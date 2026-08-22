@@ -1,0 +1,49 @@
+load("@rules_jvm//:jvm.bzl", "jvm_library")
+
+### auto-generated section `build intellij.python.community.plugin` start
+jvm_library(
+    name = "community-plugin",
+    srcs = glob(
+        [],
+        allow_empty = True,
+    ),
+    module_name = "intellij.python.community.plugin",
+    resource_strip_prefix = "resources",
+    resources = glob(
+        ["resources/**/*"],
+    ),
+    visibility = ["//visibility:public"],
+    runtime_deps = [
+        # do not sort,
+        "//plugins/toml",
+        "//platform/lang-api:lang",
+    ],
+)
+
+jvm_library(
+    name = "community-plugin_test_lib",
+    testonly = True,
+    srcs = glob(
+        [],
+        allow_empty = True,
+    ),
+    module_name = "intellij.python.community.plugin",
+    visibility = ["//visibility:public"],
+    runtime_deps = [
+        # do not sort,
+        ":community-plugin",
+        "//plugins/toml:toml_test_lib",
+        "//platform/lang-api:lang_test_lib",
+    ],
+)
+### auto-generated section `build intellij.python.community.plugin` end
+
+### auto-generated section `iml intellij.python.community.plugin` start
+exports_files(
+    [
+        "intellij.python.community.plugin.iml",
+        "resources/META-INF/plugin.xml",
+    ],
+    visibility = ["//visibility:public"],
+)
+### auto-generated section `iml intellij.python.community.plugin` end

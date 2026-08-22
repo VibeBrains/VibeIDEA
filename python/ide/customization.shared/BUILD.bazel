@@ -1,0 +1,55 @@
+load("@rules_jvm//:jvm.bzl", "jvm_library")
+
+### auto-generated section `build intellij.pycharm.community.customization.shared` start
+jvm_library(
+    name = "customization.shared",
+    srcs = glob(
+        [],
+        allow_empty = True,
+    ),
+    module_name = "intellij.pycharm.community.customization.shared",
+    resource_strip_prefix = "resources",
+    resources = glob(
+        ["resources/**/*"],
+    ),
+    visibility = ["//visibility:public"],
+    runtime_deps = [
+        # do not sort,
+        "//python/ide/impl",
+        "//python/ide/implTraining/intellij.pycharm.community.ide.implTraining:pycharm-community-ide-implTraining",
+        "//platform/whatsNew",
+        "//platform/platform-impl:ide-impl",
+        "//python/ide/customization.backend",
+    ],
+)
+
+jvm_library(
+    name = "customization.shared_test_lib",
+    testonly = True,
+    srcs = glob(
+        [],
+        allow_empty = True,
+    ),
+    module_name = "intellij.pycharm.community.customization.shared",
+    visibility = ["//visibility:public"],
+    runtime_deps = [
+        # do not sort,
+        ":customization.shared",
+        "//python/ide/impl:impl_test_lib",
+        "//python/ide/implTraining/intellij.pycharm.community.ide.implTraining:pycharm-community-ide-implTraining_test_lib",
+        "//platform/whatsNew:whatsNew_test_lib",
+        "//platform/platform-impl:ide-impl_test_lib",
+        "//python/ide/customization.backend:customization.backend_test_lib",
+    ],
+)
+### auto-generated section `build intellij.pycharm.community.customization.shared` end
+
+### auto-generated section `iml intellij.pycharm.community.customization.shared` start
+exports_files(
+    [
+        "intellij.pycharm.community.customization.shared.iml",
+        "resources/META-INF/plugin.xml",
+    ],
+    visibility = ["//visibility:public"],
+)
+### auto-generated section `iml intellij.pycharm.community.customization.shared` end

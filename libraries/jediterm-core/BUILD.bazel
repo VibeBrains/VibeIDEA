@@ -1,0 +1,43 @@
+load("@rules_jvm//:jvm.bzl", "jvm_library")
+
+### auto-generated section `build intellij.libraries.jediterm.core` start
+jvm_library(
+    name = "jediterm-core",
+    srcs = glob(
+        [],
+        allow_empty = True,
+    ),
+    module_name = "intellij.libraries.jediterm.core",
+    resource_strip_prefix = "resources",
+    resources = glob(
+        ["resources/**/*"],
+    ),
+    visibility = ["//visibility:public"],
+    exports = ["@lib//:jediterm-core"],
+    runtime_deps = ["@lib//:jediterm-core"],
+)
+
+jvm_library(
+    name = "jediterm-core_test_lib",
+    testonly = True,
+    srcs = glob(
+        [],
+        allow_empty = True,
+    ),
+    kotlinc_opts = "@community//:k8",
+    module_name = "intellij.libraries.jediterm.core",
+    visibility = ["//visibility:public"],
+    exports = ["@lib//:jediterm-core"],
+    runtime_deps = [":jediterm-core"],
+)
+### auto-generated section `build intellij.libraries.jediterm.core` end
+
+### auto-generated section `iml intellij.libraries.jediterm.core` start
+exports_files(
+    [
+        "intellij.libraries.jediterm.core.iml",
+        "resources/intellij.libraries.jediterm.core.xml",
+    ],
+    visibility = ["//visibility:public"],
+)
+### auto-generated section `iml intellij.libraries.jediterm.core` end

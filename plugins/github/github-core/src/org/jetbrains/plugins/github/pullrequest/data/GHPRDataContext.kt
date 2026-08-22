@@ -1,0 +1,43 @@
+// Copyright 2000-2021 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
+package org.jetbrains.plugins.github.pullrequest.data
+
+import com.intellij.collaboration.ui.html.AsyncHtmlImageLoader
+import com.intellij.collaboration.ui.icon.IconsProvider
+import com.intellij.collaboration.util.CodeReviewDomainEntity
+import kotlinx.coroutines.CoroutineScope
+import org.jetbrains.annotations.ApiStatus
+import org.jetbrains.plugins.github.api.data.GHReactionContent
+import org.jetbrains.plugins.github.api.data.pullrequest.GHPullRequest
+import org.jetbrains.plugins.github.pullrequest.data.provider.GHPRMentionableUsersProvider
+import org.jetbrains.plugins.github.pullrequest.data.service.GHPRCreationService
+import org.jetbrains.plugins.github.pullrequest.data.service.GHPRDetailsService
+import org.jetbrains.plugins.github.pullrequest.data.service.GHPRPersistentInteractionState
+import org.jetbrains.plugins.github.pullrequest.data.service.GHPRRepositoryDataService
+import org.jetbrains.plugins.github.pullrequest.data.service.GHPRSecurityService
+import org.jetbrains.plugins.github.ui.icons.GHAvatarIconsProvider
+
+@ApiStatus.Internal
+@CodeReviewDomainEntity // repository
+class GHPRDataContext internal constructor(
+  val scope: CoroutineScope,
+  internal val listLoader: GHPRListLoader,
+  internal val dataProviderRepository: GHPRDataProviderRepository,
+  val securityService: GHPRSecurityService,
+  val repositoryDataService: GHPRRepositoryDataService,
+  internal val creationService: GHPRCreationService,
+  internal val detailsService: GHPRDetailsService,
+  internal val reactionsService: GHReactionsService,
+  internal val htmlImageLoader: AsyncHtmlImageLoader,
+  internal val avatarIconsProvider: GHAvatarIconsProvider,
+  internal val mentionableUsersProvider: GHPRMentionableUsersProvider,
+  internal val reactionIconsProvider: IconsProvider<GHReactionContent>,
+  internal val interactionState: GHPRPersistentInteractionState,
+) {
+  init {
+    dataProviderRepository.addDetailsLoadedListener(scope) { details: GHPullRequest ->
+      listLoader.updateData {
+        if (it.id == details.id) details else null
+      }
+    }
+  }
+}

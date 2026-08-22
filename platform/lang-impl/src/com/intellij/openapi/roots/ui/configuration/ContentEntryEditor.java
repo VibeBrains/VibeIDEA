@@ -1,0 +1,331 @@
+// Copyright 2000-2026 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
+package com.intellij.openapi.roots.ui.configuration;
+
+import com.intellij.openapi.project.Project;
+import com.intellij.openapi.project.ProjectBundle;
+import com.intellij.openapi.roots.ContentEntry;
+import com.intellij.openapi.roots.ExcludeFolder;
+import com.intellij.openapi.roots.ModifiableRootModel;
+import com.intellij.openapi.roots.SourceFolder;
+import com.intellij.openapi.roots.impl.DirectoryIndexExcludePolicy;
+import com.intellij.openapi.ui.MessageDialogBuilder;
+import com.intellij.openapi.util.io.FileUtil;
+import com.intellij.openapi.vfs.VfsUtilCore;
+import com.intellij.openapi.vfs.VirtualFile;
+import com.intellij.util.EventDispatcher;
+import com.intellij.util.containers.ContainerUtil;
+import org.jetbrains.annotations.ApiStatus;
+import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
+import org.jetbrains.jps.model.JpsElement;
+import org.jetbrains.jps.model.java.JavaSourceRootType;
+import org.jetbrains.jps.model.java.JpsJavaExtensionService;
+import org.jetbrains.jps.model.module.JpsModuleSourceRootType;
+
+import javax.swing.JComponent;
+import javax.swing.JPanel;
+import java.awt.BorderLayout;
+import java.awt.event.MouseAdapter;
+import java.awt.event.MouseEvent;
+import java.util.EventListener;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Set;
+
+@ApiStatus.Internal
+public abstract class ContentEntryEditor implements ContentRootPanel.ActionCallback {
+  private boolean myIsSelected;
+  private ContentRootPanel myContentRootPanel;
+  private JPanel myMainPanel;
+  protected EventDispatcher<ContentEntryEditorListener> myEventDispatcher;
+  private final String myContentEntryUrl;
+  private final List<ModuleSourceRootEditHandler<?>> myEditHandlers;
+
+  @ApiStatus.Internal
+  public interface ContentEntryEditorListener extends EventListener{
+
+    void editingStarted(@NotNull ContentEntryEditor editor);
+    void beforeEntryDeleted(@NotNull ContentEntryEditor editor);
+    void sourceFolderAdded(@NotNull ContentEntryEditor editor, SourceFolder folder);
+    void sourceFolderRemoved(@NotNull ContentEntryEditor editor, VirtualFile file);
+    void folderExcluded(@NotNull ContentEntryEditor editor, VirtualFile file);
+    void folderIncluded(@NotNull ContentEntryEditor editor, String fileUrl);
+    void navigationRequested(@NotNull ContentEntryEditor editor, VirtualFile file);
+    void sourceRootPropertiesChanged(@NotNull ContentEntryEditor editor, @NotNull SourceFolder folder);
+  }
+
+  public ContentEntryEditor(String url, List<ModuleSourceRootEditHandler<?>> editHandlers) {
+    myContentEntryUrl = url;
+    myEditHandlers = editHandlers;
+  }
+
+  protected final List<ModuleSourceRootEditHandler<?>> getEditHandlers() {
+    return myEditHandlers;
+  }
+
+  public String getContentEntryUrl() {
+    return myContentEntryUrl;
+  }
+
+  public void initUI() {
+    myMainPanel = new JPanel(new BorderLayout());
+    myMainPanel.setOpaque(false);
+    myMainPanel.addMouseListener(new MouseAdapter() {
+      @Override
+      public void mouseClicked(MouseEvent e) {
+        myEventDispatcher.getMulticaster().editingStarted(ContentEntryEditor.this);
+      }
+      @Override
+      public void mouseEntered(MouseEvent e) {
+        if (!myIsSelected) {
+          highlight(true);
+        }
+      }
+      @Override
+      public void mouseExited(MouseEvent e) {
+        if (!myIsSelected) {
+          highlight(false);
+        }
+      }
+    });
+    myEventDispatcher = EventDispatcher.create(ContentEntryEditorListener.class);
+    setSelected(false);
+    update();
+  }
+
+  protected @Nullable ContentEntry getContentEntry() {
+    var model = getModel();
+    if (model != null) {
+      var entries = model.getContentEntries();
+      for (var entry : entries) {
+        if (entry.getUrl().equals(myContentEntryUrl)) return entry;
+      }
+    }
+
+    return null;
+  }
+
+  protected abstract ModifiableRootModel getModel();
+
+  @Override
+  public void deleteContentEntry() {
+    var path = FileUtil.toSystemDependentName(VfsUtilCore.urlToPath(myContentEntryUrl));
+    if (!MessageDialogBuilder
+      .yesNo(ProjectBundle.message("module.paths.remove.content.title"), ProjectBundle.message("module.paths.remove.content.prompt", path))
+      .ask(getModel().getProject())) {
+      return;
+    }
+    myEventDispatcher.getMulticaster().beforeEntryDeleted(this);
+    var entry = getContentEntry();
+    if (entry != null) {
+      getModel().removeContentEntry(entry);
+    }
+  }
+
+  @Override
+  public void deleteContentFolder(ContentEntry contentEntry, ContentFolderRef folderRef) {
+    var folder = folderRef.getContentFolder();
+    if (folder instanceof SourceFolder sf) {
+      removeSourceFolder(sf);
+      update();
+    }
+    else if (folder instanceof ExcludeFolder) {
+      removeExcludeFolder(folder.getUrl());
+      update();
+    }
+  }
+
+  @Override
+  public void navigateFolder(ContentEntry contentEntry, ContentFolderRef contentFolderRef) {
+    var file = contentFolderRef.getFile();
+    if (file != null) { // file can be deleted externally
+      myEventDispatcher.getMulticaster().navigationRequested(this, file);
+    }
+  }
+
+  @Override
+  public void onSourceRootPropertiesChanged(@NotNull SourceFolder folder) {
+    update();
+    myEventDispatcher.getMulticaster().sourceRootPropertiesChanged(this, folder);
+  }
+
+  public void addContentEntryEditorListener(ContentEntryEditorListener listener) {
+    myEventDispatcher.addListener(listener);
+  }
+
+  public void removeContentEntryEditorListener(ContentEntryEditorListener listener) {
+    myEventDispatcher.removeListener(listener);
+  }
+
+  public void setSelected(boolean isSelected) {
+    if (myIsSelected != isSelected) {
+      highlight(isSelected);
+      myIsSelected = isSelected;
+    }
+  }
+
+  private void highlight(boolean selected) {
+    if (myContentRootPanel != null) {
+      myContentRootPanel.setSelected(selected);
+    }
+  }
+
+  public JComponent getComponent() {
+    return myMainPanel;
+  }
+
+  public void update() {
+    if (myContentRootPanel != null) {
+      myMainPanel.remove(myContentRootPanel);
+    }
+    myContentRootPanel = createContentRootPane();
+    myContentRootPanel.initUI();
+    myContentRootPanel.setSelected(myIsSelected);
+    myMainPanel.add(myContentRootPanel, BorderLayout.CENTER);
+    myMainPanel.revalidate();
+  }
+
+  protected ContentRootPanel createContentRootPane() {
+    return new ContentRootPanel(this, myEditHandlers) {
+      @Override
+      protected ContentEntry getContentEntry() {
+        return ContentEntryEditor.this.getContentEntry();
+      }
+    };
+  }
+
+  public @Nullable SourceFolder addSourceFolder(@NotNull VirtualFile file, boolean isTestSource, String packagePrefix) {
+    var rootType = isTestSource ? JavaSourceRootType.TEST_SOURCE : JavaSourceRootType.SOURCE;
+    var properties = JpsJavaExtensionService.getInstance().createSourceRootProperties(packagePrefix);
+    return addSourceFolder(file, rootType, properties);
+  }
+
+  public @Nullable <P extends JpsElement> SourceFolder addSourceFolder(@NotNull VirtualFile file, JpsModuleSourceRootType<P> rootType, P properties) {
+    var contentEntry = getContentEntry();
+    if (contentEntry != null) {
+      var sourceFolder = contentEntry.addSourceFolder(file, rootType, properties);
+      myEventDispatcher.getMulticaster().sourceFolderAdded(this, sourceFolder);
+      update();
+      return sourceFolder;
+    }
+
+    return null;
+  }
+
+  protected @Nullable SourceFolder doAddSourceFolder(@NotNull VirtualFile file, boolean isTestSource) {
+    var contentEntry = getContentEntry();
+    return contentEntry != null ? contentEntry.addSourceFolder(file, isTestSource) : null;
+  }
+
+  public void removeSourceFolder(@NotNull SourceFolder sourceFolder) {
+    try {
+      doRemoveSourceFolder(sourceFolder);
+    }
+    finally {
+      myEventDispatcher.getMulticaster().sourceFolderRemoved(this, sourceFolder.getFile());
+      update();
+    }
+  }
+
+  protected void doRemoveSourceFolder(@NotNull SourceFolder sourceFolder) {
+    var contentEntry = getContentEntry();
+    if (contentEntry != null) contentEntry.removeSourceFolder(sourceFolder);
+  }
+
+  public @Nullable ExcludeFolder addExcludeFolder(@NotNull VirtualFile file) {
+    try {
+      return doAddExcludeFolder(file);
+    }
+    finally {
+      myEventDispatcher.getMulticaster().folderExcluded(this, file);
+      update();
+    }
+  }
+
+  protected @Nullable ExcludeFolder doAddExcludeFolder(@NotNull VirtualFile file) {
+    var contentEntry = getContentEntry();
+    return contentEntry != null ? contentEntry.addExcludeFolder(file) : null;
+  }
+
+  public void removeExcludeFolder(@NotNull String excludeRootUrl) {
+    try {
+      doRemoveExcludeFolder(excludeRootUrl);
+    }
+    finally {
+      myEventDispatcher.getMulticaster().folderIncluded(this, excludeRootUrl);
+      update();
+    }
+  }
+
+  protected void doRemoveExcludeFolder(@NotNull String excludeRootUrl) {
+    var contentEntry = getContentEntry();
+    if (contentEntry != null) {
+      contentEntry.removeExcludeFolder(excludeRootUrl);
+    }
+  }
+
+  public @Nullable JpsModuleSourceRootType<?> getRootType(@NotNull VirtualFile file) {
+    var folder = getSourceFolder(file);
+    return folder != null ? folder.getRootType() : null;
+  }
+
+  public boolean isExcludedOrUnderExcludedDirectory(@NotNull VirtualFile file) {
+    var model = getModel();
+    if (model == null) {
+      throw new AssertionError(getClass() + ".getModel() returned null unexpectedly");
+    }
+    var project = model.getProject();
+    var contentEntry = getContentEntry();
+    if (contentEntry == null) {
+      return false;
+    }
+    return isExcludedOrUnderExcludedDirectory(project, contentEntry, file);
+  }
+
+  public static boolean isExcludedOrUnderExcludedDirectory(
+    @Nullable Project project,
+    @NotNull ContentEntry entry,
+    @NotNull VirtualFile file
+  ) {
+    return isExcludedOrUnderExcludedDirectory(entry, getEntryExcludedUrls(project, entry), file);
+  }
+
+  public static boolean isExcludedOrUnderExcludedDirectory(
+    @NotNull ContentEntry entry,
+    @NotNull Set<String> excludedUrls,
+    @NotNull VirtualFile file
+  ) {
+    var sourceRoots = ContainerUtil.newHashSet(entry.getSourceFolderFiles());
+    var parent = file;
+    while (parent != null) {
+      if (excludedUrls.contains(parent.getUrl())) return true;
+      if (sourceRoots.contains(parent)) return false;
+      parent = parent.getParent();
+    }
+    return false;
+  }
+
+  public static @NotNull Set<String> getEntryExcludedUrls(@Nullable Project project, @NotNull ContentEntry entry) {
+    var excludedUrls = new HashSet<>(entry.getExcludeFolderUrls());
+    if (project != null) {
+      for (var policy : DirectoryIndexExcludePolicy.EP_NAME.getExtensions(project)) {
+        ContainerUtil.addAll(excludedUrls, policy.getExcludeUrlsForProject());
+      }
+    }
+    return excludedUrls;
+  }
+
+  public @Nullable SourceFolder getSourceFolder(@NotNull VirtualFile file) {
+    var contentEntry = getContentEntry();
+    if (contentEntry == null) {
+      return null;
+    }
+    for (var sourceFolder : contentEntry.getSourceFolders()) {
+      var f = sourceFolder.getFile();
+      if (f != null && f.equals(file)) {
+        return sourceFolder;
+      }
+    }
+    return null;
+  }
+}

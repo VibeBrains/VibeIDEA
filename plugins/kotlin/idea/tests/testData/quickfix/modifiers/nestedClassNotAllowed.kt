@@ -1,0 +1,11 @@
+// "Add 'inner' modifier" "true"
+// K2_ERROR: NESTED_CLASS_NOT_ALLOWED
+class A() {
+    inner class B() {
+        class <caret>C() {
+        }
+    }
+}
+
+// FUS_QUICKFIX_NAME: org.jetbrains.kotlin.idea.quickfix.AddModifierFix
+// FUS_K2_QUICKFIX_NAME: org.jetbrains.kotlin.idea.quickfix.AddModifierFix

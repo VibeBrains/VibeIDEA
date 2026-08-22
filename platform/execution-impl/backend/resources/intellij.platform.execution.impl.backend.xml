@@ -1,0 +1,24 @@
+<idea-plugin>
+  <!-- region Generated dependencies - run `Generate Product Layouts` to regenerate -->
+  <dependencies>
+    <module name="fleet.rhizomedb"/>
+    <module name="intellij.libraries.kotlinx.serialization.core"/>
+    <module name="intellij.libraries.kotlinx.serialization.json"/>
+    <module name="intellij.platform.core"/>
+    <module name="intellij.platform.execution"/>
+    <module name="intellij.platform.execution.impl"/>
+    <module name="intellij.platform.kernel"/>
+    <module name="intellij.platform.kernel.backend"/>
+    <module name="intellij.platform.project"/>
+    <module name="intellij.platform.rpc.backend"/>
+    <module name="intellij.platform.util.coroutines"/>
+  </dependencies>
+  <!-- endregion -->
+  <extensions defaultExtensionNs="com.intellij">
+    <!--suppress PluginXmlRegistrationCheck -->
+    <executionTargetLanguageRuntimeType implementation="com.intellij.execution.target.java.JavaLanguageRuntimeType"/>
+    <platform.rpc.backend.remoteApiProvider
+      implementation="com.intellij.platform.execution.impl.backend.BackendExecutionRemoteApiProvider"/>
+    <execution.impl.runSessionService implementation="com.intellij.platform.execution.impl.backend.BackendRunSessionService"/>
+  </extensions>
+</idea-plugin>

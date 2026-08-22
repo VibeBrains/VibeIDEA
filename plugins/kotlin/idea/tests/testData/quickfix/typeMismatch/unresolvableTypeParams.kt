@@ -1,0 +1,12 @@
+// "Change parameter 'n' type of function 'foo' to 'Any?'" "true"
+// K2_ERROR: ARGUMENT_TYPE_MISMATCH
+fun foo(n: Int) {
+
+}
+
+fun <T> bar(t: T) {
+    foo(<caret>t)
+}
+// FUS_QUICKFIX_NAME: org.jetbrains.kotlin.idea.quickfix.ChangeParameterTypeFix
+// IGNORE_K2
+// Task for K2: KTIJ-33274

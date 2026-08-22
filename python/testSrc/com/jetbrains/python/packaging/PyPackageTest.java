@@ -1,0 +1,50 @@
+package com.jetbrains.python.packaging;
+
+import com.intellij.python.requirements.parser.PyRequirementParser;
+import com.jetbrains.python.allure.Subsystems;
+import com.jetbrains.python.allure.Layers;
+import com.jetbrains.python.fixtures.PyTestCase;
+import org.jetbrains.annotations.NotNull;
+
+/**
+ * @author Ilya.Kazakevich
+ */
+@Subsystems.PackagingRequirements
+@Layers.Functional
+public class PyPackageTest extends PyTestCase {
+
+  // http://legacy.python.org/dev/peps/pep-0386/
+  public void testIsAtLeastVersionNormal() {
+    final PyPackage pyPackage = new PyPackage("somePackage", "1.2.3.4");
+    assertTrue("Failed to check normal version", pyPackage.matches(createRequirement("somePackage>=1.2")));
+    assertTrue("Failed to check normal version", pyPackage.matches(createRequirement("somePackage>=1.2.3")));
+    assertTrue("Failed to check normal version", pyPackage.matches(createRequirement("somePackage>=1")));
+    assertTrue("Failed to check normal version", pyPackage.matches(createRequirement("somePackage>=1.2.3.4")));
+
+    assertFalse("Failed to check normal version", pyPackage.matches(createRequirement("somePackage>=1.2.3.4.5")));
+    assertFalse("Failed to check normal version", pyPackage.matches(createRequirement("somePackage>=2")));
+    assertFalse("Failed to check normal version", pyPackage.matches(createRequirement("somePackage>=2.2")));
+    assertFalse("Failed to check normal version", pyPackage.matches(createRequirement("somePackage>=1.9.1")));
+    assertFalse("Failed to check normal version", pyPackage.matches(createRequirement("somePackage>=1.2.3.5")));
+    assertFalse("Failed to check normal version", pyPackage.matches(createRequirement("PackageFoo>=1.2.3.4")));
+  }
+
+
+  public void testIsAtLeastVersionBeta() {
+    final PyPackage pyPackage = new PyPackage("somePackage", "0.5a3");
+    assertTrue("Failed to check alpha version", pyPackage.matches(createRequirement("somePackage>=0.4")));
+    assertTrue("Failed to check alpha version", pyPackage.matches(createRequirement("somePackage<=0.5")));
+    assertTrue("Failed to check alpha version", pyPackage.matches(createRequirement("somePackage>=0.5a")));
+
+    assertFalse("Failed to check alpha version", pyPackage.matches(createRequirement("somePackage>=0.6")));
+    assertFalse("Failed to check alpha version", pyPackage.matches(createRequirement("somePackage>=0.5.1")));
+    assertFalse("Failed to check alpha version", pyPackage.matches(createRequirement("somePackage>=1")));
+  }
+
+  @NotNull
+  private static PyRequirement createRequirement(@NotNull String options) {
+    final PyRequirement requirement = PyRequirementParser.fromLine(options);
+    assertNotNull(requirement);
+    return requirement;
+  }
+}

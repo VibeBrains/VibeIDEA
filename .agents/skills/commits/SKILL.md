@@ -1,0 +1,80 @@
+---
+name: commits
+description: Create, amend, or rename IntelliJ commits and write commit messages.
+---
+
+# Commits
+
+SafePush/Patronus rejects malformed commit messages, so a bad subject line costs a CI round trip.
+
+## Subject line
+
+```text
+IDEA-12345 <subject>              # behavioral change — ticket, no subsystem prefix
+<label> <subsystem>: <subject>    # clearly non-behavioral change
+```
+
+- A behavioral change needs a YouTrack ticket. If you are unsure whether it is behavioral, it is.
+- Labels: `tests`, `cleanup`, `refactor`, `docs`, `format`, `style`, `setup`, `misc`.
+- Never begin a subject with `WIP`, `fixup!`, `squash!`, or `amend!`, and never use Conventional Commits (`fix(scope): …`).
+
+## Body
+
+Write one for every change except the mechanical ones (typo, import, format) — including non-production ones.
+Say why the change was made and what was decided; the diff already shows what changed.
+A requested suffix such as `IJ-MR-100` goes in its own trailing paragraph.
+
+## Safe message input
+
+On POSIX shells, pass a multiline commit message through stdin with `-F -` and a quoted heredoc:
+
+```bash
+git commit -F - <<'EOF'
+IDEA-12345 concise subject
+
+Explain why the change was made and what was decided.
+EOF
+```
+
+On PowerShell, do **not** pipe a here-string into `git commit -F -`. Windows PowerShell may add a
+Unicode BOM to the first line, producing a malformed subject that SafePush rejects. Pass one
+paragraph per `-m` argument instead; the same form is safe with `git commit --amend`:
+
+```powershell
+git commit `
+  -m "IDEA-12345 concise subject" `
+  -m "Explain why the change was made and what was decided." `
+  -m "IJ-MR-100"
+```
+
+After committing or amending from PowerShell, inspect `git cat-file commit HEAD` and confirm that
+the subject begins directly with the ticket or label, without an invisible BOM.
+
+Do not stage commit messages in `/tmp`, `/private/tmp`, or another path outside the workspace. That can require an extra filesystem-access approval and leaves a plaintext artifact behind. If a reusable draft is genuinely needed, keep it under the repository's gitignored `out/` directory, for example `out/commit-message.txt`.
+
+## Before writing
+
+1. `git status --short` and `git diff --stat` for scope.
+   Read the full diff only for changes you did not make yourself in this session, and file by file when it is large.
+2. One commit does one thing — no cleanup or refactoring mixed into a behavior change. When unsure, split.
+
+## Examples
+
+```text
+MRI-3589 harden single-flight recursion checks
+
+Track active single-flight computations in coroutine context so recursive
+awaits fail fast in both the owning coroutine and child coroutines.
+
+IJ-MR-100
+```
+
+```text
+tests cidr: migrate JUnit 5 coverage
+
+Convert remaining JUnit 4 suites under cidr/coverage to JUnit 5.
+Parametrized tests now use @MethodSource instead of the Theories runner.
+```
+
+Uncovered case (isolated-commit algorithm, `misc` triage): [2_Commits.md](../../../../docs/IntelliJ-Platform/0_Intro/2_Commits.md).
+Pushing: use the `safe-push` skill.

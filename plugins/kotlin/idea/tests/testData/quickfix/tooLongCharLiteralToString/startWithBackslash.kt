@@ -1,0 +1,10 @@
+// "Convert too long character literal to string" "true"
+// ERROR: Illegal escape: '\ '
+// K2_AFTER_ERROR: ILLEGAL_ESCAPE
+// K2_ERROR: ILLEGAL_ESCAPE
+
+fun foo() {
+    '\ bar<caret>'
+}
+// FUS_QUICKFIX_NAME: org.jetbrains.kotlin.idea.quickfix.TooLongCharLiteralToStringFix
+// FUS_K2_QUICKFIX_NAME: org.jetbrains.kotlin.idea.quickfix.TooLongCharLiteralToStringFix

@@ -1,0 +1,8 @@
+// "Change parameter 'z' type of function 'foo' to '(Int) -> Unit'" "true"
+// K2_ERROR: ARGUMENT_TYPE_MISMATCH
+fun foo(w: Int = 0, x: Int, y: Int = 0, z: (Int) -> String) {
+    foo(0, 1) {<caret>}
+}
+
+// FUS_QUICKFIX_NAME: org.jetbrains.kotlin.idea.quickfix.ChangeParameterTypeFix
+// FUS_K2_QUICKFIX_NAME: org.jetbrains.kotlin.idea.k2.refactoring.changeSignature.quickFix.ChangeParameterTypeFix

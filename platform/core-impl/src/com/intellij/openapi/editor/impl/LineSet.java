@@ -1,0 +1,300 @@
+// Copyright 2000-2026 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
+package com.intellij.openapi.editor.impl;
+
+import com.intellij.openapi.editor.ex.LineIterator;
+import com.intellij.openapi.util.text.LineTokenizer;
+import com.intellij.openapi.util.text.StringUtil;
+import com.intellij.util.ArrayUtil;
+import com.intellij.util.BitUtil;
+import com.intellij.util.text.CharArrayUtil;
+import com.intellij.util.text.MergingCharSequence;
+import it.unimi.dsi.fastutil.bytes.ByteArrayList;
+import it.unimi.dsi.fastutil.bytes.ByteList;
+import it.unimi.dsi.fastutil.ints.IntArrayList;
+import it.unimi.dsi.fastutil.ints.IntList;
+import org.jetbrains.annotations.ApiStatus;
+import org.jetbrains.annotations.Contract;
+import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.VisibleForTesting;
+
+import java.util.Arrays;
+
+/**
+ * Data structure specialized for working with document text lines, i.e. stores information about line mapping to document
+ * offsets and provides convenient ways to work with that information like retrieving target line by document offset etc.
+ * <p/>
+ * <b>Immutable and safe for racy publication.</b> All fields ({@link #myStarts}, {@link #myFlags}, {@link #myLength})
+ * are {@code final} and the backing arrays are never mutated after construction — every "mutator"
+ * ({@link #update}, {@link #clearModificationFlags}, {@link #setModified}) returns a fresh {@code LineSet}.
+ * Thanks to the final-field semantics (JLS 17.5), a fully constructed instance can be handed to another thread
+ * through a data race and still be observed consistently.
+ * <p/>
+ * {@link DocumentTextImpl} depends on this: it caches a {@code LineSet} in a non-volatile field and reads it
+ * from arbitrary threads without synchronization. Do not break the invariant — never add a non-final field and
+ * never mutate {@code myStarts}/{@code myFlags} in place.
+ */
+@ApiStatus.Internal
+public final class LineSet {
+  private static final int MODIFIED_MASK = 0x4;
+  private static final int SEPARATOR_MASK = 0x3;
+
+  private final int @NotNull [] myStarts;
+  private final byte @NotNull [] myFlags; // MODIFIED_MASK bit is for is/setModified(line); SEPARATOR_MASK 2 bits stores line separator length: 0..2
+  private final int myLength;
+
+  private LineSet(int @NotNull [] starts, byte @NotNull [] flags, int length) {
+    myStarts = starts;
+    myFlags = flags;
+    myLength = length;
+  }
+
+  @Contract("_ -> new")
+  public static @NotNull LineSet createLineSet(@NotNull CharSequence text) {
+    return createLineSet(text, false);
+  }
+
+  private static @NotNull LineSet createLineSet(@NotNull CharSequence text, boolean markModified) {
+    int approxLineCount = text.length() / 20;
+    IntList starts = new IntArrayList(approxLineCount);
+    ByteList flags = new ByteArrayList(approxLineCount);
+
+    LineTokenizer lineTokenizer = new LineTokenizer(text);
+    while (!lineTokenizer.atEnd()) {
+      starts.add(lineTokenizer.getOffset());
+      flags.add((byte) (lineTokenizer.getLineSeparatorLength() | (markModified ? MODIFIED_MASK : 0)));
+      lineTokenizer.advance();
+    }
+    return new LineSet(starts.toIntArray(), flags.toByteArray(), text.length());
+  }
+
+  /**
+   * Returns a line set corresponding to the text after the replacement, with all lines touched by the change marked as modified.
+   * Callers implementing "whole text replaced" semantics should call {@link #clearModificationFlags} on the result.
+   */
+  @VisibleForTesting
+  public @NotNull LineSet update(@NotNull CharSequence prevText, int start, int end, @NotNull CharSequence replacement) {
+    if (myLength == 0) {
+      return createLineSet(replacement, true);
+    }
+
+    // if we're breaking or creating a '\r\n' pair, expand the changed range to include it fully
+    CharSequence newText = StringUtil.replaceSubSequence(prevText, start, end, replacement);
+    if (hasChar(prevText, start - 1, '\r') &&
+        (hasChar(prevText, start, '\n') || hasChar(newText, start, '\n'))) {
+      replacement = new MergingCharSequence("\r", replacement);
+      start--;
+    }
+
+    if (hasChar(prevText, end, '\n') &&
+        (hasChar(prevText, end -1, '\r') || hasChar(newText, start + replacement.length() - 1, '\r'))) {
+      replacement = new MergingCharSequence(replacement, "\n");
+      end++;
+    }
+
+    return isSingleLineChange(start, end, replacement)
+           ? updateInsideOneLine(findLineIndex(start), replacement.length() - (end - start))
+           : genericUpdate(start, end, replacement);
+  }
+
+  private static boolean hasChar(CharSequence s, int index, char c) {
+    return index >= 0 && index < s.length() && s.charAt(index) == c;
+  }
+
+  private boolean isSingleLineChange(int start, int end, @NotNull CharSequence replacement) {
+    if (start == 0 && end == myLength && replacement.length() == 0) return false;
+
+    int startLine = findLineIndex(start);
+    return startLine == findLineIndex(end) && !CharArrayUtil.containLineBreaks(replacement) && !isLastEmptyLine(startLine);
+  }
+
+  private @NotNull LineSet updateInsideOneLine(int line, int lengthDelta) {
+    int[] starts = myStarts.clone();
+    for (int i = line + 1; i < starts.length; i++) {
+      starts[i] += lengthDelta;
+    }
+
+    byte[] flags = myFlags.clone();
+    flags[line] |= MODIFIED_MASK;
+    return new LineSet(starts, flags, myLength + lengthDelta);
+  }
+
+  @Contract("_, _, _ -> new")
+  private @NotNull LineSet genericUpdate(int startOffset, int endOffset, @NotNull CharSequence replacement) {
+    int startLine = findLineIndex(startOffset);
+    int endLine = findLineIndex(endOffset);
+
+    LineSet patch = createLineSet(replacement, true);
+
+    int lengthShift = patch.myLength - (endOffset - startOffset);
+
+    int startLineStart = getLineStart(startLine);
+    boolean addStartLine = startOffset - startLineStart > 0 || patch.myStarts.length > 0 || endOffset < myLength;
+    boolean addEndLine = endOffset < myLength && patch.myLength > 0 && patch.getSeparatorLength(patch.myStarts.length - 1) > 0;
+    int newLineCount = startLine + (addStartLine ? 1 : 0) +
+                       Math.max(patch.myStarts.length - 1, 0) +
+                       (addEndLine ? 1 : 0) + Math.max(myStarts.length - endLine - 1, 0);
+
+    int[] starts = ArrayUtil.newIntArray(newLineCount);
+    byte[] flags = ArrayUtil.newByteArray(newLineCount);
+
+    if (startLine > 0) {
+      System.arraycopy(myStarts, 0, starts, 0, startLine);
+      System.arraycopy(myFlags, 0, flags, 0, startLine);
+    }
+
+    int toIndex = startLine;
+    if (addStartLine) {
+      starts[toIndex] = startLineStart;
+      flags[toIndex] = patch.myStarts.length > 0 ? patch.myFlags[0] : MODIFIED_MASK;
+      toIndex++;
+    }
+
+    toIndex = patch.shiftData(starts, flags, 1, toIndex, patch.myStarts.length - 1, startOffset);
+
+    if (endOffset < myLength) {
+      if (addEndLine) {
+        starts[toIndex] = endOffset + lengthShift;
+        flags[toIndex] = (byte) (myFlags[endLine] | MODIFIED_MASK);
+        toIndex++;
+      } else if (toIndex > 0) {
+        flags[toIndex - 1] = (byte) (myFlags[endLine] | MODIFIED_MASK);
+      }
+    }
+
+    shiftData(starts, flags, endLine + 1, toIndex, myStarts.length - (endLine + 1), lengthShift);
+
+    return new LineSet(starts, flags, myLength + lengthShift);
+  }
+
+  private int shiftData(int @NotNull [] dstStarts, byte @NotNull [] dstFlags, int srcOffset, int dstOffset, int count, int offsetDelta) {
+    if (count < 0) return dstOffset;
+
+    System.arraycopy(myFlags, srcOffset, dstFlags, dstOffset, count);
+    for (int i = 0; i < count; i++) {
+      dstStarts[dstOffset + i] = myStarts[srcOffset + i] + offsetDelta;
+    }
+    return dstOffset + count;
+  }
+
+  public int findLineIndex(int offset) {
+    if (offset < 0 || offset > myLength) {
+      throw new IndexOutOfBoundsException("Wrong offset: " + offset + ". Should be in range: [0, " + myLength + "]");
+    }
+    if (myLength == 0) return 0;
+    if (offset == myLength) return getLineCount() - 1;
+
+    int bsResult = Arrays.binarySearch(myStarts, offset);
+    return bsResult >= 0 ? bsResult : -bsResult - 2;
+  }
+
+  public @NotNull LineIterator createIterator() {
+    return new LineIteratorImpl(this);
+  }
+
+  public int getLineStart(int index) {
+    checkLineIndex(index);
+    return isLastEmptyLine(index) ? myLength : myStarts[index];
+  }
+
+  private boolean isLastEmptyLine(int index) {
+    return index == myFlags.length && hasEol(index - 1);
+  }
+
+  private boolean hasEol(int lineIndex) {
+    return lineIndex >= 0 && getSeparatorLengthUnsafe(lineIndex) > 0;
+  }
+
+  public int getLineEnd(int index) {
+    checkLineIndex(index);
+    return index >= myStarts.length - 1 ? myLength : myStarts[index + 1];
+  }
+
+  private void checkLineIndex(int index) {
+    if (index < 0 || index >= getLineCount()) {
+      throw new IndexOutOfBoundsException("Wrong line: " + index + ". Available lines count: " + getLineCount());
+    }
+  }
+
+  /**
+   * {@code isModified}/{@code setModified}/{@code clearModificationFlags} below are no longer consumed by any
+   * production code: since the {@code DocumentText}/{@code DocumentModState} split, per-line modification
+   * tracking lives in {@link ModifiedLineSet} instead, and {@link DocumentTextImpl} never calls
+   * {@link #clearModificationFlags} on its own {@code LineSet} anymore -- so the {@code MODIFIED_MASK} bits it
+   * sets as a side effect of {@link #update} now only accumulate, never reset. Widened from package-private to
+   * public {@code @VisibleForTesting} only so {@code ModifiedLineSetTest} can compare {@link ModifiedLineSet}
+   * against this class directly. Do not read these as reflecting a document's real modification state.
+   */
+  @VisibleForTesting
+  public boolean isModified(int index) {
+    checkLineIndex(index);
+    return !isLastEmptyLine(index) && BitUtil.isSet(myFlags[index], MODIFIED_MASK);
+  }
+
+  @VisibleForTesting
+  public @NotNull LineSet setModified(@NotNull IntList indices) {
+    if (indices.isEmpty()) {
+      return this;
+    }
+    if (indices.size() == 1) {
+      int index = indices.getInt(0);
+      if (isLastEmptyLine(index) || isModified(index)) return this;
+    }
+
+    byte[] flags = myFlags.clone();
+    for (int i=0; i<indices.size();i++) {
+      int index = indices.getInt(i);
+      flags[index] |= MODIFIED_MASK;
+    }
+    return new LineSet(myStarts, flags, myLength);
+  }
+
+  /**
+   * @param endLine is exclusive, {@code Integer.MAX_VALUE} means the last line
+   */
+  @VisibleForTesting
+  public @NotNull LineSet clearModificationFlags(int startLine, int endLine) {
+    if (startLine > endLine) {
+      throw new IllegalArgumentException("endLine < startLine: " + endLine + " < " + startLine + "; lineCount: " + getLineCount());
+    }
+    int lineCount = getLineCount();
+    if (lineCount == 0 && startLine == 0) {
+      if (endLine == 0 || endLine == Integer.MAX_VALUE) {
+        // 0 and MAX_VALUE are special values, allow them bypassing checkLineIndex
+        return this;
+      }
+    }
+    checkLineIndex(startLine);
+    if (endLine == Integer.MAX_VALUE) {
+      endLine = lineCount;
+    }
+    checkLineIndex(endLine - 1);
+
+    if (isLastEmptyLine(endLine - 1)) endLine--;
+    if (startLine >= endLine) return this;
+
+    byte[] flags = myFlags.clone();
+    for (int i = startLine; i < endLine; i++) {
+      flags[i] &= ~MODIFIED_MASK;
+    }
+    return new LineSet(myStarts, flags, myLength);
+  }
+
+  @VisibleForTesting
+  public int getSeparatorLength(int index) {
+    checkLineIndex(index);
+    return getSeparatorLengthUnsafe(index);
+  }
+
+  private int getSeparatorLengthUnsafe(int index) {
+    return index < myFlags.length ? myFlags[index] & SEPARATOR_MASK : 0;
+  }
+
+  public int getLineCount() {
+    // TODO: constant per instance; precompute into a final field if profiling shows this hot path matters
+    return myStarts.length + (isLastEmptyLine(myStarts.length) ? 1 : 0);
+  }
+
+  public int getLength() {
+    return myLength;
+  }
+}

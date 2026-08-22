@@ -1,0 +1,28 @@
+// Copyright 2000-2022 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
+
+package com.intellij.openapi.ui;
+
+import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
+
+import javax.swing.JComponent;
+import java.awt.Component;
+import java.awt.Graphics2D;
+
+public interface Painter {
+  boolean needsRepaint();
+
+  void paint(@NotNull Component component, @NotNull Graphics2D g);
+
+  default void paint(@NotNull Component component, @NotNull Component source, @NotNull Graphics2D g) {
+    paint(component, g);
+  }
+
+  void addListener(@NotNull Listener listener);
+
+  void removeListener(Listener listener);
+
+  interface Listener {
+    void onNeedsRepaint(@NotNull Painter painter, @Nullable JComponent dirtyComponent);
+  }
+}

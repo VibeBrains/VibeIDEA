@@ -1,0 +1,152 @@
+/*
+ * Copyright 2000-2015 JetBrains s.r.o.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+package com.jetbrains.python.inspections;
+
+import com.intellij.idea.TestFor;
+import com.jetbrains.python.allure.Layers;
+import com.jetbrains.python.allure.Subsystems;
+
+import com.jetbrains.python.documentation.PyDocumentationSettings;
+import com.jetbrains.python.documentation.docstrings.DocStringFormat;
+import com.jetbrains.python.fixtures.PyTestCase;
+
+@Subsystems.Inspections
+@Layers.Functional
+public class PyNumpyTypeTest extends PyTestCase {
+  public static final String TEST_DIRECTORY = "inspections/PyNumpyType/";
+
+  @Override
+  protected void setUp() throws Exception {
+    super.setUp();
+    myFixture.copyDirectoryToProject(TEST_DIRECTORY, "");
+  }
+
+  private void doTest() {
+    doTest(true);
+  }
+
+  private void doTest(boolean enableNumpyDocStringFormat) {
+    PyDocumentationSettings settings = PyDocumentationSettings.getInstance(myFixture.getModule());
+    DocStringFormat originalFormat = settings.getFormat();
+    try {
+      if (enableNumpyDocStringFormat) {
+        settings.setFormat(DocStringFormat.NUMPY);
+      }
+      myFixture.configureByFile(TEST_DIRECTORY + getTestName(false) + ".py");
+      myFixture.enableInspections(PyTypeCheckerInspection.class, PyAssertTypeInspection.class);
+      myFixture.checkHighlighting(true, false, true);
+    }
+    finally {
+      settings.setFormat(originalFormat);
+    }
+  }
+
+  public void testNominalType() {
+    doTest();
+  }
+
+  public void testDtype() {
+    doTest();
+  }
+
+  public void testEmpty() {
+    doTest();
+  }
+
+  public void testTranspose() {
+    doTest();
+  }
+
+  public void testArgSort() {
+    doTest();
+  }
+
+  public void testVectorize() {
+    doTest();
+  }
+
+  public void testDefaultValue() {
+    doTest();
+  }
+
+  public void testDefaultValueKeyword() {
+    doTest();
+  }
+
+  @TestFor(issues = "PY-88579")
+  public void testDefaultNone() {
+    doTest();
+  }
+
+  @TestFor(issues = "PY-88579")
+  public void testDefaultValueVariants() {
+    doTest();
+  }
+
+  public void testSort() {
+    doTest();
+  }
+
+  public void testArrayLike() {
+    doTest();
+  }
+
+  @TestFor(issues = "PY-88579")
+  public void testTypeHintHasPriority() {
+    doTest();
+  }
+
+  @TestFor(issues = "PY-32793")
+  public void testReturnTypeHintHasPriority() {
+    doTest();
+  }
+
+  @TestFor(issues = {"PY-32793", "PY-89314"})
+  public void testReturnTypeWithBrackets() {
+    doTest();
+  }
+
+  @TestFor(issues = {"PY-32793", "PY-89314"})
+  public void testReturnTypeUnion() {
+    doTest();
+  }
+
+  public void testUFunc() {
+    doTest(false);
+  }
+
+  public void testUFuncMixedWithNumber() {
+    doTest();
+  }
+
+  public void testReturnOptional() {
+    myFixture.configureByFile(TEST_DIRECTORY + getTestName(false) + ".py");
+    myFixture.enableInspections(PyTypeCheckerInspection.class);
+    myFixture.checkHighlighting(true, false, true);
+  }
+
+  public void testReturnTuple() {
+    myFixture.configureByFile(TEST_DIRECTORY + getTestName(false) + ".py");
+    myFixture.enableInspections(PyTypeCheckerInspection.class);
+    myFixture.checkHighlighting(true, false, true);
+  }
+
+  public void testSlogdet() {
+    myFixture.configureByFile(TEST_DIRECTORY + getTestName(false) + ".py");
+    myFixture.enableInspections(PyTypeCheckerInspection.class);
+    myFixture.checkHighlighting(true, false, true);
+  }
+}

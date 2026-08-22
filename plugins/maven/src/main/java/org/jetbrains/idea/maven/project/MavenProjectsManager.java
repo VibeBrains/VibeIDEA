@@ -1,0 +1,871 @@
+// Copyright 2000-2024 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
+package org.jetbrains.idea.maven.project;
+
+import com.intellij.configurationStore.SettingsSavingComponentJavaAdapter;
+import com.intellij.openapi.Disposable;
+import com.intellij.openapi.application.ApplicationManager;
+import com.intellij.openapi.application.WriteAction;
+import com.intellij.openapi.components.PersistentStateComponent;
+import com.intellij.openapi.components.State;
+import com.intellij.openapi.module.ModifiableModuleModel;
+import com.intellij.openapi.module.Module;
+import com.intellij.openapi.module.ModuleManager;
+import com.intellij.openapi.project.Project;
+import com.intellij.openapi.project.ProjectUtil;
+import com.intellij.openapi.roots.ModifiableRootModel;
+import com.intellij.openapi.roots.ModuleOrderEntry;
+import com.intellij.openapi.roots.ModuleRootManager;
+import com.intellij.openapi.roots.OrderEntry;
+import com.intellij.openapi.roots.ProjectRootManager;
+import com.intellij.openapi.roots.impl.ModifiableModelCommitter;
+import com.intellij.openapi.roots.ui.configuration.actions.ModuleDeleteProvider;
+import com.intellij.openapi.util.Disposer;
+import com.intellij.openapi.util.ModificationTracker;
+import com.intellij.openapi.util.Pair;
+import com.intellij.openapi.util.registry.Registry;
+import com.intellij.openapi.vfs.VirtualFile;
+import com.intellij.openapi.vfs.VirtualFileManager;
+import com.intellij.util.SmartList;
+import com.intellij.util.concurrency.annotations.RequiresEdt;
+import com.intellij.util.concurrency.annotations.RequiresReadLock;
+import com.intellij.util.containers.ContainerUtil;
+import com.intellij.util.io.PathKt;
+import com.intellij.util.ui.update.MergingQueueUtil;
+import com.intellij.util.ui.update.Update;
+import kotlinx.coroutines.CoroutineScope;
+import org.jetbrains.annotations.ApiStatus;
+import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
+import org.jetbrains.annotations.TestOnly;
+import org.jetbrains.concurrency.AsyncPromise;
+import org.jetbrains.concurrency.Promise;
+import org.jetbrains.idea.maven.buildtool.MavenSyncConsole;
+import org.jetbrains.idea.maven.buildtool.MavenSyncSpec;
+import org.jetbrains.idea.maven.externalSystemIntegration.output.quickfixes.CacheForCompilerErrorMessages;
+import org.jetbrains.idea.maven.importing.MavenImportUtil;
+import org.jetbrains.idea.maven.importing.MavenPomPathModuleService;
+import org.jetbrains.idea.maven.importing.MavenProjectImporter;
+import org.jetbrains.idea.maven.indices.MavenIndicesManager;
+import org.jetbrains.idea.maven.model.MavenArtifact;
+import org.jetbrains.idea.maven.model.MavenExplicitProfiles;
+import org.jetbrains.idea.maven.model.MavenId;
+import org.jetbrains.idea.maven.model.MavenProfileKind;
+import org.jetbrains.idea.maven.model.MavenRemoteRepository;
+import org.jetbrains.idea.maven.navigator.MavenProjectsNavigator;
+import org.jetbrains.idea.maven.project.auto.reload.MavenProjectManagerWatcher;
+import org.jetbrains.idea.maven.tasks.MavenShortcutsManager;
+import org.jetbrains.idea.maven.tasks.MavenTasksManager;
+import org.jetbrains.idea.maven.utils.MavenLog;
+import org.jetbrains.idea.maven.utils.MavenMergingUpdateQueue;
+import org.jetbrains.idea.maven.utils.MavenRehighlighter;
+import org.jetbrains.idea.maven.utils.MavenSimpleProjectComponent;
+import org.jetbrains.idea.maven.utils.MavenUtil;
+
+import java.io.IOException;
+import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicReference;
+import java.util.concurrent.locks.ReentrantLock;
+import java.util.function.Consumer;
+import java.util.function.Predicate;
+
+import static org.jetbrains.idea.maven.server.MavenWrapperSupport.getWrapperDistributionUrl;
+
+@State(name = "MavenProjectsManager")
+public abstract class MavenProjectsManager extends MavenSimpleProjectComponent
+  implements PersistentStateComponent<MavenProjectsManagerState>, SettingsSavingComponentJavaAdapter, Disposable,
+             MavenAsyncProjectsManager {
+  private final ReentrantLock initLock = new ReentrantLock();
+  private final AtomicBoolean isInitialized = new AtomicBoolean();
+  private final AtomicBoolean isActivated = new AtomicBoolean();
+
+  private @NotNull MavenProjectsManagerState myState = new MavenProjectsManagerState();
+
+  private final MavenEmbeddersManager myEmbeddersManager;
+
+  private final ReentrantLock projectsTreeInitializeLock = new ReentrantLock();
+  private final AtomicReference<MavenProjectsTree> myProjectsTreeRef = new AtomicReference<>(null);
+  private final AtomicReference<MavenProjectManagerWatcher> myWatcherRef = new AtomicReference<>(null);
+  private volatile Exception myWatcherCreationTrace;
+
+  private final List<Listener> myManagerListeners = ContainerUtil.createLockFreeCopyOnWriteList();
+  private final ModificationTracker myModificationTracker;
+
+  private final AtomicReference<MavenSyncConsole> mySyncConsole = new AtomicReference<>();
+  private final CoroutineScope coroutineScope;
+  private final MavenMergingUpdateQueue mySaveQueue;
+  private static final int SAVE_DELAY = 1000;
+  protected Module myPreviewModule;
+  private transient boolean forceUpdateSnapshots = false;
+
+  public static MavenProjectsManager getInstance(@NotNull Project project) {
+    return project.getService(MavenProjectsManager.class);
+  }
+
+  public static @Nullable MavenProjectsManager getInstanceIfCreated(@NotNull Project project) {
+    return project.getServiceIfCreated(MavenProjectsManager.class);
+  }
+
+  public MavenProjectsManager(@NotNull Project project, @NotNull CoroutineScope coroutineScope) {
+    super(project);
+
+    this.coroutineScope = coroutineScope;
+    myEmbeddersManager = new MavenEmbeddersManager(project);
+    myModificationTracker = new MavenModificationTracker(this);
+    mySaveQueue = new MavenMergingUpdateQueue("Maven save queue", SAVE_DELAY, !MavenUtil.isMavenUnitTestModeEnabled(), coroutineScope);
+    MavenRehighlighter.install(project, this);
+    Disposer.register(this, this::projectClosed);
+    CacheForCompilerErrorMessages.connectToJdkListener(project, this);
+  }
+
+  @Override
+  public @NotNull MavenProjectsManagerState getState() {
+    var tree = getProjectsTree();
+    if (isInitialized()) {
+      applyTreeToState(tree);
+    }
+    return myState;
+  }
+
+  protected boolean wasMavenized() {
+    return !myState.getOriginalFiles().isEmpty();
+  }
+
+
+  @Override
+  public void loadState(@NotNull MavenProjectsManagerState state) {
+    var originalFiles = new ArrayList<>(state.getOriginalFiles());
+    MavenLog.LOG.debug("loadState: originalFiles: " + originalFiles);
+    myState = state;
+  }
+
+  @Override
+  public void dispose() {
+    mySyncConsole.set(null);
+    myManagerListeners.clear();
+    saveTree();
+  }
+
+  public ModificationTracker getModificationTracker() {
+    return myModificationTracker;
+  }
+
+  public MavenGeneralSettings getGeneralSettings() {
+    MavenGeneralSettings generalSettings = getWorkspaceSettings().getGeneralSettings();
+    generalSettings.setProject(myProject);
+    return generalSettings;
+  }
+
+  public MavenImportingSettings getImportingSettings() {
+    return getWorkspaceSettings().getImportingSettings();
+  }
+
+  private MavenWorkspaceSettings getWorkspaceSettings() {
+    return MavenWorkspaceSettingsComponent.getInstance(myProject).getSettings();
+  }
+
+  public Path getRepositoryPath() {
+    return MavenSettingsCache.getInstance(myProject).getEffectiveUserLocalRepo();
+  }
+
+  @TestOnly
+  public void initForTests() {
+    //revise when porting to kotlin
+    runInBackgroundBlocking(() -> {
+      initProjectsTree();
+      doInit();
+    });
+  }
+
+  @TestOnly
+  protected abstract void runInBackgroundBlocking(Runnable r);
+
+  private void doInit() {
+    if (isInitialized.get()) return;
+    initLock.lock();
+    try {
+      if (isInitialized.get()) return;
+      initPreloadMavenServices();
+      initWorkers();
+    }
+    finally {
+      isInitialized.set(true);
+      initLock.unlock();
+    }
+  }
+
+  private void doActivate() {
+    if (isActivated.getAndSet(true)) {
+      return;
+    }
+    fireActivated();
+    if (!ApplicationManager.getApplication().isUnitTestMode()) {
+      MavenIndicesManager.getInstance(myProject).scheduleUpdateIndicesList();
+    }
+  }
+
+
+  private void initPreloadMavenServices() {
+    // init maven tool window
+    MavenProjectsNavigator.getInstance(myProject);
+    // add CompileManager before/after tasks
+    MavenTasksManager.getInstance(myProject);
+    // init maven shortcuts manager to subscribe to KeymapManagerListener
+    MavenShortcutsManager.getInstance(myProject);
+  }
+
+  public MavenSyncConsole getSyncConsole() {
+    if (null == mySyncConsole.get()) {
+      mySyncConsole.compareAndSet(null, new MavenSyncConsole(myProject, coroutineScope));
+    }
+    return mySyncConsole.get();
+  }
+
+
+  protected void initOnProjectStartup() {
+    initProjectsTree();
+    doInit();
+    doActivate();
+    var tree = getProjectsTree();
+
+    if (!myState.getOriginalFiles().isEmpty() && tree.getRootProjects().isEmpty()) {
+      boolean autoImportDisabled = Registry.is("external.system.auto.import.disabled");
+      MavenLog.LOG.warn("MavenProjectsTree is inconsistent, auto import disabled = " + autoImportDisabled);
+      if (!autoImportDisabled) {
+        scheduleUpdateAllMavenProjects(MavenSyncSpec.full("MavenProjectsManager.onProjectStartup"));
+      }
+    }
+  }
+
+  private void initProjectsTree() {
+    if (projectsTreeInitializeLock.tryLock()) {
+      if (myProjectsTreeRef.get() != null) return;
+      //set tree from disk only if  myProjectsTreeRef is null to not override sync results if any
+      myProjectsTreeRef.compareAndSet(null, doInitTree());
+    }
+  }
+
+  private MavenProjectsTree doInitTree() {
+    var tree = new MavenProjectsTree(myProject);
+    Path path = getProjectsTreeFile();
+    tree.read(path);
+    applyStateToTree(tree, this);
+    return tree;
+  }
+
+  protected void setNewTreeFromSync(MavenProjectsTree tree) {
+    myProjectsTreeRef.set(tree);
+  }
+
+  private void applyTreeToState(MavenProjectsTree tree) {
+    myState.ignoredFiles = new HashSet<>(tree.getIgnoredFilesPaths());
+    myState.ignoredPathMasks = tree.getIgnoredFilesPatterns();
+  }
+
+  private static void applyStateToTree(MavenProjectsTree tree, MavenProjectsManager manager) {
+    tree.setIgnoredFilesPaths(new ArrayList<>(manager.myState.ignoredFiles));
+    tree.setIgnoredFilesPatterns(manager.myState.ignoredPathMasks);
+  }
+
+  @Override
+  public void doSave() {
+    Update update = new Update(this) {
+      @Override
+      public void run() {
+        saveTree();
+      }
+    };
+    if (MavenUtil.isMavenUnitTestModeEnabled()) {
+      mySaveQueue.queue(update);
+    }
+    else {
+      MergingQueueUtil.queueTracked(mySaveQueue, update);
+    }
+  }
+
+  private void saveTree() {
+    try {
+      var tree = myProjectsTreeRef.get();
+      if (tree != null) {
+        tree.save(getProjectsTreeFile());
+      }
+    }
+    catch (IOException e) {
+      MavenLog.LOG.info(e);
+    }
+  }
+
+  @ApiStatus.Internal
+  public Path getProjectsTreeFile() {
+    return getProjectCacheDir().resolve("tree.dat");
+  }
+
+  @ApiStatus.Internal
+  public Path getProjectCacheDir() {
+    return getProjectsTreesDir().resolve(myProject.getLocationHash());
+  }
+
+  @ApiStatus.Internal
+  public static @NotNull Path getProjectsTreesDir() {
+    return MavenUtil.getPluginSystemDir("Projects");
+  }
+
+  private void initWorkers() {
+    var watcher = new MavenProjectManagerWatcher(myProject);
+    if (myWatcherRef.compareAndSet(null, watcher)) {
+      myWatcherCreationTrace = new Exception("Created here");
+      if (!ApplicationManager.getApplication().isUnitTestMode()) {
+        watcher.start();
+      }
+    }
+    else {
+      MavenLog.LOG.error("Watcher is already created", new Exception("tried to create second time", myWatcherCreationTrace));
+    }
+  }
+
+  public void listenForExternalChanges() {
+    var watcher = myWatcherRef.get();
+    if (watcher != null) {
+      watcher.start();
+    }
+    else {
+      MavenLog.LOG.error("trying to start watcher, which is null", new Exception());
+    }
+  }
+
+  @TestOnly
+  public void enableAutoImportInTests() {
+    assert isInitialized();
+    listenForExternalChanges();
+    var watcher = myWatcherRef.get();
+    if (watcher != null) {
+      watcher.enableAutoImportInTests();
+    }
+    else {
+      MavenLog.LOG.error("trying to start watcher, which is null", new Exception());
+    }
+  }
+
+  private void projectClosed() {
+
+    initLock.lock();
+    try {
+      if (!isInitialized.getAndSet(false)) {
+        return;
+      }
+      var watcher = myWatcherRef.get();
+      if (watcher != null) {
+        watcher.stop();
+      }
+      else {
+        MavenLog.LOG.error("trying to stop watcher, which is null", new Exception());
+      }
+      mySaveQueue.flush();
+
+      if (MavenUtil.isMavenUnitTestModeEnabled()) {
+        PathKt.delete(getProjectsTreesDir());
+      }
+    }
+    finally {
+      initLock.unlock();
+    }
+  }
+
+  public MavenEmbeddersManager getEmbeddersManager() {
+    return myEmbeddersManager;
+  }
+
+  public boolean isInitialized() {
+    return !initLock.isLocked() && isInitialized.get();
+  }
+
+  public boolean isMavenizedProject() {
+    return isInitialized();
+  }
+
+  public boolean isMavenizedModule(@NotNull Module m) {
+    return MavenUtil.isMavenizedModule(m);
+  }
+
+  protected void doAddManagedFilesWithProfiles(List<VirtualFile> files, MavenExplicitProfiles profiles, Module previewModuleToDelete) {
+    myPreviewModule = previewModuleToDelete;
+    if (!isInitialized()) {
+      doInit();
+      doActivate();
+      var baseDir = ProjectUtil.guessProjectDir(myProject);
+
+      var distributionUrl = baseDir == null ? null : getWrapperDistributionUrl(baseDir.toNioPath());
+      if (distributionUrl != null) {
+        getGeneralSettings().setMavenHomeType(MavenWrapper.INSTANCE);
+      }
+    }
+    doAddManagedFiles(files);
+    setExplicitProfiles(profiles);
+  }
+
+  private void doAddManagedFiles(List<VirtualFile> files) {
+    var state = getState();
+
+    for (String path : MavenUtil.collectPaths(files)) {
+      state.addOriginalFile(path);
+    }
+  }
+
+  private void doRemoveManagedFiles(List<VirtualFile> files) {
+    var state = getState();
+
+    Set<String> pathsToRemove = new HashSet<>(MavenUtil.collectPaths(files));
+    state.removeOriginalFiles(pathsToRemove);
+  }
+
+  public void addManagedFiles(@NotNull List<VirtualFile> files) {
+    doAddManagedFilesWithProfiles(files, MavenExplicitProfiles.NONE, null);
+    scheduleUpdateAllMavenProjects(MavenSyncSpec.incremental("MavenProjectsManager.addManagedFiles"));
+  }
+
+  public void addManagedFilesOrUnignoreNoUpdate(@NotNull List<VirtualFile> files) {
+    removeIgnoredFilesPaths(MavenUtil.collectPaths(files));
+    doAddManagedFilesWithProfiles(files, MavenExplicitProfiles.NONE, null);
+  }
+
+  public void addManagedFilesOrUnignore(@NotNull List<VirtualFile> files) {
+    addManagedFilesOrUnignoreNoUpdate(files);
+    scheduleUpdateAllMavenProjects(MavenSyncSpec.incremental("MavenProjectsManager.addManagedFilesOrUnignore"));
+  }
+
+  public boolean isManagedFile(@NotNull VirtualFile f) {
+    return getState().getOriginalFiles().contains(f.getPath());
+  }
+
+  public @NotNull MavenExplicitProfiles getExplicitProfiles() {
+    return new MavenExplicitProfiles(getState().enabledProfiles, getState().disabledProfiles);
+  }
+
+  public @NotNull Collection<String> getAvailableProfiles() {
+    return getProjectsTree().getAvailableProfiles();
+  }
+
+  public @NotNull Collection<Pair<String, MavenProfileKind>> getProfilesWithStates() {
+    return getProjectsTree().getProfilesWithStates(getExplicitProfiles());
+  }
+
+  public boolean hasProjects() {
+    return getProjectsTree().hasProjects();
+  }
+
+  public @NotNull List<MavenProject> getProjects() {
+    if (!isInitialized()) return Collections.emptyList();
+    return getProjectsTree().getProjects();
+  }
+
+  public @NotNull List<MavenProject> getRootProjects() {
+    return getProjectsTree().getRootProjects();
+  }
+
+  public @NotNull List<MavenProject> getNonIgnoredProjects() {
+    return getProjectsTree().getNonIgnoredProjects();
+  }
+
+  public @NotNull List<VirtualFile> getProjectsFiles() {
+    if (!isInitialized()) return Collections.emptyList();
+    return getProjectsTree().getProjectsFiles();
+  }
+
+  public @Nullable MavenProject findProject(@NotNull VirtualFile f) {
+    if (!isInitialized()) return null;
+    return getProjectsTree().findProject(f);
+  }
+
+
+  public MavenProject findSingleProjectInReactor(@NotNull MavenId id) {
+    return getProjectsTree().findSingleProjectInReactor(id);
+  }
+
+
+  public @Nullable MavenProject findProject(@NotNull MavenId id) {
+    if (!isInitialized()) return null;
+    return getProjectsTree().findProject(id);
+  }
+
+  public @Nullable MavenProject findProject(@NotNull MavenArtifact artifact) {
+    if (!isInitialized()) return null;
+    return getProjectsTree().findProject(artifact);
+  }
+
+  public @Nullable MavenProject findProject(@NotNull Module module) {
+    if (!isInitialized()) return null;
+    var pomXml = MavenImportUtil.findPomXml(module);
+    if (null == pomXml) return null;
+    return findProject(pomXml);
+  }
+
+  @RequiresReadLock
+  public @Nullable Module findModule(@NotNull MavenProject project) {
+    if (!isInitialized()) return null;
+    return ProjectRootManager.getInstance(myProject).getFileIndex().getModuleForFile(project.getFile());
+  }
+
+  public @NotNull Collection<MavenProject> findInheritors(@Nullable MavenProject parent) {
+    if (parent == null) return Collections.emptyList();
+    return getProjectsTree().findInheritors(parent);
+  }
+
+  public @Nullable MavenProject findContainingProject(@NotNull VirtualFile file) {
+    if (!isInitialized()) return null;
+    Module module = ProjectRootManager.getInstance(myProject).getFileIndex().getModuleForFile(file);
+    return module == null ? null : findProject(module);
+  }
+
+  private @Nullable VirtualFile findPomFile(@NotNull Module module, @NotNull MavenModelsProvider modelsProvider) {
+    String pomFileUrl = MavenPomPathModuleService.getInstance(module).getPomFileUrl();
+    if (pomFileUrl != null) {
+      return VirtualFileManager.getInstance().findFileByUrl(pomFileUrl);
+    }
+    for (VirtualFile root : modelsProvider.getContentRoots(module)) {
+      List<VirtualFile> pomFiles = MavenUtil.streamPomFiles(module.getProject(), root).toList();
+      if (pomFiles.isEmpty()) {
+        continue;
+      }
+
+      if (pomFiles.size() == 1) {
+        return pomFiles.get(0);
+      }
+
+      for (VirtualFile file : pomFiles) {
+        if (module.getName().equals(file.getNameWithoutExtension())) {
+          return file;
+        }
+        MavenProject mavenProject = findProject(file);
+        if (mavenProject != null) {
+          if (module.getName().equals(mavenProject.getMavenId().getArtifactId())) {
+            return file;
+          }
+        }
+      }
+    }
+    return null;
+  }
+
+  public @Nullable MavenProject findAggregator(@NotNull MavenProject mavenProject) {
+    return getProjectsTree().findAggregator(mavenProject);
+  }
+
+  public @NotNull MavenProject findRootProject(@NotNull MavenProject mavenProject) {
+    return getProjectsTree().findRootProject(mavenProject);
+  }
+
+  public @NotNull List<MavenProject> getModules(@NotNull MavenProject aggregator) {
+    return getProjectsTree().getModules(aggregator);
+  }
+
+  public @NotNull List<String> getIgnoredFilesPaths() {
+    return new ArrayList<>(getState().ignoredFiles);
+  }
+
+  public void setIgnoredFilesPaths(@NotNull List<String> paths) {
+    getProjectsTree().setIgnoredFilesPaths(paths);
+  }
+
+  public void removeIgnoredFilesPaths(final Collection<String> paths) {
+    getProjectsTree().removeIgnoredFilesPaths(paths);
+  }
+
+  public boolean getIgnoredState(@NotNull MavenProject project) {
+    return getProjectsTree().getIgnoredState(project);
+  }
+
+  @ApiStatus.Internal
+  public void setIgnoredStateForPoms(@NotNull List<String> pomPaths, boolean ignored) {
+    getProjectsTree().setIgnoredStateForPoms(pomPaths, ignored);
+  }
+
+  public void setIgnoredState(@NotNull List<MavenProject> projects, boolean ignored) {
+    getProjectsTree().setIgnoredState(projects, ignored);
+  }
+
+  public @NotNull List<String> getIgnoredFilesPatterns() {
+    return new ArrayList<>(getState().ignoredPathMasks);
+  }
+
+  public void setIgnoredFilesPatterns(@NotNull List<String> patterns) {
+    getProjectsTree().setIgnoredFilesPatterns(patterns);
+  }
+
+  public boolean isIgnored(@NotNull MavenProject project) {
+    return getProjectsTree().isIgnored(project);
+  }
+
+  public Set<@NotNull MavenRemoteRepository> getRemoteRepositories() {
+    Set<MavenRemoteRepository> result = new HashSet<>();
+    for (MavenProject each : getProjects()) {
+      result.addAll(each.getRemoteRepositories());
+    }
+    return result;
+  }
+
+  @TestOnly
+  public MavenProjectsTree getProjectsTreeForTests() {
+    return myProjectsTreeRef.get();
+  }
+
+  @ApiStatus.Internal
+  public @NotNull MavenProjectsTree getProjectsTree() {
+    var tree = myProjectsTreeRef.get();
+    if (tree == null) {
+      tree = new MavenProjectsTree(myProject);
+    }
+    return tree;
+  }
+
+  /**
+   * @deprecated Use {@link #scheduleUpdateAllMavenProjects(MavenSyncSpec)}
+   */
+  @Deprecated(forRemoval = true)
+  protected abstract List<Module> updateAllMavenProjectsSync();
+
+  public synchronized void removeManagedFiles(@NotNull List<@NotNull VirtualFile> files) {
+    doRemoveManagedFiles(files);
+    scheduleUpdateAllMavenProjects(MavenSyncSpec.full("MavenProjectsManager.removeManagedFiles", true));
+  }
+
+  public synchronized void setExplicitProfiles(MavenExplicitProfiles profiles) {
+    myState.enabledProfiles = new ArrayList<>(profiles.getEnabledProfiles());
+    myState.disabledProfiles = new ArrayList<>(profiles.getDisabledProfiles());
+    myProject.getMessageBus().syncPublisher(MavenProjectsTree.Listener.TOPIC).profilesChanged();
+  }
+
+  @ApiStatus.Internal
+  public void forceUpdateProjects() {
+    scheduleUpdateAllMavenProjects(MavenSyncSpec.full("MavenProjectsManager.forceUpdateProjects", true));
+  }
+
+  /**
+   * @deprecated Use {@link #scheduleForceUpdateMavenProjects(List)}}
+   */
+  @Deprecated
+  // used in third-party plugins
+  public AsyncPromise<Void> forceUpdateProjects(@NotNull Collection<@NotNull MavenProject> projects) {
+    return doForceUpdateProjects(projects);
+  }
+
+  @ApiStatus.ScheduledForRemoval
+  @Deprecated
+  protected abstract AsyncPromise<Void> doForceUpdateProjects(@NotNull Collection<@NotNull MavenProject> projects);
+
+  public void forceUpdateAllProjectsOrFindAllAvailablePomFiles() {
+    forceUpdateAllProjectsOrFindAllAvailablePomFiles(
+      MavenSyncSpec.full("MavenProjectsManager.forceUpdateAllProjectsOrFindAllAvailablePomFiles", true));
+  }
+
+  private void forceUpdateAllProjectsOrFindAllAvailablePomFiles(MavenSyncSpec spec) {
+    if (!isMavenizedProject()) {
+      addManagedFiles(collectAllAvailablePomFiles());
+      return;
+    }
+    scheduleUpdateAllMavenProjects(spec);
+  }
+
+  /**
+   * Returned {@link Promise} instance isn't guarantied to be marked as rejected in all cases where importing wasn't performed (e.g.
+   * if project is closed)
+   *
+   * @deprecated Use {@link #scheduleUpdateAllMavenProjects(MavenSyncSpec)}}
+   */
+  // used in third-party plugins
+  @Deprecated(forRemoval = true)
+  public Promise<List<Module>> scheduleImportAndResolve() {
+    var promise = new AsyncPromise<List<Module>>();
+    var modules = updateAllMavenProjectsSync();
+    promise.setResult(modules);
+    return promise;
+  }
+
+  public void showServerException(Throwable e) {
+    getSyncConsole().addException(e);
+  }
+
+  public void terminateImport(int exitCode) {
+    getSyncConsole().terminated(exitCode);
+  }
+
+  /**
+   * @deprecated use {@link MavenFolderResolver}
+   */
+  // used in third-party plugins
+  @Deprecated
+  public void scheduleFoldersResolveForAllProjects() {
+    MavenProjectsManagerUtilKt.scheduleFoldersResolveForAllProjects(myProject);
+  }
+
+  public void updateProjectTargetFolders() {
+    if (myProject.isDisposed()) return;
+    MavenProjectImporter.scheduleUpdateTargetFolders(myProject);
+  }
+
+  @ApiStatus.Internal
+  public Map<VirtualFile, Module> getFileToModuleMapping(MavenModelsProvider modelsProvider) {
+    Map<VirtualFile, Module> result = new HashMap<>();
+    for (Module each : modelsProvider.getModules()) {
+      VirtualFile f = findPomFile(each, modelsProvider);
+      if (f != null) result.put(f, each);
+    }
+    return result;
+  }
+
+  @ApiStatus.Internal
+  public List<VirtualFile> collectAllAvailablePomFiles() {
+    List<VirtualFile> result = new ArrayList<>(getFileToModuleMapping(new MavenDefaultModelsProvider(myProject)).keySet());
+    MavenUtil.streamPomFiles(myProject, myProject.getBaseDir()).forEach(result::add);
+    return result;
+  }
+
+
+  /**
+   * @deprecated use addManagerListener(Listener, Disposable) instead
+   */
+  @Deprecated
+  public void addManagerListener(Listener listener) {
+    myManagerListeners.add(listener);
+  }
+
+  public void addManagerListener(Listener listener, @NotNull Disposable parentDisposable) {
+    myManagerListeners.add(listener);
+    Disposer.register(parentDisposable, () -> myManagerListeners.remove(listener));
+  }
+
+  /**
+   * @deprecated use MavenProjectsTree.Listener.TOPIC and register listener in plugin.xml instead
+   */
+  @Deprecated
+  public void addProjectsTreeListener(MavenProjectsTree.Listener listener) {
+    addProjectsTreeListener(listener, this);
+  }
+
+  /**
+   * @deprecated use MavenProjectsTree.Listener.TOPIC and register listener in plugin.xml instead
+   */
+  @Deprecated
+  public void addProjectsTreeListener(@NotNull MavenProjectsTree.Listener listener, @NotNull Disposable parentDisposable) {
+    getProject().getMessageBus().connect(parentDisposable).subscribe(MavenProjectsTree.Listener.TOPIC, listener);
+  }
+
+  @TestOnly
+  public void fireActivatedInTests() {
+    fireActivated();
+  }
+
+  private void fireActivated() {
+    for (Listener each : myManagerListeners) {
+      each.activated();
+    }
+  }
+
+  protected void fireImportAndResolveScheduled() {
+    for (Listener each : myManagerListeners) {
+      each.importAndResolveScheduled();
+    }
+  }
+
+
+  void fireProjectImportCompleted() {
+    for (Listener each : myManagerListeners) {
+      each.projectImportCompleted();
+    }
+  }
+
+  public void setForceUpdateSnapshots(boolean forceUpdateSnapshots) {
+    this.forceUpdateSnapshots = forceUpdateSnapshots;
+  }
+
+  public boolean getForceUpdateSnapshots() {
+    return forceUpdateSnapshots;
+  }
+
+  @ApiStatus.Internal
+  @RequiresEdt
+  public void removeManagedFiles(List<VirtualFile> selectedFiles,
+                                 @Nullable Consumer<MavenProject> removeNotification,
+                                 @Nullable Predicate<List<String>> removeConfirmation) {
+    List<VirtualFile> removableFiles = new ArrayList<>();
+    List<String> filesToUnIgnore = new ArrayList<>();
+
+    List<Module> modulesToRemove = new ArrayList<>();
+
+    for (VirtualFile pomXml : selectedFiles) {
+      if (isManagedFile(pomXml)) {
+        MavenProject managedProject = findProject(pomXml);
+        if (managedProject == null) {
+          continue;
+        }
+        addModuleToRemoveList(modulesToRemove, managedProject);
+        getModules(managedProject).forEach(mp -> {
+          addModuleToRemoveList(modulesToRemove, mp);
+          filesToUnIgnore.add(mp.getFile().getPath());
+        });
+        removableFiles.add(pomXml);
+        filesToUnIgnore.add(pomXml.getPath());
+      }
+      else {
+        if (removeNotification != null) {
+          removeNotification.accept(findProject(pomXml));
+        }
+      }
+    }
+    if (removeConfirmation != null && !removeConfirmation.test(ContainerUtil.map(modulesToRemove, m -> m.getName()))) {
+      return;
+    }
+    removeModules(ModuleManager.getInstance(getProject()), modulesToRemove);
+    removeManagedFiles(removableFiles);
+    removeIgnoredFilesPaths(filesToUnIgnore);
+  }
+
+  private void addModuleToRemoveList(List<Module> modulesToRemove, MavenProject project) {
+    Module module = findModule(project);
+    if (module == null) {
+      return;
+    }
+    modulesToRemove.add(module);
+  }
+
+  private static void removeModules(ModuleManager moduleManager, List<Module> modulesToRemove) {
+    WriteAction.run(() -> {
+      List<ModifiableRootModel> usingModels = new SmartList<>();
+
+      for (Module module : modulesToRemove) {
+
+        ModuleRootManager moduleRootManager = ModuleRootManager.getInstance(module);
+        for (OrderEntry entry : moduleRootManager.getOrderEntries()) {
+          if (entry instanceof ModuleOrderEntry) {
+            usingModels.add(moduleRootManager.getModifiableModel());
+            break;
+          }
+        }
+      }
+
+      final ModifiableModuleModel moduleModel = moduleManager.getModifiableModel();
+      for (Module module : modulesToRemove) {
+        ModuleDeleteProvider.removeModule(module, usingModels, moduleModel);
+      }
+      ModifiableModelCommitter.multiCommit(usingModels, moduleModel);
+    });
+  }
+
+  public interface Listener {
+    default void activated() {
+    }
+
+    default void importAndResolveScheduled() {
+    }
+
+    default void projectImportCompleted() {
+    }
+  }
+}

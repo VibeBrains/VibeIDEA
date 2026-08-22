@@ -1,0 +1,13 @@
+// "Wrap with '?.let { ... }' call" "true"
+// WITH_STDLIB
+// K2_ERROR: UNSAFE_IMPLICIT_INVOKE_CALL
+
+interface Foo {
+    val bar: ((Int) -> Unit)?
+}
+
+fun Foo.test() {
+    <caret>bar(1)
+}
+// FUS_QUICKFIX_NAME: org.jetbrains.kotlin.idea.quickfix.WrapWithSafeLetCallFix
+// FUS_K2_QUICKFIX_NAME: org.jetbrains.kotlin.idea.k2.codeinsight.fixes.WrapWithSafeLetCallFixFactories$WrapWithSafeLetCallModCommandAction

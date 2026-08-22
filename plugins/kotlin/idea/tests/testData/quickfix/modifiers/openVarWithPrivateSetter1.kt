@@ -1,0 +1,9 @@
+// "Make 'foo' 'final'" "true"
+// K2_ERROR: PRIVATE_SETTER_FOR_OPEN_PROPERTY
+open class My {
+    open var foo = 42
+        <caret>private set
+}
+
+// FUS_QUICKFIX_NAME: org.jetbrains.kotlin.idea.quickfix.AddModifierFixMpp
+// FUS_K2_QUICKFIX_NAME: org.jetbrains.kotlin.idea.quickfix.AddModifierFixMpp

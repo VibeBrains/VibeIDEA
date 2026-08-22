@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<module type="JAVA_MODULE" version="4">
+  <component name="NewModuleRootManager" LANGUAGE_LEVEL="JDK_1_8" inherit-compiler-output="true">
+    <exclude-output />
+    <content url="file://$MODULE_DIR$">
+      <sourceFolder url="file://$MODULE_DIR$/resources" type="java-resource" />
+    </content>
+    <orderEntry type="inheritedJdk" />
+    <orderEntry type="sourceFolder" forTests="false" />
+    <orderEntry type="module-library" exported="">
+      <library name="netty-handler-proxy" type="repository">
+        <properties maven-id="io.netty:netty-handler-proxy:4.2.16.Final">
+          <verification>
+            <artifact url="file://$MAVEN_REPOSITORY$/io/netty/netty-handler-proxy/4.2.16.Final/netty-handler-proxy-4.2.16.Final.jar">
+              <sha256sum>c53706ebaffd2fcef17b5f675b81eab4be13a714886cb4b2a7d0b73275cd39fe</sha256sum>
+            </artifact>
+            <artifact url="file://$MAVEN_REPOSITORY$/io/netty/netty-codec-socks/4.2.16.Final/netty-codec-socks-4.2.16.Final.jar">
+              <sha256sum>e5230b4c467755bb570c846c8e3c0ffadcb1b568c1cd9a3a4ee946734baae54d</sha256sum>
+            </artifact>
+          </verification>
+          <exclude>
+            <dependency maven-id="io.netty:netty-common" />
+            <dependency maven-id="io.netty:netty-buffer" />
+            <dependency maven-id="io.netty:netty-transport" />
+            <dependency maven-id="io.netty:netty-codec-base" />
+            <dependency maven-id="io.netty:netty-codec-http" />
+            <dependency maven-id="io.netty:netty-handler" />
+          </exclude>
+        </properties>
+        <CLASSES>
+          <root url="jar://$MAVEN_REPOSITORY$/io/netty/netty-handler-proxy/4.2.16.Final/netty-handler-proxy-4.2.16.Final.jar!/" />
+          <root url="jar://$MAVEN_REPOSITORY$/io/netty/netty-codec-socks/4.2.16.Final/netty-codec-socks-4.2.16.Final.jar!/" />
+        </CLASSES>
+        <JAVADOC />
+        <SOURCES>
+          <root url="jar://$MAVEN_REPOSITORY$/io/netty/netty-handler-proxy/4.2.16.Final/netty-handler-proxy-4.2.16.Final-sources.jar!/" />
+          <root url="jar://$MAVEN_REPOSITORY$/io/netty/netty-codec-socks/4.2.16.Final/netty-codec-socks-4.2.16.Final-sources.jar!/" />
+        </SOURCES>
+      </library>
+    </orderEntry>
+    <orderEntry type="module" module-name="intellij.libraries.netty.buffer" scope="RUNTIME" />
+    <orderEntry type="module" module-name="intellij.libraries.netty.codec.http" scope="RUNTIME" />
+  </component>
+</module>

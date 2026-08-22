@@ -1,0 +1,8 @@
+// "Change return type of enclosing function 'foo' to 'String?'" "true"
+// K2_ERROR: NULL_FOR_NONNULL_TYPE
+
+fun foo(): String {
+    return <caret>null
+}
+// FUS_QUICKFIX_NAME: org.jetbrains.kotlin.idea.quickfix.ChangeCallableReturnTypeFix$ForEnclosing
+// FUS_K2_QUICKFIX_NAME: org.jetbrains.kotlin.idea.k2.codeinsight.fixes.ChangeTypeQuickFixFactories$UpdateTypeQuickFix

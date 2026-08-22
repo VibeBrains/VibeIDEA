@@ -1,0 +1,1 @@
+y = (<error descr="Python version 3.4 does not support unpacking in comprehensions">*()</error> for _ in ())

@@ -1,0 +1,5 @@
+print(unicode())
+print(unicode(''))
+print(unicode('', 'utf-8'))
+print(unicode('', 'utf-8', 'ignore'))
+print(unicode<warning descr="No overload of 'unicode' matches the arguments. Argument types: (str, str, str, Unknown). Expected one of: (), (o: object), (o: str, encoding: unicode, errors: unicode)">('', 'utf-8', 'ignore', foo)</warning>)

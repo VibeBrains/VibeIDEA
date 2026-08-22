@@ -1,0 +1,689 @@
+package com.intellij.terminal.tests.reworked.frontend
+
+import com.intellij.openapi.actionSystem.ActionManager
+import com.intellij.openapi.actionSystem.ex.ActionUtil
+import com.intellij.openapi.actionSystem.impl.SimpleDataContext
+import com.intellij.openapi.application.EDT
+import com.intellij.openapi.editor.ex.EditorEx
+import com.intellij.openapi.editor.impl.EditorImpl
+import com.intellij.openapi.util.Disposer
+import com.intellij.platform.util.coroutines.childScope
+import com.intellij.terminal.actions.TerminalActionUtil
+import com.intellij.terminal.frontend.view.impl.TerminalEditorFactory
+import com.intellij.terminal.frontend.view.impl.TerminalOutputScrollingModel
+import com.intellij.terminal.frontend.view.impl.TerminalOutputScrollingModelImpl
+import com.intellij.terminal.tests.reworked.util.TerminalOutputPattern
+import com.intellij.terminal.tests.reworked.util.outputPattern
+import com.intellij.terminal.tests.reworked.util.updateContent
+import com.intellij.testFramework.EditorTestUtil
+import com.intellij.testFramework.TestActionEvent
+import com.intellij.testFramework.common.timeoutRunBlocking
+import com.intellij.testFramework.fixtures.BasePlatformTestCase
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.cancel
+import org.assertj.core.api.Assertions.assertThat
+import org.jetbrains.plugins.terminal.JBTerminalSystemSettingsProvider
+import org.jetbrains.plugins.terminal.block.reworked.TerminalSessionModel
+import org.jetbrains.plugins.terminal.block.reworked.TerminalSessionModelImpl
+import org.jetbrains.plugins.terminal.block.ui.TerminalUi
+import org.jetbrains.plugins.terminal.util.terminalProjectScope
+import org.jetbrains.plugins.terminal.view.impl.MutableTerminalOutputModel
+import org.jetbrains.plugins.terminal.view.impl.MutableTerminalOutputModelImpl
+import org.junit.Test
+import org.junit.runner.RunWith
+import org.junit.runners.JUnit4
+import kotlin.math.ceil
+
+@RunWith(JUnit4::class)
+internal class TerminalScrollingModelTest : BasePlatformTestCase() {
+  override fun runInDispatchThread(): Boolean = false
+
+  @Test
+  fun `scroll position is on top when lines fit the screen`() = timeoutRunBlocking(context = Dispatchers.EDT) {
+    val editor = createEditor(rows = 3)
+    doTest(editor, expectedScrollOffset = 0) {
+      updateText(0, outputPattern("""
+
+
+      """.trimIndent()))
+      updateText(0, outputPattern("""
+        123
+        456<cursor>
+
+      """.trimIndent()))
+    }
+  }
+
+  @Test
+  fun `scroll position follows the last non blank line`() = timeoutRunBlocking(context = Dispatchers.EDT) {
+    val editor = createEditor(rows = 3)
+    // two lines are hidden and there is an inset in the bottom
+    val expected = TerminalUi.blockTopInset + TerminalUi.blockBottomInset + 2 * editor.lineHeight
+    doTest(editor, expected) {
+      updateText(0, outputPattern("""
+
+
+      """.trimIndent()))
+      updateText(0, outputPattern("""
+        1
+        2
+
+      """.trimIndent()))
+      updateText(2, outputPattern("""
+        3
+        4
+      """.trimIndent()))
+      updateText(4, outputPattern("5"))
+    }
+  }
+
+  @Test
+  fun `scroll position follows the cursor`() = timeoutRunBlocking(context = Dispatchers.EDT) {
+    val editor = createEditor(rows = 3)
+    // the first line is hidden and there is an inset in the bottom
+    val expected = TerminalUi.blockTopInset + TerminalUi.blockBottomInset + editor.lineHeight
+    doTest(editor, expected) {
+      updateText(0, outputPattern("""
+        1
+        2
+
+        <cursor>
+      """.trimIndent()))
+    }
+  }
+
+  @Test
+  fun `scroll position follows the cursor when line is wrapped`() = timeoutRunBlocking(context = Dispatchers.EDT) {
+    val editor = createEditor(rows = 3, columns = 5)
+    // the first line is hidden due to last line is wrapped and there is an inset in the bottom
+    val expected = TerminalUi.blockTopInset + TerminalUi.blockBottomInset + editor.lineHeight
+    doTest(editor, expected) {
+      updateText(0, outputPattern("""
+        1
+        2
+        12345<cursor>
+      """.trimIndent()))
+
+      updateText(2, outputPattern("""
+        12345678<cursor>
+      """.trimIndent()))
+    }
+  }
+
+  @Test
+  fun `scroll position follows screen top when cursor is in the middle of the screen`() = timeoutRunBlocking(context = Dispatchers.EDT) {
+    val editor = createEditor(rows = 5)
+    // the first line be partially hidden but still visible due to the top inset, the last 5 lines are visible.
+    val expected = editor.lineHeight
+    doTest(editor, expected) {
+      updateText(0, outputPattern("""
+        1
+        2
+        3<cursor>
+      """.trimIndent()))
+      updateText(3, outputPattern("""
+
+
+
+      """.trimIndent()))
+    }
+  }
+
+  @Test
+  fun `scroll position doesn't take into account cursor when it is not visible`() = timeoutRunBlocking(context = Dispatchers.EDT) {
+    val editor = createEditor(rows = 5)
+    // the first line is partially hidden to make the last 5 lines visible
+    val expected = editor.lineHeight
+    doTest(editor, expected, showCursor = false) {
+      updateText(0, outputPattern("""
+        1
+        2
+        3<cursor>
+      """.trimIndent()))
+      updateText(3, outputPattern("""
+
+
+        <cursor>
+      """.trimIndent()))
+    }
+  }
+
+  @Test
+  fun `scroll position is on top after Ctrl+L in the top of the screen`() = timeoutRunBlocking(context = Dispatchers.EDT) {
+    val editor = createEditor(rows = 5)
+    // the first line be partially visible due to the top inset.
+    val expected = 1 * editor.lineHeight
+    doTest(editor, expected) {
+      // prepare: fill the screen
+      updateText(0, outputPattern("""
+        prompt> pwd<cursor>
+
+
+
+
+      """.trimIndent()))
+
+      // Ctrl+L will first replace the current line and add the new line
+      updateText(0, outputPattern("""
+        prompt> pwd<cursor>
+
+
+
+
+
+      """.trimIndent()))
+
+      // Then it will print the new prompt on a new line
+      updateText(1, outputPattern("""
+        prompt> <cursor>
+
+
+
+
+      """.trimIndent()))
+
+      // Then it will print the command
+      updateText(1, outputPattern("""
+        prompt> pwd<cursor>
+
+
+
+
+      """.trimIndent()))
+    }
+  }
+
+  @Test
+  fun `scroll position is on top after Ctrl+L in the bottom of the screen`() = timeoutRunBlocking(context = Dispatchers.EDT) {
+    val editor = createEditor(rows = 5)
+    // the initial 7 lines will be hidden, the 7th line will be partially visible due to the top inset.
+    val expected = 7 * editor.lineHeight
+    doTest(editor, expected) {
+      // prepare: fill the screen
+      updateText(0, outputPattern("""
+        1
+        2
+        3
+        4
+        5
+        6
+        prompt> pwd<cursor>
+      """.trimIndent()))
+
+      // Ctrl+L will first replace the current line and add the new lines
+      updateText(6, outputPattern("""
+        prompt> pwd<cursor>
+
+
+
+
+
+      """.trimIndent()))
+
+      // Then it will print the new prompt on a new line
+      updateText(7, outputPattern("""
+        prompt> <cursor>
+
+
+
+
+      """.trimIndent()))
+
+      // Then it will print the command
+      updateText(7, outputPattern("""
+        prompt> pwd<cursor>
+
+
+
+
+      """.trimIndent()))
+    }
+  }
+
+  @Test
+  fun `scroll position is on top after Ctrl+L in the middle of the screen`() = timeoutRunBlocking(context = Dispatchers.EDT) {
+    val editor = createEditor(rows = 5)
+    // the initial 3 lines will be hidden, the 3rd line will be partially visible due to the top inset.
+    val expected = 3 * editor.lineHeight
+    doTest(editor, expected) {
+      // prepare: fill the screen
+      updateText(0, outputPattern("""
+        1
+        2
+        prompt> pwd<cursor>
+
+
+      """.trimIndent()))
+
+      // Ctrl+L will first replace the current line and add the new line
+      updateText(2, outputPattern("""
+        prompt> pwd<cursor>
+
+
+
+
+
+      """.trimIndent()))
+
+      // Then it will print the new prompt on a new line
+      updateText(3, outputPattern("""
+        prompt> <cursor>
+
+
+
+
+      """.trimIndent()))
+
+      // Then it will print the command
+      updateText(3, outputPattern("""
+        prompt> pwd<cursor>
+
+
+
+
+      """.trimIndent()))
+    }
+  }
+
+  @Test
+  fun `scroll position is on top after invoking clear in the top of the screen`() = timeoutRunBlocking(context = Dispatchers.EDT) {
+    val editor = createEditor(rows = 3)
+    doTest(editor, expectedScrollOffset = 0) {
+      // prepare: fill the screen
+      updateText(0, outputPattern("""
+        prompt> clear<cursor>
+
+
+      """.trimIndent()))
+
+      // "clear" first replaces all lines with empty
+      updateText(0, outputPattern("""
+        <cursor>
+
+
+      """.trimIndent()))
+
+      // Then it will print the new prompt on the first line
+      updateText(0, outputPattern("""
+        prompt> <cursor>
+
+
+      """.trimIndent()))
+    }
+  }
+
+  @Test
+  fun `scroll position is on top after invoking clear in the bottom of the screen`() = timeoutRunBlocking(context = Dispatchers.EDT) {
+    val editor = createEditor(rows = 5)
+    doTest(editor, expectedScrollOffset = 0) {
+      // prepare: fill the screen
+      updateText(0, outputPattern("""
+        1
+        2
+        3
+        4
+        5
+        6
+        prompt> clear<cursor>
+      """.trimIndent()))
+
+      // "Clear" first adds the new line
+      updateText(6, outputPattern("""
+        prompt> clear
+        <cursor>
+      """.trimIndent()))
+
+      // Then it replaces everything with empty lines
+      updateText(0, outputPattern("""
+        <cursor>
+
+
+
+
+      """.trimIndent()))
+
+      // Then it will print the new prompt on the first line
+      updateText(0, outputPattern("""
+        prompt> <cursor>
+
+
+
+
+      """.trimIndent()))
+    }
+  }
+
+  @Test
+  fun `scroll position is on top after invoking clear in the middle of the screen`() = timeoutRunBlocking(context = Dispatchers.EDT) {
+    val editor = createEditor(rows = 5)
+    doTest(editor, expectedScrollOffset = 0) {
+      // prepare: fill the screen
+      updateText(0, outputPattern("""
+        1
+        2
+        prompt> clear<cursor>
+
+
+      """.trimIndent()))
+
+      // "clear" first replaces all lines with empty
+      updateText(0, outputPattern("""
+        <cursor>
+
+
+
+
+      """.trimIndent()))
+
+      // Then it will print the new prompt on the first line
+      updateText(0, outputPattern("""
+        prompt> <cursor>
+
+
+
+
+      """.trimIndent()))
+    }
+  }
+
+  @Test
+  fun `scroll position doesn't go up if line in the bottom is removed`() = timeoutRunBlocking(context = Dispatchers.EDT) {
+    val editor = createEditor(rows = 5)
+    // The first four lines are hidden, others lines are fully visible with the bottom inset.
+    val expected = TerminalUi.blockTopInset + TerminalUi.blockBottomInset + 4 * editor.lineHeight
+    doTest(editor, expected) {
+      // prepare: fill the screen
+      updateText(0, outputPattern("""
+        1
+        2
+        3
+        4
+        5
+        6
+        prompt> command<cursor>
+      """.trimIndent()))
+
+      // Suppose command printed two lines
+      updateText(6, outputPattern("""
+        prompt> command
+        persistentOutput
+        tempOutput<cursor>
+      """.trimIndent()))
+
+      // Then it removed the "tempOutput" line.
+      updateText(8, outputPattern(""))
+      updateCursor(7, 16)
+    }
+  }
+
+
+  @Test
+  fun `scrolling action stops following the cursor`() = timeoutRunBlocking(context = Dispatchers.EDT) {
+    val editor = createEditor(rows = 3)
+    // Scrolled 1 line up from the auto-followed position and snapped to that whole line's top (per-line stepping):
+    // the new output below must not pull it back down.
+    val expected = TerminalUi.blockTopInset + 2 * editor.lineHeight
+    doTest(editor, expected) {
+      updateText(0, outputPattern("""
+        1
+        2
+        3
+        4
+        5
+        6<cursor>
+      """.trimIndent()))
+
+      invokeAction("Terminal.LineUp")
+
+      updateText(6, outputPattern("7<cursor>"))
+    }
+  }
+
+  @Test
+  fun `scrolling action back at the bottom resumes following the cursor`() = timeoutRunBlocking(context = Dispatchers.EDT) {
+    val editor = createEditor(rows = 3)
+    // Scrolled back down to the exact bottom by the same kind of action, so following resumes for the new output.
+    val expected = TerminalUi.blockTopInset + TerminalUi.blockBottomInset + 4 * editor.lineHeight
+    doTest(editor, expected) {
+      updateText(0, outputPattern("""
+        1
+        2
+        3
+        4
+        5
+        6<cursor>
+      """.trimIndent()))
+
+      invokeAction("Terminal.LineUp")
+      invokeAction("Terminal.LineDown")
+
+      updateText(6, outputPattern("7<cursor>"))
+    }
+  }
+
+  @Test
+  fun `viewport change without a user action doesn't stop following the cursor`() = timeoutRunBlocking(context = Dispatchers.EDT) {
+    val editor = createEditor(rows = 3)
+    val expected = TerminalUi.blockTopInset + TerminalUi.blockBottomInset + 4 * editor.lineHeight
+    doTest(editor, expected) {
+      updateText(0, outputPattern("""
+        1
+        2
+        3
+        4
+        5
+        6<cursor>
+      """.trimIndent()))
+
+      scrollWithoutUserAction(TerminalUi.blockTopInset + TerminalUi.blockBottomInset + 2 * editor.lineHeight)
+
+      updateText(6, outputPattern("7<cursor>"))
+    }
+  }
+
+  @Test
+  fun `scrollToCursor with force resumes following the cursor`() = timeoutRunBlocking(context = Dispatchers.EDT) {
+    val editor = createEditor(rows = 3)
+    // Mirrors what happens when the user types while scrolled up: TerminalKeyEventsHandlerImpl calls
+    // scrollToCursor(force = true) directly, and following must resume for the subsequent output too.
+    val expected = TerminalUi.blockTopInset + TerminalUi.blockBottomInset + 4 * editor.lineHeight
+    doTest(editor, expected) {
+      updateText(0, outputPattern("""
+        1
+        2
+        3
+        4
+        5
+        6<cursor>
+      """.trimIndent()))
+
+      invokeAction("Terminal.LineUp")
+      scrollToCursor(true)
+
+      updateText(6, outputPattern("7<cursor>"))
+    }
+  }
+
+  @Test
+  fun `scrollToCursor without force keeps the scrolled-up position`() = timeoutRunBlocking(context = Dispatchers.EDT) {
+    val editor = createEditor(rows = 3)
+    // Contrast with the force = true test: once the user has scrolled up, a non-forced scrollToCursor must NOT snap
+    // back to the bottom. Following stays off, so the position after the line-up is preserved for the later output.
+    val expected = TerminalUi.blockTopInset + 2 * editor.lineHeight
+    doTest(editor, expected) {
+      updateText(0, outputPattern("""
+        1
+        2
+        3
+        4
+        5
+        6<cursor>
+      """.trimIndent()))
+
+      invokeAction("Terminal.LineUp")
+      scrollToCursor(false)
+
+      updateText(6, outputPattern("7<cursor>"))
+    }
+  }
+
+
+  @Test
+  fun `line stepping snaps to whole line boundaries`() = timeoutRunBlocking(context = Dispatchers.EDT) {
+    val editor = createEditor(rows = 3)
+    // Two line-ups from the followed bottom must land exactly on a whole line's top (no bottom inset remainder).
+    val expected = TerminalUi.blockTopInset + 3 * editor.lineHeight
+    doTest(editor, expected) {
+      updateText(0, outputPattern("""
+        1
+        2
+        3
+        4
+        5
+        6
+        7
+        8<cursor>
+      """.trimIndent()))
+
+      invokeAction("Terminal.LineUp")
+      invokeAction("Terminal.LineUp")
+    }
+  }
+
+  @Test
+  fun `line stepping up past the first line rests at the top`() = timeoutRunBlocking(context = Dispatchers.EDT) {
+    val editor = createEditor(rows = 3)
+    // Stepping up more times than there are hidden lines must rest exactly at the top (offset 0, revealing the top inset)
+    // without over-scrolling, and following must stay off there (the new output does not pull it back down).
+    doTest(editor, expectedScrollOffset = 0) {
+      updateText(0, outputPattern("""
+        1
+        2
+        3
+        4
+        5
+        6
+        7
+        8<cursor>
+      """.trimIndent()))
+
+      repeat(10) { invokeAction("Terminal.LineUp") }
+
+      updateText(8, outputPattern("9<cursor>"))
+    }
+  }
+
+  @Test
+  fun `page down at the bottom resumes following the cursor`() = timeoutRunBlocking(context = Dispatchers.EDT) {
+    val editor = createEditor(rows = 3)
+    // Page up unsticks, paging back down to the bottom resumes following, so the later output is followed again.
+    val expected = TerminalUi.blockTopInset + TerminalUi.blockBottomInset + 6 * editor.lineHeight
+    doTest(editor, expected) {
+      updateText(0, outputPattern("""
+        1
+        2
+        3
+        4
+        5
+        6
+        7
+        8<cursor>
+      """.trimIndent()))
+
+      invokeAction("Terminal.PageUp")
+      invokeAction("Terminal.PageDown")
+
+      updateText(8, outputPattern("9<cursor>"))
+    }
+  }
+
+  private suspend fun CoroutineScope.doTest(
+    editor: EditorImpl,
+    expectedScrollOffset: Int,
+    showCursor: Boolean = true,
+    operations: suspend ScrollingModelTestContext.() -> Unit,
+  ) {
+    val scrollingModelScope = childScope("TerminalOutputScrollingModel")
+    try {
+      val outputModel = MutableTerminalOutputModelImpl(editor.document, maxOutputLength = 0)
+      val sessionModel = createSessionModel(showCursor)
+      val scrollingModel = TerminalOutputScrollingModelImpl(editor, outputModel, sessionModel, scrollingModelScope)
+      editor.putUserData(TerminalOutputScrollingModel.KEY, scrollingModel)
+
+      val context = ScrollingModelTestContext(editor, outputModel, scrollingModel)
+      context.operations()
+
+      val offset = editor.scrollingModel.verticalScrollOffset
+      assertThat(offset)
+        .overridingErrorMessage {
+          val text = outputModel.document.text
+          val textWithCursor = StringBuilder(text).insert((outputModel.cursorOffset - outputModel.startOffset).toInt(), "<cursor>")
+          "Expected scroll offset: ${expectedScrollOffset}, but got $offset. Output text:\n$textWithCursor"
+        }
+        .isEqualTo(expectedScrollOffset)
+    }
+    finally {
+      scrollingModelScope.cancel()
+    }
+  }
+
+  private fun createEditor(rows: Int, columns: Int = 20): EditorImpl {
+    val scope = terminalProjectScope(project).childScope("TerminalOutputEditor")
+    Disposer.register(testRootDisposable) { scope.cancel() }
+    val editor = TerminalEditorFactory.createOutputEditor(project, JBTerminalSystemSettingsProvider(), scope)
+    setTerminalEditorSize(editor, rows, columns)
+    return editor
+  }
+
+  private fun setTerminalEditorSize(editor: EditorImpl, rows: Int, columns: Int) {
+    val grid = editor.characterGrid ?: error("Character grid is not initialized")
+    val heightInPixels = rows * editor.lineHeight
+    val widthInPixels = ceil(columns * grid.charWidth).toInt()
+    EditorTestUtil.setEditorVisibleSizeInPixels(editor, widthInPixels, heightInPixels)
+
+    assertThat(grid.rows).isEqualTo(rows)
+    assertThat(grid.columns).isEqualTo(columns)
+  }
+
+  private fun createSessionModel(isCursorVisible: Boolean): TerminalSessionModel {
+    val sessionModel = TerminalSessionModelImpl()
+    val newState = sessionModel.terminalState.value.copy(
+      isShellIntegrationEnabled = true, // Scrolling model relies on shell integration presence to take into account the top inset
+      isCursorVisible = isCursorVisible
+    )
+    sessionModel.updateTerminalState(newState)
+    return sessionModel
+  }
+
+  private class ScrollingModelTestContext(
+    private val editor: EditorEx,
+    private val outputModel: MutableTerminalOutputModel,
+    private val scrollingModel: TerminalOutputScrollingModelImpl,
+  ) {
+    suspend fun updateText(absoluteLineIndex: Long, pattern: TerminalOutputPattern) {
+      outputModel.updateContent(absoluteLineIndex, pattern)
+      scrollingModel.awaitEventProcessing()
+    }
+
+    suspend fun updateCursor(absoluteLineIndex: Long, column: Int) {
+      outputModel.updateCursorPosition(absoluteLineIndex, column)
+      scrollingModel.awaitEventProcessing()
+    }
+
+    fun invokeAction(actionId: String) {
+      val action = ActionManager.getInstance().getAction(actionId)!!
+      val dataContext = SimpleDataContext.getSimpleContext(TerminalActionUtil.EDITOR_KEY, editor, editor.dataContext)
+      val event = TestActionEvent.createTestEvent(action, dataContext)
+      ActionUtil.performAction(action, event)
+    }
+
+    fun scrollWithoutUserAction(offset: Int) {
+      editor.scrollingModel.scrollVertically(offset)
+    }
+
+    fun scrollToCursor(force: Boolean) {
+      scrollingModel.scrollToCursor(force)
+    }
+  }
+}

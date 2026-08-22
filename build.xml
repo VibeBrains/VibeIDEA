@@ -1,0 +1,47 @@
+<!-- Using ant is OBSOLETE, please call installers.cmd or tests.cmd directly -->
+<!-- Refer to README.md for more instructions -->
+<project name="IntelliJ IDEA" default="build">
+  <mkdir dir="build/jps-bootstrap-work" />
+  <echoproperties destfile="build/jps-bootstrap-work/intellij.properties">
+    <propertyset>
+      <propertyref prefix="idea."/>
+      <propertyref prefix="intellij."/>
+      <propertyref prefix="test."/>
+      <propertyref prefix="module."/>
+      <propertyref prefix="debug."/>
+    </propertyset>
+  </echoproperties>
+
+  <condition property="script.suffix" value=".cmd">
+    <os family="windows" />
+  </condition>
+  <property name="script.suffix" value=".sh" />
+
+  <macrodef name="jps-bootstrap">
+    <attribute name="module"/>
+    <attribute name="class"/>
+
+    <sequential>
+      <exec executable="${basedir}/platform/jps-bootstrap/jps-bootstrap${script.suffix}" failonerror="true">
+        <arg value="--properties-file" />
+        <arg value="${basedir}/build/jps-bootstrap-work/intellij.properties" />
+        <!-- project to open -->
+        <arg value="${basedir}" />
+        <!-- project module -->
+        <arg value="@{module}"/>
+        <!-- main class to run -->
+        <arg value="@{class}"/>
+      </exec>
+    </sequential>
+  </macrodef>
+
+  <target name="build">
+    <echo message="***** Using ant is OBSOLETE, please call 'installers.cmd' directly. See README.md *****" level="warning" />
+    <jps-bootstrap class="OpenSourceCommunityInstallersBuildTarget" module="intellij.idea.community.build" />
+  </target>
+
+  <target name="test">
+    <echo message="***** Using ant is OBSOLETE, please call 'tests.cmd' directly. See README.md *****" level="warning" />
+    <jps-bootstrap class="CommunityRunTestsBuildTarget" module="intellij.idea.community.build" />
+  </target>
+</project>

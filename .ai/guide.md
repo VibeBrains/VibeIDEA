@@ -1,0 +1,110 @@
+{{PARTIAL:frontmatter}}
+
+<!-- TEMPLATE:COMMENT -->
+To regenerate, run `bazel run @community//.ai:render-guides`.
+<!-- /TEMPLATE:COMMENT -->
+
+**Critical:** These guidelines MUST be followed at all times.
+
+## Project Invariants
+
+- Module/plugin directories may contain their own AGENTS/CLAUDE instructions; follow them when present.
+- `*.iml` files are the source of truth and auto-generate `BUILD.bazel` files.
+- When adding or editing a JPS module `.iml`, run `bun build/jps-module.mjs register <path-to-iml> --fix-iml-eof` before `./build/jpsModelToBazel.cmd`. This keeps `.idea/modules.xml` and `community/.idea/modules.xml` in canonical order.
+- User-visible strings belong in `*.properties` for localization.
+
+## Workspace Isolation
+
+Do not create ad hoc Git worktrees or clones, or install a workspace manager, on your own initiative. Before any workspace-isolation action, read and follow [Workspace Isolation](./workspace-isolation.md), which also covers the explicit-request exception.
+
+{{PARTIAL:module-specific}}
+
+{{PARTIAL:code-ownership}}
+
+## Mandatory Rules
+
+### After Code Changes
+
+- **Run affected tests:** `./tests.cmd --module <module> --test <FQN or wildcard>` (**FQN required; simple class names do not match; always specify the test module directly**), or `node --test <file>` for `*.test.mjs`.
+  `tests.cmd` performs Bazel compilation internally, so a separate `bazel build` step is not needed when tests will be run.
+  Module-specific rules may override the runner. Skip if plugin has no tests. See [TESTING](../.agents/skills/testing/SKILL.md).
+- **Bazel compilation without tests:** when only verifying compilation (no tests to run), use `bazel build <target>` for affected modules. Skip if only `.js`, `.mjs`, `.md`, `.txt`, or `.json` files are modified.
+- After modifying Bazel/Starlark sources (`BUILD`, `BUILD.bazel`, `MODULE.bazel`, `WORKSPACE`, `WORKSPACE.bazel`, or `*.bzl`), run `bazel run //:format.check`. If it reports diffs, run `bazel run //:format`, inspect the changes, and rerun the check.
+- After modifying `*.iml`, `BUILD.bazel`, or `.idea/` files: run `./build/jpsModelToBazel.cmd`.
+
+### After Writing Code
+
+- Use `lint_files` to check files for warnings when ijproxy or JetBrains MCP is available.
+  Fix any warnings related to the code changes made. You may ignore unrelated warnings.
+
+## Repository-wide rules
+
+Preserve IDE-serialized .iml files in canonical form. Do not:
+
+- add comments
+- auto-format
+- normalize (structure or whitespace)
+- add a trailing newline at end of file
+- prune (remove) empty tags
+- reorder elements or attributes
+
+Use `bun build/jps-module.mjs register <path-to-iml> --fix-iml-eof` for module registration and `.iml` EOF cleanup instead of hand-editing `.idea/modules.xml`. The canonical `modules.xml` order is by `.iml` basename without the `.iml` suffix, matching `org.jetbrains.intellij.build.ModulesXml`.
+
+## Tools
+
+Never use the `code-search` skill; the search tools below replace it.
+
+### Search & navigation (ijproxy preferred)
+
+Default to `search_symbol` for classes, methods, and fields; use `search_text` and `search_regex` mainly for strings, comments, and other non-symbol matches.
+<!-- IF_TOOL:CODEX -->
+Codex exposes these as `mcp__ijproxy__<name>`; inspect the deferred tool catalog (`ALL_TOOLS`) for them before using a shell or non-ijproxy fallback.
+<!-- /IF_TOOL:CODEX -->
+
+- Search symbols: `search_symbol`
+- Find files (glob): `search_file`
+- Search text: `search_text`
+- Search regex: `search_regex`
+
+### Client fallback (no MCP)
+
+- **No MCP:** use `{{TOOLS_DIR}}/fd.cmd` (file search) and `{{TOOLS_DIR}}/rg.cmd` (text/regex search) as shell search fallbacks.
+
+### IDE-backed semantic tools
+
+Available via ijproxy or JetBrains MCP. Prefer a real refactoring over manual search/replace.
+
+- Inspections & symbol info: `lint_files`, `get_symbol_info`
+- Refactors: `rename` (ijproxy) / `rename_refactoring` (JetBrains MCP)
+- Formatting: `reformat_file`
+- Concurrency checks: `find_threading_requirements_usages`, `find_lock_requirements_usages`
+- Project structure & VCS: `get_project_modules`, `get_project_dependencies`, `get_repositories`, `git_status`
+- Run configs: `get_run_configurations`, `execute_run_configuration`
+
+### Tooling rules
+
+- For content/symbol **search** and semantic operations, prefer ijproxy; fall back to JetBrains MCP, then to the client fallback, only when ijproxy is unavailable.
+- Don't shell for file **search** on repo paths, and expect this to be enforced: the `Glob` and `Grep` tools are denied outright, and so are the `grep` and `find` commands, in every pipeline position. Pipe into `{{TOOLS_DIR}}/rg.cmd` instead of `| grep` -- it reads stdin. Use ijproxy search, or `{{TOOLS_DIR}}/fd.cmd` and `{{TOOLS_DIR}}/rg.cmd` when no MCP is available.
+- The repo's documented wrapper commands are allowlisted, so prefer them over a hand-rolled equivalent: a spelling the list knows runs without a prompt, a novel one does not. The list is `community/.ai/tool-permissions.json`, rendered into each harness's own config; add an entry there and rerun `bazel run @community//.ai:render-guides` rather than editing a harness allowlist by hand.
+- Shell is allowed where explicitly documented above and for git (prefer `git_status` if the tool is available), build/test.
+- Outside the working copy, shell access is task-scoped, not general clearance. Read what this repo's tooling produced or what the user or a skill named: build output, an IDE sandbox (`system/`, `config/`, `idea.log`), a tool cache, a VM workspace a skill documents. Do not survey the machine — no listing or reading home, `~/Downloads`, other checkouts, mail, browser or messaging data — and when a step fails, report it rather than going to look for an artifact nobody named. If the task genuinely needs a path outside that set, ask first.
+- Search outside the repo still goes through `{{TOOLS_DIR}}/rg.cmd` and `{{TOOLS_DIR}}/fd.cmd` (absolute paths OK), never native `grep`/`find`.
+- Windows/PowerShell exception: do not pass literal shell metacharacters such as `<`, `>`, `|`, or `&` through `.cmd` search wrappers, even inside quotes. For `rg.cmd` alternation, use repeated `-e` patterns (`{{TOOLS_DIR}}/rg.cmd -n -e "foo" -e "bar" path/to/file.kt`) instead of `"foo|bar"`. For single-file conflict-marker checks, use `Select-String -SimpleMatch -Pattern '<<<<<<<','=======','>>>>>>>' -Path <file>` instead of retrying `rg.cmd` with different quoting.
+- `fd.cmd` and `rg.cmd` skip dot-directories by default. Agent assets live in `.agents/`, `.claude/`, `.junie/`, `.opencode/` — pass `-H` (`--hidden`) when looking for skills, guidelines, or hooks, or you will conclude they do not exist.
+
+### Skills
+
+The harness may list skill *names* only, without descriptions. When a task looks like something a skill covers, read the index for what each name does before improvising:
+
+<!-- IF_EDITION:ULTIMATE -->- Skill index: [`.agents/skills/INDEX.md`](../../.agents/skills/INDEX.md)<!-- /IF_EDITION:ULTIMATE -->
+<!-- IF_EDITION:COMMUNITY -->- Skill index: [`.agents/skills/INDEX.md`](../.agents/skills/INDEX.md)<!-- /IF_EDITION:COMMUNITY -->
+
+{{PARTIAL:knowledge-mcps}}
+
+## Individual Preferences
+
+**Local Preferences:** @./.ai/local.md
+
+<!-- IF_TOOL:CLAUDE -->
+{{PARTIAL:claude-only-individual-preferences}}
+<!-- /IF_TOOL:CLAUDE -->

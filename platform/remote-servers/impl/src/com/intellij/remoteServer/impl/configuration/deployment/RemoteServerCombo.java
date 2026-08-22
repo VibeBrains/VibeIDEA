@@ -1,0 +1,376 @@
+// Copyright 2000-2024 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
+package com.intellij.remoteServer.impl.configuration.deployment;
+
+import com.intellij.openapi.options.ShowSettingsUtil;
+import com.intellij.openapi.project.Project;
+import com.intellij.openapi.ui.ComboBox;
+import com.intellij.openapi.util.NlsSafe;
+import com.intellij.openapi.util.RecursionManager;
+import com.intellij.openapi.util.text.StringUtil;
+import com.intellij.remoteServer.CloudBundle;
+import com.intellij.remoteServer.ServerType;
+import com.intellij.remoteServer.configuration.RemoteServer;
+import com.intellij.remoteServer.configuration.RemoteServersManager;
+import com.intellij.remoteServer.configuration.ServerConfiguration;
+import com.intellij.remoteServer.impl.configuration.RemoteServerListConfigurable;
+import com.intellij.ui.CollectionComboBoxModel;
+import com.intellij.ui.ColoredListCellRenderer;
+import com.intellij.ui.ComboboxWithBrowseButton;
+import com.intellij.ui.SimpleColoredComponent;
+import com.intellij.ui.SimpleTextAttributes;
+import com.intellij.ui.UserActivityProviderComponent;
+import com.intellij.util.containers.ContainerUtil;
+import com.intellij.util.ui.EmptyIcon;
+import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
+
+import javax.swing.JList;
+import javax.swing.event.ChangeEvent;
+import javax.swing.event.ChangeListener;
+import java.awt.event.ActionEvent;
+import java.awt.event.ItemEvent;
+import java.util.Collections;
+import java.util.Comparator;
+import java.util.List;
+import java.util.Objects;
+import java.util.UUID;
+
+public class RemoteServerCombo<S extends ServerConfiguration> extends ComboboxWithBrowseButton implements UserActivityProviderComponent {
+  private static final Comparator<RemoteServer<?>> SERVERS_COMPARATOR =
+    Comparator.comparing(RemoteServer::getName, String.CASE_INSENSITIVE_ORDER);
+
+  private final ServerType<S> myServerType;
+  private final @NotNull Project myProject;
+  private final List<ChangeListener> myChangeListeners = ContainerUtil.createLockFreeCopyOnWriteList();
+  private final CollectionComboBoxModel<ServerItem> myServerListModel;
+  private String myServerNameReminder;
+
+  public RemoteServerCombo(@NotNull ServerType<S> serverType, @NotNull Project project) {
+    this(serverType, project, new CollectionComboBoxModel<>());
+  }
+
+  private RemoteServerCombo(@NotNull ServerType<S> serverType,
+                            @NotNull Project project,
+                            @NotNull CollectionComboBoxModel<ServerItem> model) {
+    super(new ComboBox<>(model));
+    myServerType = serverType;
+    myProject = project;
+    myServerListModel = model;
+
+    refillModel(null);
+
+    addActionListener(this::onBrowseServer);
+    getComboBox().addActionListener(this::onItemChosen);
+    getComboBox().addItemListener(this::onItemUnselected);
+
+    //noinspection unchecked
+    getComboBox().setRenderer(new ColoredListCellRenderer<ServerItem>() {
+      @Override
+      protected void customizeCellRenderer(@NotNull JList<? extends ServerItem> list, ServerItem value,
+                                           int index, boolean selected, boolean focused) {
+        if (value == null) return;
+        value.render(this);
+      }
+    });
+  }
+
+  public ServerItem getSelectedItem() {
+    return (ServerItem)myServerListModel.getSelectedItem();
+  }
+
+  public @Nullable RemoteServer<S> getSelectedServer() {
+    ServerItem selected = getSelectedItem();
+    //noinspection unchecked
+    return selected == null ? null : (RemoteServer<S>)selected.findRemoteServer();
+  }
+
+  public void selectServerInCombo(@Nullable String serverName) {
+    ServerItem item = findNonTransientItemForName(serverName);
+    if (serverName != null && item == null) {
+      item = getMissingServerItem(serverName);
+      if (item != null) {
+        myServerListModel.add(0, item);
+      }
+    }
+    getComboBox().setSelectedItem(item);
+  }
+
+  protected ServerType<S> getServerType() {
+    return myServerType;
+  }
+
+  protected @NotNull List<TransientItem> getActionItems() {
+    return Collections.singletonList(new CreateNewServerItem());
+  }
+
+  protected @Nullable ServerItem getMissingServerItem(@NotNull String serverName) {
+    return new MissingServerItem(serverName);
+  }
+
+  /**
+   * @return item with <code>result.getServerName() == null</code>
+   */
+  protected @NotNull ServerItem getNoServersItem() {
+    return new NoServersItem();
+  }
+
+  private ServerItem findNonTransientItemForName(@Nullable String serverName) {
+    return myServerListModel.getItems().stream()
+      .filter(Objects::nonNull)
+      .filter(item -> !(item instanceof TransientItem))
+      .filter(item -> Objects.equals(item.getServerName(), serverName))
+      .findAny().orElse(null);
+  }
+
+  @Override
+  public void dispose() {
+    super.dispose();
+    myChangeListeners.clear();
+  }
+
+  protected final void fireStateChanged() {
+    ChangeEvent event = new ChangeEvent(this);
+    for (ChangeListener changeListener : myChangeListeners) {
+      changeListener.stateChanged(event);
+    }
+  }
+
+  private void onBrowseServer(ActionEvent e) {
+    ServerItem item = getSelectedItem();
+    if (item != null) {
+      item.onBrowseAction();
+    }
+    else {
+      editServer(RemoteServerListConfigurable.createConfigurable(myServerType, null));
+    }
+  }
+
+  private void onItemChosen(ActionEvent e) {
+    RecursionManager.doPreventingRecursion(this, false, () -> {
+      ServerItem selectedItem = getSelectedItem();
+      if (selectedItem != null) {
+        selectedItem.onItemChosen();
+      }
+      if (!(selectedItem instanceof TransientItem)) {
+        fireStateChanged();
+      }
+      return null;
+    });
+  }
+
+  private void onItemUnselected(ItemEvent e) {
+    if (e.getStateChange() == ItemEvent.DESELECTED) {
+      ServerItem item = (ServerItem)e.getItem();
+      myServerNameReminder = item == null ? null : item.getServerName();
+    }
+  }
+
+  protected final boolean editServer(@NotNull RemoteServerListConfigurable configurable) {
+    boolean isOk = ShowSettingsUtil.getInstance().editConfigurable(this, configurable);
+    if (isOk) {
+      RemoteServer<?> lastSelectedServer = configurable.getLastSelectedServer();
+      refillModel(lastSelectedServer);
+    }
+    return isOk;
+  }
+
+  protected final void createAndEditNewServer() {
+    String selectedBefore = myServerNameReminder;
+    RemoteServersManager manager = RemoteServersManager.getInstance();
+    RemoteServer<?> newServer = manager.createServer(myServerType);
+    manager.addServer(newServer);
+    if (!editServer(RemoteServerListConfigurable.createConfigurable(myServerType, newServer.getName()))) {
+      manager.removeServer(newServer);
+      selectServerInCombo(selectedBefore);
+    }
+  }
+
+  protected final void refillModel(@Nullable RemoteServer<?> newSelection) {
+    String nameToSelect = newSelection != null ? newSelection.getName() : null;
+
+    myServerListModel.removeAll();
+    ServerItem itemToSelect = null;
+
+    List<RemoteServer<S>> servers = getSortedServers();
+    if (servers.isEmpty()) {
+      ServerItem noServersItem = getNoServersItem();
+      if (nameToSelect == null) {
+        itemToSelect = noServersItem;
+      }
+      myServerListModel.add(noServersItem);
+    }
+
+    for (RemoteServer<S> nextServer : getSortedServers()) {
+      ServerItem nextServerItem = new ServerItemImpl(nextServer.getUniqueId(), nextServer.getName());
+      if (itemToSelect == null && nextServer.getName().equals(nameToSelect)) {
+        itemToSelect = nextServerItem;
+      }
+      myServerListModel.add(nextServerItem);
+    }
+
+    for (TransientItem nextAction : getActionItems()) {
+      myServerListModel.add(nextAction);
+    }
+
+    setSelectedServerItem(newSelection, itemToSelect);
+  }
+
+  protected void setSelectedServerItem(@Nullable RemoteServer<?> newSelection, @Nullable ServerItem itemToSelect) {
+    getComboBox().setSelectedItem(itemToSelect);
+  }
+
+  protected @NotNull List<RemoteServer<S>> getSortedServers() {
+    return RemoteServersManager.getInstance().getServers(myServerType).stream()
+      .filter(server -> server.getConfiguration().isVisibleInProject(myProject))
+      .sorted(SERVERS_COMPARATOR)
+      .toList();
+  }
+
+  @Override
+  public void addChangeListener(@NotNull ChangeListener changeListener) {
+    myChangeListeners.add(changeListener);
+  }
+
+  @Override
+  public void removeChangeListener(@NotNull ChangeListener changeListener) {
+    myChangeListeners.remove(changeListener);
+  }
+
+  public interface ServerItem {
+    @Nullable
+    String getServerName();
+
+    void render(@NotNull SimpleColoredComponent ui);
+
+    void onItemChosen();
+
+    void onBrowseAction();
+
+    @Nullable
+    RemoteServer<?> findRemoteServer();
+  }
+
+  /**
+   * marker for action items which always temporary and switch selection themselves after being chosen by user
+   */
+  public interface TransientItem extends ServerItem {
+    //
+  }
+
+  private class CreateNewServerItem implements TransientItem {
+
+    @Override
+    public void render(@NotNull SimpleColoredComponent ui) {
+      ui.setIcon(EmptyIcon.create(myServerType.getIcon()));
+      ui.append(CloudBundle.message("remote.server.combo.create.new.server"), SimpleTextAttributes.REGULAR_ATTRIBUTES);
+    }
+
+    @Override
+    public String getServerName() {
+      return null;
+    }
+
+    @Override
+    public void onItemChosen() {
+      getChildComponent().hidePopup();
+      createAndEditNewServer();
+    }
+
+    @Override
+    public void onBrowseAction() {
+      createAndEditNewServer();
+    }
+
+    @Override
+    public @Nullable RemoteServer<S> findRemoteServer() {
+      return null;
+    }
+  }
+
+  public abstract class NamedServerItemImpl implements ServerItem {
+    private final @NlsSafe String myServerName;
+
+    protected NamedServerItemImpl(@NlsSafe String serverName) {
+      myServerName = serverName;
+    }
+
+    @Override
+    public @NlsSafe String getServerName() {
+      return myServerName;
+    }
+
+    @Override
+    public void onItemChosen() {
+      //
+    }
+
+    @Override
+    public void onBrowseAction() {
+      editServer(RemoteServerListConfigurable.createConfigurable(myServerType, myServerName));
+    }
+
+    @Override
+    public void render(@NotNull SimpleColoredComponent ui) {
+      RemoteServer<?> server = findRemoteServer();
+      SimpleTextAttributes attributes = server == null ? SimpleTextAttributes.ERROR_ATTRIBUTES : SimpleTextAttributes.REGULAR_ATTRIBUTES;
+      ui.setIcon(server == null ? null : myServerType.getIcon());
+      ui.append(StringUtil.notNullize(myServerName), attributes);
+    }
+  }
+
+  public class ServerItemImpl extends NamedServerItemImpl {
+    private final @NotNull UUID myId;
+
+    public ServerItemImpl(@NotNull UUID id, @NlsSafe String serverName) {
+      super(serverName);
+      myId = id;
+    }
+
+    @Override
+    public @Nullable RemoteServer<S> findRemoteServer() {
+      return RemoteServersManager.getInstance().findById(myId);
+    }
+  }
+
+  protected class MissingServerItem extends NamedServerItemImpl {
+
+    public MissingServerItem(@NotNull String serverName) {
+      super(serverName);
+    }
+
+    @Override
+    public @NotNull @NlsSafe String getServerName() {
+      String result = super.getServerName();
+      assert result != null;
+      return result;
+    }
+
+    @Override
+    public void render(@NotNull SimpleColoredComponent ui) {
+      ui.setIcon(myServerType.getIcon());
+      ui.append(getServerName(), SimpleTextAttributes.ERROR_ATTRIBUTES);
+    }
+
+    @Override
+    public @Nullable RemoteServer<?> findRemoteServer() {
+      return null;
+    }
+  }
+
+  protected class NoServersItem extends NamedServerItemImpl {
+    public NoServersItem() {
+      super(null);
+    }
+
+    @Override
+    public void render(@NotNull SimpleColoredComponent ui) {
+      ui.setIcon(null);
+      ui.append(CloudBundle.message("remote.server.combo.no.servers"), SimpleTextAttributes.ERROR_ATTRIBUTES);
+    }
+
+    @Override
+    public @Nullable RemoteServer<?> findRemoteServer() {
+      return null;
+    }
+  }
+}

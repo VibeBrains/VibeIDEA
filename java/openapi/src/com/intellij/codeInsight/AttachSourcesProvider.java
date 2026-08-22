@@ -1,0 +1,72 @@
+// Copyright 2000-2026 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
+package com.intellij.codeInsight;
+
+import com.intellij.openapi.extensions.ExtensionPointName;
+import com.intellij.openapi.project.Project;
+import com.intellij.openapi.roots.LibraryOrderEntry;
+import com.intellij.openapi.util.ActionCallback;
+import com.intellij.openapi.util.NlsContexts;
+import com.intellij.platform.workspace.jps.entities.LibraryEntity;
+import com.intellij.psi.PsiFile;
+import org.jetbrains.annotations.ApiStatus;
+import org.jetbrains.annotations.Nls;
+import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Unmodifiable;
+
+import java.util.Collection;
+import java.util.Collections;
+import java.util.List;
+
+/**
+ * Adds actions to "Attach sources" notification panel
+ *
+ * @see com.intellij.codeInsight.daemon.impl.AttachSourcesNotificationProvider
+ */
+public interface AttachSourcesProvider {
+
+  @ApiStatus.Internal
+  ExtensionPointName<AttachSourcesProvider> EXTENSION_POINT_NAME =
+    new ExtensionPointName<>("com.intellij.attachSourcesProvider");
+
+
+  /**
+   * @deprecated Use {@link #getLibrariesActions(Collection, PsiFile)}
+   */
+  @NotNull @Unmodifiable
+  @Deprecated
+  Collection<? extends AttachSourcesAction> getActions(@NotNull List<? extends LibraryOrderEntry> orderEntries,
+                                                       @NotNull PsiFile psiFile);
+
+  @NotNull @Unmodifiable
+  default Collection<? extends AttachSourcesAction> getLibrariesActions(@NotNull Collection<LibraryEntity> libraryEntities,
+                                                       @NotNull PsiFile psiFile) {
+    return Collections.emptyList();
+  }
+
+  interface AttachSourcesAction {
+
+    @Nls(capitalization = Nls.Capitalization.Title) String getName();
+
+    @NlsContexts.LinkLabel String getBusyText();
+
+    /**
+     * @deprecated Use {@link #perform(Collection, Project)}
+     */
+    @NotNull
+    @Deprecated
+    ActionCallback perform(@NotNull List<? extends LibraryOrderEntry> orderEntriesContainingFile);
+
+    default @NotNull ActionCallback perform(@NotNull Collection<LibraryEntity> libraryEntities, @NotNull Project project) {
+      return ActionCallback.REJECTED;
+    }
+  }
+
+  default boolean isApplicable(@NotNull List<? extends LibraryOrderEntry> orderEntries, PsiFile psiFile) {
+    return !orderEntries.isEmpty();
+  }
+
+  /**
+   * This marker interface means what this action will be shown only if it is single action.
+   */
+  interface LightAttachSourcesAction extends AttachSourcesAction { }
+}

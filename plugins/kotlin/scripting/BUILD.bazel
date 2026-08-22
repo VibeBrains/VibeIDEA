@@ -1,0 +1,63 @@
+load("@rules_jvm//:jvm.bzl", "jvm_library")
+load("//build:compiler-options.bzl", "create_kotlinc_options")
+
+### auto-generated section `build kotlin.scripting` start
+create_kotlinc_options(
+    name = "custom_scripting",
+    x_allow_kotlin_package = True,
+)
+
+jvm_library(
+    name = "scripting",
+    srcs = glob(
+        [
+            "src/**/*.kt",
+            "src/**/*.java",
+            "src/**/*.form",
+        ],
+        allow_empty = True,
+    ),
+    kotlinc_opts = ":custom_scripting",
+    module_name = "kotlin.scripting",
+    resource_strip_prefix = "resources",
+    resources = glob(
+        ["resources/**/*"],
+    ),
+    visibility = ["//visibility:public"],
+    deps = [
+        # do not sort,
+        "//platform/core-api:core",
+        "@lib//:kotlin-stdlib",
+        "//platform/util",
+        "@lib//:kotlinc-kotlin-scripting-common",
+    ],
+)
+
+jvm_library(
+    name = "scripting_test_lib",
+    testonly = True,
+    srcs = glob(
+        [],
+        allow_empty = True,
+    ),
+    kotlinc_opts = ":custom_scripting",
+    module_name = "kotlin.scripting",
+    visibility = ["//visibility:public"],
+    runtime_deps = [
+        # do not sort,
+        ":scripting",
+        "//platform/core-api:core_test_lib",
+        "//platform/util:util_test_lib",
+    ],
+)
+### auto-generated section `build kotlin.scripting` end
+
+### auto-generated section `iml kotlin.scripting` start
+exports_files(
+    [
+        "kotlin.scripting.iml",
+        "resources/kotlin.scripting.xml",
+    ],
+    visibility = ["//visibility:public"],
+)
+### auto-generated section `iml kotlin.scripting` end

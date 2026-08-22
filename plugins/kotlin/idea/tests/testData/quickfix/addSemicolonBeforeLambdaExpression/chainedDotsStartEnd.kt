@@ -1,0 +1,14 @@
+// "Terminate preceding call with semicolon" "true"
+// K2_ERROR: CANNOT_INFER_PARAMETER_TYPE
+// K2_ERROR: CANNOT_INFER_PARAMETER_TYPE
+// K2_ERROR: NONE_APPLICABLE
+// K2_ERROR: NO_VALUE_FOR_PARAMETER
+// K2_ERROR: UNEXPECTED_TRAILING_LAMBDA_ON_A_NEW_LINE
+
+fun test() {
+    "test".toString().toString().toString()
+    {<caret>"test"}.invoke().toString().toString()
+}
+
+// FUS_QUICKFIX_NAME: org.jetbrains.kotlin.idea.quickfix.AddSemicolonBeforeLambdaExpressionFix
+// FUS_K2_QUICKFIX_NAME: org.jetbrains.kotlin.idea.quickfix.AddSemicolonBeforeLambdaExpressionFix

@@ -1,0 +1,15 @@
+<idea-plugin visibility="internal">
+  <!-- region Generated dependencies - run `Generate Product Layouts` to regenerate -->
+  <dependencies>
+    <module name="intellij.libraries.kotlinx.coroutines.core"/>
+    <module name="intellij.libraries.rd.core"/>
+    <module name="intellij.libraries.rd.framework"/>
+    <module name="intellij.libraries.rd.swing"/>
+    <module name="intellij.libraries.rd.text"/>
+    <module name="intellij.platform.core"/>
+    <module name="intellij.platform.core.impl"/>
+    <module name="intellij.platform.ide"/>
+    <module name="intellij.platform.ide.progress"/>
+  </dependencies>
+  <!-- endregion -->
+</idea-plugin>

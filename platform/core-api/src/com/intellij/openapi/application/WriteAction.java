@@ -1,0 +1,95 @@
+// Copyright 2000-2026 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
+package com.intellij.openapi.application;
+
+import com.intellij.openapi.diagnostic.Logger;
+import com.intellij.openapi.util.ThrowableComputable;
+import com.intellij.util.ExceptionUtil;
+import com.intellij.util.ThrowableRunnable;
+import com.intellij.util.ui.EDT;
+import org.jetbrains.annotations.NotNull;
+
+import java.util.concurrent.atomic.AtomicReference;
+
+/**
+ * See <a href="https://plugins.jetbrains.com/docs/intellij/threading-model.html">Threading Model</a>
+ *
+ * @see ReadAction
+ */
+public final class WriteAction {
+  private static final Logger LOG = Logger.getInstance(WriteAction.class);
+
+  private WriteAction() {
+  }
+
+  /**
+   * Executes {@code action} inside write action.
+   */
+  public static <E extends Throwable> void run(@NotNull ThrowableRunnable<E> action) throws E {
+    ApplicationManager.getApplication().runWriteAction(CoroutinesKt.throwableRunnableToThrowableComputable(action));
+  }
+
+  /**
+   * Executes {@code action} inside write action and returns the result.
+   */
+  public static <T, E extends Throwable> T compute(@NotNull ThrowableComputable<T, E> action) throws E {
+    return ApplicationManager.getApplication().runWriteAction(action);
+  }
+
+  /**
+   * Executes {@code action} inside write action.
+   * If called from outside the EDT, transfers control to the EDT first, executes write action there and waits for the execution end.
+   * <br/><span color=red>CAUTION</span>: if called from outside EDT, please be aware of possible deadlocks (e.g. when EDT is busy)
+   * or invalid data (e.g. when something is changed during control transferred to EDT and back).
+   * <br/>Instead, please use {@link #run(ThrowableRunnable)}.
+   */
+  public static <E extends Throwable> void runAndWait(@NotNull ThrowableRunnable<E> action) throws E {
+    computeAndWait(CoroutinesKt.throwableRunnableToThrowableComputable(action));
+  }
+
+  /**
+   * Executes {@code action} inside write action.
+   * If called from outside the EDT, transfers control to the EDT first, executes write action there and waits for the execution end.
+   * <br/><span color=red>CAUTION</span>: if called from outside EDT, please be aware of possible deadlocks (e.g. when EDT is busy)
+   * or invalid data (e.g. when something is changed during control transferred to EDT and back).
+   * <br/>Instead, please use {@link #compute(ThrowableComputable)}.
+   */
+  public static <T, E extends Throwable> T computeAndWait(@NotNull ThrowableComputable<T, E> action) throws E {
+    return computeAndWait(action, ModalityState.defaultModalityState());
+  }
+
+  public static <T, E extends Throwable> T computeAndWait(@NotNull ThrowableComputable<T, E> action, ModalityState modalityState) throws E {
+    Application application = ApplicationManager.getApplication();
+    if (application.isWriteIntentLockAcquired()) {
+      return application.runWriteAction(action);
+    }
+
+    if (EDT.isCurrentThreadEdt()) {
+      return application.runWriteIntentReadAction(() -> application.runWriteAction(action));
+    }
+
+    if (application.holdsReadLock()) {
+      LOG.error("Must not start write action from within read action in the other thread - deadlock is coming");
+    }
+
+    AtomicReference<T> result = new AtomicReference<>();
+    AtomicReference<Throwable> exception = new AtomicReference<>();
+    WriteThread.invokeAndWait(() -> {
+      try {
+        result.set(compute(action));
+      }
+      catch (Throwable e) {
+        exception.set(e);
+      }
+    }, modalityState);
+
+    Throwable t = exception.get();
+    if (t != null) {
+      t.addSuppressed(new RuntimeException()); // preserve the calling thread stacktrace
+      ExceptionUtil.rethrowUnchecked(t);
+      //noinspection unchecked
+      throw (E)t;
+    }
+
+    return result.get();
+  }
+}

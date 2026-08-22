@@ -1,0 +1,5 @@
+print(slice(<warning descr="No overload of 'slice' matches the arguments. Argument types: (). Expected one of: (stop: Any), (start: Any, stop: Any, step: Any)">)</warning>)
+print(slice(1))
+print(slice(1, 2))
+print(slice(1, 2, 3))
+print(slice<warning descr="No overload of 'slice' matches the arguments. Argument types: (Literal[1], Literal[2], Literal[3], Literal[4]). Expected one of: (stop: Any), (start: Any, stop: Any, step: Any)">(1, 2, 3, 4)</warning>)

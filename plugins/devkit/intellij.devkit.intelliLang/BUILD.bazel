@@ -1,0 +1,40 @@
+load("@rules_jvm//:jvm.bzl", "jvm_library")
+
+### auto-generated section `build intellij.devkit.intelliLang` start
+jvm_library(
+    name = "intelliLang",
+    srcs = glob(
+        [],
+        allow_empty = True,
+    ),
+    module_name = "intellij.devkit.intelliLang",
+    resource_strip_prefix = "resources",
+    resources = glob(
+        ["resources/**/*"],
+    ),
+    visibility = ["//visibility:public"],
+)
+
+jvm_library(
+    name = "intelliLang_test_lib",
+    testonly = True,
+    srcs = glob(
+        [],
+        allow_empty = True,
+    ),
+    module_name = "intellij.devkit.intelliLang",
+    visibility = ["//visibility:public"],
+    runtime_deps = [":intelliLang"],
+)
+### auto-generated section `build intellij.devkit.intelliLang` end
+
+### auto-generated section `iml intellij.devkit.intelliLang` start
+exports_files(
+    [
+        "intellij.devkit.intelliLang.iml",
+        "resources/devkit-xmlInjections.xml",
+        "resources/intellij.devkit.intelliLang.xml",
+    ],
+    visibility = ["//visibility:public"],
+)
+### auto-generated section `iml intellij.devkit.intelliLang` end

@@ -1,0 +1,25 @@
+import a.b.c as
+d
+-----
+Groovy script
+  Import statement
+    Modifiers
+      <empty list>
+    PsiElement(import)('import')
+    PsiWhiteSpace(' ')
+    Reference element
+      Reference element
+        Reference element
+          PsiElement(identifier)('a')
+        PsiElement(.)('.')
+        PsiElement(identifier)('b')
+      PsiElement(.)('.')
+      PsiElement(identifier)('c')
+    PsiWhiteSpace(' ')
+    GrImportAliasImpl(IMPORT_ALIAS)
+      PsiElement(as)('as')
+      PsiErrorElement:identifier expected
+        <empty list>
+  PsiElement(new line)('\n')
+  Reference expression
+    PsiElement(identifier)('d')

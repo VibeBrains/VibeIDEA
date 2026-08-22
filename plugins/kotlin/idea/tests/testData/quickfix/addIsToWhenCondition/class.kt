@@ -1,0 +1,12 @@
+// "Add 'is' before 'Foo'" "true"
+// K2_ERROR: NO_COMPANION_OBJECT
+
+class Foo
+
+fun test(a: Any) {
+    when (a) {
+        <caret>Foo -> {}
+    }
+}
+// FUS_QUICKFIX_NAME: org.jetbrains.kotlin.idea.quickfix.AddIsToWhenConditionFix
+// FUS_K2_QUICKFIX_NAME: org.jetbrains.kotlin.idea.quickfix.AddIsToWhenConditionFix

@@ -1,0 +1,3 @@
+- name: lib/turboComplete.jar
+  modules:
+  - name: intellij.turboComplete

@@ -1,0 +1,2 @@
+record Param(int... i) {
+}

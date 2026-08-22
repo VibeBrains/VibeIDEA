@@ -1,0 +1,13 @@
+// "Convert 'KClass' to 'Class'" "true"
+// PRIORITY: HIGH
+// WITH_STDLIB
+// K2_ERROR: ASSIGNMENT_TYPE_MISMATCH
+
+fun foo() {
+    val clazz = String::class
+    val cls: Class<*>
+    cls = clazz<caret>
+}
+
+// FUS_QUICKFIX_NAME: org.jetbrains.kotlin.idea.quickfix.ConvertKClassToClassFix
+// FUS_K2_QUICKFIX_NAME: org.jetbrains.kotlin.idea.quickfix.ConvertKClassToClassFix
