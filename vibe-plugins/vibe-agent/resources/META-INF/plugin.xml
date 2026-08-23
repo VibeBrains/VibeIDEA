@@ -15,4 +15,9 @@
     <notificationGroup id="Vibe Agent" displayType="BALLOON"/>
     <inline.completion.provider implementation="com.vibe.agent.fim.VibeFimProvider"/>
   </extensions>
+  <actions>
+    <action id="com.vibe.agent.exportCodeGraph" class="com.vibe.agent.graph.ExportCodeGraphAction" text="Vibe: экспорт графа проекта">
+      <add-to-group group-id="ToolsMenu" anchor="last"/>
+    </action>
+  </actions>
 </idea-plugin>

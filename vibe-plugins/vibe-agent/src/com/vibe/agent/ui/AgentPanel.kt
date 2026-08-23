@@ -12,6 +12,7 @@ import com.vibe.agent.acp.AcpConfig
 import com.vibe.agent.acp.AgentServerConfig
 import com.vibe.agent.acp.IdeFileOps
 import com.vibe.agent.pipelines.PipelinesFile
+import com.vibe.agent.design.DesignContextFile
 import com.vibe.agent.providers.ChatMessage
 import com.vibe.agent.providers.LlmClient
 import com.vibe.agent.providers.ModelEntry
@@ -113,7 +114,9 @@ class AgentPanel(private val project: Project) : JPanel(BorderLayout()), AcpClie
       is LlmTarget -> sendToLlm(target, text)
       is AcpTarget, null -> ApplicationManager.getApplication().executeOnPooledThread {
         try {
-          ensureClient().prompt(text).whenComplete { result, error ->
+          val design = DesignContextFile.load(project.basePath)
+          val fullPrompt = if (design != null) DesignContextFile.promptBlock(design) + "\n" + text else text
+          ensureClient().prompt(fullPrompt).whenComplete { result, error ->
             if (error != null) appendLine("[ошибка] ${error.message}")
             else {
               val stop = result?.jsonObject?.get("stopReason")?.jsonPrimitive?.contentOrNull

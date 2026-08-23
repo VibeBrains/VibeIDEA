@@ -60,9 +60,9 @@
 12. [ ] Диспетчерская + `agent-runs.jsonl` (heartbeat, «Проверить запуск») — S/M
 13. [ ] FIM: расширение (типы предсказаний VibeIDE, фильтры не-кода, кэш+SLA-метрики) — M
 14. [x] `servers.json` — ✅ (2026-08-23) `vibe-plugins/vibe-server` (`com.vibe.server`): контракт VibeIDE целиком (task/service, 5 readyCheck, волны топосортом, skipIf, pathPrepend, envFile, stopCommand, исключения с причинами), тулвиндоу. Спека serversSpec.md. Осталось: autoStart с гейтом доверия, previewPath-превью. Решение: свой раннер, НЕ Run Configurations (волны+readyCheck в RC не выражаются)
-15. [ ] `code_graph` поверх PSI/UAST (платформа сильнее оригинала) — L
+15. [~] `code_graph` — ✅ первый срез (2026-08-23): файлы+символы+импорты (UAST)+TODO → экспорт `.vibe/codeGraph.json` (Tools-меню). Осталось: рёбра importers (ReferencesSearch), инкрементальность, MCP-мост для агентов
 
-16. [ ] Дизайн-контур: контракт `.vibe/design/{product,design,components,uiKit}.md` + спека (первый срез — этой волной); движок детекторов (81 шт., JCEF+DevTools, 2 вьюпорта, замер с живой страницы) — отдельным куском — L
+16. [~] Дизайн-контур — ✅ контракт `.vibe/design/` (парсер правил/дрейфа, fallback-пути, подмешивание путей в промпт агента uiKit-первым, сиды components/uiKit, спека designSpec.md — которой не было даже у VibeIDE) (2026-08-23). Осталось: движок 81 детектора (чистые функции над JSON-снимком), мост замера (JCEF), два вьюпорта, оверлей, enforceFloor-хук — L
 17. [ ] Видео-разбор (/watch: yt-dlp+ffmpeg, кадры по сменам сцен, транскрипт) — нативные бинари переносимы, UI-обвязка своя — M/L
 18. [ ] Голосовой ввод (sherpa-onnx локально) — M
 

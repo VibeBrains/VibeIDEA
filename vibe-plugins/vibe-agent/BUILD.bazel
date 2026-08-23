@@ -34,6 +34,10 @@ jvm_library(
         "//platform/platform-impl/codeinsight-inline:ide-codeinsight-inline",
         "//libraries/kotlinx/coroutines/core",
         "//platform/editor-ui-api:editor-ui",
+        "//platform/indexing-api:indexing",
+        "//uast/uast-common:uast",
+        "//java/java-psi-api:psi",
+        "//platform/lang-impl",
     ],
 )
 
