@@ -42,6 +42,7 @@
 
 - [x] **Тема Vibe Neon Dark** — ✅ (2026-08-23) `vibe-plugins/vibe-theme/` (`themeProvider`, parentTheme Dark, editorScheme от Darcula, неоновые акценты); бандлится как обычный плагин.
 - [x] **FIM-автокомплит** — ✅ (2026-08-23) `com.vibe.agent.fim.VibeFimProvider` (DebouncedInlineCompletionProvider, 250 мс): модели `fim: true` из providers.json, `/completions` prefix/suffix, механика VibeIDE (25 строк, стопы, 300/96). Превосходит оригинал: у VibeIDE dynamic-FIM был `null` («follow-up»).
+- [x] **Хаб настроек Tools → VibeIDEA** — ✅ (2026-08-23, next) «Провайдеры»: карточка на провайдер, ключ → PasswordSafe, «Проверить» пингует каталог моделей, статус называет победивший источник ключа; «Модели»: группы по провайдерам, AND-поиск, тумблеры видимости (side-map в PropertiesComponent). Фикс 2026-08-23: карточки следуют ширине вьюпорта (Scrollable + авто-перенос html-лейблов) — раньше длинная подсказка уводила поле и кнопку за край.
 - [x] **Пайплайны `.vibe/pipelines.json`** — ✅ (2026-08-23) контракт VibeIDE (роли закрытым списком, ≤20 шагов, пути+резюме, провал→«пропущен», толерантный парсер); прогон поверх ACP; отклонение зафиксировано в спеке: роль не ограничивает инструменты физически. Спека: [pipelinesSpec.md](manuals/pipelinesSpec.md).
 
 ## Путь переноса VibeIDE→VibeIDEA (очередь по gap-анализу 2026-08-23)

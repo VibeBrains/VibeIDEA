@@ -14,6 +14,9 @@ import com.vibe.agent.providers.LlmClient
 import com.vibe.agent.providers.ProviderEntry
 import com.vibe.agent.providers.ProvidersService
 import java.awt.BorderLayout
+import java.awt.Dimension
+import java.awt.Rectangle
+import javax.swing.Scrollable
 import javax.swing.BoxLayout
 import javax.swing.JButton
 import javax.swing.JComponent
@@ -45,6 +48,7 @@ class VibeProvidersConfigurable(private val project: Project) : Configurable {
       val status = JBLabel(sourceLine(p)).apply {
         font = com.intellij.util.ui.JBFont.label().deriveFont(11f)
         foreground = com.intellij.ui.JBColor.GRAY
+        minimumSize = Dimension(0, 0)
       }
       val test = JButton("Проверить").apply {
         addActionListener { verify(p, status) }
@@ -52,6 +56,9 @@ class VibeProvidersConfigurable(private val project: Project) : Configurable {
       val hint = JBLabel("<html>Провайдер из providers.json (id: <code>${p.id}</code>${p.apiKeyEnv?.let { " · env: <code>$it</code>" } ?: ""}). Введите ключ здесь — он уйдёт в защищённое хранилище ОС, — или задайте его в .vibe/.env.</html>").apply {
         font = com.intellij.util.ui.JBFont.label().deriveFont(11f)
         foreground = com.intellij.ui.JBColor.GRAY
+        // Long html text must wrap to the card width, not dictate it.
+        setAllowAutoWrapping(true)
+        minimumSize = Dimension(0, 0)
       }
       val card = JPanel(BorderLayout(0, JBUI.scale(4))).apply {
         border = IdeBorderFactory.createTitledBorder(p.name, false)
@@ -67,7 +74,7 @@ class VibeProvidersConfigurable(private val project: Project) : Configurable {
     }
     return JPanel(BorderLayout()).apply {
       border = JBUI.Borders.empty(8)
-      add(JBScrollPane(JPanel(BorderLayout()).apply { add(list, BorderLayout.NORTH) }), BorderLayout.CENTER)
+      add(JBScrollPane(ViewportWidthPanel(list)), BorderLayout.CENTER)
     }
   }
 
@@ -119,6 +126,16 @@ class VibeProvidersConfigurable(private val project: Project) : Configurable {
       }
       c.status.text = sourceLine(c.provider)
     }
+  }
+
+  /** Content follows the viewport width (vertical scroll only) — same fix as the chat feed. */
+  private class ViewportWidthPanel(content: JComponent) : JPanel(BorderLayout()), Scrollable {
+    init { add(content, BorderLayout.NORTH) }
+    override fun getPreferredScrollableViewportSize(): Dimension = preferredSize
+    override fun getScrollableUnitIncrement(r: Rectangle, o: Int, d: Int): Int = JBUI.scale(16)
+    override fun getScrollableBlockIncrement(r: Rectangle, o: Int, d: Int): Int = r.height
+    override fun getScrollableTracksViewportWidth(): Boolean = true
+    override fun getScrollableTracksViewportHeight(): Boolean = false
   }
 
   private companion object {
