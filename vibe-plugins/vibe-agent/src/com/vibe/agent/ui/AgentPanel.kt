@@ -67,7 +67,10 @@ class AgentPanel(private val project: Project) : JPanel(BorderLayout()), AcpClie
     border = JBUI.Borders.empty(6)
     background = CHAT_BG
   }
-  private val scroll = JBScrollPane(messages)
+  private val scroll = JBScrollPane(JPanel(BorderLayout()).apply {
+    isOpaque = false
+    add(messages, BorderLayout.NORTH)
+  })
   private val input = JBTextField()
   private val agents: List<AgentServerConfig> = AcpConfig.load { systemLine("[конфиг] $it") }
   @Volatile private var providers: List<ProviderEntry> = ProvidersService.load(project.basePath) { systemLine("[providers] $it") }
@@ -378,6 +381,13 @@ class AgentPanel(private val project: Project) : JPanel(BorderLayout()), AcpClie
 
   // --- рендер ленты (дизайн VibeIDE: пузырь только у пользователя; агент — полная ширина; лучше оригинала: кап ширины строки, единая шкала радиусов 4/8, один язык подписей) ---
 
+  /** A chat row NEVER stretches vertically: max height is pinned to preferred. */
+  private open class ChatRow(layout: java.awt.LayoutManager) : JPanel(layout) {
+    init { isOpaque = false; alignmentX = Component.LEFT_ALIGNMENT }
+    override fun getMaximumSize(): java.awt.Dimension =
+      java.awt.Dimension(Int.MAX_VALUE, preferredSize.height)
+  }
+
   private class RoundedPanel(private val bg: java.awt.Color, private val radius: Int) : JPanel() {
     init { isOpaque = false }
     override fun paintComponent(g: java.awt.Graphics) {
@@ -409,15 +419,14 @@ class AgentPanel(private val project: Project) : JPanel(BorderLayout()), AcpClie
   private inner class AgentMessage {
     val text = proseArea()
     val meta = metaLabel("Агент · ${now()}", right = false)
-    val row = JPanel(BorderLayout(0, JBUI.scale(2))).apply {
-      isOpaque = false
+    val row: JPanel = object : ChatRow(BorderLayout(0, JBUI.scale(2))) {
+      // better than the original: cap the text column so lines stay readable in a wide panel
+      override fun getMaximumSize(): java.awt.Dimension =
+        java.awt.Dimension(JBUI.scale(720), preferredSize.height)
+    }.apply {
       border = JBUI.Borders.empty(4, 4, 8, 4)
       add(text, BorderLayout.CENTER)
       add(meta, BorderLayout.SOUTH)
-      // better than the original: cap the text column so lines stay readable in a wide panel
-      add(Box.createHorizontalStrut(0), BorderLayout.WEST)
-      alignmentX = Component.LEFT_ALIGNMENT
-      maximumSize = java.awt.Dimension(JBUI.scale(720), Int.MAX_VALUE)
     }
     fun append(s: String) { text.append(s) }
     fun finish(seconds: Double, suffix: String?) {
@@ -434,13 +443,12 @@ class AgentPanel(private val project: Project) : JPanel(BorderLayout()), AcpClie
         border = JBUI.Borders.empty(6, 8)
         add(proseArea().also { it.text = text }, BorderLayout.CENTER)
       }
-      val row = JPanel(BorderLayout(0, JBUI.scale(2))).apply {
-        isOpaque = false
+      val row = ChatRow(BorderLayout(0, JBUI.scale(2))).apply {
         border = JBUI.Borders.empty(4, 4, 8, 4)
         add(bubble, BorderLayout.CENTER)
         add(metaLabel("Вы · ${now()}", right = true), BorderLayout.SOUTH)
-        add(Box.createHorizontalStrut(JBUI.scale(120)), BorderLayout.WEST)
-        alignmentX = Component.LEFT_ALIGNMENT
+        // width-fit вправо: слева распорка съедает всё лишнее (мин. четверть ширины)
+        add(Box.createHorizontalStrut(JBUI.scale(160)), BorderLayout.WEST)
       }
       messages.add(row)
       revalidateScroll()
@@ -489,11 +497,9 @@ class AgentPanel(private val project: Project) : JPanel(BorderLayout()), AcpClie
           foreground = META_FG
         }, BorderLayout.WEST)
       }
-      val row = JPanel(BorderLayout()).apply {
-        isOpaque = false
+      val row = ChatRow(BorderLayout()).apply {
         border = JBUI.Borders.empty(1, 4)
         add(card, BorderLayout.WEST)
-        alignmentX = Component.LEFT_ALIGNMENT
       }
       messages.add(row)
       revalidateScroll()
