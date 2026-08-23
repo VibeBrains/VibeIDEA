@@ -101,7 +101,6 @@ class AgentPanel(private val project: Project) : JPanel(BorderLayout()), AcpClie
   init {
     border = JBUI.Borders.empty(4)
     val pipelineButton = JButton("Пайплайн…").apply { addActionListener { choosePipeline() } }
-    val checkpointsButton = JButton("Чекпоинты…").apply { addActionListener { showCheckpoints() } }
     val stopButton = JButton("Стоп").apply { addActionListener { stopAgent() } }
     val sendButton = JButton("Отправить").apply { addActionListener { send() } }
     modelCombo.isEnabled = false
@@ -115,8 +114,6 @@ class AgentPanel(private val project: Project) : JPanel(BorderLayout()), AcpClie
     val buttonsRow = JPanel().apply {
       layout = BoxLayout(this, BoxLayout.X_AXIS)
       add(pipelineButton)
-      add(Box.createHorizontalStrut(JBUI.scale(4)))
-      add(checkpointsButton)
       add(Box.createHorizontalGlue())
       add(stopButton)
     }
@@ -188,7 +185,7 @@ class AgentPanel(private val project: Project) : JPanel(BorderLayout()), AcpClie
   private fun sendToAcp(text: String, startedAt: Long) {
     ApplicationManager.getApplication().executeOnPooledThread {
       try {
-        checkpoints?.create("сообщение: ${text.take(48)}")?.let { checkpointLine("— чекпоинт ${it.hash.take(8)} · ${now()} —") }
+        checkpoints?.create("сообщение: ${text.take(48)}")?.let { checkpointLine(it) }
         val design = DesignContextFile.load(project.basePath)
         val fullPrompt = if (design != null) DesignContextFile.promptBlock(design) + "\n" + text else text
         ensureClient().prompt(fullPrompt).whenComplete { result, error ->
@@ -243,34 +240,6 @@ class AgentPanel(private val project: Project) : JPanel(BorderLayout()), AcpClie
     fresh.initializeAndOpenSession().get()
     systemLine("[агент] сессия открыта")
     return fresh
-  }
-
-  private fun showCheckpoints() {
-    val service = checkpoints ?: run { systemLine("[чекпоинты] проект не под git — недоступны"); return }
-    ApplicationManager.getApplication().executeOnPooledThread {
-      val list = service.list()
-      SwingUtilities.invokeLater {
-        if (list.isEmpty()) { systemLine("[чекпоинты] пока нет — создаются на каждое сообщение агенту"); return@invokeLater }
-        val fmt = java.time.format.DateTimeFormatter.ofPattern("HH:mm:ss")
-        val names = list.take(30).map {
-          "${java.time.Instant.ofEpochMilli(it.atMillis).atZone(java.time.ZoneId.systemDefault()).toLocalTime().format(fmt)} · ${it.hash.take(8)} · ${it.label}"
-        }
-        val choice = Messages.showDialog(project, "Откатить рабочую папку к снимку? Файлы, созданные позже, останутся.", "Vibe Agent: чекпоинты", names.toTypedArray(), 0, Messages.getQuestionIcon())
-        if (choice >= 0) {
-          val cp = list[choice]
-          val confirm = Messages.showYesNoDialog(project, "Рабочее дерево будет перезаписано состоянием снимка ${cp.hash.take(8)} («${cp.label}»). Продолжить?", "Подтверждение отката", Messages.getWarningIcon())
-          if (confirm == Messages.YES) {
-            ApplicationManager.getApplication().executeOnPooledThread {
-              val ok = service.restore(cp)
-              systemLine(if (ok) "⚑ откат к ${cp.hash.take(8)} выполнен" else "[чекпоинты] откат не удался (см. git)")
-              ApplicationManager.getApplication().invokeLater {
-                com.intellij.openapi.vfs.VfsUtil.markDirtyAndRefresh(true, true, true, com.intellij.openapi.vfs.LocalFileSystem.getInstance().findFileByPath(project.basePath!!))
-              }
-            }
-          }
-        }
-      }
-    }
   }
 
   private fun stopAgent() {
@@ -525,15 +494,34 @@ class AgentPanel(private val project: Project) : JPanel(BorderLayout()), AcpClie
     }
   }
 
-  /** Centered checkpoint line, ghost-quiet. */
-  private fun checkpointLine(text: String) {
+  /** Clickable checkpoint line in the feed (VibeIDE pattern): click = confirm + roll back. */
+  private fun checkpointLine(cp: com.vibe.agent.checkpoints.Checkpoint) {
     SwingUtilities.invokeLater {
-      messages.add(JLabel(text, JLabel.CENTER).apply {
-        font = com.intellij.util.ui.JBFont.label().deriveFont(Font.PLAIN, 10f)
-        foreground = META_FG
-        alignmentX = Component.LEFT_ALIGNMENT
-        border = JBUI.Borders.empty(2)
+      val label = JLabel("— чекпоинт ${cp.hash.take(8)} · ${now()} · нажмите, чтобы откатить к этой точке —", JLabel.CENTER)
+      label.font = com.intellij.util.ui.JBFont.label().deriveFont(Font.PLAIN, 10f)
+      label.foreground = META_FG
+      label.alignmentX = Component.LEFT_ALIGNMENT
+      label.border = JBUI.Borders.empty(3)
+      label.cursor = java.awt.Cursor.getPredefinedCursor(java.awt.Cursor.HAND_CURSOR)
+      label.toolTipText = "Откатить рабочую папку к состоянию перед этим сообщением (файлы, созданные позже, останутся)"
+      label.addMouseListener(object : java.awt.event.MouseAdapter() {
+        override fun mouseClicked(e: java.awt.event.MouseEvent) {
+          val confirm = Messages.showYesNoDialog(project,
+            "Рабочее дерево будет перезаписано снимком ${cp.hash.take(8)} («${cp.label}»). Файлы, созданные позже, останутся. Продолжить?",
+            "Откат к чекпоинту", Messages.getWarningIcon())
+          if (confirm == Messages.YES) {
+            ApplicationManager.getApplication().executeOnPooledThread {
+              val service = checkpoints ?: return@executeOnPooledThread
+              val ok = service.restore(cp)
+              systemLine(if (ok) "⚑ откат к ${cp.hash.take(8)} выполнен" else "[чекпоинты] откат не удался (см. git)")
+              ApplicationManager.getApplication().invokeLater {
+                com.intellij.openapi.vfs.VfsUtil.markDirtyAndRefresh(true, true, true, com.intellij.openapi.vfs.LocalFileSystem.getInstance().findFileByPath(project.basePath!!))
+              }
+            }
+          }
+        }
       })
+      messages.add(label)
       revalidateScroll()
     }
   }
