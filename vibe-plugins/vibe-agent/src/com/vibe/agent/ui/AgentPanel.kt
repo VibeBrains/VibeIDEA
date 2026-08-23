@@ -4,6 +4,7 @@ package com.vibe.agent.ui
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.ui.Messages
+import com.intellij.ui.JBColor
 import com.intellij.ui.components.JBScrollPane
 import com.intellij.ui.components.JBTextField
 import com.intellij.util.ui.JBUI
@@ -11,80 +12,91 @@ import com.vibe.agent.acp.AcpClient
 import com.vibe.agent.acp.AcpConfig
 import com.vibe.agent.acp.AgentServerConfig
 import com.vibe.agent.acp.IdeFileOps
-import com.vibe.agent.pipelines.PipelinesFile
 import com.vibe.agent.design.DesignContextFile
+import com.vibe.agent.pipelines.PipelinesFile
 import com.vibe.agent.providers.ChatMessage
 import com.vibe.agent.providers.LlmClient
 import com.vibe.agent.providers.ModelEntry
-import com.vibe.agent.providers.ProviderGuard
 import com.vibe.agent.providers.ProviderEntry
+import com.vibe.agent.providers.ProviderGuard
 import com.vibe.agent.providers.ProvidersService
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
-import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.put
 import java.awt.BorderLayout
+import java.awt.Component
 import java.awt.Font
+import java.awt.datatransfer.DataFlavor
+import java.io.File
+import java.time.LocalTime
+import java.time.format.DateTimeFormatter
+import javax.swing.Box
+import javax.swing.BoxLayout
 import javax.swing.DefaultComboBoxModel
 import javax.swing.JButton
 import javax.swing.JComboBox
+import javax.swing.JLabel
 import javax.swing.JPanel
 import javax.swing.JTextArea
 import javax.swing.SwingUtilities
+import javax.swing.TransferHandler
 
 /**
- * MVP agent chat: agent picker, streamed transcript, prompt input.
- * Permission requests pop a modal dialog; a closed dialog is a refusal
- * (VibeIDE contract), file operations are mapped through [IdeFileOps].
+ * VibeIDE-style chat: user bubbles on the RIGHT, agent bubbles on the LEFT,
+ * each with a time stamp; agent bubbles get the response duration on finish.
+ * Selection is two-step like VibeIDE: pick an agent/provider, then a model.
+ * Files dragged from the project tree drop into the input as relative paths.
  */
 class AgentPanel(private val project: Project) : JPanel(BorderLayout()), AcpClient.Handler {
-  private val transcript = JTextArea().apply {
-    isEditable = false
-    lineWrap = true
-    wrapStyleWord = true
-    font = Font(Font.MONOSPACED, Font.PLAIN, 12)
-  }
-  private val input = JBTextField()
   private sealed interface Target { val label: String }
   private data class AcpTarget(val config: AgentServerConfig) : Target {
     override val label: String get() = "Агент: ${config.name}"
   }
-  private data class LlmTarget(val provider: ProviderEntry, val model: ModelEntry) : Target {
-    override val label: String get() = "LLM: ${provider.name} · ${model.name}"
+  private data class LlmTarget(val provider: ProviderEntry) : Target {
+    override val label: String get() = "LLM: ${provider.name}"
   }
 
-  private val agents: List<AgentServerConfig> = AcpConfig.load { appendLine("[конфиг] $it") }
-  private val providers: List<ProviderEntry> = ProvidersService.load(project.basePath) { appendLine("[providers] $it") }
-  private val targets: List<Target> = buildList<Target> {
-    agents.forEach { add(AcpTarget(it)) }
-    providers.forEach { p ->
-      p.models.filter { it.active }
-        .sortedWith(compareByDescending<ModelEntry> { it.default }.thenByDescending { it.pinned }.thenBy { it.name })
-        .forEach { m -> add(LlmTarget(p, m)) }
-    }
+  private val messages = JPanel().apply {
+    layout = BoxLayout(this, BoxLayout.Y_AXIS)
+    border = JBUI.Borders.empty(6)
+    background = JBColor.PanelBackground
   }
-  private val agentCombo = JComboBox(DefaultComboBoxModel(targets.map { it.label }.toTypedArray()))
-  private var liveTargets: List<Target> = targets
+  private val scroll = JBScrollPane(messages)
+  private val input = JBTextField()
+  private val agents: List<AgentServerConfig> = AcpConfig.load { systemLine("[конфиг] $it") }
+  @Volatile private var providers: List<ProviderEntry> = ProvidersService.load(project.basePath) { systemLine("[providers] $it") }
+  private var targets: List<Target> = buildTargets()
+  private val targetCombo = JComboBox(DefaultComboBoxModel(targets.map { it.label }.toTypedArray()))
+  private val modelCombo = JComboBox<String>()
   private val llmClient = LlmClient()
   private val llmHistory = ArrayList<ChatMessage>()
-  private val sendButton = JButton("Отправить")
-  private val stopButton = JButton("Стоп")
   private val fileOps = IdeFileOps(project)
   private var client: AcpClient? = null
   @Volatile private var stepBuffer: StringBuilder? = null
+  @Volatile private var currentAgentBubble: Bubble? = null
   private val changedPaths = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
 
   init {
     border = JBUI.Borders.empty(4)
-    val pipelineButton = JButton("Пайплайн…")
-    pipelineButton.addActionListener { choosePipeline() }
+    val pipelineButton = JButton("Пайплайн…").apply { addActionListener { choosePipeline() } }
+    val stopButton = JButton("Стоп").apply { addActionListener { stopAgent() } }
+    val sendButton = JButton("Отправить").apply { addActionListener { send() } }
+    modelCombo.isEnabled = false
+    targetCombo.addActionListener { refreshModelCombo() }
+    val combos = JPanel().apply {
+      layout = BoxLayout(this, BoxLayout.X_AXIS)
+      add(targetCombo)
+      add(Box.createHorizontalStrut(4))
+      add(modelCombo)
+    }
     val top = JPanel(BorderLayout()).apply {
-      add(agentCombo, BorderLayout.CENTER)
       add(pipelineButton, BorderLayout.WEST)
+      add(combos, BorderLayout.CENTER)
       add(stopButton, BorderLayout.EAST)
     }
     val bottom = JPanel(BorderLayout()).apply {
@@ -92,69 +104,100 @@ class AgentPanel(private val project: Project) : JPanel(BorderLayout()), AcpClie
       add(sendButton, BorderLayout.EAST)
     }
     add(top, BorderLayout.NORTH)
-    add(JBScrollPane(transcript), BorderLayout.CENTER)
+    add(scroll, BorderLayout.CENTER)
     add(bottom, BorderLayout.SOUTH)
-    sendButton.addActionListener { send() }
     input.addActionListener { send() }
-    stopButton.addActionListener { stopAgent() }
-    appendLine("Vibe Agent готов. Агенты: ${agents.joinToString { it.name }} (реестр: ${AcpConfig.configPath()}).")
-    if (providers.isNotEmpty()) {
-      appendLine("Провайдеры (.vibe/providers.json): " + providers.joinToString { it.name })
-      ProviderGuard.scan(providers).forEach { f -> appendLine("[guard:${f.severity}] ${f.message}") }
-      fetchProviderModels()
+    installFileDrop()
+    systemLine("Vibe Agent готов. Агенты: ${agents.joinToString { it.name }}; провайдеры: ${providers.joinToString { it.name }.ifEmpty { "нет" }}.")
+    systemLine("Ключи провайдеров: Settings → Tools → Vibe Providers (или .vibe/.env). Реестры: ${AcpConfig.configPath()}, ~/.vibe/providers.json.")
+    ProviderGuard.scan(providers).forEach { f -> systemLine("[guard:${f.severity}] ${f.message}") }
+    refreshModelCombo()
+    fetchProviderModels()
+  }
+
+  private fun buildTargets(): List<Target> = buildList<Target> {
+    agents.forEach { add(AcpTarget(it)) }
+    providers.forEach { add(LlmTarget(it)) }
+  }
+
+  private fun selectedTarget(): Target? = targets.getOrNull(targetCombo.selectedIndex.coerceAtLeast(0))
+
+  private fun refreshModelCombo() {
+    val t = selectedTarget()
+    if (t is LlmTarget) {
+      val models = t.provider.models.filter { it.active }
+        .sortedWith(compareByDescending<ModelEntry> { it.default }.thenByDescending { it.pinned }.thenBy { it.name })
+      modelCombo.model = DefaultComboBoxModel(models.map { it.name }.toTypedArray())
+      modelCombo.isEnabled = models.isNotEmpty()
+    }
+    else {
+      modelCombo.model = DefaultComboBoxModel(arrayOf("— модель агента —"))
+      modelCombo.isEnabled = false
     }
   }
+
+  private fun selectedModel(provider: ProviderEntry): ModelEntry? {
+    val models = provider.models.filter { it.active }
+      .sortedWith(compareByDescending<ModelEntry> { it.default }.thenByDescending { it.pinned }.thenBy { it.name })
+    return models.getOrNull(modelCombo.selectedIndex.coerceAtLeast(0))
+  }
+
+  // --- отправка ---
 
   private fun send() {
     val text = input.text.trim()
     if (text.isEmpty()) return
     input.text = ""
-    appendLine("\n▶ Вы: $text")
-    when (val target = liveTargets.getOrNull(agentCombo.selectedIndex.coerceAtLeast(0))) {
-      is LlmTarget -> sendToLlm(target, text)
-      is AcpTarget, null -> ApplicationManager.getApplication().executeOnPooledThread {
-        try {
-          val design = DesignContextFile.load(project.basePath)
-          val fullPrompt = if (design != null) DesignContextFile.promptBlock(design) + "\n" + text else text
-          ensureClient().prompt(fullPrompt).whenComplete { result, error ->
-            if (error != null) appendLine("[ошибка] ${error.message}")
-            else {
-              val stop = result?.jsonObject?.get("stopReason")?.jsonPrimitive?.contentOrNull
-              appendLine("\n■ Ход завершён${if (stop != null) " ($stop)" else ""}")
-            }
+    userBubble(text)
+    val startedAt = System.currentTimeMillis()
+    when (val target = selectedTarget()) {
+      is LlmTarget -> sendToLlm(target, text, startedAt)
+      is AcpTarget -> sendToAcp(text, startedAt)
+      null -> systemLine("[ошибка] цель не выбрана")
+    }
+  }
+
+  private fun sendToAcp(text: String, startedAt: Long) {
+    ApplicationManager.getApplication().executeOnPooledThread {
+      try {
+        val design = DesignContextFile.load(project.basePath)
+        val fullPrompt = if (design != null) DesignContextFile.promptBlock(design) + "\n" + text else text
+        ensureClient().prompt(fullPrompt).whenComplete { result, error ->
+          val secs = (System.currentTimeMillis() - startedAt) / 1000.0
+          if (error != null) systemLine("[ошибка] ${error.message}")
+          else {
+            val stop = result?.jsonObject?.get("stopReason")?.jsonPrimitive?.contentOrNull
+            finishAgentBubble(secs, stop)
           }
         }
-        catch (e: Exception) {
-          appendLine("[ошибка] ${e.message}")
-        }
+      }
+      catch (e: Exception) {
+        systemLine("[ошибка] ${e.message}")
       }
     }
   }
 
-  private fun sendToLlm(target: LlmTarget, text: String) {
+  private fun sendToLlm(target: LlmTarget, text: String, startedAt: Long) {
     ApplicationManager.getApplication().executeOnPooledThread {
       try {
-        val resolved = ProvidersService.resolve(target.provider, project.basePath) { appendLine("[providers] $it") }
-        if (resolved == null) return@executeOnPooledThread
+        val resolved = ProvidersService.resolve(target.provider, project.basePath) { systemLine("[providers] $it") } ?: return@executeOnPooledThread
+        val model = selectedModel(target.provider) ?: run { systemLine("[providers] у '${target.provider.id}' нет активных моделей"); return@executeOnPooledThread }
         if (resolved.apiKey == null && !resolved.isLocal) {
-          appendLine("[providers] нет ключа для '${target.provider.id}': задайте apiKeyEnv в providers.json и значение в .vibe/.env (или переменной окружения)")
+          systemLine("[providers] нет ключа для '${target.provider.id}': Settings → Tools → Vibe Providers, либо .vibe/.env")
           return@executeOnPooledThread
         }
-        if (resolved.isLocal) appendLine("[локальная модель]")
+        if (resolved.isLocal) systemLine("[локальная модель]")
         llmHistory.add(ChatMessage("user", text))
         val answer = StringBuilder()
-        llmClient.chat(resolved, target.model, llmHistory) { delta ->
+        llmClient.chat(resolved, model, llmHistory) { delta ->
           answer.append(delta)
-          SwingUtilities.invokeLater {
-            transcript.append(delta)
-            transcript.caretPosition = transcript.document.length
-          }
+          appendAgentText(delta)
         }
         llmHistory.add(ChatMessage("assistant", answer.toString()))
-        appendLine("\n■ Ответ завершён (${target.model.id})")
+        finishAgentBubble((System.currentTimeMillis() - startedAt) / 1000.0, model.id)
       }
       catch (e: Exception) {
-        appendLine("[ошибка] ${e.message}")
+        systemLine("[ошибка] ${e.message}")
       }
     }
   }
@@ -162,57 +205,28 @@ class AgentPanel(private val project: Project) : JPanel(BorderLayout()), AcpClie
   private fun ensureClient(): AcpClient {
     val existing = client
     if (existing != null && existing.isAlive && existing.sessionId != null) return existing
-    val config = (liveTargets.getOrNull(agentCombo.selectedIndex.coerceAtLeast(0)) as? AcpTarget)?.config ?: agents.first()
-    appendLine("[агент] запускаю: ${config.command} ${config.args.joinToString(" ")}")
+    val config = (selectedTarget() as? AcpTarget)?.config ?: agents.first()
+    systemLine("[агент] запускаю: ${config.command} ${config.args.joinToString(" ")}")
     val fresh = AcpClient(config, project.basePath, this)
     fresh.start()
     client = fresh
     fresh.initializeAndOpenSession().get()
-    appendLine("[агент] сессия открыта")
+    systemLine("[агент] сессия открыта")
     return fresh
   }
 
-  /** models.fetch: merge fetched ids into static (static overrides by id), then rebuild the combo. */
-  private fun fetchProviderModels() {
-    ApplicationManager.getApplication().executeOnPooledThread {
-      var changed = false
-      val updated = providers.map { p ->
-        if (p.modelsFetch == null) return@map p
-        val resolved = ProvidersService.resolve(p, project.basePath) { } ?: return@map p
-        try {
-          val ids = llmClient.listModels(resolved, p.modelsFetch.ifBlank { null })
-          val known = p.models.map { it.id }.toSet()
-          val extra = ids.filter { it !in known }.map { ModelEntry(id = it) }
-          if (extra.isNotEmpty()) { changed = true; p.copy(models = p.models + extra) } else p
-        }
-        catch (e: Exception) {
-          appendLine("[providers] '${p.id}': каталог моделей не получен (${e.message}) — работаю по static")
-          p
-        }
-      }
-      if (changed) {
-        SwingUtilities.invokeLater {
-          val selected = agentCombo.selectedIndex
-          liveTargets = buildList<Target> {
-            agents.forEach { add(AcpTarget(it)) }
-            updated.forEach { p ->
-              p.models.filter { it.active }
-                .sortedWith(compareByDescending<ModelEntry> { it.default }.thenByDescending { it.pinned }.thenBy { it.name })
-                .forEach { m -> add(LlmTarget(p, m)) }
-            }
-          }
-          agentCombo.model = DefaultComboBoxModel(liveTargets.map { it.label }.toTypedArray())
-          if (selected in liveTargets.indices) agentCombo.selectedIndex = selected
-          appendLine("[providers] каталоги моделей подтянуты")
-        }
-      }
-    }
+  private fun stopAgent() {
+    client?.stop()
+    client = null
+    systemLine("[агент] остановлен")
   }
 
+  // --- пайплайны ---
+
   private fun choosePipeline() {
-    val pipelines = PipelinesFile.load(project.basePath) { appendLine("[pipelines] $it") }
+    val pipelines = PipelinesFile.load(project.basePath) { systemLine("[pipelines] $it") }
     if (pipelines.isEmpty()) {
-      appendLine("[pipelines] нет пайплайнов: создайте .vibe/pipelines.json (спека — docs/vibe/manuals/pipelinesSpec.md)")
+      systemLine("[pipelines] нет пайплайнов: создайте .vibe/pipelines.json (спека — docs/vibe/manuals/pipelinesSpec.md)")
       return
     }
     val names = pipelines.map { "${it.name} (${it.steps.size} шагов)" }
@@ -221,7 +235,7 @@ class AgentPanel(private val project: Project) : JPanel(BorderLayout()), AcpClie
   }
 
   private fun runPipeline(pipeline: com.vibe.agent.pipelines.Pipeline) {
-    appendLine("\n═══ Пайплайн «${pipeline.name}» — ${pipeline.steps.size} шагов ═══")
+    systemLine("═══ Пайплайн «${pipeline.name}» — ${pipeline.steps.size} шагов ═══")
     ApplicationManager.getApplication().executeOnPooledThread {
       val artifacts = LinkedHashSet<String>()
       var lastSummary: String? = null
@@ -229,10 +243,10 @@ class AgentPanel(private val project: Project) : JPanel(BorderLayout()), AcpClie
       pipeline.steps.forEachIndexed { i, step ->
         val header = "— Шаг ${i + 1}/${pipeline.steps.size} [${step.role}]"
         if (failed && !step.continueOnFailure) {
-          appendLine("$header — пропущен (предыдущий шаг провалился)")
+          systemLine("$header — пропущен (предыдущий шаг провалился)")
           return@forEachIndexed
         }
-        appendLine("$header ${step.task.take(80)}")
+        systemLine("$header ${step.task.take(80)}")
         val prompt = buildString {
           appendLine(PipelinesFile.rolePreamble(step.role))
           appendLine("Задача: ${step.task}")
@@ -246,34 +260,178 @@ class AgentPanel(private val project: Project) : JPanel(BorderLayout()), AcpClie
           val c = ensureClient()
           changedPaths.clear()
           stepBuffer = StringBuilder()
+          val startedAt = System.currentTimeMillis()
           c.prompt(prompt).get()
+          finishAgentBubble((System.currentTimeMillis() - startedAt) / 1000.0, "шаг ${i + 1}")
           val summaryText = stepBuffer?.toString().orEmpty()
           lastSummary = summaryText.takeLast(2000).ifBlank { "(шаг не оставил текста)" }
           artifacts.addAll(changedPaths)
-          appendLine("\n$header завершён; изменённых файлов: ${changedPaths.size}")
+          systemLine("$header завершён; изменённых файлов: ${changedPaths.size}")
         }
         catch (e: Exception) {
           failed = true
-          appendLine("$header ПРОВАЛЕН: ${e.message}")
+          systemLine("$header ПРОВАЛЕН: ${e.message}")
         }
         finally {
           stepBuffer = null
         }
       }
-      appendLine("═══ Пайплайн «${pipeline.name}» ${if (failed) "остановлен с провалом" else "завершён"} ═══")
+      systemLine("═══ Пайплайн «${pipeline.name}» ${if (failed) "остановлен с провалом" else "завершён"} ═══")
     }
   }
 
-  private fun stopAgent() {
-    client?.stop()
-    client = null
-    appendLine("[агент] остановлен")
+  // --- models.fetch ---
+
+  private fun fetchProviderModels() {
+    ApplicationManager.getApplication().executeOnPooledThread {
+      var changed = false
+      val updated = providers.map { p ->
+        if (p.modelsFetch == null) return@map p
+        val resolved = ProvidersService.resolve(p, project.basePath) { } ?: return@map p
+        try {
+          val ids = llmClient.listModels(resolved, p.modelsFetch.ifBlank { null })
+          val known = p.models.map { it.id }.toSet()
+          val extra = ids.filter { it !in known }.map { ModelEntry(id = it) }
+          if (extra.isNotEmpty()) { changed = true; p.copy(models = p.models + extra) } else p
+        }
+        catch (e: Exception) {
+          systemLine("[providers] '${p.id}': каталог моделей не получен (${e.message}) — работаю по static")
+          p
+        }
+      }
+      if (changed) {
+        SwingUtilities.invokeLater {
+          providers = updated
+          val selected = targetCombo.selectedIndex
+          targets = buildTargets()
+          targetCombo.model = DefaultComboBoxModel(targets.map { it.label }.toTypedArray())
+          if (selected in targets.indices) targetCombo.selectedIndex = selected
+          refreshModelCombo()
+          systemLine("[providers] каталоги моделей подтянуты")
+        }
+      }
+    }
   }
 
-  private fun appendLine(text: String) {
+  // --- drag-n-drop из дерева проекта ---
+
+  private fun installFileDrop() {
+    val handler = object : TransferHandler() {
+      override fun canImport(support: TransferSupport): Boolean =
+        support.isDataFlavorSupported(DataFlavor.javaFileListFlavor)
+
+      override fun importData(support: TransferSupport): Boolean {
+        if (!canImport(support)) return false
+        @Suppress("UNCHECKED_CAST")
+        val files = support.transferable.getTransferData(DataFlavor.javaFileListFlavor) as List<File>
+        val base = project.basePath
+        val paths = files.joinToString(" ") { f ->
+          val p = f.absolutePath
+          if (base != null && p.startsWith(base)) p.removePrefix(base).removePrefix("/") else p
+        }
+        input.text = (input.text + " " + paths).trim() + " "
+        input.requestFocusInWindow()
+        return true
+      }
+    }
+    input.transferHandler = handler
+    messages.transferHandler = handler
+    transferHandler = handler
+  }
+
+  // --- пузыри ---
+
+  private inner class Bubble(role: String, meta: String, right: Boolean) {
+    val header = JLabel(meta).apply {
+      font = font.deriveFont(Font.PLAIN, 10f)
+      foreground = JBColor.GRAY
+    }
+    val text = JTextArea().apply {
+      isEditable = false
+      lineWrap = true
+      wrapStyleWord = true
+      font = Font(Font.MONOSPACED, Font.PLAIN, 12)
+      background = if (right) JBColor(0xD8ECF8, 0x2A3550) else JBColor(0xEDEDED, 0x2B2D30)
+      border = JBUI.Borders.empty(6, 8)
+    }
+    val row = JPanel(BorderLayout()).apply {
+      isOpaque = false
+      border = JBUI.Borders.emptyBottom(6)
+      val inner = JPanel(BorderLayout(0, 2)).apply {
+        isOpaque = false
+        add(header, BorderLayout.NORTH)
+        add(text, BorderLayout.CENTER)
+      }
+      add(inner, BorderLayout.CENTER)
+      add(Box.createHorizontalStrut(60), if (right) BorderLayout.WEST else BorderLayout.EAST)
+      alignmentX = Component.LEFT_ALIGNMENT
+    }
+    init {
+      header.horizontalAlignment = if (right) JLabel.RIGHT else JLabel.LEFT
+    }
+    fun append(t: String) { text.append(t) }
+    fun setMeta(m: String) { header.text = m }
+  }
+
+  private fun now(): String = LocalTime.now().format(DateTimeFormatter.ofPattern("HH:mm"))
+
+  private fun userBubble(text: String) {
     SwingUtilities.invokeLater {
-      transcript.append(text + "\n")
-      transcript.caretPosition = transcript.document.length
+      val b = Bubble("user", "Вы · ${now()}", right = true)
+      b.append(text)
+      messages.add(b.row)
+      revalidateScroll()
+    }
+    currentAgentBubble = null
+  }
+
+  private fun agentBubble(): Bubble {
+    var b = currentAgentBubble
+    if (b == null) {
+      b = Bubble("agent", "Агент · ${now()}", right = false)
+      currentAgentBubble = b
+      SwingUtilities.invokeLater {
+        messages.add(b.row)
+        revalidateScroll()
+      }
+    }
+    return b
+  }
+
+  private fun appendAgentText(text: String) {
+    val b = agentBubble()
+    SwingUtilities.invokeLater {
+      b.append(text)
+      revalidateScroll()
+    }
+  }
+
+  private fun finishAgentBubble(seconds: Double, suffix: String?) {
+    val b = currentAgentBubble ?: return
+    currentAgentBubble = null
+    SwingUtilities.invokeLater {
+      b.setMeta("Агент · ${now()} · ${"%.1f".format(seconds)} с${suffix?.let { " · $it" } ?: ""}")
+      revalidateScroll()
+    }
+  }
+
+  private fun systemLine(text: String) {
+    SwingUtilities.invokeLater {
+      messages.add(JLabel(text).apply {
+        font = font.deriveFont(Font.PLAIN, 10f)
+        foreground = JBColor.GRAY
+        alignmentX = Component.LEFT_ALIGNMENT
+        border = JBUI.Borders.empty(2, 4)
+      })
+      revalidateScroll()
+    }
+  }
+
+  private fun revalidateScroll() {
+    messages.revalidate()
+    messages.repaint()
+    SwingUtilities.invokeLater {
+      scroll.verticalScrollBar.value = scroll.verticalScrollBar.maximum
     }
   }
 
@@ -282,21 +440,14 @@ class AgentPanel(private val project: Project) : JPanel(BorderLayout()), AcpClie
   override fun onSessionUpdate(update: JsonObject) {
     val u = update["update"]?.jsonObject ?: return
     when (u["sessionUpdate"]?.jsonPrimitive?.contentOrNull) {
-      "agent_message_chunk" -> appendChunk(u)
-      "agent_thought_chunk" -> {}
-      "tool_call" -> appendLine("⚙ ${u["title"]?.jsonPrimitive?.contentOrNull ?: u["kind"]?.jsonPrimitive?.contentOrNull ?: "инструмент"}")
-      "tool_call_update" -> {}
-      "plan" -> appendLine("🗺 план обновлён")
+      "agent_message_chunk" -> {
+        val text = u["content"]?.jsonObject?.get("text")?.jsonPrimitive?.contentOrNull ?: return
+        stepBuffer?.append(text)
+        appendAgentText(text)
+      }
+      "tool_call" -> systemLine("⚙ ${u["title"]?.jsonPrimitive?.contentOrNull ?: u["kind"]?.jsonPrimitive?.contentOrNull ?: "инструмент"}")
+      "plan" -> systemLine("🗺 план обновлён")
       else -> {}
-    }
-  }
-
-  private fun appendChunk(u: JsonObject) {
-    val text = u["content"]?.jsonObject?.get("text")?.jsonPrimitive?.contentOrNull ?: return
-    stepBuffer?.append(text)
-    SwingUtilities.invokeLater {
-      transcript.append(text)
-      transcript.caretPosition = transcript.document.length
     }
   }
 
@@ -331,10 +482,10 @@ class AgentPanel(private val project: Project) : JPanel(BorderLayout()), AcpClie
     return fileOps.writeTextFile(params)
   }
 
-  override fun onProtocolLog(line: String) = appendLine(line)
+  override fun onProtocolLog(line: String) = systemLine(line)
 
   override fun onProcessExit(code: Int) {
-    appendLine("[агент] процесс завершился (код $code)")
+    systemLine("[агент] процесс завершился (код $code)")
     client = null
   }
 }

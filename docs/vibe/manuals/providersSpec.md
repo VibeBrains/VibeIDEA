@@ -64,7 +64,9 @@
 
 ## Ключи API
 
-Приоритет резолва: `apiKeyRef` (защищённое хранилище ОС) → `.vibe/.env` проекта → `~/.vibe/.env` → переменная окружения ОС (имя из `apiKeyEnv`). Формат `.env`: строки `ИМЯ=значение`, `#`-комментарии; интерполяции нет; файл в `.gitignore`. Для localhost-провайдера ключ не обязателен, чат помечается меткой `[локальная модель]`.
+**Удобный путь: Settings → Tools → Vibe Providers** — поле ключа на каждого провайдера, значение сохраняется в защищённое хранилище ОС (Keychain) под `apiKeyRef` (или id провайдера, если `apiKeyRef` не задан).
+
+Приоритет резолва: защищённое хранилище (`apiKeyRef` → id) → `.vibe/.env` проекта → `~/.vibe/.env` → переменная окружения ОС (имя из `apiKeyEnv`). Формат `.env`: строки `ИМЯ=значение`, `#`-комментарии; интерполяции нет; файл в `.gitignore`. Для localhost-провайдера ключ не обязателен, чат помечается меткой `[локальная модель]`.
 
 Точный путь: клиент дописывает к `baseURL` только имя метода — anthropic: `/messages`, openai: `/chat/completions`, gemini: `/models/<id>:streamGenerateContent` — поэтому версию пути включайте в `baseURL` сами: `https://api.anthropic.com/v1`, `http://localhost:11434/v1`, `https://generativelanguage.googleapis.com/v1beta`. Для gemini дефолтный auth-способ — `{"type":"query","name":"key"}` либо заголовок `x-goog-api-key` (auth `header`).
 

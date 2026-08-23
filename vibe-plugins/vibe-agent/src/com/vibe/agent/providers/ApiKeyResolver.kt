@@ -14,11 +14,18 @@ import java.nio.file.Path
  * providers.json and never reaches the transcript.
  */
 object ApiKeyResolver {
+  fun attributes(ref: String): CredentialAttributes =
+    CredentialAttributes(generateServiceName("VibeIDEA Providers", ref))
+
+  fun storedKey(provider: ProviderEntry): String? =
+    PasswordSafe.instance.getPassword(attributes(provider.apiKeyRef ?: provider.id))
+
+  fun storeKey(provider: ProviderEntry, key: String?) {
+    PasswordSafe.instance.setPassword(attributes(provider.apiKeyRef ?: provider.id), key?.ifBlank { null })
+  }
+
   fun resolve(provider: ProviderEntry, projectBase: String?): String? {
-    provider.apiKeyRef?.let { ref ->
-      val attrs = CredentialAttributes(generateServiceName("VibeIDEA Providers", ref))
-      PasswordSafe.instance.getPassword(attrs)?.let { return it }
-    }
+    storedKey(provider)?.let { return it }
     provider.apiKeyEnv?.let { envName ->
       dotEnv(projectBase)[envName]?.let { return it }
       System.getenv(envName)?.let { return it }
