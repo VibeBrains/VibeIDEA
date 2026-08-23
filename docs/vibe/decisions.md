@@ -20,3 +20,5 @@
 
 12. **Падение search_index (traverseUI) под нашим префиксом** → скипнуть шаг / чинить платформу → **точечная правка платформы** `AppUIUtil.loadConsentsForEditing` (`toMutableList()`) → это латентный баг апстрима на продуктах без бандленных согласий (`removeIf` на иммутабельном списке); скип шага деградировал бы поиск по настройкам. Запись в FORK_CHANGES.md, кандидат на отправку апстриму.
 13. **Источник LSP4IJ для бандла** → Marketplace / GitHub releases → **GitHub releases с пином sha256** (`vibe-plugins/deps/download.sh`) → артефакт EPL-2.0 раздаётся самим Red Hat на GitHub; Marketplace-ToS не затрагивается вовсе.
+
+14. **ACP-клиент: официальный Kotlin SDK или свой минимальный** → SDK из Maven Central / свой ndjson JSON-RPC → **свой минимальный (~250 строк)** → затащить внешнюю Maven-зависимость в JPS+Bazel-граф IC — отдельная инженерная задача с рисками, а протокольная поверхность MVP крошечная; kotlinx-serialization уже в платформе (JsonElement-API не требует компилятор-плагина). Миграция на SDK — открытый пункт roadmap, интерфейс клиента изолирован в `acp/`.

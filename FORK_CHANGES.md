@@ -33,6 +33,9 @@
 - `lib/vibe/lsp4ij/` — вендоренный API-jar LSP4IJ (компиляция, scope PROVIDED — в наш плагин не пакуется) + свой `BUILD.bazel`-пакет.
 - `.idea/libraries/vibe_lsp4ij.xml`, строки в `.idea/modules.xml` — регистрация модулей (аддитивно).
 
+### Добавлено для Фазы 3 (агентская обвязка)
+- `vibe-plugins/vibe-agent/` — плагин `com.vibe.agent`: ACP-клиент (ndjson JSON-RPC/stdio), ToolWindow-чат, permission-гейты, маппинг fs-запросов на Document/VFS. **Причина:** ACP-клиент JetBrains закрыт и в IC отсутствует.
+
 ## Запланированные изменения
 
 - [ ] Свой `README.md` (замена апстримного — identity форка) — Фаза 1.

@@ -33,10 +33,10 @@
 
 ## Фаза 3 — Агентская обвязка (плагин `com.vibe.agent`)
 
-- [ ] ACP-клиент на Kotlin SDK `com.agentclientprotocol:acp`: спавн агента, `initialize` / `session/new` / `session/prompt` / `session/update`, permissions.
-- [ ] UI: ToolWindow (Swing или JCEF — решить по референсам Continue / jetbrains-cc-gui / ProxyAI).
-- [ ] Маппинг ACP→платформа: `fs/read_text_file`→VFS/Document, `fs/write_text_file`→WriteCommandAction + diff-превью (DiffManager), `terminal/*`→Terminal API, async VFS refresh после внешних записей.
-- [ ] Совместимость с `~/.jetbrains/acp.json` и ACP Agent Registry; Claude — через `claude-agent-acp`.
+- [~] ACP-клиент — ✅ (2026-08-23) `vibe-plugins/vibe-agent/` (`com.vibe.agent`): собственный минимальный клиент (ndjson JSON-RPC 2.0/stdio, ~250 строк, без внешнего SDK — kotlinx-serialization JsonElement без компилятор-плагина): `initialize`/`session/new`/`session/prompt`/`session/update`, permission-диалог (закрыт = отказ), спавн без оболочки, PATH-фикс для GUI macOS. `plugins/vibe-agent/lib/vibe-agent.jar` в дистрибутиве. Осталось: живой прогон с реальным агентом; миграция на официальный Kotlin SDK — осознанная развилка (см. decisions №14).
+- [~] UI — ✅ ToolWindow «Vibe Agent» (Swing, путь ProxyAI): выбор агента, стриминг-транскрипт, ввод, стоп. Осталось: rich-рендер (markdown, диффы), JCEF-решение по мере роста.
+- [~] Маппинг ACP→платформа — ✅ `fs/read_text_file` видит несохранённые правки (Document-first), `fs/write_text_file` — WriteCommandAction для открытых файлов, NIO+async VFS refresh для остальных. Осталось: diff-превью перед записью (DiffManager), `terminal/*`→Terminal API.
+- [x] Совместимость с `~/.jetbrains/acp.json` — ✅ (2026-08-23) толерантный парсер (битая запись пропускается), дефолт — Claude Code через `npx @agentclientprotocol/claude-agent-acp`; спека формата: [manuals/acpAgentsSpec.md](manuals/acpAgentsSpec.md).
 - [ ] Перенос контрактов VibeIDE: hooks (0/2/прочее), turn checks (закрытый тип), предохранители, VERIFY-GATE, бюджеты, HTTP API (loopback + Host-check до токена), Config Guard, защита source-папок по всем content roots, Skills (SKILL.md).
 
 ## Фаза 4 — Релизная дисциплина

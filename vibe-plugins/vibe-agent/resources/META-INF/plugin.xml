@@ -1,0 +1,17 @@
+<idea-plugin>
+  <id>com.vibe.agent</id>
+  <name>Vibe Agent</name>
+  <vendor>VibeBrains</vendor>
+  <description><![CDATA[
+    Agent harness for VibeIDEA: a native Agent Client Protocol (ACP) client.
+    Connects local coding agents (Claude Code via claude-agent-acp, Codex, Gemini CLI,
+    goose and 60+ others from the ACP registry) to the IDE: streamed sessions,
+    permission-gated tool calls, IDE-mapped file reads/writes.
+    Compatible with the ~/.jetbrains/acp.json agent registry format.
+  ]]></description>
+  <depends>com.intellij.modules.platform</depends>
+  <extensions defaultExtensionNs="com.intellij">
+    <toolWindow id="VibeAgent" anchor="right" factoryClass="com.vibe.agent.ui.VibeAgentToolWindowFactory" icon="/icons/vibeAgent.svg"/>
+    <notificationGroup id="Vibe Agent" displayType="BALLOON"/>
+  </extensions>
+</idea-plugin>
