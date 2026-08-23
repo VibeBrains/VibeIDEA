@@ -90,6 +90,7 @@ class AgentPanel(private val project: Project) : JPanel(BorderLayout()), AcpClie
   private val modelCombo = JComboBox<String>()
   private val llmClient = LlmClient()
   private val llmHistory = ArrayList<ChatMessage>()
+  private val llmCancel = java.util.concurrent.atomic.AtomicBoolean(false)
   private val fileOps = IdeFileOps(project)
   private var client: AcpClient? = null
   private val checkpoints: CheckpointService? = project.basePath?.let { CheckpointService(it) }
@@ -111,15 +112,20 @@ class AgentPanel(private val project: Project) : JPanel(BorderLayout()), AcpClie
       add(Box.createHorizontalStrut(4))
       add(modelCombo)
     }
-    val leftButtons = JPanel().apply {
+    val buttonsRow = JPanel().apply {
       layout = BoxLayout(this, BoxLayout.X_AXIS)
       add(pipelineButton)
+      add(Box.createHorizontalStrut(JBUI.scale(4)))
       add(checkpointsButton)
+      add(Box.createHorizontalGlue())
+      add(stopButton)
     }
-    val top = JPanel(BorderLayout()).apply {
-      add(leftButtons, BorderLayout.WEST)
-      add(combos, BorderLayout.CENTER)
-      add(stopButton, BorderLayout.EAST)
+    val top = JPanel().apply {
+      layout = BoxLayout(this, BoxLayout.Y_AXIS)
+      add(combos.apply { alignmentX = Component.LEFT_ALIGNMENT })
+      add(Box.createVerticalStrut(JBUI.scale(4)))
+      add(buttonsRow.apply { alignmentX = Component.LEFT_ALIGNMENT })
+      border = JBUI.Borders.emptyBottom(4)
     }
     val bottom = JPanel(BorderLayout()).apply {
       add(input, BorderLayout.CENTER)
@@ -212,7 +218,8 @@ class AgentPanel(private val project: Project) : JPanel(BorderLayout()), AcpClie
         if (resolved.isLocal) systemLine("[локальная модель]")
         llmHistory.add(ChatMessage("user", text))
         val answer = StringBuilder()
-        llmClient.chat(resolved, model, llmHistory) { delta ->
+        llmCancel.set(false)
+        llmClient.chat(resolved, model, llmHistory, { llmCancel.get() }) { delta ->
           answer.append(delta)
           appendAgentText(delta)
         }
@@ -267,9 +274,10 @@ class AgentPanel(private val project: Project) : JPanel(BorderLayout()), AcpClie
   }
 
   private fun stopAgent() {
+    llmCancel.set(true)
     client?.stop()
     client = null
-    systemLine("[агент] остановлен")
+    systemLine("[остановлено] агент выключен; стрим провайдера прерван, если шёл")
   }
 
   // --- пайплайны ---

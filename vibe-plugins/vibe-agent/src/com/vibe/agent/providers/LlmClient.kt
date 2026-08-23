@@ -30,14 +30,17 @@ data class ChatMessage(val role: String, val text: String)
  */
 class LlmClient(private val http: HttpClient = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(20)).build()) {
   private val json = Json { ignoreUnknownKeys = true }
+  @Volatile private var cancelled: () -> Boolean = { false }
 
   /** Blocking call; invoke from a pooled thread. onDelta receives text chunks as they stream. */
   fun chat(
     provider: ResolvedProvider,
     model: ModelEntry,
     messages: List<ChatMessage>,
+    isCancelled: () -> Boolean = { false },
     onDelta: (String) -> Unit,
   ) {
+    this.cancelled = isCancelled
     when (provider.protocol) {
       "anthropic" -> anthropicChat(provider, model, messages, onDelta)
       "gemini" -> geminiChat(provider, model, messages, onDelta)
@@ -222,6 +225,7 @@ class LlmClient(private val http: HttpClient = HttpClient.newBuilder().connectTi
         throw RuntimeException("HTTP " + response.statusCode() + ": " + reader.readText().take(500))
       }
       reader.forEachLine { line ->
+        if (cancelled()) throw java.io.InterruptedIOException("остановлено пользователем")
         if (line.startsWith("data:")) onData(line.removePrefix("data:").trim())
       }
     }
