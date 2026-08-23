@@ -37,6 +37,7 @@ jvm_library(
         "//platform/indexing-api:indexing",
         "//uast/uast-common:uast",
         "//java/java-psi-api:psi",
+        "//platform/diff-api:diff",
         "//platform/lang-impl",
     ],
 )

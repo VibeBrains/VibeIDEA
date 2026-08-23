@@ -47,7 +47,7 @@
 ## Путь переноса VibeIDE→VibeIDEA (очередь по gap-анализу 2026-08-23)
 
 1. [ ] Живой E2E-прогон ACP (частично ✅ — чат с Claude Code подтверждён владельцем 2026-08-23; systematically не гонялся) — S/M
-2. [ ] Diff-превью перед записью (DiffManager; «каждое действие — вопрос с диффом ДО записи») — S/M
+2. [x] Diff-превью перед записью — ✅ (2026-08-23) WritePreview: модальный платформенный диффер «Было→Станет» на каждый fs/write, закрыт = отказ; неизменённое содержимое — без диалога
 3. [ ] `terminal/*` → Terminal API + контракты команд (timeout clamp, background, head+tail 80КБ, стоп-вопрос на разрушительных) — M
 4. [ ] Хуки `.vibe/hooks.json` (0=разрешено/2=отказ/прочее=поломка; TrustedProjects-гейт) — S
 5. [ ] Turn checks + предохранители-залипания (PersistentStateComponent) + `.vibe/audit.jsonl` — M
@@ -56,7 +56,7 @@
 8. [ ] Защита от отравления контекста + детекция секретов + нормализация tool-call'ов — S
 9. [ ] providers.json: кэш последнего набора + вотчер (AsyncFileListener) — S
 10. [ ] Skills (SKILL.md, открытый стандарт) + валидатор — S/M
-11. [ ] Чекпоинты рабочей папки на каждое сообщение (git-объекты; Local History покрывает пофайлово) — M
+11. [x] Чекпоинты — ✅ (2026-08-23) CheckpointService: снимок дерева через временный индекс (write-tree/commit-tree, HEAD/индекс не трогаются), журнал .vibe/checkpoints.jsonl, откат с подтверждением + VFS refresh; UI-кнопка со списком
 12. [ ] Диспетчерская + `agent-runs.jsonl` (heartbeat, «Проверить запуск») — S/M
 13. [ ] FIM: расширение (типы предсказаний VibeIDE, фильтры не-кода, кэш+SLA-метрики) — M
 14. [x] `servers.json` — ✅ (2026-08-23) `vibe-plugins/vibe-server` (`com.vibe.server`): контракт VibeIDE целиком (task/service, 5 readyCheck, волны топосортом, skipIf, pathPrepend, envFile, stopCommand, исключения с причинами), тулвиндоу. Спека serversSpec.md. Осталось: autoStart с гейтом доверия, previewPath-превью. Решение: свой раннер, НЕ Run Configurations (волны+readyCheck в RC не выражаются)

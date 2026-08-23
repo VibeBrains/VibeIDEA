@@ -12,6 +12,7 @@ import com.vibe.agent.acp.AcpClient
 import com.vibe.agent.acp.AcpConfig
 import com.vibe.agent.acp.AgentServerConfig
 import com.vibe.agent.acp.IdeFileOps
+import com.vibe.agent.checkpoints.CheckpointService
 import com.vibe.agent.design.DesignContextFile
 import com.vibe.agent.pipelines.PipelinesFile
 import com.vibe.agent.providers.ChatMessage
@@ -77,13 +78,15 @@ class AgentPanel(private val project: Project) : JPanel(BorderLayout()), AcpClie
   private val llmHistory = ArrayList<ChatMessage>()
   private val fileOps = IdeFileOps(project)
   private var client: AcpClient? = null
+  private val checkpoints: CheckpointService? = project.basePath?.let { CheckpointService(it) }
   @Volatile private var stepBuffer: StringBuilder? = null
-  @Volatile private var currentAgentBubble: Bubble? = null
+  @Volatile private var currentAgentMessage: AgentMessage? = null
   private val changedPaths = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
 
   init {
     border = JBUI.Borders.empty(4)
     val pipelineButton = JButton("Пайплайн…").apply { addActionListener { choosePipeline() } }
+    val checkpointsButton = JButton("Чекпоинты…").apply { addActionListener { showCheckpoints() } }
     val stopButton = JButton("Стоп").apply { addActionListener { stopAgent() } }
     val sendButton = JButton("Отправить").apply { addActionListener { send() } }
     modelCombo.isEnabled = false
@@ -94,8 +97,13 @@ class AgentPanel(private val project: Project) : JPanel(BorderLayout()), AcpClie
       add(Box.createHorizontalStrut(4))
       add(modelCombo)
     }
+    val leftButtons = JPanel().apply {
+      layout = BoxLayout(this, BoxLayout.X_AXIS)
+      add(pipelineButton)
+      add(checkpointsButton)
+    }
     val top = JPanel(BorderLayout()).apply {
-      add(pipelineButton, BorderLayout.WEST)
+      add(leftButtons, BorderLayout.WEST)
       add(combos, BorderLayout.CENTER)
       add(stopButton, BorderLayout.EAST)
     }
@@ -160,6 +168,7 @@ class AgentPanel(private val project: Project) : JPanel(BorderLayout()), AcpClie
   private fun sendToAcp(text: String, startedAt: Long) {
     ApplicationManager.getApplication().executeOnPooledThread {
       try {
+        checkpoints?.create("сообщение: ${text.take(48)}")?.let { checkpointLine("— чекпоинт ${it.hash.take(8)} · ${now()} —") }
         val design = DesignContextFile.load(project.basePath)
         val fullPrompt = if (design != null) DesignContextFile.promptBlock(design) + "\n" + text else text
         ensureClient().prompt(fullPrompt).whenComplete { result, error ->
@@ -213,6 +222,34 @@ class AgentPanel(private val project: Project) : JPanel(BorderLayout()), AcpClie
     fresh.initializeAndOpenSession().get()
     systemLine("[агент] сессия открыта")
     return fresh
+  }
+
+  private fun showCheckpoints() {
+    val service = checkpoints ?: run { systemLine("[чекпоинты] проект не под git — недоступны"); return }
+    ApplicationManager.getApplication().executeOnPooledThread {
+      val list = service.list()
+      SwingUtilities.invokeLater {
+        if (list.isEmpty()) { systemLine("[чекпоинты] пока нет — создаются на каждое сообщение агенту"); return@invokeLater }
+        val fmt = java.time.format.DateTimeFormatter.ofPattern("HH:mm:ss")
+        val names = list.take(30).map {
+          "${java.time.Instant.ofEpochMilli(it.atMillis).atZone(java.time.ZoneId.systemDefault()).toLocalTime().format(fmt)} · ${it.hash.take(8)} · ${it.label}"
+        }
+        val choice = Messages.showDialog(project, "Откатить рабочую папку к снимку? Файлы, созданные позже, останутся.", "Vibe Agent: чекпоинты", names.toTypedArray(), 0, Messages.getQuestionIcon())
+        if (choice >= 0) {
+          val cp = list[choice]
+          val confirm = Messages.showYesNoDialog(project, "Рабочее дерево будет перезаписано состоянием снимка ${cp.hash.take(8)} («${cp.label}»). Продолжить?", "Подтверждение отката", Messages.getWarningIcon())
+          if (confirm == Messages.YES) {
+            ApplicationManager.getApplication().executeOnPooledThread {
+              val ok = service.restore(cp)
+              systemLine(if (ok) "⚑ откат к ${cp.hash.take(8)} выполнен" else "[чекпоинты] откат не удался (см. git)")
+              ApplicationManager.getApplication().invokeLater {
+                com.intellij.openapi.vfs.VfsUtil.markDirtyAndRefresh(true, true, true, com.intellij.openapi.vfs.LocalFileSystem.getInstance().findFileByPath(project.basePath!!))
+              }
+            }
+          }
+        }
+      }
+    }
   }
 
   private fun stopAgent() {
@@ -339,78 +376,139 @@ class AgentPanel(private val project: Project) : JPanel(BorderLayout()), AcpClie
     transferHandler = handler
   }
 
-  // --- пузыри ---
+  // --- рендер ленты (дизайн VibeIDE: пузырь только у пользователя; агент — полная ширина; лучше оригинала: кап ширины строки, единая шкала радиусов 4/8, один язык подписей) ---
 
-  private inner class Bubble(role: String, meta: String, right: Boolean) {
-    val header = JLabel(meta).apply {
-      font = font.deriveFont(Font.PLAIN, 10f)
-      foreground = META_FG
+  private class RoundedPanel(private val bg: java.awt.Color, private val radius: Int) : JPanel() {
+    init { isOpaque = false }
+    override fun paintComponent(g: java.awt.Graphics) {
+      val g2 = g.create() as java.awt.Graphics2D
+      g2.setRenderingHint(java.awt.RenderingHints.KEY_ANTIALIASING, java.awt.RenderingHints.VALUE_ANTIALIAS_ON)
+      g2.color = bg
+      g2.fillRoundRect(0, 0, width, height, JBUI.scale(radius), JBUI.scale(radius))
+      g2.dispose()
+      super.paintComponent(g)
     }
-    val text = JTextArea().apply {
-      isEditable = false
-      lineWrap = true
-      wrapStyleWord = true
-      font = Font(Font.MONOSPACED, Font.PLAIN, 12)
-      background = if (right) USER_BUBBLE else AGENT_BUBBLE
-      border = JBUI.Borders.empty(6, 8)
-    }
-    val row = JPanel(BorderLayout()).apply {
+  }
+
+  private fun proseArea(fg: java.awt.Color? = null): JTextArea = JTextArea().apply {
+    isEditable = false
+    isOpaque = false
+    lineWrap = true
+    wrapStyleWord = true
+    font = com.intellij.util.ui.JBFont.label().deriveFont(13f)
+    fg?.let { foreground = it }
+    border = JBUI.Borders.empty()
+  }
+
+  private fun metaLabel(text: String, right: Boolean): JLabel = JLabel(text).apply {
+    font = com.intellij.util.ui.JBFont.label().deriveFont(Font.PLAIN, 11f)
+    foreground = META_FG
+    horizontalAlignment = if (right) JLabel.RIGHT else JLabel.LEFT
+  }
+
+  private inner class AgentMessage {
+    val text = proseArea()
+    val meta = metaLabel("Агент · ${now()}", right = false)
+    val row = JPanel(BorderLayout(0, JBUI.scale(2))).apply {
       isOpaque = false
-      border = JBUI.Borders.emptyBottom(6)
-      val inner = JPanel(BorderLayout(0, 2)).apply {
-        isOpaque = false
-        add(header, BorderLayout.NORTH)
-        add(text, BorderLayout.CENTER)
-      }
-      add(inner, BorderLayout.CENTER)
-      add(Box.createHorizontalStrut(60), if (right) BorderLayout.WEST else BorderLayout.EAST)
+      border = JBUI.Borders.empty(4, 4, 8, 4)
+      add(text, BorderLayout.CENTER)
+      add(meta, BorderLayout.SOUTH)
+      // better than the original: cap the text column so lines stay readable in a wide panel
+      add(Box.createHorizontalStrut(0), BorderLayout.WEST)
       alignmentX = Component.LEFT_ALIGNMENT
+      maximumSize = java.awt.Dimension(JBUI.scale(720), Int.MAX_VALUE)
     }
-    init {
-      header.horizontalAlignment = if (right) JLabel.RIGHT else JLabel.LEFT
+    fun append(s: String) { text.append(s) }
+    fun finish(seconds: Double, suffix: String?) {
+      meta.text = "Агент · ${now()} · ${"%.1f".format(seconds)} с${suffix?.let { " · $it" } ?: ""}"
     }
-    fun append(t: String) { text.append(t) }
-    fun setMeta(m: String) { header.text = m }
   }
 
   private fun now(): String = LocalTime.now().format(DateTimeFormatter.ofPattern("HH:mm"))
 
   private fun userBubble(text: String) {
     SwingUtilities.invokeLater {
-      val b = Bubble("user", "Вы · ${now()}", right = true)
-      b.append(text)
-      messages.add(b.row)
+      val bubble = RoundedPanel(USER_BUBBLE, radius = 8).apply {
+        layout = BorderLayout()
+        border = JBUI.Borders.empty(6, 8)
+        add(proseArea().also { it.text = text }, BorderLayout.CENTER)
+      }
+      val row = JPanel(BorderLayout(0, JBUI.scale(2))).apply {
+        isOpaque = false
+        border = JBUI.Borders.empty(4, 4, 8, 4)
+        add(bubble, BorderLayout.CENTER)
+        add(metaLabel("Вы · ${now()}", right = true), BorderLayout.SOUTH)
+        add(Box.createHorizontalStrut(JBUI.scale(120)), BorderLayout.WEST)
+        alignmentX = Component.LEFT_ALIGNMENT
+      }
+      messages.add(row)
       revalidateScroll()
     }
-    currentAgentBubble = null
+    currentAgentMessage = null
   }
 
-  private fun agentBubble(): Bubble {
-    var b = currentAgentBubble
-    if (b == null) {
-      b = Bubble("agent", "Агент · ${now()}", right = false)
-      currentAgentBubble = b
+  private fun agentMessage(): AgentMessage {
+    var m = currentAgentMessage
+    if (m == null) {
+      m = AgentMessage()
+      currentAgentMessage = m
       SwingUtilities.invokeLater {
-        messages.add(b.row)
+        messages.add(m.row)
         revalidateScroll()
       }
     }
-    return b
+    return m
   }
 
   private fun appendAgentText(text: String) {
-    val b = agentBubble()
+    val m = agentMessage()
     SwingUtilities.invokeLater {
-      b.append(text)
+      m.append(text)
       revalidateScroll()
     }
   }
 
   private fun finishAgentBubble(seconds: Double, suffix: String?) {
-    val b = currentAgentBubble ?: return
-    currentAgentBubble = null
+    val m = currentAgentMessage ?: return
+    currentAgentMessage = null
     SwingUtilities.invokeLater {
-      b.setMeta("Агент · ${now()} · ${"%.1f".format(seconds)} с${suffix?.let { " · $it" } ?: ""}")
+      m.finish(seconds, suffix)
+      revalidateScroll()
+    }
+  }
+
+  /** Compact tool-call card, VibeIDE style: 4px radius, quiet border, 11px italic. */
+  private fun toolCard(title: String) {
+    SwingUtilities.invokeLater {
+      val card = RoundedPanel(TOOL_CARD, radius = 4).apply {
+        layout = BorderLayout()
+        border = JBUI.Borders.empty(3, 8)
+        add(JLabel(title).apply {
+          font = com.intellij.util.ui.JBFont.label().deriveFont(Font.ITALIC, 11f)
+          foreground = META_FG
+        }, BorderLayout.WEST)
+      }
+      val row = JPanel(BorderLayout()).apply {
+        isOpaque = false
+        border = JBUI.Borders.empty(1, 4)
+        add(card, BorderLayout.WEST)
+        alignmentX = Component.LEFT_ALIGNMENT
+      }
+      messages.add(row)
+      revalidateScroll()
+    }
+  }
+
+  /** Centered checkpoint line, ghost-quiet. */
+  private fun checkpointLine(text: String) {
+    SwingUtilities.invokeLater {
+      messages.add(JLabel(text, JLabel.CENTER).apply {
+        font = com.intellij.util.ui.JBFont.label().deriveFont(Font.PLAIN, 10f)
+        foreground = META_FG
+        alignmentX = Component.LEFT_ALIGNMENT
+        border = JBUI.Borders.empty(2)
+      })
       revalidateScroll()
     }
   }
@@ -418,7 +516,7 @@ class AgentPanel(private val project: Project) : JPanel(BorderLayout()), AcpClie
   private fun systemLine(text: String) {
     SwingUtilities.invokeLater {
       messages.add(JLabel(text).apply {
-        font = font.deriveFont(Font.PLAIN, 10f)
+        font = com.intellij.util.ui.JBFont.label().deriveFont(Font.PLAIN, 10f)
         foreground = META_FG
         alignmentX = Component.LEFT_ALIGNMENT
         border = JBUI.Borders.empty(2, 4)
@@ -445,8 +543,8 @@ class AgentPanel(private val project: Project) : JPanel(BorderLayout()), AcpClie
         stepBuffer?.append(text)
         appendAgentText(text)
       }
-      "tool_call" -> systemLine("⚙ ${u["title"]?.jsonPrimitive?.contentOrNull ?: u["kind"]?.jsonPrimitive?.contentOrNull ?: "инструмент"}")
-      "plan" -> systemLine("🗺 план обновлён")
+      "tool_call" -> toolCard(u["title"]?.jsonPrimitive?.contentOrNull ?: u["kind"]?.jsonPrimitive?.contentOrNull ?: "инструмент")
+      "plan" -> toolCard("план обновлён")
       else -> {}
     }
   }
@@ -494,7 +592,7 @@ class AgentPanel(private val project: Project) : JPanel(BorderLayout()), AcpClie
     // keys; the JBColor defaults keep stock light/dark themes sensible.
     val CHAT_BG = JBColor.namedColor("Vibe.Chat.background", JBColor.namedColor("Panel.background", JBColor.PanelBackground))
     val USER_BUBBLE = JBColor.namedColor("Vibe.Chat.userBubbleBackground", JBColor(0xD8ECF8, 0x2A3550))
-    val AGENT_BUBBLE = JBColor.namedColor("Vibe.Chat.agentBubbleBackground", JBColor(0xEDEDED, 0x2B2D30))
+    val TOOL_CARD = JBColor.namedColor("Vibe.Chat.toolCardBackground", JBColor(0xF2F2F2, 0x26282E))
     val META_FG = JBColor.namedColor("Vibe.Chat.metaForeground", JBColor.namedColor("Label.infoForeground", JBColor.GRAY))
   }
 }

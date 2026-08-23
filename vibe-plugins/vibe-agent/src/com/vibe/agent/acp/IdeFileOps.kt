@@ -49,6 +49,11 @@ internal class IdeFileOps(private val project: Project) {
   fun writeTextFile(params: JsonObject): JsonElement {
     val path = Path.of(params.getValue("path").jsonPrimitive.content)
     val content = params.getValue("content").jsonPrimitive.contentOrNull ?: ""
+    val oldText = readCurrentText(path)
+    if (oldText == content) return buildJsonObject { }
+    if (!WritePreview.confirm(project, path.toString(), oldText, content)) {
+      throw IllegalStateException("пользователь отклонил запись в $path (закрытый диалог = отказ)")
+    }
     var handledInEditor = false
     ApplicationManager.getApplication().invokeAndWait {
       val vFile = LocalFileSystem.getInstance().findFileByNioFile(path) ?: return@invokeAndWait
@@ -67,5 +72,14 @@ internal class IdeFileOps(private val project: Project) {
       }
     }
     return buildJsonObject { }
+  }
+
+  private fun readCurrentText(path: Path): String {
+    var text: String? = null
+    ApplicationManager.getApplication().runReadAction {
+      val vFile = LocalFileSystem.getInstance().findFileByNioFile(path)
+      if (vFile != null) text = FileDocumentManager.getInstance().getDocument(vFile)?.text
+    }
+    return text ?: runCatching { Files.readString(path) }.getOrDefault("")
   }
 }

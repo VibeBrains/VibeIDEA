@@ -73,7 +73,7 @@
       "Chat": {
         "background": "DeepBg",
         "userBubbleBackground": "SelBg",
-        "agentBubbleBackground": "PanelBg",
+        "toolCardBackground": "PanelBg",
         "metaForeground": "NeonCyanDim"
       }
     }
