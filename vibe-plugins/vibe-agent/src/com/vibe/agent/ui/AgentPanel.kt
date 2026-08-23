@@ -101,6 +101,13 @@ class AgentPanel(private val project: Project) : JPanel(BorderLayout()), AcpClie
   init {
     border = JBUI.Borders.empty(4)
     val pipelineButton = JButton("Пайплайн…").apply { addActionListener { choosePipeline() } }
+    val settingsButton = JButton("Настройки…").apply {
+      toolTipText = "Провайдеры и ключи API (Settings → Tools → Vibe Providers)"
+      addActionListener {
+        com.intellij.openapi.options.ShowSettingsUtil.getInstance()
+          .showSettingsDialog(project, com.vibe.agent.settings.VibeProvidersConfigurable::class.java)
+      }
+    }
     val stopButton = JButton("Стоп").apply { addActionListener { stopAgent() } }
     val sendButton = JButton("Отправить").apply { addActionListener { send() } }
     modelCombo.isEnabled = false
@@ -114,6 +121,8 @@ class AgentPanel(private val project: Project) : JPanel(BorderLayout()), AcpClie
     val buttonsRow = JPanel().apply {
       layout = BoxLayout(this, BoxLayout.X_AXIS)
       add(pipelineButton)
+      add(Box.createHorizontalStrut(JBUI.scale(4)))
+      add(settingsButton)
       add(Box.createHorizontalGlue())
       add(stopButton)
     }
