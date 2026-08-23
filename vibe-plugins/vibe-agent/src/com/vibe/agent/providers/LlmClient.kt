@@ -40,7 +40,90 @@ class LlmClient(private val http: HttpClient = HttpClient.newBuilder().connectTi
   ) {
     when (provider.protocol) {
       "anthropic" -> anthropicChat(provider, model, messages, onDelta)
+      "gemini" -> geminiChat(provider, model, messages, onDelta)
       else -> openAiChat(provider, model, messages, onDelta)
+    }
+  }
+
+  /** GET model catalog; openai-style {data:[{id}]} and gemini-style {models:[{name}]} are both understood. */
+  fun listModels(provider: ResolvedProvider, fetchUrl: String?): List<String> {
+    val url = if (!fetchUrl.isNullOrBlank()) fetchUrl else provider.baseUrl.trimEnd('/') + "/models"
+    val builder = HttpRequest.newBuilder(URI.create(url)).timeout(Duration.ofSeconds(30)).GET()
+    provider.apiKey?.let { key ->
+      when (provider.entry.auth.type) {
+        "header" -> builder.header(provider.entry.auth.name ?: "x-api-key", key)
+        "query" -> {} // ключ уже должен быть в fetchUrl; для дефолта добавим ниже
+        else -> builder.header("Authorization", "Bearer " + key)
+      }
+    }
+    val response = http.send(builder.build(), HttpResponse.BodyHandlers.ofString())
+    if (response.statusCode() !in 200..299) throw RuntimeException("HTTP " + response.statusCode())
+    val root = json.parseToJsonElement(response.body()).jsonObject
+    val arr = root["data"]?.jsonArray ?: root["models"]?.jsonArray ?: return emptyList()
+    return arr.mapNotNull { el ->
+      val o = el.jsonObject
+      o["id"]?.jsonPrimitive?.contentOrNull ?: o["name"]?.jsonPrimitive?.contentOrNull?.removePrefix("models/")
+    }
+  }
+
+  /**
+   * FIM completion over the legacy `/completions` endpoint (openai protocol only) —
+   * prefix/suffix as API fields, special tokens are the server's business (VibeIDE approach).
+   * Non-streaming; max_tokens mirrors VibeIDE: 300 cloud / 96 local.
+   */
+  fun fimComplete(provider: ResolvedProvider, model: ModelEntry, prefix: String, suffix: String, stop: List<String>): String {
+    val body = withExtras(buildJsonObject {
+      put("model", model.id)
+      put("prompt", prefix)
+      put("suffix", suffix)
+      put("stream", false)
+      put("max_tokens", if (provider.isLocal) 96 else 300)
+      if (stop.isNotEmpty()) put("stop", JsonArray(stop.map { kotlinx.serialization.json.JsonPrimitive(it) }))
+    }, model.extraBody)
+    val request = requestBuilder(provider, "completions")
+      .POST(HttpRequest.BodyPublishers.ofString(body.toString()))
+      .build()
+    val response = http.send(request, HttpResponse.BodyHandlers.ofString())
+    if (response.statusCode() !in 200..299) throw RuntimeException("HTTP " + response.statusCode() + ": " + response.body().take(300))
+    return json.parseToJsonElement(response.body()).jsonObject["choices"]?.jsonArray?.firstOrNull()
+      ?.jsonObject?.get("text")?.jsonPrimitive?.contentOrNull ?: ""
+  }
+
+  private fun geminiChat(provider: ResolvedProvider, model: ModelEntry, messages: List<ChatMessage>, onDelta: (String) -> Unit) {
+    val system = messages.filter { it.role == "system" }.joinToString("\n") { it.text }
+    val body = withExtras(buildJsonObject {
+      if (system.isNotBlank()) put("systemInstruction", buildJsonObject {
+        put("parts", JsonArray(listOf(buildJsonObject { put("text", system) })))
+      })
+      put("contents", JsonArray(messages.filter { it.role != "system" }.map { m ->
+        buildJsonObject {
+          put("role", if (m.role == "assistant") "model" else "user")
+          put("parts", JsonArray(listOf(buildJsonObject { put("text", m.text) })))
+        }
+      }))
+      put("generationConfig", buildJsonObject {
+        model.temperature?.let { put("temperature", it) }
+        model.topP?.let { put("topP", it) }
+        model.topK?.let { put("topK", it) }
+        model.maxOutputTokens?.let { put("maxOutputTokens", it) }
+      })
+    }, model.extraBody)
+    var url = provider.baseUrl.trimEnd('/') + "/models/" + model.id + ":streamGenerateContent?alt=sse"
+    val key = provider.apiKey
+    if (key != null && provider.entry.auth.type == "query") {
+      url += "&" + (provider.entry.auth.name ?: "key") + "=" + URLEncoder.encode(key, StandardCharsets.UTF_8)
+    }
+    val builder = HttpRequest.newBuilder(URI.create(url))
+      .timeout(Duration.ofMillis(provider.entry.timeoutMs ?: 600_000L))
+      .header("Content-Type", "application/json")
+    provider.entry.headers.forEach { (k, v) -> builder.header(k, v) }
+    if (key != null && provider.entry.auth.type != "query") builder.header("x-goog-api-key", key)
+    val request = builder.POST(HttpRequest.BodyPublishers.ofString(body.toString())).build()
+    streamSse(request) { data ->
+      val text = json.parseToJsonElement(data).jsonObject["candidates"]?.jsonArray?.firstOrNull()
+        ?.jsonObject?.get("content")?.jsonObject?.get("parts")?.jsonArray?.firstOrNull()
+        ?.jsonObject?.get("text")?.jsonPrimitive?.contentOrNull
+      if (text != null) onDelta(text)
     }
   }
 

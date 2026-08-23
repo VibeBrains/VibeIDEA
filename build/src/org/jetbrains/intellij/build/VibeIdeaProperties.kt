@@ -26,11 +26,12 @@ open class VibeIdeaProperties(communityHomeDir: Path) : IdeaCommunityProperties(
     // Same trimming approach as AndroidStudioProperties: drop vendor AI/onboarding extras.
     productLayout.bundledPluginModules = IDEA_BUNDLED_PLUGINS
       .removing("intellij.mcpserver.plugin")
-      .removing("intellij.featuresTrainer") + persistentListOf("intellij.javaFX.community", "intellij.vibe.lsp", "intellij.vibe.agent")
+      .removing("intellij.featuresTrainer") + persistentListOf("intellij.javaFX.community", "intellij.vibe.lsp", "intellij.vibe.agent", "intellij.vibe.theme")
 
     productLayout.pluginLayouts = productLayout.pluginLayouts + persistentListOf(
       PluginLayout.pluginAuto("intellij.vibe.lsp") {},
       PluginLayout.pluginAuto("intellij.vibe.agent") {},
+      PluginLayout.pluginAuto("intellij.vibe.theme") {},
     )
   }
 

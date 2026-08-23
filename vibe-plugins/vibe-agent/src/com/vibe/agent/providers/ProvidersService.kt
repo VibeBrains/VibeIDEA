@@ -45,10 +45,7 @@ object ProvidersService {
     }
     val protocol = when (entry.protocol) {
       "anthropic" -> "anthropic"
-      "gemini" -> {
-        onWarning("провайдер '${entry.id}': протокол gemini пока не реализован — использую openai-совместимый")
-        "openai"
-      }
+      "gemini" -> "gemini"
       else -> "openai"
     }
     val host = runCatching { java.net.URI(base).host }.getOrNull() ?: ""

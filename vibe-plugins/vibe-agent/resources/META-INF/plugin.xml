@@ -13,5 +13,6 @@
   <extensions defaultExtensionNs="com.intellij">
     <toolWindow id="VibeAgent" anchor="right" factoryClass="com.vibe.agent.ui.VibeAgentToolWindowFactory" icon="/icons/vibeAgent.svg"/>
     <notificationGroup id="Vibe Agent" displayType="BALLOON"/>
+    <inline.completion.provider implementation="com.vibe.agent.fim.VibeFimProvider"/>
   </extensions>
 </idea-plugin>

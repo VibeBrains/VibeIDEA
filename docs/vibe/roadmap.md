@@ -37,8 +37,36 @@
 - [~] UI — ✅ ToolWindow «Vibe Agent» (Swing, путь ProxyAI): выбор агента, стриминг-транскрипт, ввод, стоп. Осталось: rich-рендер (markdown, диффы), JCEF-решение по мере роста.
 - [~] Маппинг ACP→платформа — ✅ `fs/read_text_file` видит несохранённые правки (Document-first), `fs/write_text_file` — WriteCommandAction для открытых файлов, NIO+async VFS refresh для остальных. Осталось: diff-превью перед записью (DiffManager), `terminal/*`→Terminal API.
 - [x] Совместимость с `~/.jetbrains/acp.json` — ✅ (2026-08-23) толерантный парсер (битая запись пропускается), дефолт — Claude Code через `npx @agentclientprotocol/claude-agent-acp`; спека формата: [manuals/acpAgentsSpec.md](manuals/acpAgentsSpec.md).
-- [~] **providers.json (контракт VibeIDE)** — ✅ (2026-08-23) парсер/мерж/extends/Guard/ключи (`com.vibe.agent.providers`), прямой стриминговый LLM-чат (openai+anthropic SSE) в панели Vibe Agent; спека [providersSpec.md](manuals/providersSpec.md). Осталось: models.fetch, gemini-протокол, FIM-автокомплит, встроенные провайдеры, кэш+вотчер файлов.
+- [~] **providers.json (контракт VibeIDE)** — ✅ (2026-08-23) парсер/мерж/extends/Guard/ключи (`com.vibe.agent.providers`), прямой стриминговый LLM-чат (openai+anthropic SSE) в панели Vibe Agent; спека [providersSpec.md](manuals/providersSpec.md). ✅ models.fetch (авто-каталог, мерж по id, static сильнее) и нативный gemini-протокол (streamGenerateContent SSE) — 2026-08-23. Осталось: FIM-автокомплит, встроенные провайдеры, кэш+вотчер файлов.
 - [ ] Перенос контрактов VibeIDE: hooks (0/2/прочее), turn checks (закрытый тип), предохранители, VERIFY-GATE, бюджеты, HTTP API (loopback + Host-check до токена), Config Guard, защита source-папок по всем content roots, Skills (SKILL.md).
+
+- [x] **Тема Vibe Neon Dark** — ✅ (2026-08-23) `vibe-plugins/vibe-theme/` (`themeProvider`, parentTheme Dark, editorScheme от Darcula, неоновые акценты); бандлится как обычный плагин.
+- [x] **FIM-автокомплит** — ✅ (2026-08-23) `com.vibe.agent.fim.VibeFimProvider` (DebouncedInlineCompletionProvider, 250 мс): модели `fim: true` из providers.json, `/completions` prefix/suffix, механика VibeIDE (25 строк, стопы, 300/96). Превосходит оригинал: у VibeIDE dynamic-FIM был `null` («follow-up»).
+- [x] **Пайплайны `.vibe/pipelines.json`** — ✅ (2026-08-23) контракт VibeIDE (роли закрытым списком, ≤20 шагов, пути+резюме, провал→«пропущен», толерантный парсер); прогон поверх ACP; отклонение зафиксировано в спеке: роль не ограничивает инструменты физически. Спека: [pipelinesSpec.md](manuals/pipelinesSpec.md).
+
+## Путь переноса VibeIDE→VibeIDEA (очередь по gap-анализу 2026-08-23)
+
+1. [ ] Живой E2E-прогон ACP (частично ✅ — чат с Claude Code подтверждён владельцем 2026-08-23; systematically не гонялся) — S/M
+2. [ ] Diff-превью перед записью (DiffManager; «каждое действие — вопрос с диффом ДО записи») — S/M
+3. [ ] `terminal/*` → Terminal API + контракты команд (timeout clamp, background, head+tail 80КБ, стоп-вопрос на разрушительных) — M
+4. [ ] Хуки `.vibe/hooks.json` (0=разрешено/2=отказ/прочее=поломка; TrustedProjects-гейт) — S
+5. [ ] Turn checks + предохранители-залипания (PersistentStateComponent) + `.vibe/audit.jsonl` — M
+6. [ ] VERIFY-GATE поверх задач сборки — M
+7. [ ] HTTP API loopback (Host-check до токена, constant-time, коды отказов) — S/M
+8. [ ] Защита от отравления контекста + детекция секретов + нормализация tool-call'ов — S
+9. [ ] providers.json: кэш последнего набора + вотчер (AsyncFileListener) — S
+10. [ ] Skills (SKILL.md, открытый стандарт) + валидатор — S/M
+11. [ ] Чекпоинты рабочей папки на каждое сообщение (git-объекты; Local History покрывает пофайлово) — M
+12. [ ] Диспетчерская + `agent-runs.jsonl` (heartbeat, «Проверить запуск») — S/M
+13. [ ] FIM: расширение (типы предсказаний VibeIDE, фильтры не-кода, кэш+SLA-метрики) — M
+14. [ ] `servers.json` поверх Run Configurations + свой раннер волн — M/L
+15. [ ] `code_graph` поверх PSI/UAST (платформа сильнее оригинала) — L
+
+16. [ ] Дизайн-контур: контракт `.vibe/design/{product,design,components,uiKit}.md` + спека (первый срез — этой волной); движок детекторов (81 шт., JCEF+DevTools, 2 вьюпорта, замер с живой страницы) — отдельным куском — L
+17. [ ] Видео-разбор (/watch: yt-dlp+ffmpeg, кадры по сменам сцен, транскрипт) — нативные бинари переносимы, UI-обвязка своя — M/L
+18. [ ] Голосовой ввод (sherpa-onnx локально) — M
+
+Платформа даёт бесплатно (не переносить): PasswordSafe, TrustedProjects, Document/VFS-трёхслойка, DiffManager/LineStatusTracker, Local History, PSI-поиск вместо ripgrep, Terminal/RunConfigurations/Services, InlineCompletionProvider, git4idea, инспекции+авто-импорт, AsyncFileListener, Markdown-рендер.
 
 ## Фаза 4 — Релизная дисциплина
 

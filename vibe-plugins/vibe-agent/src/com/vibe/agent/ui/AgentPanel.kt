@@ -11,6 +11,7 @@ import com.vibe.agent.acp.AcpClient
 import com.vibe.agent.acp.AcpConfig
 import com.vibe.agent.acp.AgentServerConfig
 import com.vibe.agent.acp.IdeFileOps
+import com.vibe.agent.pipelines.PipelinesFile
 import com.vibe.agent.providers.ChatMessage
 import com.vibe.agent.providers.LlmClient
 import com.vibe.agent.providers.ModelEntry
@@ -66,17 +67,23 @@ class AgentPanel(private val project: Project) : JPanel(BorderLayout()), AcpClie
     }
   }
   private val agentCombo = JComboBox(DefaultComboBoxModel(targets.map { it.label }.toTypedArray()))
+  private var liveTargets: List<Target> = targets
   private val llmClient = LlmClient()
   private val llmHistory = ArrayList<ChatMessage>()
   private val sendButton = JButton("Отправить")
   private val stopButton = JButton("Стоп")
   private val fileOps = IdeFileOps(project)
   private var client: AcpClient? = null
+  @Volatile private var stepBuffer: StringBuilder? = null
+  private val changedPaths = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
 
   init {
     border = JBUI.Borders.empty(4)
+    val pipelineButton = JButton("Пайплайн…")
+    pipelineButton.addActionListener { choosePipeline() }
     val top = JPanel(BorderLayout()).apply {
       add(agentCombo, BorderLayout.CENTER)
+      add(pipelineButton, BorderLayout.WEST)
       add(stopButton, BorderLayout.EAST)
     }
     val bottom = JPanel(BorderLayout()).apply {
@@ -93,6 +100,7 @@ class AgentPanel(private val project: Project) : JPanel(BorderLayout()), AcpClie
     if (providers.isNotEmpty()) {
       appendLine("Провайдеры (.vibe/providers.json): " + providers.joinToString { it.name })
       ProviderGuard.scan(providers).forEach { f -> appendLine("[guard:${f.severity}] ${f.message}") }
+      fetchProviderModels()
     }
   }
 
@@ -101,7 +109,7 @@ class AgentPanel(private val project: Project) : JPanel(BorderLayout()), AcpClie
     if (text.isEmpty()) return
     input.text = ""
     appendLine("\n▶ Вы: $text")
-    when (val target = targets.getOrNull(agentCombo.selectedIndex.coerceAtLeast(0))) {
+    when (val target = liveTargets.getOrNull(agentCombo.selectedIndex.coerceAtLeast(0))) {
       is LlmTarget -> sendToLlm(target, text)
       is AcpTarget, null -> ApplicationManager.getApplication().executeOnPooledThread {
         try {
@@ -151,7 +159,7 @@ class AgentPanel(private val project: Project) : JPanel(BorderLayout()), AcpClie
   private fun ensureClient(): AcpClient {
     val existing = client
     if (existing != null && existing.isAlive && existing.sessionId != null) return existing
-    val config = (targets.getOrNull(agentCombo.selectedIndex.coerceAtLeast(0)) as? AcpTarget)?.config ?: agents.first()
+    val config = (liveTargets.getOrNull(agentCombo.selectedIndex.coerceAtLeast(0)) as? AcpTarget)?.config ?: agents.first()
     appendLine("[агент] запускаю: ${config.command} ${config.args.joinToString(" ")}")
     val fresh = AcpClient(config, project.basePath, this)
     fresh.start()
@@ -159,6 +167,98 @@ class AgentPanel(private val project: Project) : JPanel(BorderLayout()), AcpClie
     fresh.initializeAndOpenSession().get()
     appendLine("[агент] сессия открыта")
     return fresh
+  }
+
+  /** models.fetch: merge fetched ids into static (static overrides by id), then rebuild the combo. */
+  private fun fetchProviderModels() {
+    ApplicationManager.getApplication().executeOnPooledThread {
+      var changed = false
+      val updated = providers.map { p ->
+        if (p.modelsFetch == null) return@map p
+        val resolved = ProvidersService.resolve(p, project.basePath) { } ?: return@map p
+        try {
+          val ids = llmClient.listModels(resolved, p.modelsFetch.ifBlank { null })
+          val known = p.models.map { it.id }.toSet()
+          val extra = ids.filter { it !in known }.map { ModelEntry(id = it) }
+          if (extra.isNotEmpty()) { changed = true; p.copy(models = p.models + extra) } else p
+        }
+        catch (e: Exception) {
+          appendLine("[providers] '${p.id}': каталог моделей не получен (${e.message}) — работаю по static")
+          p
+        }
+      }
+      if (changed) {
+        SwingUtilities.invokeLater {
+          val selected = agentCombo.selectedIndex
+          liveTargets = buildList<Target> {
+            agents.forEach { add(AcpTarget(it)) }
+            updated.forEach { p ->
+              p.models.filter { it.active }
+                .sortedWith(compareByDescending<ModelEntry> { it.default }.thenByDescending { it.pinned }.thenBy { it.name })
+                .forEach { m -> add(LlmTarget(p, m)) }
+            }
+          }
+          agentCombo.model = DefaultComboBoxModel(liveTargets.map { it.label }.toTypedArray())
+          if (selected in liveTargets.indices) agentCombo.selectedIndex = selected
+          appendLine("[providers] каталоги моделей подтянуты")
+        }
+      }
+    }
+  }
+
+  private fun choosePipeline() {
+    val pipelines = PipelinesFile.load(project.basePath) { appendLine("[pipelines] $it") }
+    if (pipelines.isEmpty()) {
+      appendLine("[pipelines] нет пайплайнов: создайте .vibe/pipelines.json (спека — docs/vibe/manuals/pipelinesSpec.md)")
+      return
+    }
+    val names = pipelines.map { "${it.name} (${it.steps.size} шагов)" }
+    val choice = Messages.showDialog(project, "Какой пайплайн запустить?", "Vibe Agent: пайплайны", names.toTypedArray(), 0, Messages.getQuestionIcon())
+    if (choice >= 0) runPipeline(pipelines[choice])
+  }
+
+  private fun runPipeline(pipeline: com.vibe.agent.pipelines.Pipeline) {
+    appendLine("\n═══ Пайплайн «${pipeline.name}» — ${pipeline.steps.size} шагов ═══")
+    ApplicationManager.getApplication().executeOnPooledThread {
+      val artifacts = LinkedHashSet<String>()
+      var lastSummary: String? = null
+      var failed = false
+      pipeline.steps.forEachIndexed { i, step ->
+        val header = "— Шаг ${i + 1}/${pipeline.steps.size} [${step.role}]"
+        if (failed && !step.continueOnFailure) {
+          appendLine("$header — пропущен (предыдущий шаг провалился)")
+          return@forEachIndexed
+        }
+        appendLine("$header ${step.task.take(80)}")
+        val prompt = buildString {
+          appendLine(PipelinesFile.rolePreamble(step.role))
+          appendLine("Задача: ${step.task}")
+          step.acceptance?.let { appendLine("Критерий готовности: $it") }
+          if (!step.ignorePreviousArtifacts) {
+            if (artifacts.isNotEmpty()) appendLine("Файлы, которых касались предыдущие шаги (прочитай нужные сам): ${artifacts.joinToString()}")
+            lastSummary?.let { appendLine("Резюме предыдущего шага: $it") }
+          }
+        }
+        try {
+          val c = ensureClient()
+          changedPaths.clear()
+          stepBuffer = StringBuilder()
+          c.prompt(prompt).get()
+          val summaryText = stepBuffer?.toString().orEmpty()
+          lastSummary = summaryText.takeLast(2000).ifBlank { "(шаг не оставил текста)" }
+          artifacts.addAll(changedPaths)
+          appendLine("\n$header завершён; изменённых файлов: ${changedPaths.size}")
+        }
+        catch (e: Exception) {
+          failed = true
+          appendLine("$header ПРОВАЛЕН: ${e.message}")
+        }
+        finally {
+          stepBuffer = null
+        }
+      }
+      appendLine("═══ Пайплайн «${pipeline.name}» ${if (failed) "остановлен с провалом" else "завершён"} ═══")
+    }
   }
 
   private fun stopAgent() {
@@ -190,6 +290,7 @@ class AgentPanel(private val project: Project) : JPanel(BorderLayout()), AcpClie
 
   private fun appendChunk(u: JsonObject) {
     val text = u["content"]?.jsonObject?.get("text")?.jsonPrimitive?.contentOrNull ?: return
+    stepBuffer?.append(text)
     SwingUtilities.invokeLater {
       transcript.append(text)
       transcript.caretPosition = transcript.document.length
@@ -222,7 +323,10 @@ class AgentPanel(private val project: Project) : JPanel(BorderLayout()), AcpClie
 
   override fun onReadTextFile(params: JsonObject): JsonElement = fileOps.readTextFile(params)
 
-  override fun onWriteTextFile(params: JsonObject): JsonElement = fileOps.writeTextFile(params)
+  override fun onWriteTextFile(params: JsonObject): JsonElement {
+    params["path"]?.jsonPrimitive?.contentOrNull?.let { changedPaths.add(it) }
+    return fileOps.writeTextFile(params)
+  }
 
   override fun onProtocolLog(line: String) = appendLine(line)
 

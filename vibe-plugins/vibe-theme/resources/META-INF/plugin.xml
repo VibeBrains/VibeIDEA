@@ -1,0 +1,11 @@
+<idea-plugin>
+  <id>com.vibe.theme</id>
+  <name>Vibe Neon Theme</name>
+  <vendor>VibeBrains</vendor>
+  <category>Themes</category>
+  <description>Vibe Neon Dark — the signature VibeIDEA dark theme with neon accents.</description>
+  <depends>com.intellij.modules.platform</depends>
+  <extensions defaultExtensionNs="com.intellij">
+    <themeProvider id="VibeNeonDark" path="/vibeNeonDark.theme.json" targetUi="new"/>
+  </extensions>
+</idea-plugin>

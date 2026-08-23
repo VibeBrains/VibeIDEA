@@ -23,7 +23,7 @@
       // Обязательное: id (уникальный) и baseURL.
       "id": "ollama",
       "name": "Ollama (локально)",
-      "protocol": "openai",              // openai (дефолт) | anthropic; gemini пока падает в openai-совместимый
+      "protocol": "openai",              // openai (дефолт) | anthropic | gemini
       "baseURL": "http://localhost:11434/v1",
       "auth": "bearer",                  // "bearer" | {"type":"header","name":"x-api-key"} | {"type":"query","name":"key"}
       "apiKeyEnv": "OLLAMA_API_KEY",     // имя переменной: ищется в <проект>/.vibe/.env → ~/.vibe/.env → окружении ОС
@@ -34,6 +34,10 @@
       "active": true,                    // false выключает провайдера и его модели
       "order": 10,                       // порядок среди ваших провайдеров (меньше = выше)
       "models": {
+        // fetch: true (дефолт) = авто-каталог с <baseURL>/models; строка = полный URL каталога;
+        // false = только static. Ответ понимается и openai-вида {data:[{id}]}, и gemini-вида {models:[{name}]}.
+        // Найденные модели добавляются к static; static сильнее по совпавшему id.
+        "fetch": true,
         "static": [
           {
             "id": "qwen3:14b",           // обязательное: как принимает API
@@ -62,7 +66,7 @@
 
 Приоритет резолва: `apiKeyRef` (защищённое хранилище ОС) → `.vibe/.env` проекта → `~/.vibe/.env` → переменная окружения ОС (имя из `apiKeyEnv`). Формат `.env`: строки `ИМЯ=значение`, `#`-комментарии; интерполяции нет; файл в `.gitignore`. Для localhost-провайдера ключ не обязателен, чат помечается меткой `[локальная модель]`.
 
-Точный путь anthropic-протокола: клиент дописывает к `baseURL` ровно `/messages` (openai — `/chat/completions`), поэтому версию пути включайте в `baseURL` сами: `https://api.anthropic.com/v1`, `http://localhost:11434/v1`.
+Точный путь: клиент дописывает к `baseURL` только имя метода — anthropic: `/messages`, openai: `/chat/completions`, gemini: `/models/<id>:streamGenerateContent` — поэтому версию пути включайте в `baseURL` сами: `https://api.anthropic.com/v1`, `http://localhost:11434/v1`, `https://generativelanguage.googleapis.com/v1beta`. Для gemini дефолтный auth-способ — `{"type":"query","name":"key"}` либо заголовок `x-goog-api-key` (auth `header`).
 
 ## Безопасность (Config Guard)
 
@@ -74,8 +78,7 @@
 ## Отличия от VibeIDE (честные границы этой реализации)
 
 - Встроенных провайдеров нет → патч встроенного по id и `extends` встроенного невозможны; `extends` работает между записями ваших файлов.
-- `models.fetch` (авто-список из `/v1/models`) пока не реализован — только `static`.
-- `protocol: "gemini"` пока падает в openai-совместимый с предупреждением.
+- `models.fetch` по умолчанию ходит на `<baseURL>/models` (в VibeIDE — `<baseURL>/v1/models`): у нас `baseURL` всегда включает версионный корень. Нестандартный путь — строкой с полным URL, как и в VibeIDE.
 - Потребителя `fim` (автокомплит) пока нет; `maxTools`/`maxPromptDirectoryChars` не читаются (нет потребителей).
 - Кэша последнего рабочего набора и вотчера файлов нет — перезапуск IDE.
 

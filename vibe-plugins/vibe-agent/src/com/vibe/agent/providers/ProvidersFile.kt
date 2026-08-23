@@ -51,6 +51,8 @@ data class ProviderEntry(
   val query: Map<String, String> = emptyMap(),
   val timeoutMs: Long? = null,
   val extendsId: String? = null,
+  /** models.fetch: true (default) = `<baseURL>/models`; string = full URL; false = static only. */
+  val modelsFetch: String? = "",
   val models: List<ModelEntry> = emptyList(),
   val note: String? = null,
 )
@@ -112,7 +114,15 @@ object ProvidersFile {
                 name = a.jsonObject["name"]?.jsonPrimitive?.contentOrNull,
               )
     }
-    val models = o["models"]?.jsonObject?.get("static")?.jsonArray?.mapNotNull { m ->
+    val modelsObj = o["models"]?.jsonObject
+    val fetchEl = modelsObj?.get("fetch")
+    val modelsFetch: String? = when {
+      fetchEl == null -> ""
+      fetchEl is kotlinx.serialization.json.JsonPrimitive && fetchEl.booleanOrNull == false -> null
+      fetchEl is kotlinx.serialization.json.JsonPrimitive && fetchEl.booleanOrNull == true -> ""
+      else -> fetchEl.jsonPrimitive.contentOrNull ?: ""
+    }
+    val models = modelsObj?.get("static")?.jsonArray?.mapNotNull { m ->
       val mo = m.jsonObject
       val mid = mo["id"]?.jsonPrimitive?.contentOrNull ?: return@mapNotNull null
       ModelEntry(
@@ -145,6 +155,7 @@ object ProvidersFile {
       query = o["query"]?.jsonObject?.mapValues { it.value.jsonPrimitive.content } ?: emptyMap(),
       timeoutMs = o["timeoutMs"]?.jsonPrimitive?.contentOrNull?.toLongOrNull(),
       extendsId = o["extends"]?.jsonPrimitive?.contentOrNull,
+      modelsFetch = modelsFetch,
       models = models,
       note = o["note"]?.jsonPrimitive?.contentOrNull,
     )
@@ -194,6 +205,7 @@ object ProvidersFile {
       query = base.query + over.query,
       timeoutMs = over.timeoutMs ?: base.timeoutMs,
       extendsId = null,
+      modelsFetch = if (over.modelsFetch != "") over.modelsFetch else base.modelsFetch,
       models = mergedModels.values.toList(),
       note = over.note ?: base.note,
     )

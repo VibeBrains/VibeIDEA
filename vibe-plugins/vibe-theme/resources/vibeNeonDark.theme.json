@@ -1,0 +1,73 @@
+{
+  "name": "Vibe Neon Dark",
+  "dark": true,
+  "author": "VibeBrains",
+  "parentTheme": "Dark",
+  "editorScheme": "/vibeNeonScheme.xml",
+  "colors": {
+    "NeonCyan": "#00E5FF",
+    "NeonCyanDim": "#00B8CC",
+    "NeonMagenta": "#FF2E97",
+    "NeonPurple": "#9D5CFF",
+    "DeepBg": "#16171B",
+    "PanelBg": "#1E1F24",
+    "SelBg": "#28324A"
+  },
+  "ui": {
+    "*": {
+      "focusColor": "NeonCyan",
+      "underlineColor": "NeonCyan",
+      "inactiveUnderlineColor": "NeonCyanDim",
+      "selectionBackground": "SelBg"
+    },
+    "Component": {
+      "focusedBorderColor": "NeonCyan",
+      "arc": 8
+    },
+    "Button": {
+      "default": {
+        "startBackground": "#2A3550",
+        "endBackground": "#2A3550",
+        "startBorderColor": "NeonCyan",
+        "endBorderColor": "NeonCyan",
+        "foreground": "#E8FBFF"
+      }
+    },
+    "Link": {
+      "activeForeground": "NeonCyan",
+      "hoverForeground": "NeonCyan",
+      "pressedForeground": "NeonMagenta",
+      "visitedForeground": "NeonPurple"
+    },
+    "EditorTabs": {
+      "underlineHeight": 3,
+      "underlineArc": 3
+    },
+    "ProgressBar": {
+      "progressColor": "NeonCyan",
+      "indeterminateStartColor": "NeonCyan",
+      "indeterminateEndColor": "NeonMagenta"
+    },
+    "SearchMatch": {
+      "startBackground": "#3C2B4F",
+      "endBackground": "#3C2B4F"
+    },
+    "ToolWindow": {
+      "Button": {
+        "selectedBackground": "#2A3550"
+      }
+    },
+    "TabbedPane": {
+      "focusColor": "NeonCyan",
+      "hoverColor": "#252A38"
+    },
+    "StatusBar": {
+      "Widget": {
+        "hoverBackground": "#252A38"
+      }
+    },
+    "Counter": {
+      "background": "NeonMagenta"
+    }
+  }
+}
