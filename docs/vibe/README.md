@@ -14,6 +14,7 @@
 - [manuals/pipelinesSpec.md](manuals/pipelinesSpec.md) — спека `.vibe/pipelines.json`: цепочки шагов-ролей (самодостаточная, для LLM).
 - [manuals/serversSpec.md](manuals/serversSpec.md) — спека `.vibe/servers.json`: декларативный дев-стек с волнами и readyCheck (самодостаточная, для LLM).
 - [manuals/designSpec.md](manuals/designSpec.md) — спека дизайн-контекста `.vibe/design/` (4 файла; самодостаточная, для LLM).
+- [references/vibeideUxParity.md](references/vibeideUxParity.md) — поведенческие спеки экранов VibeIDE (эталон UX-паритета волн A/B/C).
 - [knowledge/README.md](knowledge/README.md) — база знаний: индекс обязателен, запись без строки в индексе не существует.
 - [../../FORK_CHANGES.md](../../FORK_CHANGES.md) — реестр отклонений от апстрима + плейбук синка.
 - [../../CLAUDE.md](../../CLAUDE.md) — специфика проекта для сессий Claude.

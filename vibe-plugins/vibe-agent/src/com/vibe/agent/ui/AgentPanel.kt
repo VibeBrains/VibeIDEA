@@ -159,7 +159,7 @@ class AgentPanel(private val project: Project) : JPanel(BorderLayout()), AcpClie
   private fun refreshModelCombo() {
     val t = selectedTarget()
     if (t is LlmTarget) {
-      val models = t.provider.models.filter { it.active }
+      val models = t.provider.models.filter { it.active && !com.vibe.agent.settings.ModelVisibility.isHidden(t.provider.id, it.id) }
         .sortedWith(compareByDescending<ModelEntry> { it.default }.thenByDescending { it.pinned }.thenBy { it.name })
       modelCombo.model = DefaultComboBoxModel(models.map { it.name }.toTypedArray())
       modelCombo.isEnabled = models.isNotEmpty()

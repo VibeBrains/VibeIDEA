@@ -14,7 +14,9 @@
     <toolWindow id="VibeAgent" anchor="right" factoryClass="com.vibe.agent.ui.VibeAgentToolWindowFactory" icon="/icons/vibeAgent.svg"/>
     <notificationGroup id="Vibe Agent" displayType="BALLOON"/>
     <inline.completion.provider implementation="com.vibe.agent.fim.VibeFimProvider"/>
-    <projectConfigurable groupId="tools" displayName="Vibe Providers" id="com.vibe.agent.providers" instance="com.vibe.agent.settings.VibeProvidersConfigurable"/>
+    <applicationConfigurable groupId="tools" displayName="VibeIDEA" id="com.vibe.settings" instance="com.vibe.agent.settings.VibeSettingsRoot"/>
+    <projectConfigurable parentId="com.vibe.settings" displayName="Провайдеры" id="com.vibe.agent.providers" instance="com.vibe.agent.settings.VibeProvidersConfigurable"/>
+    <projectConfigurable parentId="com.vibe.settings" displayName="Модели" id="com.vibe.agent.models" instance="com.vibe.agent.settings.VibeModelsConfigurable"/>
   </extensions>
   <actions>
     <action id="com.vibe.agent.exportCodeGraph" class="com.vibe.agent.graph.ExportCodeGraphAction" text="Vibe: экспорт графа проекта">
