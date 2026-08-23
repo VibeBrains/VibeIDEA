@@ -30,6 +30,7 @@ jvm_library(
         "//platform/util:util-ui",
         "//platform/analysis-api:analysis",
         "//platform/core-ui",
+        "//platform/credential-store",
     ],
 )
 

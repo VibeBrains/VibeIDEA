@@ -11,6 +11,12 @@ import com.vibe.agent.acp.AcpClient
 import com.vibe.agent.acp.AcpConfig
 import com.vibe.agent.acp.AgentServerConfig
 import com.vibe.agent.acp.IdeFileOps
+import com.vibe.agent.providers.ChatMessage
+import com.vibe.agent.providers.LlmClient
+import com.vibe.agent.providers.ModelEntry
+import com.vibe.agent.providers.ProviderGuard
+import com.vibe.agent.providers.ProviderEntry
+import com.vibe.agent.providers.ProvidersService
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
@@ -41,8 +47,27 @@ class AgentPanel(private val project: Project) : JPanel(BorderLayout()), AcpClie
     font = Font(Font.MONOSPACED, Font.PLAIN, 12)
   }
   private val input = JBTextField()
+  private sealed interface Target { val label: String }
+  private data class AcpTarget(val config: AgentServerConfig) : Target {
+    override val label: String get() = "Агент: ${config.name}"
+  }
+  private data class LlmTarget(val provider: ProviderEntry, val model: ModelEntry) : Target {
+    override val label: String get() = "LLM: ${provider.name} · ${model.name}"
+  }
+
   private val agents: List<AgentServerConfig> = AcpConfig.load { appendLine("[конфиг] $it") }
-  private val agentCombo = JComboBox(DefaultComboBoxModel(agents.map { it.name }.toTypedArray()))
+  private val providers: List<ProviderEntry> = ProvidersService.load(project.basePath) { appendLine("[providers] $it") }
+  private val targets: List<Target> = buildList<Target> {
+    agents.forEach { add(AcpTarget(it)) }
+    providers.forEach { p ->
+      p.models.filter { it.active }
+        .sortedWith(compareByDescending<ModelEntry> { it.default }.thenByDescending { it.pinned }.thenBy { it.name })
+        .forEach { m -> add(LlmTarget(p, m)) }
+    }
+  }
+  private val agentCombo = JComboBox(DefaultComboBoxModel(targets.map { it.label }.toTypedArray()))
+  private val llmClient = LlmClient()
+  private val llmHistory = ArrayList<ChatMessage>()
   private val sendButton = JButton("Отправить")
   private val stopButton = JButton("Стоп")
   private val fileOps = IdeFileOps(project)
@@ -65,6 +90,10 @@ class AgentPanel(private val project: Project) : JPanel(BorderLayout()), AcpClie
     input.addActionListener { send() }
     stopButton.addActionListener { stopAgent() }
     appendLine("Vibe Agent готов. Агенты: ${agents.joinToString { it.name }} (реестр: ${AcpConfig.configPath()}).")
+    if (providers.isNotEmpty()) {
+      appendLine("Провайдеры (.vibe/providers.json): " + providers.joinToString { it.name })
+      ProviderGuard.scan(providers).forEach { f -> appendLine("[guard:${f.severity}] ${f.message}") }
+    }
   }
 
   private fun send() {
@@ -72,15 +101,46 @@ class AgentPanel(private val project: Project) : JPanel(BorderLayout()), AcpClie
     if (text.isEmpty()) return
     input.text = ""
     appendLine("\n▶ Вы: $text")
-    ApplicationManager.getApplication().executeOnPooledThread {
-      try {
-        ensureClient().prompt(text).whenComplete { result, error ->
-          if (error != null) appendLine("[ошибка] ${error.message}")
-          else {
-            val stop = result?.jsonObject?.get("stopReason")?.jsonPrimitive?.contentOrNull
-            appendLine("\n■ Ход завершён${if (stop != null) " ($stop)" else ""}")
+    when (val target = targets.getOrNull(agentCombo.selectedIndex.coerceAtLeast(0))) {
+      is LlmTarget -> sendToLlm(target, text)
+      is AcpTarget, null -> ApplicationManager.getApplication().executeOnPooledThread {
+        try {
+          ensureClient().prompt(text).whenComplete { result, error ->
+            if (error != null) appendLine("[ошибка] ${error.message}")
+            else {
+              val stop = result?.jsonObject?.get("stopReason")?.jsonPrimitive?.contentOrNull
+              appendLine("\n■ Ход завершён${if (stop != null) " ($stop)" else ""}")
+            }
           }
         }
+        catch (e: Exception) {
+          appendLine("[ошибка] ${e.message}")
+        }
+      }
+    }
+  }
+
+  private fun sendToLlm(target: LlmTarget, text: String) {
+    ApplicationManager.getApplication().executeOnPooledThread {
+      try {
+        val resolved = ProvidersService.resolve(target.provider, project.basePath) { appendLine("[providers] $it") }
+        if (resolved == null) return@executeOnPooledThread
+        if (resolved.apiKey == null && !resolved.isLocal) {
+          appendLine("[providers] нет ключа для '${target.provider.id}': задайте apiKeyEnv в providers.json и значение в .vibe/.env (или переменной окружения)")
+          return@executeOnPooledThread
+        }
+        if (resolved.isLocal) appendLine("[локальная модель]")
+        llmHistory.add(ChatMessage("user", text))
+        val answer = StringBuilder()
+        llmClient.chat(resolved, target.model, llmHistory) { delta ->
+          answer.append(delta)
+          SwingUtilities.invokeLater {
+            transcript.append(delta)
+            transcript.caretPosition = transcript.document.length
+          }
+        }
+        llmHistory.add(ChatMessage("assistant", answer.toString()))
+        appendLine("\n■ Ответ завершён (${target.model.id})")
       }
       catch (e: Exception) {
         appendLine("[ошибка] ${e.message}")
@@ -91,7 +151,7 @@ class AgentPanel(private val project: Project) : JPanel(BorderLayout()), AcpClie
   private fun ensureClient(): AcpClient {
     val existing = client
     if (existing != null && existing.isAlive && existing.sessionId != null) return existing
-    val config = agents[agentCombo.selectedIndex.coerceAtLeast(0)]
+    val config = (targets.getOrNull(agentCombo.selectedIndex.coerceAtLeast(0)) as? AcpTarget)?.config ?: agents.first()
     appendLine("[агент] запускаю: ${config.command} ${config.args.joinToString(" ")}")
     val fresh = AcpClient(config, project.basePath, this)
     fresh.start()

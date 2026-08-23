@@ -37,6 +37,7 @@
 - [~] UI — ✅ ToolWindow «Vibe Agent» (Swing, путь ProxyAI): выбор агента, стриминг-транскрипт, ввод, стоп. Осталось: rich-рендер (markdown, диффы), JCEF-решение по мере роста.
 - [~] Маппинг ACP→платформа — ✅ `fs/read_text_file` видит несохранённые правки (Document-first), `fs/write_text_file` — WriteCommandAction для открытых файлов, NIO+async VFS refresh для остальных. Осталось: diff-превью перед записью (DiffManager), `terminal/*`→Terminal API.
 - [x] Совместимость с `~/.jetbrains/acp.json` — ✅ (2026-08-23) толерантный парсер (битая запись пропускается), дефолт — Claude Code через `npx @agentclientprotocol/claude-agent-acp`; спека формата: [manuals/acpAgentsSpec.md](manuals/acpAgentsSpec.md).
+- [~] **providers.json (контракт VibeIDE)** — ✅ (2026-08-23) парсер/мерж/extends/Guard/ключи (`com.vibe.agent.providers`), прямой стриминговый LLM-чат (openai+anthropic SSE) в панели Vibe Agent; спека [providersSpec.md](manuals/providersSpec.md). Осталось: models.fetch, gemini-протокол, FIM-автокомплит, встроенные провайдеры, кэш+вотчер файлов.
 - [ ] Перенос контрактов VibeIDE: hooks (0/2/прочее), turn checks (закрытый тип), предохранители, VERIFY-GATE, бюджеты, HTTP API (loopback + Host-check до токена), Config Guard, защита source-папок по всем content roots, Skills (SKILL.md).
 
 ## Фаза 4 — Релизная дисциплина
