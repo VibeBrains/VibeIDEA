@@ -1,0 +1,12 @@
+<idea-plugin>
+  <id>com.vibe.lsp</id>
+  <name>Vibe Languages: TypeScript &amp; PHP</name>
+  <vendor>VibeBrains</vendor>
+  <description><![CDATA[
+    First-class TypeScript and PHP support for VibeIDEA through the Language Server Protocol:
+    vtsls (TypeScript, MIT) and Phpactor (PHP, MIT) wired into the bundled LSP4IJ client.
+    Syntax highlighting comes from the bundled TextMate grammars.
+  ]]></description>
+  <depends>com.intellij.modules.platform</depends>
+  <depends optional="true" config-file="vibe-lsp4ij-integration.xml">com.redhat.devtools.lsp4ij</depends>
+</idea-plugin>

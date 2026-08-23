@@ -2,6 +2,9 @@
 package org.jetbrains.intellij.build
 
 import kotlinx.collections.immutable.persistentListOf
+import org.jetbrains.intellij.build.impl.PluginLayout
+import org.jetbrains.intellij.build.io.copyDir
+import java.nio.file.Files
 import kotlinx.collections.immutable.plus
 import java.nio.file.Path
 
@@ -23,7 +26,22 @@ open class VibeIdeaProperties(communityHomeDir: Path) : IdeaCommunityProperties(
     // Same trimming approach as AndroidStudioProperties: drop vendor AI/onboarding extras.
     productLayout.bundledPluginModules = IDEA_BUNDLED_PLUGINS
       .removing("intellij.mcpserver.plugin")
-      .removing("intellij.featuresTrainer") + persistentListOf("intellij.javaFX.community")
+      .removing("intellij.featuresTrainer") + persistentListOf("intellij.javaFX.community", "intellij.vibe.lsp", "intellij.vibe.agent")
+
+    productLayout.pluginLayouts = productLayout.pluginLayouts + persistentListOf(
+      PluginLayout.pluginAuto("intellij.vibe.lsp") {},
+      PluginLayout.pluginAuto("intellij.vibe.agent") {},
+    )
+  }
+
+  /**
+   * LSP4IJ (EPL-2.0) is bundled from its pinned GitHub release artifact,
+   * prepared by `vibe-plugins/deps/download.sh` — never from JetBrains Marketplace.
+   */
+  override suspend fun bundleExternalPlugins(context: BuildContext, targetDirectory: Path) {
+    val lsp4ij = context.paths.communityHomeDir.resolve("vibe-plugins/deps/extracted/lsp4ij")
+    check(Files.isDirectory(lsp4ij)) { "LSP4IJ plugin dir not found: $lsp4ij — run vibe-plugins/deps/download.sh first" }
+    copyDir(lsp4ij, targetDirectory.resolve("plugins/lsp4ij"))
   }
 
   override fun getBaseArtifactName(appInfo: ApplicationInfoProperties, buildNumber: String): String = "vibeIdea-$buildNumber"

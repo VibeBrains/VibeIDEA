@@ -8,6 +8,7 @@
 - [roadmap.md](roadmap.md) — план по фазам; единственный источник правды «что сделано».
 - [functional.md](functional.md) — версионно-независимый каталог возможностей продукта.
 - [decisions.md](decisions.md) — журнал решений (включая ночные).
+- [manuals/languageServers.md](manuals/languageServers.md) — как поставить vtsls/Phpactor для TS/PHP.
 - [knowledge/README.md](knowledge/README.md) — база знаний: индекс обязателен, запись без строки в индексе не существует.
 - [../../FORK_CHANGES.md](../../FORK_CHANGES.md) — реестр отклонений от апстрима + плейбук синка.
 - [../../CLAUDE.md](../../CLAUDE.md) — специфика проекта для сессий Claude.

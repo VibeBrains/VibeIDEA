@@ -25,9 +25,9 @@
 
 ## Фаза 2 — Языки PhpStorm-класса (TS + PHP)
 
-- [ ] Бандл **LSP4IJ** (EPL-2.0) в состав дистрибутива (внешний плагин через `bundleExternalPlugins`).
-- [ ] **TypeScript**: vtsls (MIT) — свой плагин-регистратор (языковой маппинг, установка/обновление сервера, Node-детект); подсветка TextMate.
-- [ ] **PHP**: Phpactor (MIT) — то же (PHP ≥8.1 детект); подсветка TextMate; Intelephense — опциональная установка с его EULA («премиум-путь»).
+- [x] Бандл **LSP4IJ** (EPL-2.0) — ✅ (2026-08-23) `bundleExternalPlugins` в VibeIdeaProperties раскладывает пиненный релиз с GitHub (`vibe-plugins/deps/download.sh`, sha256) в `plugins/lsp4ij/`; проверено содержимым .sit.
+- [~] **TypeScript**: vtsls — ✅ плагин `intellij.vibe.lsp` (`com.vibe.lsp`): server+fileNamePatternMapping через LSP4IJ (optional depends, PROVIDED-библиотека `lib/vibe/lsp4ij/`), резолв бинаря с учётом GUI-PATH macOS; подсветка — TextMate из комплекта IC; `plugins/vibe-lsp/lib/vibe-lsp.jar` в дистрибутиве. Осталось: авто-установка сервера, настройки путей, живой прогон на реальном проекте.
+- [~] **PHP**: Phpactor — ✅ в том же плагине (server+mapping `*.php`); Intelephense — задокументированный путь самостоятельной установки ([мануал](manuals/languageServers.md)). Осталось: то же, что для TS.
 - [ ] **Отладка**: vscode-js-debug — готовый шаблон LSP4IJ; vscode-php-debug (Xdebug) — свой DAP-шаблон, кандидат на контрибуцию в LSP4IJ.
 - [ ] Отслеживать `platform/lsp` (Apache-2.0) как нативную замену LSP4IJ для языковых фич (без DAP).
 

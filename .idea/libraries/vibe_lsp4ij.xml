@@ -1,0 +1,9 @@
+<component name="libraryTable">
+  <library name="vibe-lsp4ij">
+    <CLASSES>
+      <root url="jar://$PROJECT_DIR$/lib/vibe/lsp4ij/lsp4ij-0.20.1.jar!/" />
+    </CLASSES>
+    <JAVADOC />
+    <SOURCES />
+  </library>
+</component>

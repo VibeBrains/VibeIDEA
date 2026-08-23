@@ -1,0 +1,12 @@
+<idea-plugin>
+  <extensions defaultExtensionNs="com.redhat.devtools.lsp4ij">
+    <server id="vibeVtsls" name="TypeScript (vtsls)" factoryClass="com.vibe.lsp.VtslsServerFactory">
+      <description>TypeScript/JavaScript language server (vtsls, wraps the VSCode TS extension)</description>
+    </server>
+    <fileNamePatternMapping patterns="*.ts;*.tsx;*.mts;*.cts;*.js;*.jsx;*.mjs;*.cjs" serverId="vibeVtsls" languageId="typescript"/>
+    <server id="vibePhpactor" name="PHP (Phpactor)" factoryClass="com.vibe.lsp.PhpactorServerFactory">
+      <description>PHP language server (Phpactor)</description>
+    </server>
+    <fileNamePatternMapping patterns="*.php" serverId="vibePhpactor" languageId="php"/>
+  </extensions>
+</idea-plugin>

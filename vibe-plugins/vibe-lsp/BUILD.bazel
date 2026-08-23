@@ -1,0 +1,50 @@
+load("@rules_jvm//:jvm.bzl", "jvm_library")
+
+jvm_library(
+    name = "vibe-lsp",
+    srcs = glob(
+        [
+            "src/**/*.kt",
+            "src/**/*.java",
+        ],
+        allow_empty = True,
+    ),
+    module_name = "intellij.vibe.lsp",
+    resource_strip_prefix = "resources",
+    resources = glob(
+        ["resources/**/*"],
+    ),
+    visibility = ["//visibility:public"],
+    deps = [
+        # do not sort,
+        "@lib//:kotlin-stdlib",
+        "//platform/core-api:core",
+        "//platform/projectModel-api:projectModel",
+        "//platform/util",
+        "//platform/extensions",
+        "@lib//vibe/lsp4ij:vibe-lsp4ij",
+    ],
+)
+
+jvm_library(
+    name = "vibe-lsp_test_lib",
+    testonly = True,
+    srcs = glob(
+        [],
+        allow_empty = True,
+    ),
+    module_name = "intellij.vibe.lsp",
+    visibility = ["//visibility:public"],
+    runtime_deps = [
+        # do not sort,
+        ":vibe-lsp",
+    ],
+)
+
+exports_files(
+    [
+        "intellij.vibe.lsp.iml",
+        "resources/META-INF/plugin.xml",
+    ],
+    visibility = ["//visibility:public"],
+)
