@@ -17,6 +17,7 @@
     <applicationConfigurable groupId="tools" displayName="VibeIDEA" id="com.vibe.settings" instance="com.vibe.agent.settings.VibeSettingsRoot"/>
     <projectConfigurable parentId="com.vibe.settings" displayName="Провайдеры" id="com.vibe.agent.providers" instance="com.vibe.agent.settings.VibeProvidersConfigurable"/>
     <projectConfigurable parentId="com.vibe.settings" displayName="Модели" id="com.vibe.agent.models" instance="com.vibe.agent.settings.VibeModelsConfigurable"/>
+    <applicationConfigurable parentId="com.vibe.settings" displayName="Чат" id="com.vibe.agent.chat" instance="com.vibe.agent.settings.VibeChatConfigurable"/>
   </extensions>
   <actions>
     <action id="com.vibe.agent.exportCodeGraph" class="com.vibe.agent.graph.ExportCodeGraphAction" text="Vibe: экспорт графа проекта">

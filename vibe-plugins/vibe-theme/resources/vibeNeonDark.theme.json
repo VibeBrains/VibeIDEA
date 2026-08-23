@@ -75,6 +75,27 @@
         "userBubbleBackground": "SelBg",
         "toolCardBackground": "PanelBg",
         "metaForeground": "NeonCyanDim"
+      },
+      "Composer": {
+        "background": "PanelBg",
+        "border": "#2A2D36",
+        "focusBorder": "NeonCyanDim",
+        "separator": "#2A2D36",
+        "chipBackground": "SelBg",
+        "chipForeground": "#E6E8EF",
+        "pillForeground": "#E6E8EF",
+        "pillHoverBackground": "#252A38",
+        "accent": "NeonCyan",
+        "accentHover": "#33ECFF",
+        "accentForeground": "DeepBg",
+        "accentDisabled": "#3A4A52",
+        "queueBackground": "#3A3220",
+        "queueBorder": "#6B5A2E",
+        "queueForeground": "#F2E6C4"
+      },
+      "Mention": {
+        "headerForeground": "#E6E8EF",
+        "hintForeground": "NeonCyanDim"
       }
     }
   }

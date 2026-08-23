@@ -9,6 +9,7 @@
 | Файл | О чём |
 |---|---|
 | [swingChatLayout.md](ui/swingChatLayout.md) | [баг] BoxLayout-лента без maxHeight у строк растягивает сообщения на весь вьюпорт; пузырь в BorderLayout.CENTER — на всю ширину. ChatRow с maxHeight=preferred + якорь NORTH. Урок: UI не отдаётся без визуальной проверки. |
+| [focuslessListPopup.md](ui/focuslessListPopup.md) | [архитектура] Меню `@` под JTextArea без потери фокуса: `PopupChooserBuilder.setRequestFocus(false)` (паттерн FileTextFieldImpl); клавиши — ТОЛЬКО локальные шорткаты `registerCustomShortcutSet`: KeyListener/InputMap на JTextComponent не видят стрелки/Backspace/Esc — их раньше забирает IdeKeyEventDispatcher через keymap (`EditorBackSpace` и т.п. включены на любом текстовом поле); `showUnderneathOf` не флипает вверх — место считать самим; ACP-блоки контекста и режимы. |
 
 ## architecture
 

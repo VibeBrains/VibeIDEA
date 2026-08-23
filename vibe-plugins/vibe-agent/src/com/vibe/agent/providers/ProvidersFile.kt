@@ -32,6 +32,8 @@ data class ModelEntry(
   val topK: Int? = null,
   val extraBody: JsonObject? = null,
   val fim: Boolean = false,
+  /** Accepts images: null = unknown (attachments allowed), false = composer blocks image sends. */
+  val vision: Boolean? = null,
   val note: String? = null,
 )
 
@@ -138,6 +140,7 @@ object ProvidersFile {
         topK = mo["topK"]?.jsonPrimitive?.intOrNull,
         extraBody = mo["extraBody"] as? JsonObject,
         fim = mo["fim"]?.jsonPrimitive?.booleanOrNull ?: false,
+        vision = mo["vision"]?.jsonPrimitive?.booleanOrNull,
         note = mo["note"]?.jsonPrimitive?.contentOrNull,
       )
     } ?: emptyList()
@@ -187,10 +190,14 @@ object ProvidersFile {
     return result.sortedWith(compareBy({ it.order ?: Int.MAX_VALUE }, { it.name }))
   }
 
+  /** Same-id model: the override wins; tri-state `vision` falls back to the base when unknown. */
+  private fun overlayModel(base: ModelEntry?, over: ModelEntry): ModelEntry =
+    if (base == null) over else over.copy(vision = over.vision ?: base.vision)
+
   private fun overlay(base: ProviderEntry, over: ProviderEntry): ProviderEntry {
     val mergedModels = LinkedHashMap<String, ModelEntry>()
     base.models.forEach { mergedModels[it.id] = it }
-    over.models.forEach { m -> mergedModels[m.id] = m }
+    over.models.forEach { m -> mergedModels[m.id] = overlayModel(mergedModels[m.id], m) }
     return ProviderEntry(
       id = base.id,
       name = if (over.name != over.id) over.name else base.name,

@@ -18,7 +18,73 @@ import java.net.http.HttpResponse
 import java.nio.charset.StandardCharsets
 import java.time.Duration
 
-data class ChatMessage(val role: String, val text: String)
+/** One inline image: raw base64 payload (no data: prefix) plus its MIME type. */
+data class ImagePart(val mimeType: String, val base64: String)
+
+data class ChatMessage(val role: String, val text: String, val images: List<ImagePart> = emptyList()) {
+  /** Text-only copy for models without vision; the dropped images are named so the model knows context went missing. */
+  fun withoutImages(): ChatMessage =
+    if (images.isEmpty()) this
+    else copy(text = (text + "\n[${images.size} image(s) omitted: model has no vision]").trim(), images = emptyList())
+}
+
+/**
+ * Per-protocol message serialization, kept free of transport so it is unit-testable.
+ * A message without images keeps the plain-string wire shape; images switch the
+ * content to the vendor's multipart form. A blank text next to images is dropped:
+ * Anthropic and Gemini reject empty text blocks, and it carries nothing anyway.
+ */
+internal object LlmMessages {
+  private const val DATA_URL_PREFIX = "data:"
+  private const val DATA_URL_BASE64_MARKER = ";base64,"
+
+  /** openai: "content" is a string, or [{type:text},{type:image_url,image_url:{url:data-url}}…]. */
+  fun openAi(m: ChatMessage): JsonObject = buildJsonObject {
+    put("role", m.role)
+    if (m.images.isEmpty()) put("content", m.text)
+    else put("content", JsonArray(buildList {
+      if (m.text.isNotBlank()) add(buildJsonObject { put("type", "text"); put("text", m.text) })
+      m.images.forEach { img ->
+        add(buildJsonObject {
+          put("type", "image_url")
+          put("image_url", buildJsonObject { put("url", DATA_URL_PREFIX + img.mimeType + DATA_URL_BASE64_MARKER + img.base64) })
+        })
+      }
+    }))
+  }
+
+  /** anthropic: "content" is a string, or [{type:image,source:{base64}}…,{type:text}]. */
+  fun anthropic(m: ChatMessage): JsonObject = buildJsonObject {
+    put("role", m.role)
+    if (m.images.isEmpty()) put("content", m.text)
+    else put("content", JsonArray(buildList {
+      m.images.forEach { img ->
+        add(buildJsonObject {
+          put("type", "image")
+          put("source", buildJsonObject {
+            put("type", "base64")
+            put("media_type", img.mimeType)
+            put("data", img.base64)
+          })
+        })
+      }
+      if (m.text.isNotBlank()) add(buildJsonObject { put("type", "text"); put("text", m.text) })
+    }))
+  }
+
+  /** gemini: "parts" is [{text}] plus one {inlineData:{mimeType,data}} per image; assistant role becomes "model". */
+  fun gemini(m: ChatMessage): JsonObject = buildJsonObject {
+    put("role", if (m.role == "assistant") "model" else "user")
+    put("parts", JsonArray(buildList {
+      if (m.images.isEmpty() || m.text.isNotBlank()) add(buildJsonObject { put("text", m.text) })
+      m.images.forEach { img ->
+        add(buildJsonObject {
+          put("inlineData", buildJsonObject { put("mimeType", img.mimeType); put("data", img.base64) })
+        })
+      }
+    }))
+  }
+}
 
 /**
  * Direct streaming chat against a provider endpoint.
@@ -31,6 +97,12 @@ data class ChatMessage(val role: String, val text: String)
 class LlmClient(private val http: HttpClient = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(20)).build()) {
   private val json = Json { ignoreUnknownKeys = true }
   @Volatile private var cancelled: () -> Boolean = { false }
+  @Volatile private var activeBody: java.io.InputStream? = null
+
+  /** Aborts the in-flight stream from any thread: closing the body wakes a read blocked on a silent server. */
+  fun cancel() {
+    activeBody?.let { runCatching { it.close() } }
+  }
 
   /** Blocking call; invoke from a pooled thread. onDelta receives text chunks as they stream. */
   fun chat(
@@ -55,7 +127,7 @@ class LlmClient(private val http: HttpClient = HttpClient.newBuilder().connectTi
     provider.apiKey?.let { key ->
       when (provider.entry.auth.type) {
         "header" -> builder.header(provider.entry.auth.name ?: "x-api-key", key)
-        "query" -> {} // ключ уже должен быть в fetchUrl; для дефолта добавим ниже
+        "query" -> {} // the key must already be part of fetchUrl
         else -> builder.header("Authorization", "Bearer " + key)
       }
     }
@@ -98,12 +170,7 @@ class LlmClient(private val http: HttpClient = HttpClient.newBuilder().connectTi
       if (system.isNotBlank()) put("systemInstruction", buildJsonObject {
         put("parts", JsonArray(listOf(buildJsonObject { put("text", system) })))
       })
-      put("contents", JsonArray(messages.filter { it.role != "system" }.map { m ->
-        buildJsonObject {
-          put("role", if (m.role == "assistant") "model" else "user")
-          put("parts", JsonArray(listOf(buildJsonObject { put("text", m.text) })))
-        }
-      }))
+      put("contents", JsonArray(messages.filter { it.role != "system" }.map(LlmMessages::gemini)))
       put("generationConfig", buildJsonObject {
         model.temperature?.let { put("temperature", it) }
         model.topP?.let { put("topP", it) }
@@ -137,12 +204,7 @@ class LlmClient(private val http: HttpClient = HttpClient.newBuilder().connectTi
       model.temperature?.let { put("temperature", it) }
       model.topP?.let { put("top_p", it) }
       model.maxOutputTokens?.let { put("max_tokens", it) }
-      put("messages", JsonArray(messages.map { m ->
-        buildJsonObject {
-          put("role", m.role)
-          put("content", m.text)
-        }
-      }))
+      put("messages", JsonArray(messages.map(LlmMessages::openAi)))
     }, model.extraBody)
     val request = requestBuilder(provider, "chat/completions")
       .POST(HttpRequest.BodyPublishers.ofString(body.toString()))
@@ -165,12 +227,7 @@ class LlmClient(private val http: HttpClient = HttpClient.newBuilder().connectTi
       model.topP?.let { put("top_p", it) }
       model.topK?.let { put("top_k", it) }
       if (system.isNotBlank()) put("system", system)
-      put("messages", JsonArray(messages.filter { it.role != "system" }.map { m ->
-        buildJsonObject {
-          put("role", m.role)
-          put("content", m.text)
-        }
-      }))
+      put("messages", JsonArray(messages.filter { it.role != "system" }.map(LlmMessages::anthropic)))
     }, model.extraBody)
     val request = requestBuilder(provider, "messages")
       .header("anthropic-version", "2023-06-01")
@@ -220,14 +277,31 @@ class LlmClient(private val http: HttpClient = HttpClient.newBuilder().connectTi
 
   private fun streamSse(request: HttpRequest, onData: (String) -> Unit) {
     val response = http.send(request, HttpResponse.BodyHandlers.ofInputStream())
-    response.body().bufferedReader().use { reader ->
-      if (response.statusCode() !in 200..299) {
-        throw RuntimeException("HTTP " + response.statusCode() + ": " + reader.readText().take(500))
-      }
-      reader.forEachLine { line ->
-        if (cancelled()) throw java.io.InterruptedIOException("остановлено пользователем")
-        if (line.startsWith("data:")) onData(line.removePrefix("data:").trim())
+    val body = response.body()
+    activeBody = body
+    try {
+      // Stop may have been pressed while we waited for the headers.
+      if (cancelled()) throw java.io.InterruptedIOException(STOPPED_BY_USER)
+      body.bufferedReader().use { reader ->
+        if (response.statusCode() !in 200..299) {
+          throw RuntimeException("HTTP " + response.statusCode() + ": " + reader.readText().take(500))
+        }
+        reader.forEachLine { line ->
+          if (cancelled()) throw java.io.InterruptedIOException(STOPPED_BY_USER)
+          if (line.startsWith("data:")) onData(line.removePrefix("data:").trim())
+        }
       }
     }
+    catch (e: java.io.IOException) {
+      // close() from cancel() surfaces as IOException("closed") — report it as a user stop, not an error.
+      if (cancelled()) throw java.io.InterruptedIOException(STOPPED_BY_USER) else throw e
+    }
+    finally {
+      activeBody = null
+    }
+  }
+
+  private companion object {
+    const val STOPPED_BY_USER = "остановлено пользователем"
   }
 }

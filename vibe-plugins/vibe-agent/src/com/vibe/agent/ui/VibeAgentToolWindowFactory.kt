@@ -10,6 +10,9 @@ class VibeAgentToolWindowFactory : ToolWindowFactory {
   override fun createToolWindowContent(project: Project, toolWindow: ToolWindow) {
     val panel = AgentPanel(project)
     val content = ContentFactory.getInstance().createContent(panel, "", false)
+    // The panel owns the agent process and popups; it dies with the content.
+    content.setDisposer(panel)
+    content.preferredFocusableComponent = panel.preferredFocusComponent
     toolWindow.contentManager.addContent(content)
   }
 }
