@@ -15,11 +15,13 @@
 
 ## Фаза 1 — Свой продукт (брендинг)
 
-- [ ] Customization-модуль: ресурс `idea/VibeIdeaApplicationInfo.xml` (имена, product code, версия), SVG-иконки (обычная/16px/EAP), splash.
-- [ ] `VibeIdeaProperties : IdeaCommunityProperties` (по образцу `AndroidStudioProperties` — ~30 строк поверх IC): `platformPrefix`, `baseFileName`, `systemSelector`, кастомайзеры Win/mac/Linux (`bundleIdentifier`, имена папок).
-- [ ] Свой installers-таргет (`object VibeIdeaInstallersBuildTarget`) + регистрация в Bazel.
-- [ ] Ревизия `bundledPluginModules`: вырезать vendor AI (mcpserver и т.п.), решить судьбу Android-плагина в **нашем** дистрибутиве (для сборки IC он обязателен, для нашего продукта — вероятно нет).
+- [x] Customization-модуль — ✅ (2026-08-23) `vibeidea-customization/`: `idea/VibeIdeaApplicationInfo.xml` (product=VibeIDEA, код `VI`), свои SVG-иконки (оригинальная V-геометрия, без знаков JetBrains); splash отключён (`useSplash=false`).
+- [x] `VibeIdeaProperties : IdeaCommunityProperties` — ✅ (2026-08-23) `build/src/org/jetbrains/intellij/build/VibeIdeaProperties.kt`: prefix `VibeIdea`, selector `VibeIdea2026.3`, mac `com.vibe.vibeidea`/`VibeIDEA.app`, вырезаны `intellij.mcpserver.plugin` и `intellij.featuresTrainer`. Корневой дескриптор `META-INF/VibeIdeaPlugin.xml` — зеркало IdeaPlugin.xml.
+- [x] Свой installers-таргет — ✅ (2026-08-23) `build/src/VibeIdeaInstallersBuildTarget.kt` + `//build:vibeidea_installers` + обёртка `vibeidea-installers.cmd`. Гейт фазы: `out/vibeidea/artifacts/vibeIdea-263.SNAPSHOT-aarch64.dmg` (778M, hdiutil VALID, product-info: name=VibeIDEA, code=VI, `VibeIDEA.app`).
+- [~] Ревизия `bundledPluginModules` — ✅ mcpserver/featuresTrainer вырезаны (2026-08-23). Осталось: судьба Android-плагина в нашем дистрибутиве; полная ревизия списка.
 - [ ] Grep-гейт брендинга: user-visible «IntelliJ IDEA»/«JetBrains» в наших ресурсах после каждого синка.
+
+- [ ] Свой `.icns` для macOS (сейчас в `.app` наследуется иконка IC — знак JetBrains; до публикации обязательно заменить).
 
 ## Фаза 2 — Языки PhpStorm-класса (TS + PHP)
 

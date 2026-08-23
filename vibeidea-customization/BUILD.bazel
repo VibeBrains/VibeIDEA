@@ -1,0 +1,52 @@
+load("@rules_jvm//:jvm.bzl", "jvm_library")
+
+jvm_library(
+    name = "vibeidea-customization",
+    srcs = glob(
+        [
+            "src/**/*.kt",
+            "src/**/*.java",
+        ],
+        allow_empty = True,
+    ),
+    module_name = "intellij.vibeidea.customization",
+    resource_strip_prefix = "resources",
+    resources = glob(
+        ["resources/**/*"],
+    ),
+    visibility = ["//visibility:public"],
+    deps = [
+        # do not sort,
+        "@lib//:kotlin-stdlib",
+        "//platform/ide-core",
+        "//libraries/kotlinx/coroutines/core",
+        "//platform/util",
+    ],
+)
+
+jvm_library(
+    name = "vibeidea-customization_test_lib",
+    testonly = True,
+    srcs = glob(
+        [],
+        allow_empty = True,
+    ),
+    module_name = "intellij.vibeidea.customization",
+    visibility = ["//visibility:public"],
+    runtime_deps = [
+        # do not sort,
+        ":vibeidea-customization",
+        "//platform/ide-core:ide-core_test_lib",
+        "//libraries/kotlinx/coroutines/core:core_test_lib",
+        "//platform/util:util_test_lib",
+    ],
+)
+
+exports_files(
+    [
+        "intellij.vibeidea.customization.iml",
+        "resources/idea/VibeIdeaApplicationInfo.xml",
+        "resources/intellij.vibeidea.customization.xml",
+    ],
+    visibility = ["//visibility:public"],
+)

@@ -94,6 +94,18 @@ alias(
 )
 
 # Can't name the target 'installers' since it triggers elevation in Windows
+# VibeIDEA fork: installers target (see FORK_CHANGES.md)
+java_binary(
+    name = "vibeidea_installers",
+    add_opens = INTELLIJ_ADD_OPENS,
+    data = ALL_COMMUNITY_TARGETS + [BAZEL_TARGETS_JSON_COMMUNITY],
+    jvm_flags = [
+        "-Dintellij.build.bazel.targets.json.file=$(rlocationpath %s)" % BAZEL_TARGETS_JSON_COMMUNITY,
+    ],
+    main_class = "VibeIdeaInstallersBuildTarget",
+    runtime_deps = [":build"],
+)
+
 java_binary(
     name = "i_build_target",
     add_opens = INTELLIJ_ADD_OPENS,

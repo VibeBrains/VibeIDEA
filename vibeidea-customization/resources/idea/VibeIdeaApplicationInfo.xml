@@ -1,0 +1,12 @@
+<component xmlns="http://jetbrains.org/intellij/schema/application-info">
+  <version major="2026" minor="3" eap="true"/>
+  <company name="VibeBrains" shortName="VibeBrains" url="https://github.com/VibeBrains"/>
+  <build number="VI-__BUILD__" date="__BUILD_DATE__"/>
+  <icon svg="/vibeidea.svg" svg-small="/vibeidea_16.svg"/>
+  <icon-eap svg="/vibeidea-eap.svg" svg-small="/vibeidea-eap_16.svg"/>
+  <names product="VibeIDEA" fullname="VibeIDEA" script="idea" motto="Ты видишь всё — и управляешь всем"/>
+
+  <essential-plugin>com.intellij.java</essential-plugin>
+  <essential-plugin>com.intellij.java.ide</essential-plugin>
+  <essential-plugin>com.intellij.modules.json</essential-plugin>
+</component>

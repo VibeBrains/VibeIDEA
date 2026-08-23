@@ -326,7 +326,10 @@ object AppUIUtil {
   @JvmStatic
   fun loadConsentsForEditing(): List<Consent> {
     val options = ConsentOptions.getInstance()
-    var result = options.consents.first
+    // [VibeIDEA] options.consents.first may be an immutable list when the product has no bundled consents
+    // (non-JetBrains vendor); removeTraceConsents/removeIf below would throw UnsupportedOperationException.
+    // Upstream-candidate fix: always operate on a mutable copy.
+    var result = options.consents.first.toMutableList()
     if (options.isEAP) {
       val statConsent = options.defaultUsageStatsConsent
       val errorAutoReportConsent = when {
