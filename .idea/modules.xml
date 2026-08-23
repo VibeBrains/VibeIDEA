@@ -591,6 +591,7 @@
       <module fileurl="file://$PROJECT_DIR$/vibe-plugins/vibe-lsp/intellij.vibe.lsp.iml" filepath="$PROJECT_DIR$/vibe-plugins/vibe-lsp/intellij.vibe.lsp.iml" />
       <module fileurl="file://$PROJECT_DIR$/vibe-plugins/vibe-agent/intellij.vibe.agent.iml" filepath="$PROJECT_DIR$/vibe-plugins/vibe-agent/intellij.vibe.agent.iml" />
       <module fileurl="file://$PROJECT_DIR$/vibe-plugins/vibe-theme/intellij.vibe.theme.iml" filepath="$PROJECT_DIR$/vibe-plugins/vibe-theme/intellij.vibe.theme.iml" />
+      <module fileurl="file://$PROJECT_DIR$/vibe-plugins/vibe-server/intellij.vibe.server.iml" filepath="$PROJECT_DIR$/vibe-plugins/vibe-server/intellij.vibe.server.iml" />
       <module fileurl="file://$PROJECT_DIR$/build/intellij.idea.community.build.iml" filepath="$PROJECT_DIR$/build/intellij.idea.community.build.iml" />
       <module fileurl="file://$PROJECT_DIR$/build/deps/intellij.idea.community.build.dependencies.iml" filepath="$PROJECT_DIR$/build/deps/intellij.idea.community.build.dependencies.iml" />
       <module fileurl="file://$PROJECT_DIR$/build/tasks/intellij.idea.community.build.tasks.iml" filepath="$PROJECT_DIR$/build/tasks/intellij.idea.community.build.tasks.iml" />

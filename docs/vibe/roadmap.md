@@ -11,7 +11,7 @@
 - [~] **Проверка сборки из исходников** — ✅ `./bazel.cmd build //build:idea_community`: Build completed successfully, 4009 действий, 37 мин (2026-08-23, лог ночи основания); тулчейн герметичен — JBR/Bazel скачались сами, ничего не ставилось. Осталось: запуск GUI (`run`) — не гонялся ночью намеренно, проверить днём.
 - [x] **Инсталлятор из исходников (dmg)** — ✅ (2026-08-23) `./installers.cmd -Dintellij.build.target.os=current -Dintellij.build.target.arch=current` + skip `sources_archive,cross_platform_dist,non_bundled_plugins`: `out/idea-ce/artifacts/ideaIC-263.SNAPSHOT-aarch64.dmg` (783M, `hdiutil verify` VALID, sha256 OK), ~5 мин на тёплом bazel-кэше. Не подписан — Gatekeeper «Open Anyway». Внутри ванильный «IntelliJ IDEA OSS.app» — наш брендинг это Фаза 1.
 - [ ] **AGENTS.md** — правила для AI-агентов (язык строк, база знаний, продуктовые инварианты) — по мере накопления содержимого.
-- [ ] **Гейт целостности доков** (dead links / unindexed / unreachable от docs/README.md) — порт `vibe-docs-graph` или Kotlin-аналог + CI.
+- [x] **Гейт целостности доков** — ✅ (2026-08-23) `vibe-tools/docsGraphCheck.py` (stdlib, dead links + wikilinks + unindexed + unreachable); прогнан: 16 файлов, 0 проблем. Осталось: CI-провязка (когда появится CI).
 
 ## Фаза 1 — Свой продукт (брендинг)
 
@@ -59,7 +59,7 @@
 11. [ ] Чекпоинты рабочей папки на каждое сообщение (git-объекты; Local History покрывает пофайлово) — M
 12. [ ] Диспетчерская + `agent-runs.jsonl` (heartbeat, «Проверить запуск») — S/M
 13. [ ] FIM: расширение (типы предсказаний VibeIDE, фильтры не-кода, кэш+SLA-метрики) — M
-14. [ ] `servers.json` поверх Run Configurations + свой раннер волн — M/L
+14. [x] `servers.json` — ✅ (2026-08-23) `vibe-plugins/vibe-server` (`com.vibe.server`): контракт VibeIDE целиком (task/service, 5 readyCheck, волны топосортом, skipIf, pathPrepend, envFile, stopCommand, исключения с причинами), тулвиндоу. Спека serversSpec.md. Осталось: autoStart с гейтом доверия, previewPath-превью. Решение: свой раннер, НЕ Run Configurations (волны+readyCheck в RC не выражаются)
 15. [ ] `code_graph` поверх PSI/UAST (платформа сильнее оригинала) — L
 
 16. [ ] Дизайн-контур: контракт `.vibe/design/{product,design,components,uiKit}.md` + спека (первый срез — этой волной); движок детекторов (81 шт., JCEF+DevTools, 2 вьюпорта, замер с живой страницы) — отдельным куском — L

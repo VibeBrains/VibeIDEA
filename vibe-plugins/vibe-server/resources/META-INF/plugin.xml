@@ -1,0 +1,14 @@
+<idea-plugin>
+  <id>com.vibe.server</id>
+  <name>Vibe Server</name>
+  <vendor>VibeBrains</vendor>
+  <description><![CDATA[
+    Declarative dev stack for the project: .vibe/servers.json describes services and
+    one-shot tasks with dependencies and readiness checks; the stack starts in waves.
+  ]]></description>
+  <depends>com.intellij.modules.platform</depends>
+  <extensions defaultExtensionNs="com.intellij">
+    <toolWindow id="VibeServer" anchor="bottom" factoryClass="com.vibe.server.ui.VibeServerToolWindowFactory"/>
+    <notificationGroup id="Vibe Server" displayType="BALLOON"/>
+  </extensions>
+</idea-plugin>

@@ -13,6 +13,14 @@
 - **TypeScript/JavaScript через LSP (vtsls)** — completion, диагностика, навигация, hover, форматирование для `*.ts/tsx/js/jsx/mts/cts/mjs/cjs`; сервер vtsls (MIT) подключён через бандленный LSP4IJ, подсветка — TextMate. Сервер ставится пользователем один раз ([мануал](manuals/languageServers.md)); IDE ищет его в PATH и типовых местах установки — GUI-приложениям macOS shell-PATH не достаётся, поэтому известные каталоги проверяются явно.
 - **PHP через LSP (Phpactor)** — то же для `*.php`; Phpactor (MIT). Intelephense не поставляется (его EULA запрещает редистрибуцию) — задокументирован путь самостоятельной установки как «премиум»-вариант.
 
+## 🖥 Дев-стек
+
+- **Vibe Server (`.vibe/servers.json`)** — декларативный дев-стек: сервисы и task-и с `dependsOn`, волны запуска (зависимые ждут ГОТОВНОСТИ — TCP-порт / HTTP не-5xx / regex по логу / exit 0 / spawn), `skipIf`-пробы («уже сделано» — пропуск), `pathPrepend`-пин тулчейна, `envFile`, `stopCommand` best-effort. Тулвиндоу внизу IDE: Запустить/Остановить всё, запуск выбранного с транзитивными зависимостями; исключённые записи (неизвестная зависимость, цикл) видны с причиной — ничего не стартует втихую. Спека: [manuals/serversSpec.md](manuals/serversSpec.md).
+
+## 📚 Документация
+
+- **Гейт графа доков** — `vibe-tools/docsGraphCheck.py` (stdlib-python, без зависимостей): dead links, wikilinks, записи knowledge без строки в индексе, недостижимость от `docs/vibe/README.md`; exit 1 на любой дефект. Перенос контракта `docs-graph-check` VibeIDE.
+
 ## 🎨 Оформление
 
 - **Тема Vibe Neon Dark** — фирменная тёмная тема с неоновыми акцентами (циан/маджента/пурпур): своя палитра UI (фокус, ссылки, прогресс, вкладки) и схема редактора (наследует Darcula, неоновый курсор и синтаксические акценты). Выбирается в Settings → Appearance; новая UI (`targetUi=new`).
