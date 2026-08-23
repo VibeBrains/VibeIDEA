@@ -9,6 +9,7 @@
 - [x] **Git-дисциплина форка** — ✅ (2026-08-23) remote `upstream` (клоном `--origin upstream`), push в него отключён физически (`no_push://`); ветки `master` (зеркало) / `main` / `next`, работа в `next` — подтверждено `git branch -vv`, `git remote -v`.
 - [x] **Docs-пакет** — ✅ (2026-08-23) CLAUDE.md, FORK_CHANGES.md, docs/vibe/{README,idea,roadmap,functional,decisions}.md, docs/vibe/knowledge/ (5 записей + индекс). Свой неймспейс docs/vibe/ — см. решение №11.
 - [~] **Проверка сборки из исходников** — ✅ `./bazel.cmd build //build:idea_community`: Build completed successfully, 4009 действий, 37 мин (2026-08-23, лог ночи основания); тулчейн герметичен — JBR/Bazel скачались сами, ничего не ставилось. Осталось: запуск GUI (`run`) — не гонялся ночью намеренно, проверить днём.
+- [x] **Инсталлятор из исходников (dmg)** — ✅ (2026-08-23) `./installers.cmd -Dintellij.build.target.os=current -Dintellij.build.target.arch=current` + skip `sources_archive,cross_platform_dist,non_bundled_plugins`: `out/idea-ce/artifacts/ideaIC-263.SNAPSHOT-aarch64.dmg` (783M, `hdiutil verify` VALID, sha256 OK), ~5 мин на тёплом bazel-кэше. Не подписан — Gatekeeper «Open Anyway». Внутри ванильный «IntelliJ IDEA OSS.app» — наш брендинг это Фаза 1.
 - [ ] **AGENTS.md** — правила для AI-агентов (язык строк, база знаний, продуктовые инварианты) — по мере накопления содержимого.
 - [ ] **Гейт целостности доков** (dead links / unindexed / unreachable от docs/README.md) — порт `vibe-docs-graph` или Kotlin-аналог + CI.
 
