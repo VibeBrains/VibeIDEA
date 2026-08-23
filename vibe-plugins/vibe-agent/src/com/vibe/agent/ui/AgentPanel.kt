@@ -67,10 +67,21 @@ class AgentPanel(private val project: Project) : JPanel(BorderLayout()), AcpClie
     border = JBUI.Borders.empty(6)
     background = CHAT_BG
   }
-  private val scroll = JBScrollPane(JPanel(BorderLayout()).apply {
-    isOpaque = false
+  /** Scroll view tracks the viewport width so rows wrap instead of growing sideways. */
+  private class FeedView : JPanel(BorderLayout()), javax.swing.Scrollable {
+    init { isOpaque = false }
+    override fun getPreferredScrollableViewportSize(): java.awt.Dimension = preferredSize
+    override fun getScrollableUnitIncrement(r: java.awt.Rectangle, o: Int, d: Int): Int = JBUI.scale(16)
+    override fun getScrollableBlockIncrement(r: java.awt.Rectangle, o: Int, d: Int): Int = JBUI.scale(64)
+    override fun getScrollableTracksViewportWidth(): Boolean = true
+    override fun getScrollableTracksViewportHeight(): Boolean = false
+  }
+
+  private val scroll = JBScrollPane(FeedView().apply {
     add(messages, BorderLayout.NORTH)
-  })
+  }).apply {
+    horizontalScrollBarPolicy = javax.swing.ScrollPaneConstants.HORIZONTAL_SCROLLBAR_NEVER
+  }
   private val input = JBTextField()
   private val agents: List<AgentServerConfig> = AcpConfig.load { systemLine("[конфиг] $it") }
   @Volatile private var providers: List<ProviderEntry> = ProvidersService.load(project.basePath) { systemLine("[providers] $it") }
