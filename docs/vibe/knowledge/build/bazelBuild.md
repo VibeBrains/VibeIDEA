@@ -7,7 +7,7 @@
 
 **Суть:**
 - JDK/Bazel вручную НЕ ставятся: `./bazel.cmd` сам качает bazelisk (версия в `.bazeliskversion`) → форк Bazel JetBrains (`.bazelversion`); тулчейн-JDK — JetBrains Runtime (`build/jbr-toolchains.bzl`), есть артефакт osx-aarch64.
-- **Android-репо обязателен для инсталлятора даже без интереса к Android**: `IdeaCommunityProperties` бандлит android-плагин → без каталога `android/` сборка инсталлятора падает. `./getPlugins.sh` (есть `--shallow`); зеркало: `https://github.com/JetBrains/android.git`. IC и android чекаутить на одинаковые ветки/теги.
+- **Android-репо обязателен для ЛЮБОЙ bazel-цели, читающей JPS-модель проекта, даже без интереса к Android** — проверено фактом 2026-08-23: `./bazel.cmd build //build:idea_community` падает за 31 с на `FileNotFoundException: android/android-adb/intellij.android.adb.iml` ещё на фазе Loading (репозиторий `jps_dynamic_deps_community`, `build/jps_model.bzl:237`). `./getPlugins.sh` (есть `--shallow`) клонирует по `git://git.jetbrains.org` — надёжнее зеркало: `https://github.com/JetBrains/android.git`. IC и android чекаутить на одинаковые ветки/теги.
 - Ресурсы: CI дословно — «The IDE build may hit OOM (exit 137) with the default 16 GB RAM and 4 GB swap», CI добавляет 30 GB swap; диск на полный цикл — закладывать ~100 GB; CI-прогон инсталляторов ~60–68 мин на 4 ядрах.
 
 **Применение:**

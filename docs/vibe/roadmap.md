@@ -8,7 +8,7 @@
 - [x] **Разведка перед стройкой** — ✅ (2026-08-23) 9 агентов: опыт VibeIDE (дисциплина форка, upstream-playbook, доки, база знаний, агентская обвязка) + веб (Bazel-сборка IC, механика брендинга, LSP/лицензии, ACP). Выжимки легли в [knowledge/](knowledge/README.md) и [idea.md](idea.md).
 - [x] **Git-дисциплина форка** — ✅ (2026-08-23) remote `upstream` (клоном `--origin upstream`), push в него отключён физически (`no_push://`); ветки `master` (зеркало) / `main` / `next`, работа в `next` — подтверждено `git branch -vv`, `git remote -v`.
 - [x] **Docs-пакет** — ✅ (2026-08-23) CLAUDE.md, FORK_CHANGES.md, docs/vibe/{README,idea,roadmap,functional,decisions}.md, docs/vibe/knowledge/ (5 записей + индекс). Свой неймспейс docs/vibe/ — см. решение №11.
-- [/] **Проверка сборки из исходников** — запуск `./bazel.cmd run //build:idea_community`; статус см. в утреннем отчёте ночи основания.
+- [~] **Проверка сборки из исходников** — ✅ `./bazel.cmd build //build:idea_community`: Build completed successfully, 4009 действий, 37 мин (2026-08-23, лог ночи основания); тулчейн герметичен — JBR/Bazel скачались сами, ничего не ставилось. Осталось: запуск GUI (`run`) — не гонялся ночью намеренно, проверить днём.
 - [ ] **AGENTS.md** — правила для AI-агентов (язык строк, база знаний, продуктовые инварианты) — по мере накопления содержимого.
 - [ ] **Гейт целостности доков** (dead links / unindexed / unreachable от docs/README.md) — порт `vibe-docs-graph` или Kotlin-аналог + CI.
 
