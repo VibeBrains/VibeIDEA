@@ -64,7 +64,7 @@ class AgentPanel(private val project: Project) : JPanel(BorderLayout()), AcpClie
   private val messages = JPanel().apply {
     layout = BoxLayout(this, BoxLayout.Y_AXIS)
     border = JBUI.Borders.empty(6)
-    background = JBColor.PanelBackground
+    background = CHAT_BG
   }
   private val scroll = JBScrollPane(messages)
   private val input = JBTextField()
@@ -344,14 +344,14 @@ class AgentPanel(private val project: Project) : JPanel(BorderLayout()), AcpClie
   private inner class Bubble(role: String, meta: String, right: Boolean) {
     val header = JLabel(meta).apply {
       font = font.deriveFont(Font.PLAIN, 10f)
-      foreground = JBColor.GRAY
+      foreground = META_FG
     }
     val text = JTextArea().apply {
       isEditable = false
       lineWrap = true
       wrapStyleWord = true
       font = Font(Font.MONOSPACED, Font.PLAIN, 12)
-      background = if (right) JBColor(0xD8ECF8, 0x2A3550) else JBColor(0xEDEDED, 0x2B2D30)
+      background = if (right) USER_BUBBLE else AGENT_BUBBLE
       border = JBUI.Borders.empty(6, 8)
     }
     val row = JPanel(BorderLayout()).apply {
@@ -419,7 +419,7 @@ class AgentPanel(private val project: Project) : JPanel(BorderLayout()), AcpClie
     SwingUtilities.invokeLater {
       messages.add(JLabel(text).apply {
         font = font.deriveFont(Font.PLAIN, 10f)
-        foreground = JBColor.GRAY
+        foreground = META_FG
         alignmentX = Component.LEFT_ALIGNMENT
         border = JBUI.Borders.empty(2, 4)
       })
@@ -487,5 +487,14 @@ class AgentPanel(private val project: Project) : JPanel(BorderLayout()), AcpClie
   override fun onProcessExit(code: Int) {
     systemLine("[агент] процесс завершился (код $code)")
     client = null
+  }
+
+  private companion object {
+    // Theme tokens: any theme (ours or third-party) recolours the chat via these
+    // keys; the JBColor defaults keep stock light/dark themes sensible.
+    val CHAT_BG = JBColor.namedColor("Vibe.Chat.background", JBColor.namedColor("Panel.background", JBColor.PanelBackground))
+    val USER_BUBBLE = JBColor.namedColor("Vibe.Chat.userBubbleBackground", JBColor(0xD8ECF8, 0x2A3550))
+    val AGENT_BUBBLE = JBColor.namedColor("Vibe.Chat.agentBubbleBackground", JBColor(0xEDEDED, 0x2B2D30))
+    val META_FG = JBColor.namedColor("Vibe.Chat.metaForeground", JBColor.namedColor("Label.infoForeground", JBColor.GRAY))
   }
 }

@@ -68,6 +68,14 @@
     },
     "Counter": {
       "background": "NeonMagenta"
+    },
+    "Vibe": {
+      "Chat": {
+        "background": "DeepBg",
+        "userBubbleBackground": "SelBg",
+        "agentBubbleBackground": "PanelBg",
+        "metaForeground": "NeonCyanDim"
+      }
     }
   }
 }
