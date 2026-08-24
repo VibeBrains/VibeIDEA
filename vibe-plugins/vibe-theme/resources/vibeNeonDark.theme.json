@@ -96,6 +96,21 @@
       "Mention": {
         "headerForeground": "#E6E8EF",
         "hintForeground": "NeonCyanDim"
+      },
+      "Tabs": {
+        "activeForeground": "#E6E8EF",
+        "inactiveForeground": "NeonCyanDim",
+        "activeBackground": "#252A38",
+        "hoverBackground": "#20242E",
+        "underline": "NeonCyan"
+      },
+      "History": {
+        "rowHoverBackground": "#252A38",
+        "activeStripe": "NeonMagenta",
+        "badgeBackground": "SelBg",
+        "quoteForeground": "NeonCyanDim",
+        "groupForeground": "NeonCyanDim",
+        "revealBackground": "SelBg"
       }
     }
   }

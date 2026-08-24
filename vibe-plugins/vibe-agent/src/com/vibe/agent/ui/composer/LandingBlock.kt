@@ -13,28 +13,22 @@ import java.awt.Graphics
 import java.awt.Graphics2D
 import java.awt.RenderingHints
 import javax.swing.BoxLayout
+import javax.swing.JComponent
 import javax.swing.JLabel
 import javax.swing.JPanel
 
 /**
  * Empty-chat landing under the composer (VibeIDE §7): informational chips «Файл …» /
- * «Модель Провайдер:модель» (not buttons) and the «Подсказки» prompt buttons that send
- * on click. Quick actions (Объяснить / Рефакторинг …) wait for their IDE commands.
+ * «Модель Провайдер:модель» (not buttons), then either «Прошлые чаты» (when the history
+ * holds more than one thread — the caller passes the list component) or the «Подсказки»
+ * prompt buttons. Quick actions (Объяснить / Рефакторинг …) wait for their IDE commands.
  */
-class LandingBlock(private val onPrompt: (String) -> Unit) : JPanel() {
+class LandingBlock(pastChats: JComponent, private val onPrompt: (String) -> Unit) : JPanel() {
   private val chips = JPanel(WrapLayout(FlowLayout.CENTER, JBUI.scale(GAP), JBUI.scale(GAP))).apply { isOpaque = false }
-
-  init {
+  private val suggestionsSection = JPanel().apply {
     layout = BoxLayout(this, BoxLayout.Y_AXIS)
     isOpaque = false
-    border = JBUI.Borders.empty(TOP_PAD, SIDE_PAD, 0, SIDE_PAD)
-    add(chips.apply { alignmentX = Component.LEFT_ALIGNMENT })
-    add(JLabel("Подсказки").apply {
-      font = JBFont.label().deriveFont(TITLE_FONT_SIZE).asBold()
-      foreground = MUTED
-      alignmentX = Component.LEFT_ALIGNMENT
-      border = JBUI.Borders.empty(SECTION_GAP, 0, GAP, 0)
-    })
+    add(sectionTitle("Подсказки"))
     SUGGESTIONS.forEach { text ->
       add(PillButton(text = text) { onPrompt(text) }.apply {
         alignmentX = Component.LEFT_ALIGNMENT
@@ -44,12 +38,37 @@ class LandingBlock(private val onPrompt: (String) -> Unit) : JPanel() {
       })
     }
   }
+  private val pastChatsSection = JPanel().apply {
+    layout = BoxLayout(this, BoxLayout.Y_AXIS)
+    isOpaque = false
+    add(sectionTitle("Прошлые чаты"))
+    add(pastChats.apply { alignmentX = Component.LEFT_ALIGNMENT })
+    isVisible = false
+  }
 
-  fun update(activeFileName: String?, modelLabel: String?) {
+  init {
+    layout = BoxLayout(this, BoxLayout.Y_AXIS)
+    isOpaque = false
+    border = JBUI.Borders.empty(TOP_PAD, SIDE_PAD, 0, SIDE_PAD)
+    add(chips.apply { alignmentX = Component.LEFT_ALIGNMENT })
+    add(pastChatsSection.apply { alignmentX = Component.LEFT_ALIGNMENT })
+    add(suggestionsSection.apply { alignmentX = Component.LEFT_ALIGNMENT })
+  }
+
+  private fun sectionTitle(text: String): JLabel = JLabel(text).apply {
+    font = JBFont.label().deriveFont(TITLE_FONT_SIZE).asBold()
+    foreground = MUTED
+    alignmentX = Component.LEFT_ALIGNMENT
+    border = JBUI.Borders.empty(SECTION_GAP, 0, GAP, 0)
+  }
+
+  fun update(activeFileName: String?, modelLabel: String?, showPastChats: Boolean) {
     chips.removeAll()
     activeFileName?.let { chips.add(InfoChip("Файл", it)) }
     modelLabel?.let { chips.add(InfoChip("Модель", it)) }
     chips.isVisible = chips.componentCount > 0
+    pastChatsSection.isVisible = showPastChats
+    suggestionsSection.isVisible = !showPastChats
     revalidate()
     repaint()
   }

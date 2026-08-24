@@ -213,8 +213,10 @@ class ComposerPanel(
   fun restoreDraft(message: ComposedMessage) {
     input.text = message.text
     message.context.forEach { context[it.key] = it }
-    if (imagesAllowed) images.addAll(message.images)
-    else if (message.images.isNotEmpty()) imagesBlockedReason?.let { listener.onNotice(it) }
+    // Images are kept even when the current target refuses them: the send-time guards decide,
+    // and the user may be about to switch the model back.
+    images.addAll(message.images)
+    if (!imagesAllowed && message.images.isNotEmpty()) imagesBlockedReason?.let { listener.onNotice(it) }
     renderContext()
     renderAttachments()
     focusInput()

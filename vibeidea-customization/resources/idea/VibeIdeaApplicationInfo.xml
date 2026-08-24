@@ -1,7 +1,7 @@
 <component xmlns="http://jetbrains.org/intellij/schema/application-info">
-  <version major="2026" minor="3" eap="true"/>
+  <version major="2026" minor="3" eap="false"/>
   <company name="VibeBrains" shortName="VibeBrains" url="https://github.com/VibeBrains"/>
-  <build number="VI-__BUILD__" date="__BUILD_DATE__"/>
+  <build number="VI-__BUILD__" date="__BUILD_DATE__" majorReleaseDate="20260823"/>
   <icon svg="/vibeidea.svg" svg-small="/vibeidea_16.svg"/>
   <icon-eap svg="/vibeidea-eap.svg" svg-small="/vibeidea-eap_16.svg"/>
   <names product="VibeIDEA" fullname="VibeIDEA" script="idea" motto="Ты видишь всё — и управляешь всем"/>

@@ -18,10 +18,21 @@
     <projectConfigurable parentId="com.vibe.settings" displayName="Провайдеры" id="com.vibe.agent.providers" instance="com.vibe.agent.settings.VibeProvidersConfigurable"/>
     <projectConfigurable parentId="com.vibe.settings" displayName="Модели" id="com.vibe.agent.models" instance="com.vibe.agent.settings.VibeModelsConfigurable"/>
     <applicationConfigurable parentId="com.vibe.settings" displayName="Чат" id="com.vibe.agent.chat" instance="com.vibe.agent.settings.VibeChatConfigurable"/>
+    <postStartupActivity implementation="com.vibe.agent.history.VibeHistoryWarmUp"/>
   </extensions>
   <actions>
     <action id="com.vibe.agent.exportCodeGraph" class="com.vibe.agent.graph.ExportCodeGraphAction" text="Vibe: экспорт графа проекта">
       <add-to-group group-id="ToolsMenu" anchor="last"/>
     </action>
+    <group id="VibeIdea.History" text="VibeIDEA" popup="false">
+      <action id="Vibe.ShowChatHistory" class="com.vibe.agent.history.VibeShowChatHistoryAction"
+              text="История чата" description="Открыть выпадающий список прошлых чатов"/>
+      <action id="Vibe.ExportProjectHistory" class="com.vibe.agent.history.VibeExportProjectHistoryAction"
+              text="Экспортировать историю текущего проекта" description="Сохранить треды проекта в Markdown или JSON"/>
+      <action id="Vibe.ClearProjectHistory" class="com.vibe.agent.history.VibeClearProjectHistoryAction"
+              text="Удалить историю текущего проекта" description="Удалить все треды, принадлежащие этому проекту"/>
+      <action id="Vibe.ClaimUntaggedHistory" class="com.vibe.agent.history.VibeClaimUntaggedHistoryAction"
+              text="Привязать историю без проекта к текущему" description="Проставить тредам без проекта текущий проект"/>
+    </group>
   </actions>
 </idea-plugin>

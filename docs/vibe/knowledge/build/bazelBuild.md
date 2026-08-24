@@ -20,3 +20,8 @@
 - **Инсталляторы (проверено 2026-08-23):** `./installers.cmd -Dintellij.build.target.os=current -Dintellij.build.target.arch=current` → `out/idea-ce/artifacts/` (dmg 783M + sit 813M + SBOM + sha256/512); на тёплом кэше после полной компиляции — ~5 мин. Лишние артефакты режутся свойством `intellij.build.skip.build.steps` (константы шагов — `BuildOptions.kt`, напр. `sources_archive`, `cross_platform_dist`, `non_bundled_plugins`). Подпись на macOS скипается автоматически → образ не подписан, запуск через Gatekeeper «Open Anyway». SPDX-ворнинги «GPL-2.0 is deprecated» — не фатальны.
 
 **Антипаттерны:** ставить свой JDK/Bazel «для надёжности» — бесполезно и вводит в заблуждение: тулчейн качает свои версии и внешние не использует; jps-bootstrap как путь сборки (легаси, installers.cmd его больше не использует).
+
+## Релизный флаг ApplicationInfo
+
+`eap="false"` в `*ApplicationInfo.xml` требует `majorReleaseDate="YYYYMMDD"` на теге `<build>` — иначе инсталлятор падает в `ApplicationInfoPropertiesImpl`: «majorReleaseDate may be omitted only for EAP». Побочный эффект `eap="true"` — суффикс «-EAP» в имени бандла macOS (`MacDistributionBuilder.substitutePlaceholdersInInfoPlist`).
+
