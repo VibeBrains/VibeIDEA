@@ -66,4 +66,14 @@ class ToolCallRegistryTest {
     val reg = ToolCallRegistry()
     assertNull(reg.onToolCall(frame("""{"title":"x"}""")))
   }
+
+  @Test
+  fun locationsParsedIntoPaths() {
+    val reg = ToolCallRegistry()
+    val call = reg.onToolCall(frame("""{"toolCallId":"t1","name":"Edit","status":"pending","locations":[{"path":"/a.kt","line":3},{"path":"/b.kt"}]}"""))!!
+    assertEquals(listOf("/a.kt", "/b.kt"), call.locations)
+    // A later update without locations keeps them.
+    reg.onToolCallUpdate(frame("""{"toolCallId":"t1","status":"completed"}"""))
+    assertEquals(listOf("/a.kt", "/b.kt"), reg["t1"]?.locations)
+  }
 }

@@ -41,6 +41,47 @@ class AuditLog(
     worker.shutdown()
   }
 
+  val path: Path get() = logFile
+
+  /**
+   * Run a file operation on the SAME single-thread worker that append() uses, so
+   * the viewer's read/export/delete never interleaves with an in-flight write
+   * (which would tear a line or clobber a rotation). Falls back to inline after
+   * close() so a disposed log still answers reads.
+   */
+  private fun <T> onWorker(fallback: T, block: () -> T): T = try {
+    worker.submit(java.util.concurrent.Callable { block() }).get()
+  } catch (e: java.util.concurrent.RejectedExecutionException) {
+    runCatching(block).getOrDefault(fallback)
+  }
+
+  /** Last [limit] raw JSONL lines (newest last), for the viewer. Empty when no log yet. */
+  fun readRecent(limit: Int): List<String> = onWorker(emptyList()) {
+    if (!Files.isRegularFile(logFile)) emptyList()
+    else runCatching { Files.readAllLines(logFile).filter { it.isNotBlank() }.takeLast(limit) }.getOrDefault(emptyList())
+  }
+
+  /** Copy the whole live log to [target] (rotated .gz files are left in place). */
+  fun exportTo(target: Path): Unit = onWorker(Unit) {
+    if (Files.isRegularFile(logFile)) Files.copy(logFile, target, java.nio.file.StandardCopyOption.REPLACE_EXISTING)
+    else Files.writeString(target, "")
+  }
+
+  /** GDPR erase: delete the live log and every rotated segment. Returns how many files were removed. */
+  fun deleteAll(): Int = onWorker(0) {
+    var removed = 0
+    if (Files.deleteIfExists(logFile)) removed++
+    val dir = logFile.parent ?: return@onWorker removed
+    runCatching {
+      Files.list(dir).use { stream ->
+        stream.filter { it.fileName.toString().matches(Regex("audit\\.\\d+\\.jsonl\\.gz")) }.forEach {
+          if (Files.deleteIfExists(it)) removed++
+        }
+      }
+    }
+    removed
+  }
+
   private fun writeLine(line: String) {
     try {
       Files.createDirectories(logFile.parent)

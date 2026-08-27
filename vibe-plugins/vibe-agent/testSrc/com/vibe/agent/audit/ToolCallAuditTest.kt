@@ -20,6 +20,21 @@ class ToolCallAuditTest {
   }
 
   @Test
+  fun claudeEditToolsRecordTheirTarget() {
+    // Regression: the Claude adapter uses file_path / notebook_path — these must be captured.
+    assertEquals("/src/App.kt", ToolCallAudit.safeTargetPath("Write", mapOf("file_path" to "/src/App.kt", "content" to "x")))
+    assertEquals("/src/Edit.kt", ToolCallAudit.safeTargetPath("Edit", mapOf("file_path" to "/src/Edit.kt")))
+    assertEquals("/nb.ipynb", ToolCallAudit.safeTargetPath("NotebookEdit", mapOf("notebook_path" to "/nb.ipynb")))
+  }
+
+  @Test
+  fun claudeBashRevealsNothing() {
+    // Bash by name, and any tool of ACP kind "execute", never leak a path/command.
+    assertNull(ToolCallAudit.safeTargetPath("Bash", mapOf("command" to "cat /etc/passwd")))
+    assertNull(ToolCallAudit.safeTargetPath("some_runner", mapOf("path" to "/etc/passwd"), kind = "execute"))
+  }
+
+  @Test
   fun pathTruncatedToLimit() {
     val long = "/" + "x".repeat(400)
     val result = ToolCallAudit.safeTargetPath("edit_file", mapOf("path" to long))!!

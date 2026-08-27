@@ -20,6 +20,7 @@
     <applicationConfigurable parentId="com.vibe.settings" displayName="Агент" id="com.vibe.agent.behavior" instance="com.vibe.agent.settings.VibeAgentConfigurable"/>
     <applicationConfigurable parentId="com.vibe.settings" displayName="Чат" id="com.vibe.agent.chat" instance="com.vibe.agent.settings.VibeChatConfigurable"/>
     <postStartupActivity implementation="com.vibe.agent.history.VibeHistoryWarmUp"/>
+    <statusBarWidgetFactory id="VibeAgentStatus" implementation="com.vibe.agent.ui.VibeAgentStatusWidgetFactory" order="last"/>
   </extensions>
   <actions>
     <action id="com.vibe.agent.exportCodeGraph" class="com.vibe.agent.graph.ExportCodeGraphAction" text="Vibe: экспорт графа проекта">
@@ -34,6 +35,10 @@
               text="Удалить историю текущего проекта" description="Удалить все треды, принадлежащие этому проекту"/>
       <action id="Vibe.ClaimUntaggedHistory" class="com.vibe.agent.history.VibeClaimUntaggedHistoryAction"
               text="Привязать историю без проекта к текущему" description="Проставить тредам без проекта текущий проект"/>
+      <action id="Vibe.AuditLog" class="com.vibe.agent.audit.VibeAuditLogAction"
+              text="Журнал аудита агента" description="Показать последние записи .vibe/audit.jsonl, экспортировать или очистить"/>
+      <action id="Vibe.Breakers" class="com.vibe.agent.gates.VibeBreakersAction"
+              text="Предохранители агента" description="Показать и снять сработавшие защитные предохранители"/>
     </group>
   </actions>
 </idea-plugin>

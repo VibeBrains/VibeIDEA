@@ -67,16 +67,48 @@ object ShellSafetyAnalyzer {
 
   /**
    * Worst verdict over every simple command in a raw shell line, or null when
-   * nothing is destructive. Returns the offending segment so the dialog can name
-   * the exact command the user is being asked about.
+   * nothing is destructive. Descends into `$(...)` and backtick command
+   * substitutions so a `dd`/`mkfs` hidden inside `sh -c "$(mkfs …)"` is not waved
+   * through. Returns the offending segment so the dialog can name the exact command.
    */
-  fun analyzeLine(line: String): Result? {
+  fun analyzeLine(line: String, depth: Int = 0): Result? {
     for (segment in splitSegments(line)) {
       val verdict = analyze(segment.first, segment.second)
       if (verdict.safety == Safety.DESTRUCTIVE) return verdict
     }
+    if (depth < MAX_SUBSTITUTION_DEPTH) {
+      for (inner in extractSubstitutions(line)) {
+        analyzeLine(inner, depth + 1)?.let { return it }
+      }
+    }
     return null
   }
+
+  /** Inner command text of every `$(...)` and backtick substitution in [line] (best-effort, non-nesting-aware for backticks). */
+  fun extractSubstitutions(line: String): List<String> {
+    val found = ArrayList<String>()
+    // $( ... ) with balanced parentheses.
+    var i = 0
+    while (i < line.length - 1) {
+      if (line[i] == '$' && line[i + 1] == '(') {
+        var depth = 1
+        var j = i + 2
+        while (j < line.length && depth > 0) {
+          when (line[j]) { '(' -> depth++; ')' -> depth-- }
+          if (depth == 0) break
+          j++
+        }
+        if (j <= line.length) found.add(line.substring(i + 2, minOf(j, line.length)))
+        i = j + 1
+      } else i++
+    }
+    // `...` backtick spans.
+    val ticks = line.split('`')
+    if (ticks.size >= 3) { var k = 1; while (k < ticks.size) { found.add(ticks[k]); k += 2 } }
+    return found.filter { it.isNotBlank() }
+  }
+
+  private const val MAX_SUBSTITUTION_DEPTH = 3
 
   /**
    * Split a raw shell line into the simple commands it will run. Deliberately

@@ -25,6 +25,16 @@ class TurnChecksTest {
   }
 
   @Test
+  fun detectsModernOpenAiAndGithubTokenFormats() {
+    // sk-proj-/sk-svcacct- (hyphens in body) must be caught, not just legacy sk-.
+    assertTrue(TurnChecks.scanSecretLeak(listOf("f" to ("sk-proj-" + "a".repeat(24)))).isNotEmpty())
+    assertTrue(TurnChecks.scanSecretLeak(listOf("f" to ("sk-svcacct-" + "b".repeat(24)))).isNotEmpty())
+    // GitHub OAuth/user/server/refresh prefixes, not only ghp_.
+    assertTrue(TurnChecks.scanSecretLeak(listOf("f" to ("gho_" + "c".repeat(36)))).isNotEmpty())
+    assertTrue(TurnChecks.scanSecretLeak(listOf("f" to ("ghs_" + "d".repeat(36)))).isNotEmpty())
+  }
+
+  @Test
   fun cleanFilesNoFindings() {
     assertTrue(TurnChecks.scanSecretLeak(listOf("a" to "hello", "b" to "world")).isEmpty())
   }

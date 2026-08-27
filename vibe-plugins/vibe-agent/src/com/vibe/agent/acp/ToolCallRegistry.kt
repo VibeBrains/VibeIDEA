@@ -25,6 +25,8 @@ data class ToolCall(
   var rawInput: JsonObject?,
   /** Terminal id carried by the Claude adapter's `_meta.terminal_info`, if any. */
   var terminalId: String? = null,
+  /** ACP `locations` — file paths the tool works with (used to widen changed-file coverage). */
+  var locations: List<String> = emptyList(),
 ) {
   val isRunning: Boolean get() = status == STATUS_PENDING || status == STATUS_IN_PROGRESS
   val isDone: Boolean get() = status == STATUS_COMPLETED || status == STATUS_FAILED
@@ -81,6 +83,7 @@ class ToolCallRegistry {
       rawInput = rawInput,
     ).also { byId[id] = it }
     call.terminalId = call.terminalId ?: terminalIdOf(update)
+    locationsOf(update)?.let { call.locations = it }
     return call
   }
 
@@ -101,7 +104,15 @@ class ToolCallRegistry {
     update["title"]?.jsonPrimitive?.contentOrNull?.let { call.title = it }
     (update["rawInput"] as? JsonObject)?.let { call.rawInput = it }
     (terminalIdOf(update))?.let { call.terminalId = it }
+    locationsOf(update)?.let { call.locations = it }
     return call
+  }
+
+  /** Parse the ACP `locations` array (`[{path, line?}]`) into a list of paths. */
+  private fun locationsOf(update: JsonObject): List<String>? {
+    val arr = update["locations"] as? kotlinx.serialization.json.JsonArray ?: return null
+    val paths = arr.mapNotNull { (it as? JsonObject)?.get("path")?.jsonPrimitive?.contentOrNull }
+    return paths.ifEmpty { null }
   }
 
   private fun terminalIdOf(update: JsonObject): String? {

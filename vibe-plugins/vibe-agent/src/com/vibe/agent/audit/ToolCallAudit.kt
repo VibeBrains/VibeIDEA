@@ -11,24 +11,39 @@ package com.vibe.agent.audit
 object ToolCallAudit {
   const val MAX_TARGET_LEN = 260
 
+  /**
+   * Ordered path-shaped input keys, the single source of truth for "the file a
+   * tool touches". Covers the Claude adapter's real edit tools (file_path,
+   * notebook_path) as well as the standard-ACP snake_case variants used by other
+   * agents. Reused by AgentPanel's changed-path harvest so audit and gates agree.
+   */
+  val PATH_KEYS = listOf("path", "file_path", "filePath", "uri", "notebook_path", "dirUri")
+
   /** Tools whose whole payload is the command line — no path is safe to record. */
   private val COMMAND_TOOLS = setOf(
+    // Claude adapter:
+    "Bash", "BashOutput", "KillShell",
+    // standard-ACP / VibeIDE snake_case variants:
     "run_command", "run_persistent_command", "kill_background_command",
     "read_background_output", "run_nl_command", "open_persistent_terminal",
     "kill_persistent_terminal",
   )
 
+  /** ACP tool kind that runs a command — the agent-agnostic way to spot a command tool. */
+  private const val KIND_EXECUTE = "execute"
+
   /**
    * The one path (if any) safe to store for [tool], derived from raw params.
-   * Returns null for command tools and when no path-shaped field is present.
+   * Returns null for command tools (by name or ACP [kind]) and when no
+   * path-shaped field is present.
    */
-  fun safeTargetPath(tool: String, rawParams: Map<String, String?>): String? {
-    if (tool in COMMAND_TOOLS) return null
-    val raw = rawParams["uri"] ?: rawParams["path"] ?: rawParams["dirUri"] ?: return null
+  fun safeTargetPath(tool: String, rawParams: Map<String, String?>, kind: String? = null): String? {
+    if (kind == KIND_EXECUTE || tool in COMMAND_TOOLS) return null
+    val raw = PATH_KEYS.firstNotNullOfOrNull { rawParams[it] } ?: return null
     val trimmed = raw.trim()
     if (trimmed.isEmpty()) return null
     return if (trimmed.length > MAX_TARGET_LEN) trimmed.take(MAX_TARGET_LEN) else trimmed
   }
 
-  fun isCommandTool(tool: String): Boolean = tool in COMMAND_TOOLS
+  fun isCommandTool(tool: String, kind: String? = null): Boolean = kind == KIND_EXECUTE || tool in COMMAND_TOOLS
 }

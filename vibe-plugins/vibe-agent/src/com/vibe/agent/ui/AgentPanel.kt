@@ -149,9 +149,8 @@ class AgentPanel(private val project: Project) : JPanel(BorderLayout()), AcpClie
   /** Guards check-then-act on [client]: ensureClient (pooled), onProcessExit (exit thread), dispose (EDT). */
   private val clientLock = Any()
   private val checkpoints: CheckpointService? = project.basePath?.let { CheckpointService(it) }
-  private val audit: AuditLog? = project.basePath?.let {
-    AuditLog(it, { VibeAgentSettings.auditEnabled }, { VibeAgentSettings.auditRotationBytes }, { w -> systemLine("[аудит] $w") })
-  }
+  // One shared audit log per project (writer here, reader in the viewer action) — see VibeAuditService.
+  private val audit: AuditLog? = com.vibe.agent.audit.VibeAuditService.getInstance(project).get()
   /** Tool-calls of the running turn, assembled from the session/update stream by id. */
   private val toolCalls = ToolCallRegistry()
   private val hooks = HookRunner(project) { systemLine("[хук] $it") }
@@ -160,6 +159,7 @@ class AgentPanel(private val project: Project) : JPanel(BorderLayout()), AcpClie
   private val terminalConsoles = java.util.concurrent.ConcurrentHashMap<String, TerminalConsole>()
   private val verifyRunner: VerifyGateRunner? = project.basePath?.let { VerifyGateRunner(it) }
   private val breakers = VibeBreakerService.getInstance(project)
+  private val status = VibeAgentStatusService.getInstance(project)
   @Volatile private var stepBuffer: StringBuilder? = null
   @Volatile private var currentAgentMessage: AgentMessage? = null
   private val changedPaths = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
@@ -257,7 +257,7 @@ class AgentPanel(private val project: Project) : JPanel(BorderLayout()), AcpClie
     composer.queue.clear()
     turnInFlight.set(false)
     terminals.disposeAll()
-    audit?.close()
+    // audit is owned by VibeAuditService (project-scoped) — do not close it here.
     synchronized(clientLock) {
       client?.stop()
       client = null
@@ -422,6 +422,7 @@ class AgentPanel(private val project: Project) : JPanel(BorderLayout()), AcpClie
       return false
     }
     turnInFlight.set(true)
+    status.set(VibeAgentStatusService.State.RUNNING)
     // The cancel flag belongs to the whole turn (Stop during context resolution must not be lost).
     llmCancel.set(false)
     composer.busy = true
@@ -480,7 +481,9 @@ class AgentPanel(private val project: Project) : JPanel(BorderLayout()), AcpClie
     val endedThreadId = turnThreadId
     turnThreadId = null
     endedThreadId?.let { history.endTurn(it) }
+    status.set(if (breakers.isBlocking()) VibeAgentStatusService.State.BLOCKED else VibeAgentStatusService.State.IDLE)
     if (disposed) return
+    notifyTurnEndIfAway()
     SwingUtilities.invokeLater {
       if (disposed) return@invokeLater
       composer.busy = false
@@ -488,6 +491,19 @@ class AgentPanel(private val project: Project) : JPanel(BorderLayout()), AcpClie
       composer.queue.drain()?.let { merged ->
         if (!startTurn(merged, endedThreadId ?: currentThreadId)) composer.restoreDraft(merged)
       }
+    }
+  }
+
+  /** Modern touch: a balloon when a turn finishes while the IDE window is NOT active (you tabbed away). */
+  private fun notifyTurnEndIfAway() {
+    SwingUtilities.invokeLater {
+      if (disposed) return@invokeLater
+      val active = com.intellij.openapi.wm.WindowManager.getInstance().getFrame(project)?.isActive == true
+      if (active) return@invokeLater
+      com.intellij.notification.NotificationGroupManager.getInstance()
+        .getNotificationGroup("Vibe Agent")
+        .createNotification("Vibe Agent завершил ход", com.intellij.notification.NotificationType.INFORMATION)
+        .notify(project)
     }
   }
 
@@ -511,7 +527,11 @@ class AgentPanel(private val project: Project) : JPanel(BorderLayout()), AcpClie
   }
 
   private fun sendToAcp(t: ChatTarget.Agent, text: String, loaded: List<ContextSerializer.Loaded>, images: List<ImageAttachment>, startedAt: Long) {
-    checkpoints?.create("сообщение: ${text.take(48)}")?.let { checkpointLine(it) }
+    checkpoints?.create("сообщение: ${text.take(CHECKPOINT_LABEL_LEN)}")?.let {
+      checkpointLine(it)
+      audit?.append(AuditEvent(System.currentTimeMillis(), AuditEvent.Action.CHECKPOINT, ok = true,
+        meta = mapOf("hash" to it.hash.take(12))))
+    }
     val design = DesignContextFile.load(project.basePath)
     val fullPrompt = if (design != null) DesignContextFile.promptBlock(design) + "\n" + text else text
     val c = ensureClient(t.config)
@@ -563,7 +583,9 @@ class AgentPanel(private val project: Project) : JPanel(BorderLayout()), AcpClie
         // Gates may run a build command and read files — never on the reader thread that completed us.
         ApplicationManager.getApplication().executeOnPooledThread {
           try {
+            status.set(VibeAgentStatusService.State.GATE)
             val bounce = evaluateGates(verifyAttempt, checkAttempt)
+            if (bounce == null) status.set(VibeAgentStatusService.State.RUNNING)
             if (bounce != null && !llmCancel.get() && !disposed && c.isAlive) {
               finishAgentBubble(secs, "проверка: возврат")
               promptAcpTurn(c, listOf(ContentBlock.Text(bounce.message)), t, startedAt, bounce.verifyAttempt, bounce.checkAttempt)
@@ -607,7 +629,15 @@ class AgentPanel(private val project: Project) : JPanel(BorderLayout()), AcpClie
     // --- TURN-CHECKS: scan + trip FIRST, unconditionally. A leaked secret or a protected-path write
     // is a present harm that must latch the breaker even if VERIFY-GATE bounces/stops this round. ---
     val findings = if (cMode == VibeAgentSettings.CHECKS_OFF) emptyList() else {
-      val contents = paths.take(TurnChecks.MAX_FILES_SCANNED).mapNotNull { p -> readFileForScan(p)?.let { p to it } }
+      val scanned = paths.take(TurnChecks.MAX_FILES_SCANNED)
+      val contents = scanned.mapNotNull { p -> readFileForScan(p)?.let { p to it } }
+      // A silently-unscanned file weakens the secret-leak guarantee — say so rather than hide it.
+      val skippedByCount = paths.size - scanned.size
+      val skippedBySize = scanned.size - contents.size
+      if (skippedByCount > 0 || skippedBySize > 0) systemLine(
+        "[проверки хода] не просканировано файлов: ${skippedByCount + skippedBySize}" +
+          (if (skippedByCount > 0) " (сверх лимита ${TurnChecks.MAX_FILES_SCANNED})" else "") +
+          (if (skippedBySize > 0) " (крупнее ${MAX_SCAN_FILE_BYTES / 1024} КБ)" else ""))
       TurnChecks.scanSecretLeak(contents) + TurnChecks.scanProtectedPath(paths)
     }
     if (findings.isNotEmpty()) {
@@ -1404,8 +1434,9 @@ class AgentPanel(private val project: Project) : JPanel(BorderLayout()), AcpClie
     val isEdit = name != null && name in EDIT_TOOLS
     if (isEdit || kind in MUTATING_KINDS) turnHadMutatingTool = true
     if (isEdit) {
-      val ri = call.rawInput ?: return
-      for (key in EDIT_PATH_KEYS) ri[key]?.jsonPrimitive?.contentOrNull?.let { changedPaths.add(it) }
+      call.rawInput?.let { ri -> for (key in EDIT_PATH_KEYS) ri[key]?.jsonPrimitive?.contentOrNull?.let { changedPaths.add(it) } }
+      // Agents that declare touched files via ACP `locations` widen coverage beyond fs/write.
+      changedPaths.addAll(call.locations)
     }
   }
 
@@ -1413,7 +1444,7 @@ class AgentPanel(private val project: Project) : JPanel(BorderLayout()), AcpClie
   private fun auditToolCall(action: String, call: ToolCall) {
     val log = audit ?: return
     val tool = call.toolName ?: call.kind ?: "tool"
-    val target = ToolCallAudit.safeTargetPath(tool, call.rawParamsFlat())
+    val target = ToolCallAudit.safeTargetPath(tool, call.rawParamsFlat(), call.kind)
     log.append(AuditEvent(
       ts = System.currentTimeMillis(),
       action = action,
@@ -1438,7 +1469,7 @@ class AgentPanel(private val project: Project) : JPanel(BorderLayout()), AcpClie
     val command = hookParams?.get("command")?.jsonPrimitive?.contentOrNull
     val destructive = command?.let { ShellSafetyAnalyzer.analyzeLine(it) }
     val dialogText = if (destructive != null)
-      "⚠️ Разрушительная команда (${destructive.reasons.joinToString(", ")}):\n${command.take(300)}\n\n$title"
+      "⚠️ Разрушительная команда (${destructive.reasons.joinToString(", ")}):\n${command.take(DESTRUCTIVE_PREVIEW_LEN)}\n\n$title"
     else title
     val options = params["options"]?.jsonArray?.map { it.jsonObject } ?: emptyList()
     var selected: String? = null
@@ -1502,7 +1533,7 @@ class AgentPanel(private val project: Project) : JPanel(BorderLayout()), AcpClie
       var approved = false
       ApplicationManager.getApplication().invokeAndWait {
         val choice = Messages.showYesNoDialog(project,
-          "Агент хочет выполнить разрушительную команду:\n\n${(listOf(command) + args).joinToString(" ").take(300)}\n\nПризнаки: ${verdict.reasons.joinToString(", ")}\n\nЭто действие может уничтожить данные, и отменить его нечем.",
+          "Агент хочет выполнить разрушительную команду:\n\n${(listOf(command) + args).joinToString(" ").take(DESTRUCTIVE_PREVIEW_LEN)}\n\nПризнаки: ${verdict.reasons.joinToString(", ")}\n\nЭто действие может уничтожить данные, и отменить его нечем.",
           "Vibe Agent: разрушительная команда", "Выполнить", "Отмена", Messages.getWarningIcon())
         approved = choice == Messages.YES
       }
@@ -1575,12 +1606,17 @@ class AgentPanel(private val project: Project) : JPanel(BorderLayout()), AcpClie
     const val MAX_IMAGE_HISTORY_MESSAGES = 4
     /** Files larger than this are skipped by the secret scan (binary/generated noise). */
     const val MAX_SCAN_FILE_BYTES = 512L * 1024L
+    /** Truncation of a command preview shown in a destructive-command confirm dialog. */
+    const val DESTRUCTIVE_PREVIEW_LEN = 300
+    /** Checkpoint label preview length. */
+    const val CHECKPOINT_LABEL_LEN = 48
     /** ACP tool kinds that can change files (gates run when a turn used one). */
     val MUTATING_KINDS = setOf("edit", "delete", "move", "execute")
     /** Tool names known to write files — their declared path is harvested into the changed set. */
     val EDIT_TOOLS = setOf("write_text_file", "Write", "Edit", "MultiEdit", "NotebookEdit",
       "edit_file", "rewrite_file", "create_file_or_folder", "delete_file_or_folder")
-    val EDIT_PATH_KEYS = listOf("path", "file_path", "filePath", "uri")
+    /** Single source of truth for path-shaped input keys (shared with the audit filter). */
+    val EDIT_PATH_KEYS = ToolCallAudit.PATH_KEYS
     const val KEY_ACTIVE_TAB = "vibe.chat.activeTab"
     /** VibeIDE: the reveal highlight fades after 2600 ms. */
     const val REVEAL_HIGHLIGHT_MS = 2600

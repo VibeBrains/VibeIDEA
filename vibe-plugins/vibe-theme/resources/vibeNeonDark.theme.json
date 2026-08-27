@@ -74,7 +74,12 @@
         "background": "DeepBg",
         "userBubbleBackground": "SelBg",
         "toolCardBackground": "PanelBg",
-        "metaForeground": "NeonCyanDim"
+        "metaForeground": "NeonCyanDim",
+        "terminalBackground": "#131417",
+        "terminalForeground": "#BFC7D0",
+        "terminalBorder": "#2A2D36",
+        "terminalOk": "#5FAD5F",
+        "terminalError": "#FF6B5A"
       },
       "Composer": {
         "background": "PanelBg",

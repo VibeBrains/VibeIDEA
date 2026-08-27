@@ -1,11 +1,13 @@
 // Copyright 2026 VibeBrains. Use of this source code is governed by the Apache 2.0 license.
 package com.vibe.agent.ui
 
+import com.intellij.openapi.ide.CopyPasteManager
 import com.intellij.ui.JBColor
 import com.intellij.util.ui.JBUI
 import java.awt.BorderLayout
 import java.awt.Component
 import java.awt.Font
+import java.awt.datatransfer.StringSelection
 import javax.swing.JLabel
 import javax.swing.JPanel
 import javax.swing.JTextArea
@@ -17,7 +19,17 @@ import javax.swing.JTextArea
  * READ-ONLY view: the command runs inside the agent, we only mirror its bytes.
  */
 class TerminalConsole(title: String) : JPanel(BorderLayout()) {
-  private val header = JLabel("▹ ${title.take(120)}")
+  private val titleText = title.take(120)
+  private var exitBadge: String? = null
+  private var collapsed = false
+  private val header = JLabel("▾ ▹ $titleText")
+  private val copy = JLabel("копировать").apply {
+    font = com.intellij.util.ui.JBFont.label().deriveFont(Font.PLAIN, 10f)
+    foreground = JBColor.namedColor("Vibe.Chat.metaForeground", JBColor.GRAY)
+    border = JBUI.Borders.empty(3, 6)
+    cursor = java.awt.Cursor.getPredefinedCursor(java.awt.Cursor.HAND_CURSOR)
+    toolTipText = "Скопировать вывод терминала"
+  }
   private val area = JTextArea().apply {
     isEditable = false
     font = Font(Font.MONOSPACED, Font.PLAIN, JBUI.scaleFontSize(11f))
@@ -37,8 +49,36 @@ class TerminalConsole(title: String) : JPanel(BorderLayout()) {
     header.font = com.intellij.util.ui.JBFont.label().deriveFont(Font.PLAIN, 11f)
     header.foreground = JBColor.namedColor("Vibe.Chat.metaForeground", JBColor.GRAY)
     header.border = JBUI.Borders.empty(3, 6)
-    add(header, BorderLayout.NORTH)
+    header.cursor = java.awt.Cursor.getPredefinedCursor(java.awt.Cursor.HAND_CURSOR)
+    header.toolTipText = "Свернуть/развернуть вывод"
+    header.addMouseListener(object : java.awt.event.MouseAdapter() {
+      override fun mouseClicked(e: java.awt.event.MouseEvent) = toggleCollapsed()
+    })
+    copy.addMouseListener(object : java.awt.event.MouseAdapter() {
+      override fun mouseClicked(e: java.awt.event.MouseEvent) {
+        CopyPasteManager.getInstance().setContents(StringSelection(raw.toString()))
+      }
+    })
+    val bar = JPanel(BorderLayout()).apply {
+      isOpaque = false
+      add(header, BorderLayout.WEST)
+      add(copy, BorderLayout.EAST)
+    }
+    add(bar, BorderLayout.NORTH)
     add(area, BorderLayout.CENTER)
+  }
+
+  private fun toggleCollapsed() {
+    collapsed = !collapsed
+    area.isVisible = !collapsed
+    refreshHeader()
+    revalidate(); repaint()
+  }
+
+  private fun refreshHeader() {
+    val arrow = if (collapsed) "▸" else "▾"
+    val mark = if (exitBadge != null) "▪" else "▹"
+    header.text = "$arrow $mark $titleText" + (exitBadge?.let { "  ·  $it" } ?: "")
   }
 
   /** Append a streamed chunk (called on the EDT). */
@@ -48,13 +88,13 @@ class TerminalConsole(title: String) : JPanel(BorderLayout()) {
   }
 
   fun markExit(exitCode: Int?, signal: String?) {
-    val badge = when {
+    exitBadge = when {
       signal != null -> "убит ($signal)"
       exitCode == 0 -> "завершено (0)"
       exitCode != null -> "код $exitCode"
       else -> "завершено"
     }
-    header.text = "▪ ${header.text.removePrefix("▹ ").removePrefix("▪ ")}  ·  $badge"
+    refreshHeader()
     header.foreground = if (exitCode == 0) OK_FG else if (exitCode != null || signal != null) ERR_FG else header.foreground
   }
 

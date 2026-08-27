@@ -22,8 +22,10 @@ object TurnChecks {
     "приватный ключ" to Regex("-----BEGIN [A-Z ]*PRIVATE KEY-----"),
     "AWS access key" to Regex("\\bAKIA[0-9A-Z]{16}\\b"),
     "ключ Anthropic" to Regex("\\bsk-ant-[A-Za-z0-9_-]{20,}"),
-    "ключ OpenAI" to Regex("\\bsk-[A-Za-z0-9]{32,}\\b"),
-    "GitHub token" to Regex("\\bghp_[A-Za-z0-9]{36}\\b"),
+    // Covers legacy sk-, and modern sk-proj-/sk-svcacct-/sk-admin- (hyphens in the body); no trailing \b (can't follow '-').
+    "ключ OpenAI" to Regex("\\bsk-[A-Za-z0-9_-]{20,}"),
+    // ghp_/gho_/ghu_/ghs_/ghr_ personal, OAuth, user, server and refresh tokens.
+    "GitHub token" to Regex("\\bgh[pousr]_[A-Za-z0-9]{36,}\\b"),
     "Slack token" to Regex("\\bxox[baprs]-[A-Za-z0-9-]{10,}"),
     "Google API key" to Regex("\\bAIza[0-9A-Za-z_-]{35}\\b"),
   )

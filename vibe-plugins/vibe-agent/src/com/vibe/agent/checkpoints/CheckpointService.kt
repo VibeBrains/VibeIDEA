@@ -44,12 +44,16 @@ class CheckpointService(private val projectBase: String) {
       val (commitCode, commitOut) = git(*args)
       if (commitCode != 0) return null
       val cp = Checkpoint(commitOut.trim(), label, System.currentTimeMillis())
-      Files.createDirectories(logFile.parent)
-      Files.writeString(logFile, buildJsonObject {
-        put("hash", cp.hash)
-        put("label", cp.label)
-        put("at", cp.atMillis)
-      }.toString() + "\n", java.nio.file.StandardOpenOption.CREATE, java.nio.file.StandardOpenOption.APPEND)
+      // A failing journal write must not lose the (already-created) snapshot — the commit object
+      // exists in git regardless; only the .jsonl pointer is best-effort.
+      runCatching {
+        Files.createDirectories(logFile.parent)
+        Files.writeString(logFile, buildJsonObject {
+          put("hash", cp.hash)
+          put("label", cp.label)
+          put("at", cp.atMillis)
+        }.toString() + "\n", java.nio.file.StandardOpenOption.CREATE, java.nio.file.StandardOpenOption.APPEND)
+      }
       return cp
     }
     finally {

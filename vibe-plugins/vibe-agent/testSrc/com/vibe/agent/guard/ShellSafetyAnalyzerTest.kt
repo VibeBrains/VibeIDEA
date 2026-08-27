@@ -94,6 +94,25 @@ class ShellSafetyAnalyzerTest {
   }
 
   @Test
+  fun destructiveInsideCommandSubstitutionCaught() {
+    // A binary hidden in $(...) where no flag leaks to the outer tokens.
+    val r = ShellSafetyAnalyzer.analyzeLine("""sh -c "$(mkfs.ext4 /dev/sda)"""")
+    assertTrue(r != null && r.safety == Safety.DESTRUCTIVE)
+    assertTrue(ShellSafetyAnalyzer.analyzeLine("echo \$(dd if=/dev/zero of=/dev/sda)") != null)
+  }
+
+  @Test
+  fun destructiveInBackticksCaught() {
+    assertTrue(ShellSafetyAnalyzer.analyzeLine("echo `shred -u secret`") != null)
+  }
+
+  @Test
+  fun benignSubstitutionStaysSafe() {
+    assertNull(ShellSafetyAnalyzer.analyzeLine("echo \$(date) && ls"))
+    assertNull(ShellSafetyAnalyzer.analyzeLine("VERSION=`git describe --tags`"))
+  }
+
+  @Test
   fun splitSegmentsHandlesAndOrPipe() {
     val segs = ShellSafetyAnalyzer.splitSegments("a b && c || d | e")
     assertEquals(listOf("a", "c", "d", "e"), segs.map { it.first })

@@ -4,6 +4,7 @@ package com.vibe.agent.hooks
 import com.intellij.ide.trustedProjects.TrustedProjects
 import com.intellij.openapi.project.Project
 import com.vibe.agent.settings.VibeAgentSettings
+import com.vibe.agent.util.ProcessSupport
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
@@ -78,6 +79,9 @@ class HookRunner(private val project: Project, private val onWarning: (String) -
     }
   }
 
+  // Synchronized: run() is invoked from the reader thread (preToolUse), pooled threads
+  // (postToolUse, turnEnd) and the fs-write thread — the mtime cache must not tear.
+  @Synchronized
   private fun load(): List<Hook> {
     val file = hooksFile ?: return emptyList()
     if (!Files.isRegularFile(file)) { cached = emptyList(); cachedMtime = -1L; return emptyList() }
@@ -99,8 +103,7 @@ class HookRunner(private val project: Project, private val onWarning: (String) -
     }.toString()
 
   private fun execute(hook: Hook, payload: String, cwd: String): HookResult {
-    val command = shellCommand(hook.command)
-    val pb = ProcessBuilder(command)
+    val pb = ProcessBuilder(ProcessSupport.shellCommand(hook.command))
     pb.directory(java.io.File(cwd))
     pb.environment()["VIBE_HOOK_EVENT"] = hook.event.wire
     pb.environment()["VIBE_HOOK_TOOL"] = if (hook.event == HookEvent.TURN_END) "" else (hook.tools.firstOrNull() ?: "")
@@ -108,32 +111,19 @@ class HookRunner(private val project: Project, private val onWarning: (String) -
       val process = pb.start()
       // Drain both pipes CONCURRENTLY, or a process that fills the stderr buffer while we read stdout
       // deadlocks; and bound the wait BEFORE reading, or a hanging process outlives its timeout.
-      val out = drain(process.inputStream)
-      val err = drain(process.errorStream)
+      val out = ProcessSupport.drain(process.inputStream, "vibe-hook-drain")
+      val err = ProcessSupport.drain(process.errorStream, "vibe-hook-drain")
       runCatching { process.outputStream.use { it.write(payload.toByteArray(Charsets.UTF_8)) } }
       val finished = process.waitFor(hook.timeoutMs, TimeUnit.MILLISECONDS)
       if (!finished) process.destroyForcibly() // closes pipes → drain threads reach EOF
-      val stdout = out.get(2, TimeUnit.SECONDS)
-      val stderr = err.get(2, TimeUnit.SECONDS)
+      val stdout = out.get(ProcessSupport.DRAIN_JOIN_TIMEOUT_SEC, TimeUnit.SECONDS)
+      val stderr = err.get(ProcessSupport.DRAIN_JOIN_TIMEOUT_SEC, TimeUnit.SECONDS)
       HookOutcome.verdictOf(hook, if (finished) process.exitValue() else null,
         timedOut = !finished, spawnFailed = false, stdout = stdout, stderr = stderr)
     }
     catch (e: Exception) {
       HookOutcome.verdictOf(hook, null, timedOut = false, spawnFailed = true, stdout = "", stderr = e.message ?: "")
     }
-  }
-
-  private fun drain(stream: java.io.InputStream): java.util.concurrent.Future<String> {
-    val future = java.util.concurrent.CompletableFuture<String>()
-    Thread({ future.complete(runCatching { stream.bufferedReader().readText() }.getOrDefault("")) }, "vibe-hook-drain")
-      .apply { isDaemon = true }.start()
-    return future
-  }
-
-  private fun shellCommand(command: String): List<String> {
-    val os = System.getProperty("os.name").lowercase()
-    return if (os.contains("win")) listOf(System.getenv("COMSPEC") ?: "cmd.exe", "/d", "/s", "/c", command)
-           else listOf("/bin/sh", "-c", command)
   }
 
   private fun notifyBrokenOnce(message: String?) {
