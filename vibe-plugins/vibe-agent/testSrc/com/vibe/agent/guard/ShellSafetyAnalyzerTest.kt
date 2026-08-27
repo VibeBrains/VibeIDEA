@@ -45,6 +45,14 @@ class ShellSafetyAnalyzerTest {
   }
 
   @Test
+  fun pathQualifiedBinariesStillCaught() {
+    // Regression: a full path must not defeat the ^binary$ classifier.
+    assertEquals(Safety.DESTRUCTIVE, ShellSafetyAnalyzer.analyze("/bin/rm", listOf("-rf", "x")).safety)
+    assertEquals(Safety.DESTRUCTIVE, ShellSafetyAnalyzer.analyze("/usr/bin/git", listOf("push", "--force")).safety)
+    assertEquals(Safety.AMBIGUOUS, ShellSafetyAnalyzer.analyze("/usr/local/bin/docker", emptyList()).safety)
+  }
+
+  @Test
   fun powershellEquivalents() {
     assertEquals(Safety.DESTRUCTIVE, ShellSafetyAnalyzer.analyze("Remove-Item", listOf("-Recurse")).safety)
     assertEquals(Safety.DESTRUCTIVE, ShellSafetyAnalyzer.analyze("Format-Volume", listOf("C")).safety)

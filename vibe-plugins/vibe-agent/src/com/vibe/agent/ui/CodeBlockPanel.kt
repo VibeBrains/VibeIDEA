@@ -1,41 +1,45 @@
 // Copyright 2026 VibeBrains. Use of this source code is governed by the Apache 2.0 license.
 package com.vibe.agent.ui
 
+import com.intellij.openapi.editor.ex.EditorEx
+import com.intellij.openapi.fileTypes.FileTypeManager
+import com.intellij.openapi.fileTypes.UnknownFileType
 import com.intellij.openapi.ide.CopyPasteManager
+import com.intellij.openapi.project.Project
+import com.intellij.ui.EditorTextField
 import com.intellij.ui.JBColor
 import com.intellij.util.ui.JBUI
 import java.awt.BorderLayout
 import java.awt.Component
 import java.awt.Font
 import java.awt.datatransfer.StringSelection
+import javax.swing.JComponent
 import javax.swing.JLabel
 import javax.swing.JPanel
 import javax.swing.JTextArea
 
 /**
- * A monospace code block for an agent message's fenced ``` section: theme-colored
- * surface, an optional language tag, and its own «копировать» button. Reuses the
- * terminal-console theme tokens so code and terminal read as one surface.
+ * A code block for an agent message's fenced section: real IDE syntax
+ * highlighting via a read-only [EditorTextField] when the language tag resolves
+ * to a known FileType, otherwise plain monospace. Theme-colored, with a language
+ * tag and its own «копировать» button.
  */
-class CodeBlockPanel(lang: String?, code: String) : JPanel(BorderLayout()) {
+class CodeBlockPanel(project: Project?, lang: String?, rawCode: String) : JPanel(BorderLayout()) {
+  // Cap a runaway block: a highlighting editor over megabytes of code would freeze the feed.
+  private val code = if (rawCode.length > MAX_CODE_CHARS)
+    rawCode.take(MAX_CODE_CHARS) + "\n… (обрезано, ${rawCode.length - MAX_CODE_CHARS} символов)" else rawCode
+  private val tooBigForHighlight = code.length > MAX_HIGHLIGHT_CHARS
+
   init {
     isOpaque = false
     alignmentX = Component.LEFT_ALIGNMENT
     border = JBUI.Borders.compound(JBUI.Borders.empty(2, 0), JBUI.Borders.customLine(BORDER, 1))
 
     val header = JPanel(BorderLayout()).apply {
-      isOpaque = false
       background = HEADER_BG
       isOpaque = true
-      add(JLabel(lang?.lowercase() ?: "код").apply {
-        font = com.intellij.util.ui.JBFont.label().deriveFont(Font.PLAIN, 10f)
-        foreground = FG
-        border = JBUI.Borders.empty(2, 8)
-      }, BorderLayout.WEST)
-      add(JLabel("копировать").apply {
-        font = com.intellij.util.ui.JBFont.label().deriveFont(Font.PLAIN, 10f)
-        foreground = FG
-        border = JBUI.Borders.empty(2, 8)
+      add(label(lang?.lowercase() ?: "код"), BorderLayout.WEST)
+      add(label("копировать").apply {
         cursor = java.awt.Cursor.getPredefinedCursor(java.awt.Cursor.HAND_CURSOR)
         toolTipText = "Скопировать код"
         addMouseListener(object : java.awt.event.MouseAdapter() {
@@ -45,27 +49,74 @@ class CodeBlockPanel(lang: String?, code: String) : JPanel(BorderLayout()) {
         })
       }, BorderLayout.EAST)
     }
+    add(header, BorderLayout.NORTH)
+    add(highlighted(project, lang, code) ?: plain(code), BorderLayout.CENTER)
+  }
 
+  private fun label(text: String) = JLabel(text).apply {
+    font = com.intellij.util.ui.JBFont.label().deriveFont(Font.PLAIN, HEADER_FONT_PT)
+    foreground = FG
+    border = JBUI.Borders.empty(2, 8)
+  }
+
+  /** A read-only highlighting editor, or null when no project / unknown language / too big / creation fails. */
+  private fun highlighted(project: Project?, lang: String?, code: String): JComponent? {
+    if (project == null || tooBigForHighlight) return null
+    val fileName = CodeLangMapping.fileNameFor(lang) ?: return null
+    val fileType = FileTypeManager.getInstance().getFileTypeByFileName(fileName)
+    if (fileType is UnknownFileType) return null
+    return try {
+      val field = object : EditorTextField(code, project, fileType) {
+        override fun createEditor(): EditorEx = super.createEditor().apply {
+          setViewer(true)
+          isRendererMode = true
+          settings.apply {
+            isLineNumbersShown = false
+            isFoldingOutlineShown = false
+            isLineMarkerAreaShown = false
+            isCaretRowShown = false
+            additionalLinesCount = 0
+            additionalColumnsCount = 0
+            isUseSoftWraps = false
+          }
+          setHorizontalScrollbarVisible(true)
+          setVerticalScrollbarVisible(false)
+          setBorder(JBUI.Borders.empty(4, 6))
+        }
+      }
+      field.setOneLineMode(false)
+      field.isViewer = true
+      field
+    } catch (e: Throwable) {
+      null // any editor-creation failure degrades to the plain area
+    }
+  }
+
+  private fun plain(code: String): JComponent {
     val area = JTextArea(code).apply {
       isEditable = false
-      font = Font(Font.MONOSPACED, Font.PLAIN, JBUI.scaleFontSize(12f))
+      font = Font(Font.MONOSPACED, Font.PLAIN, JBUI.scaleFontSize(BODY_FONT_PT))
       background = BG
       foreground = FG_CODE
       lineWrap = false
       border = JBUI.Borders.empty(6, 8)
     }
-    add(header, BorderLayout.NORTH)
-    // Horizontal scroll for long lines instead of wrapping code.
-    add(com.intellij.ui.components.JBScrollPane(area).apply {
+    return com.intellij.ui.components.JBScrollPane(area).apply {
       horizontalScrollBarPolicy = javax.swing.ScrollPaneConstants.HORIZONTAL_SCROLLBAR_AS_NEEDED
       verticalScrollBarPolicy = javax.swing.ScrollPaneConstants.VERTICAL_SCROLLBAR_NEVER
       border = JBUI.Borders.empty()
       isOpaque = false
       viewport.isOpaque = false
-    }, BorderLayout.CENTER)
+    }
   }
 
   companion object {
+    /** Hard cap on rendered code; beyond this the block is truncated with a notice. */
+    private const val MAX_CODE_CHARS = 200_000
+    /** Above this, skip the highlighting editor (too heavy) and use the plain area. */
+    private const val MAX_HIGHLIGHT_CHARS = 40_000
+    private const val HEADER_FONT_PT = 10f
+    private const val BODY_FONT_PT = 12f
     private val BG = JBColor.namedColor("Vibe.Chat.terminalBackground", JBColor(0xF7F7F7, 0x1E1F22))
     private val HEADER_BG = JBColor.namedColor("Vibe.Chat.toolCardBackground", JBColor(0xF2F2F2, 0x26282E))
     private val FG_CODE = JBColor.namedColor("Vibe.Chat.terminalForeground", JBColor(0x2B2B2B, 0xBCBEC4))

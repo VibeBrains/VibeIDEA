@@ -85,6 +85,12 @@ class HookRunner(private val project: Project, private val onWarning: (String) -
   private fun load(): List<Hook> {
     val file = hooksFile ?: return emptyList()
     if (!Files.isRegularFile(file)) { cached = emptyList(); cachedMtime = -1L; return emptyList() }
+    // Guard against a pathological/huge file OOMing the read (a config, not a data file).
+    if (Files.size(file) > MAX_HOOKS_BYTES) {
+      if (cachedMtime != -2L) { onWarning("hooks.json больше ${MAX_HOOKS_BYTES / 1024} КБ — пропущен"); cachedMtime = -2L }
+      cached = emptyList()
+      return emptyList()
+    }
     val mtime = Files.getLastModifiedTime(file).toMillis()
     if (mtime != cachedMtime) {
       cached = HookConfig.parse(Files.readString(file), onWarning)
@@ -115,9 +121,14 @@ class HookRunner(private val project: Project, private val onWarning: (String) -
       val err = ProcessSupport.drain(process.errorStream, "vibe-hook-drain")
       runCatching { process.outputStream.use { it.write(payload.toByteArray(Charsets.UTF_8)) } }
       val finished = process.waitFor(hook.timeoutMs, TimeUnit.MILLISECONDS)
-      if (!finished) process.destroyForcibly() // closes pipes → drain threads reach EOF
-      val stdout = out.get(ProcessSupport.DRAIN_JOIN_TIMEOUT_SEC, TimeUnit.SECONDS)
-      val stderr = err.get(ProcessSupport.DRAIN_JOIN_TIMEOUT_SEC, TimeUnit.SECONDS)
+      if (!finished) {
+        runCatching { com.intellij.execution.process.OSProcessUtil.killProcessTree(process) }
+        process.destroyForcibly() // closes pipes → drain threads reach EOF
+      }
+      // Swallow a slow drain (e.g. a grandchild holding the pipe): the exit code is authoritative, so a
+      // passing hook must NOT be mislabelled BROKEN just because the reader didn't reach EOF in time.
+      val stdout = runCatching { out.get(ProcessSupport.DRAIN_JOIN_TIMEOUT_SEC, TimeUnit.SECONDS) }.getOrDefault("")
+      val stderr = runCatching { err.get(ProcessSupport.DRAIN_JOIN_TIMEOUT_SEC, TimeUnit.SECONDS) }.getOrDefault("")
       HookOutcome.verdictOf(hook, if (finished) process.exitValue() else null,
         timedOut = !finished, spawnFailed = false, stdout = stdout, stderr = stderr)
     }
@@ -133,6 +144,7 @@ class HookRunner(private val project: Project, private val onWarning: (String) -
 
   companion object {
     private val NOTHING = HookDecision(false, flagged = false, agentMessage = null, brokenHooks = emptyList())
+    private const val MAX_HOOKS_BYTES = 512L * 1024L
 
     /** Seeded to `.vibe/hooks.example.jsonc`; rename to `hooks.json` and enable in settings. Spec: docs/vibe/manuals/hooksSpec.md. */
     private val EXAMPLE = """

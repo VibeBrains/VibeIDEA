@@ -50,9 +50,12 @@ object ShellSafetyAnalyzer {
   fun analyze(command: String, args: List<String>): Result {
     val cleanArgs = args.map { it.trim() }.filter { it.isNotEmpty() }
     val reasons = ArrayList<String>()
-    for (p in DESTRUCTIVE_COMMANDS) if (p.re.containsMatchIn(command)) reasons.add(p.reason)
+    // Match on the basename so a path-qualified binary (/bin/rm, C:\Windows\System32\format) is
+    // still classified by the anchored ^binary$ patterns.
+    val base = command.substringAfterLast('/').substringAfterLast('\\')
+    for (p in DESTRUCTIVE_COMMANDS) if (p.re.containsMatchIn(base)) reasons.add(p.reason)
     for (arg in cleanArgs) for (p in DESTRUCTIVE_ARGS) if (p.re.containsMatchIn(arg)) reasons.add(p.reason)
-    if (Regex("^git$", RegexOption.IGNORE_CASE).matches(command)) {
+    if (Regex("^git$", RegexOption.IGNORE_CASE).matches(base)) {
       val joined = cleanArgs.joinToString(" ")
       if (Regex("(^|\\s)push\\b.*--force\\b", RegexOption.IGNORE_CASE).containsMatchIn(joined)) reasons.add("git-push-force")
       if (Regex("(^|\\s)reset\\b.*--hard\\b", RegexOption.IGNORE_CASE).containsMatchIn(joined)) reasons.add("git-reset-hard")
@@ -60,7 +63,7 @@ object ShellSafetyAnalyzer {
     }
     if (reasons.isNotEmpty()) return Result(Safety.DESTRUCTIVE, reasons, command, cleanArgs)
     if (cleanArgs.isEmpty()) {
-      for (p in AMBIGUOUS_COMMANDS) if (p.re.containsMatchIn(command)) return Result(Safety.AMBIGUOUS, listOf(p.reason), command, cleanArgs)
+      for (p in AMBIGUOUS_COMMANDS) if (p.re.containsMatchIn(base)) return Result(Safety.AMBIGUOUS, listOf(p.reason), command, cleanArgs)
     }
     return Result(Safety.SAFE, emptyList(), command, cleanArgs)
   }

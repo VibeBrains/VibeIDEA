@@ -1009,6 +1009,13 @@ class AgentPanel(private val project: Project) : JPanel(BorderLayout()), AcpClie
       recordRows.add(row)
     }
     val liveTurnHere = turnInFlight.get() && turnThreadId == thread.id
+    if (liveTurnHere) {
+      // removeAll() detached the live turn's transient surfaces — re-attach them so their ongoing
+      // streams (appendThought / appendTerminalOutput) keep landing in the visible feed. Exact
+      // interleaving with the text is lost on a mid-turn switch; that is acceptable.
+      thoughtsBlock?.let { messages.add(it) }
+      terminalConsoles.values.forEach { messages.add(it) }
+    }
     val live = if (liveTurnHere) turnText.toString() else ""
     if (live.isNotEmpty()) {
       // The stream continues into a fresh row; finished text is already a stored record.
@@ -1205,7 +1212,7 @@ class AgentPanel(private val project: Project) : JPanel(BorderLayout()), AcpClie
       val stack = JPanel().apply { layout = BoxLayout(this, BoxLayout.Y_AXIS); isOpaque = false; alignmentX = Component.LEFT_ALIGNMENT }
       for (seg in MessageSegments.parse(content)) when (seg) {
         is MessageSegment.Prose -> stack.add(proseArea().also { it.text = seg.text; it.alignmentX = Component.LEFT_ALIGNMENT })
-        is MessageSegment.Code -> stack.add(CodeBlockPanel(seg.lang, seg.code))
+        is MessageSegment.Code -> stack.add(CodeBlockPanel(project, seg.lang, seg.code))
       }
       (text.parent as? java.awt.Container)?.let { c ->
         c.remove(text)
@@ -1463,7 +1470,7 @@ class AgentPanel(private val project: Project) : JPanel(BorderLayout()), AcpClie
       val console = TerminalConsole(title)
       terminalConsoles[terminalId] = console
       messages.add(console)
-      recordRows.add(console)
+      // Not added to recordRows: consoles are not history records, and would shift the reveal index.
       revalidateScroll()
     }
   }
@@ -1484,7 +1491,7 @@ class AgentPanel(private val project: Project) : JPanel(BorderLayout()), AcpClie
         block = ThoughtsBlock()
         thoughtsBlock = block
         messages.add(block)
-        recordRows.add(block)
+        // Not added to recordRows: reasoning is not a history record (would shift the reveal index).
       }
       block.append(text)
       revalidateScroll()

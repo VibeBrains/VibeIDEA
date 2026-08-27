@@ -25,7 +25,12 @@ class VerifyGateRunner(private val cwd: String?) {
       // thread would block until the process exits, making the timeout unreachable for a hung command.
       val outFuture = ProcessSupport.drain(process.inputStream, "vibe-verify-drain")
       val finished = process.waitFor(timeoutMs.toLong(), TimeUnit.MILLISECONDS)
-      if (!finished) process.destroyForcibly() // closes the pipe → drain thread reaches EOF
+      if (!finished) {
+        // Reap the whole tree, not just the shell child — a build daemon grandchild would otherwise
+        // keep the pipe open, hang the drain thread and starve the output.
+        runCatching { com.intellij.execution.process.OSProcessUtil.killProcessTree(process) }
+        process.destroyForcibly()
+      }
       val output = runCatching { outFuture.get(ProcessSupport.DRAIN_JOIN_TIMEOUT_SEC, TimeUnit.SECONDS) }.getOrDefault("")
       if (!finished) return VerifyResult(ran = true, passed = false, exitCode = null, outputTail = tail(output) + "\n[таймаут]")
       val code = process.exitValue()

@@ -66,4 +66,35 @@ class MessageSegmentsTest {
     assertTrue(segs.all { it is MessageSegment.Code })
     assertEquals(2, segs.size)
   }
+
+  @Test
+  fun nestedFenceNotClosedByShorterInner() {
+    // A 4-backtick outer block containing a 3-backtick inner sample stays ONE block.
+    val segs = MessageSegments.parse("````md\n```js\ncode\n```\n````")
+    assertEquals(1, segs.size)
+    assertEquals("md", code(segs[0]).lang)
+    assertEquals("```js\ncode\n```", code(segs[0]).code)
+  }
+
+  @Test
+  fun infoStringKeepsOnlyLanguageToken() {
+    assertEquals("ts", code(MessageSegments.parse("```ts title=\"x\"\ncode\n```")[0]).lang)
+    assertEquals("python", code(MessageSegments.parse("```python {.numberLines}\np\n```")[0]).lang)
+  }
+
+  @Test
+  fun crlfDoesNotLeakCarriageReturn() {
+    val segs = MessageSegments.parse("intro\r\n```\r\na\r\nb\r\n```\r\nend")
+    assertEquals("a\nb", code(segs[1]).code)
+    assertFalse(code(segs[1]).code.contains('\r'))
+    assertFalse((segs[0] as MessageSegment.Prose).text.contains('\r'))
+  }
+
+  @Test
+  fun loneFenceDoesNotRenderEmptyBox() {
+    // A trailing lone fence with no content must not produce an empty Code segment.
+    val segs = MessageSegments.parse("hello\n```")
+    assertTrue(segs.all { it is MessageSegment.Prose })
+    assertFalse(MessageSegments.hasCode("hello\n```"))
+  }
 }

@@ -31,9 +31,11 @@ class AuditLog(
   /** Every file touch (append, read, export, delete) takes this monitor so the log is never torn. */
   private val ioLock = Any()
   @Volatile private var warned = false
+  /** Latched off after a write failure — the warning promises "отключён до перезапуска", so honour it. */
+  @Volatile private var disabled = false
 
   fun append(event: AuditEvent) {
-    if (!enabled()) return
+    if (!enabled() || disabled) return
     val line = event.toJson().toString() + "\n"
     runCatching { worker.execute { writeLine(line) } } // rejected after close() = nothing to log
   }
@@ -83,6 +85,7 @@ class AuditLog(
         Files.writeString(logFile, line, StandardOpenOption.CREATE, StandardOpenOption.APPEND)
       }
       catch (e: Exception) {
+        disabled = true
         if (!warned) {
           warned = true
           onWarning("аудит: запись не удалась (${e.message}) — журнал отключён до перезапуска")

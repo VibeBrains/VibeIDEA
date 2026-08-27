@@ -244,23 +244,30 @@ class AcpClient(
     try {
       reader.forEachLine { line ->
         if (line.isBlank()) return@forEachLine
-        val msg = try { json.parseToJsonElement(line).jsonObject }
-        catch (e: Exception) {
-          handler.onProtocolLog("[protocol] не-JSON строка: ${line.take(200)}")
-          return@forEachLine
-        }
-        val id = msg["id"]?.jsonPrimitive?.longOrNull
-        val method = msg["method"]?.jsonPrimitive?.content
-        when {
-          method != null && id != null -> respond(id, method, msg["params"]?.jsonObject ?: JsonObject(emptyMap()))
-          method != null -> if (method == "session/update") onSessionUpdateNotification(msg["params"]!!.jsonObject)
-                            else handler.onProtocolLog("[protocol] уведомление $method")
-          id != null -> {
-            val future = pending.remove(id) ?: return@forEachLine
-            val error = msg["error"]
-            if (error != null && error != JsonNull) future.completeExceptionally(RuntimeException(error.toString()))
-            else future.complete(msg["result"] ?: JsonNull)
+        // A single malformed frame must NEVER kill the reader thread (which would kill the whole
+        // ACP connection). Parse and route with safe casts; any per-frame error is logged and skipped.
+        try {
+          val msg = (json.parseToJsonElement(line) as? JsonObject) ?: run {
+            handler.onProtocolLog("[protocol] не-JSON объект: ${line.take(200)}")
+            return@forEachLine
           }
+          val id = (msg["id"] as? JsonPrimitive)?.longOrNull
+          val method = (msg["method"] as? JsonPrimitive)?.contentOrNull
+          val params = msg["params"] as? JsonObject
+          when {
+            method != null && id != null -> respond(id, method, params ?: JsonObject(emptyMap()))
+            method != null -> if (method == "session/update") { if (params != null) onSessionUpdateNotification(params) }
+                              else handler.onProtocolLog("[protocol] уведомление $method")
+            id != null -> {
+              val future = pending.remove(id) ?: return@forEachLine
+              val error = msg["error"]
+              if (error != null && error != JsonNull) future.completeExceptionally(RuntimeException(error.toString()))
+              else future.complete(msg["result"] ?: JsonNull)
+            }
+          }
+        }
+        catch (e: Exception) {
+          handler.onProtocolLog("[protocol] кадр пропущен: ${e.message}")
         }
       }
     }

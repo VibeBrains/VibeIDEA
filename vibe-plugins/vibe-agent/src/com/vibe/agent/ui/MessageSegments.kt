@@ -17,44 +17,51 @@ sealed interface MessageSegment {
 
 object MessageSegments {
   private const val FENCE = "```"
+  // Opening fence: ≤3 leading spaces, a run of ≥3 backticks, then an optional info string (no backticks).
+  private val OPEN = Regex("^ {0,3}(`{3,})[ \\t]*([^`]*?)[ \\t]*$")
+  // Closing fence: ≤3 leading spaces, a run of ≥3 backticks, nothing but whitespace after.
+  private val CLOSE = Regex("^ {0,3}(`{3,})[ \\t]*$")
 
   fun parse(text: String): List<MessageSegment> {
     if (!text.contains(FENCE)) return listOf(MessageSegment.Prose(text))
     val out = ArrayList<MessageSegment>()
-    val lines = text.split("\n")
+    // Normalize CRLF/CR so no stray \r leaks into rendered code or prose.
+    val lines = text.split(Regex("\\r\\n|\\r|\\n"))
     val prose = StringBuilder()
     var i = 0
     fun flushProse() {
       if (prose.isNotEmpty()) {
-        // Trim only the trailing newline we accumulate between segments, keep inner blank lines.
         out.add(MessageSegment.Prose(prose.toString().trimEnd('\n')))
         prose.setLength(0)
       }
     }
     while (i < lines.size) {
-      val line = lines[i]
-      val trimmed = line.trimStart()
-      if (trimmed.startsWith(FENCE)) {
+      val open = OPEN.matchEntire(lines[i])
+      if (open != null) {
         flushProse()
-        val lang = trimmed.removePrefix(FENCE).trim().takeIf { it.isNotEmpty() }
+        val fenceLen = open.groupValues[1].length // close must be ≥ this run → outer ```` not closed by inner ```
+        val lang = open.groupValues[2].trim().substringBefore(' ').substringBefore('\t').takeIf { it.isNotEmpty() }
         val code = StringBuilder()
         i++
         var closed = false
         while (i < lines.size) {
-          if (lines[i].trimStart().startsWith(FENCE)) { closed = true; i++; break }
+          val close = CLOSE.matchEntire(lines[i])
+          if (close != null && close.groupValues[1].length >= fenceLen) { closed = true; i++; break }
           code.append(lines[i]).append('\n')
           i++
         }
         out.add(MessageSegment.Code(lang, code.toString().removeSuffix("\n")))
         if (!closed) break // unterminated fence: everything consumed as code
       } else {
-        prose.append(line).append('\n')
+        prose.append(lines[i]).append('\n')
         i++
       }
     }
     flushProse()
-    // Drop empty prose that can appear between adjacent fences.
-    return out.filterNot { it is MessageSegment.Prose && it.text.isBlank() }.ifEmpty { listOf(MessageSegment.Prose(text)) }
+    // Drop empty prose AND empty code (a lone/trailing fence must not render an empty box).
+    return out.filterNot {
+      (it is MessageSegment.Prose && it.text.isBlank()) || (it is MessageSegment.Code && it.code.isBlank())
+    }.ifEmpty { listOf(MessageSegment.Prose(text)) }
   }
 
   /** True when [text] has at least one fenced code block worth special rendering. */
