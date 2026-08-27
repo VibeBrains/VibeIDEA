@@ -31,7 +31,7 @@ class VibeFimProvider : DebouncedInlineCompletionProvider() {
   @Volatile private var cached: Pair<ResolvedProvider, ModelEntry>? = null
   @Volatile private var cachedAt: Long = 0
 
-  override suspend fun getDebounceDelay(request: InlineCompletionRequest): Duration = 250.milliseconds
+  override suspend fun getDebounceDelay(request: InlineCompletionRequest): Duration = DEBOUNCE_DELAY
 
   override fun isEnabled(event: InlineCompletionEvent): Boolean =
     event is InlineCompletionEvent.DocumentChange || event is InlineCompletionEvent.DirectCall
@@ -42,7 +42,7 @@ class VibeFimProvider : DebouncedInlineCompletionProvider() {
     val document = request.document
     val offset = request.endOffset
     val (prefix, suffix, sameLineSuffix) = slice(document, offset)
-    if (prefix.lines().lastOrNull().orEmpty().length > 500) return InlineCompletionSuggestion.Empty
+    if (prefix.lines().lastOrNull().orEmpty().length > MAX_LINE_LENGTH) return InlineCompletionSuggestion.Empty
     val stop = if (sameLineSuffix.isNotBlank()) listOf("\n") else listOf("\n\n")
     val text = withContext(Dispatchers.IO) {
       runCatching { llm.fimComplete(target.first, target.second, prefix, suffix, stop) }.getOrDefault("")
@@ -58,14 +58,14 @@ class VibeFimProvider : DebouncedInlineCompletionProvider() {
     val lineStart = text.lastIndexOf('\n', maxOf(0, offset - 1)).let { if (it < 0) 0 else it + 1 }
     var from = offset
     var lines = 0
-    while (from > 0 && lines < 25) {
+    while (from > 0 && lines < CONTEXT_LINES) {
       from = text.lastIndexOf('\n', from - 1).let { if (it < 0) 0 else it }
       lines++
       if (from == 0) break
     }
     var to = offset
     lines = 0
-    while (to < text.length && lines < 25) {
+    while (to < text.length && lines < CONTEXT_LINES) {
       val next = text.indexOf('\n', to)
       to = if (next < 0) text.length else next + 1
       lines++
@@ -77,7 +77,7 @@ class VibeFimProvider : DebouncedInlineCompletionProvider() {
 
   private fun fimTarget(projectBase: String?): Pair<ResolvedProvider, ModelEntry>? {
     val now = System.currentTimeMillis()
-    if (now - cachedAt < 30_000) return cached
+    if (now - cachedAt < TARGET_CACHE_TTL_MS) return cached
     cachedAt = now
     cached = run {
       for (p in ProvidersService.load(projectBase) { }) {
@@ -90,5 +90,16 @@ class VibeFimProvider : DebouncedInlineCompletionProvider() {
       null
     }
     return cached
+  }
+
+  private companion object {
+    /** Debounce before asking the model for a completion (VibeIDE parity). */
+    val DEBOUNCE_DELAY = 250.milliseconds
+    /** Lines of prefix/suffix context sent to the model. */
+    const val CONTEXT_LINES = 25
+    /** Skip completion on very long lines (likely minified/generated). */
+    const val MAX_LINE_LENGTH = 500
+    /** How long a resolved FIM provider/model is cached before re-resolving. */
+    const val TARGET_CACHE_TTL_MS = 30_000L
   }
 }

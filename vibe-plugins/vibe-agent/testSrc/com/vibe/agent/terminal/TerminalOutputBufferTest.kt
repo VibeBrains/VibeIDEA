@@ -30,6 +30,7 @@ class TerminalOutputBufferTest {
 
   @Test
   fun noLimitKeepsAll() {
+    // null = the caller opted out of a limit (AgentPanel substitutes a default cap before this).
     val b = TerminalOutputBuffer(null)
     b.append("x".repeat(1000))
     val (text, truncated) = b.snapshot()

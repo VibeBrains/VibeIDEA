@@ -184,7 +184,7 @@ class LlmClient(private val http: HttpClient = HttpClient.newBuilder().connectTi
       url += "&" + (provider.entry.auth.name ?: "key") + "=" + URLEncoder.encode(key, StandardCharsets.UTF_8)
     }
     val builder = HttpRequest.newBuilder(URI.create(url))
-      .timeout(Duration.ofMillis(provider.entry.timeoutMs ?: 600_000L))
+      .timeout(Duration.ofMillis(provider.entry.timeoutMs ?: DEFAULT_REQUEST_TIMEOUT_MS))
       .header("Content-Type", "application/json")
     provider.entry.headers.forEach { (k, v) -> builder.header(k, v) }
     if (key != null && provider.entry.auth.type != "query") builder.header("x-goog-api-key", key)
@@ -255,7 +255,7 @@ class LlmClient(private val http: HttpClient = HttpClient.newBuilder().connectTi
       }
     }
     val builder = HttpRequest.newBuilder(URI.create(url))
-      .timeout(Duration.ofMillis(entry.timeoutMs ?: 600_000L))
+      .timeout(Duration.ofMillis(entry.timeoutMs ?: DEFAULT_REQUEST_TIMEOUT_MS))
       .header("Content-Type", "application/json")
     entry.headers.forEach { (k, v) -> builder.header(k, v) }
     val key = provider.apiKey
@@ -303,5 +303,7 @@ class LlmClient(private val http: HttpClient = HttpClient.newBuilder().connectTi
 
   private companion object {
     const val STOPPED_BY_USER = "остановлено пользователем"
+    /** Default per-request timeout when a provider does not set `timeoutMs` (10 min). */
+    const val DEFAULT_REQUEST_TIMEOUT_MS = 600_000L
   }
 }

@@ -157,6 +157,8 @@ class AgentPanel(private val project: Project) : JPanel(BorderLayout()), AcpClie
   private val terminals = AgentTerminalService(project.basePath)
   /** Live terminal consoles by terminal id (Claude _meta.terminal_output stream). */
   private val terminalConsoles = java.util.concurrent.ConcurrentHashMap<String, TerminalConsole>()
+  /** The current turn's collapsible reasoning block (ACP agent_thought_chunk), created on first thought. */
+  @Volatile private var thoughtsBlock: ThoughtsBlock? = null
   private val verifyRunner: VerifyGateRunner? = project.basePath?.let { VerifyGateRunner(it) }
   private val breakers = VibeBreakerService.getInstance(project)
   private val status = VibeAgentStatusService.getInstance(project)
@@ -538,6 +540,7 @@ class AgentPanel(private val project: Project) : JPanel(BorderLayout()), AcpClie
     // A fresh turn: tool-call ids and the changed-files set are per-turn.
     toolCalls.reset()
     terminalConsoles.clear()
+    thoughtsBlock = null
     changedPaths.clear()
     turnHadMutatingTool = false
     audit?.append(AuditEvent(System.currentTimeMillis(), AuditEvent.Action.PROMPT, ok = true,
@@ -629,16 +632,17 @@ class AgentPanel(private val project: Project) : JPanel(BorderLayout()), AcpClie
     // --- TURN-CHECKS: scan + trip FIRST, unconditionally. A leaked secret or a protected-path write
     // is a present harm that must latch the breaker even if VERIFY-GATE bounces/stops this round. ---
     val findings = if (cMode == VibeAgentSettings.CHECKS_OFF) emptyList() else {
-      val scanned = paths.take(TurnChecks.MAX_FILES_SCANNED)
+      val maxFiles = VibeAgentSettings.checksMaxFiles
+      val scanned = paths.take(maxFiles)
       val contents = scanned.mapNotNull { p -> readFileForScan(p)?.let { p to it } }
       // A silently-unscanned file weakens the secret-leak guarantee — say so rather than hide it.
       val skippedByCount = paths.size - scanned.size
       val skippedBySize = scanned.size - contents.size
       if (skippedByCount > 0 || skippedBySize > 0) systemLine(
         "[проверки хода] не просканировано файлов: ${skippedByCount + skippedBySize}" +
-          (if (skippedByCount > 0) " (сверх лимита ${TurnChecks.MAX_FILES_SCANNED})" else "") +
-          (if (skippedBySize > 0) " (крупнее ${MAX_SCAN_FILE_BYTES / 1024} КБ)" else ""))
-      TurnChecks.scanSecretLeak(contents) + TurnChecks.scanProtectedPath(paths)
+          (if (skippedByCount > 0) " (сверх лимита $maxFiles)" else "") +
+          (if (skippedBySize > 0) " (крупнее ${VibeAgentSettings.checksMaxFileKb} КБ)" else ""))
+      TurnChecks.scanSecretLeak(contents, maxFiles) + TurnChecks.scanProtectedPath(paths)
     }
     if (findings.isNotEmpty()) {
       findings.forEach { f ->
@@ -690,7 +694,7 @@ class AgentPanel(private val project: Project) : JPanel(BorderLayout()), AcpClie
   /** Read a changed file for the secret scan; skips huge/binary/unreadable files. */
   private fun readFileForScan(path: String): String? = try {
     val p = java.nio.file.Path.of(path)
-    if (!java.nio.file.Files.isRegularFile(p) || java.nio.file.Files.size(p) > MAX_SCAN_FILE_BYTES) null
+    if (!java.nio.file.Files.isRegularFile(p) || java.nio.file.Files.size(p) > VibeAgentSettings.checksMaxFileBytes) null
     else java.nio.file.Files.readString(p)
   } catch (e: Exception) { null }
 
@@ -715,7 +719,9 @@ class AgentPanel(private val project: Project) : JPanel(BorderLayout()), AcpClie
   /** preToolUse/postToolUse gate for one tool-call: runs the chain, audits, surfaces messages. */
   private fun runToolHook(event: HookEvent, tool: String?, params: JsonObject?): HookDecision {
     val decision = hooks.run(event, tool, params, emptyList())
-    audit?.append(AuditEvent(System.currentTimeMillis(), AuditEvent.Action.HOOK, ok = !decision.blocked,
+    // ok reflects whether a hook flagged a problem (exit 2), not merely whether it blocked —
+    // a postToolUse refusal is a real "not ok" even though it cannot stop the already-run tool.
+    audit?.append(AuditEvent(System.currentTimeMillis(), AuditEvent.Action.HOOK, ok = !decision.flagged,
       meta = mapOf("event" to event.wire, "tool" to (tool ?: ""), "blocked" to decision.blocked.toString(),
         "broken" to decision.brokenHooks.size.toString())))
     // Notes and post/turnEnd requirements are for the agent; the ACP model can't inject a mid-turn
@@ -726,7 +732,7 @@ class AgentPanel(private val project: Project) : JPanel(BorderLayout()), AcpClie
 
   private fun runTurnEndHooks() {
     val decision = hooks.run(HookEvent.TURN_END, null, null, changedPaths.toList())
-    audit?.append(AuditEvent(System.currentTimeMillis(), AuditEvent.Action.HOOK, ok = true,
+    audit?.append(AuditEvent(System.currentTimeMillis(), AuditEvent.Action.HOOK, ok = !decision.flagged,
       meta = mapOf("event" to HookEvent.TURN_END.wire, "changedFiles" to changedPaths.size.toString(),
         "broken" to decision.brokenHooks.size.toString())))
     decision.agentMessage?.let { systemLine("🪝 ПРОВЕРКА ПРОЕКТА: $it") }
@@ -795,15 +801,16 @@ class AgentPanel(private val project: Project) : JPanel(BorderLayout()), AcpClie
         clientConfig = config
       }
     }
+    val handshakeSec = VibeAgentSettings.handshakeTimeoutSec.toLong()
     try {
-      fresh.initializeAndOpenSession().get(HANDSHAKE_TIMEOUT_SEC, TimeUnit.SECONDS)
+      fresh.initializeAndOpenSession().get(handshakeSec, TimeUnit.SECONDS)
     }
     catch (e: TimeoutException) {
       synchronized(clientLock) {
         fresh.stop()
         if (client === fresh) { client = null; clientConfig = null }
       }
-      throw IllegalStateException("агент не ответил на initialize/session/new за $HANDSHAKE_TIMEOUT_SEC с — проверьте команду и ACP-флаг в ${AcpConfig.configPath()}")
+      throw IllegalStateException("агент не ответил на initialize/session/new за $handshakeSec с — проверьте команду и ACP-флаг в ${AcpConfig.configPath()}")
     }
     systemLine("[агент] сессия открыта" + (fresh.modes?.let { m -> " · режим: ${m.available.firstOrNull { it.id == m.currentModeId }?.name ?: m.currentModeId}" } ?: ""))
     return fresh
@@ -1040,6 +1047,7 @@ class AgentPanel(private val project: Project) : JPanel(BorderLayout()), AcpClie
     }
     systemLine("═══ Пайплайн «${pipeline.name}» — ${pipeline.steps.size} шагов ═══")
     turnInFlight.set(true)
+    status.set(VibeAgentStatusService.State.RUNNING)
     composer.busy = true
     turnThreadId = currentThreadId
     turnText.setLength(0)
@@ -1170,6 +1178,11 @@ class AgentPanel(private val project: Project) : JPanel(BorderLayout()), AcpClie
   private inner class AgentMessage {
     val text = proseArea()
     val meta = metaLabel("Агент · ${now()}", right = false)
+    private val metaRow = JPanel(BorderLayout()).apply {
+      isOpaque = false
+      add(meta, BorderLayout.WEST)
+      add(copyLink { text.text }, BorderLayout.EAST)
+    }
     val row: JPanel = object : ChatRow(BorderLayout(0, JBUI.scale(2))) {
       // better than the original: cap the text column so lines stay readable in a wide panel
       override fun getMaximumSize(): java.awt.Dimension =
@@ -1177,12 +1190,25 @@ class AgentPanel(private val project: Project) : JPanel(BorderLayout()), AcpClie
     }.apply {
       border = JBUI.Borders.empty(4, 4, 8, 4)
       add(text, BorderLayout.CENTER)
-      add(meta, BorderLayout.SOUTH)
+      add(metaRow, BorderLayout.SOUTH)
     }
     fun append(s: String) { text.append(s) }
     fun finish(seconds: Double, suffix: String?) {
       meta.text = "Агент · ${now()} · ${"%.1f".format(seconds)} с${suffix?.let { " · $it" } ?: ""}"
     }
+  }
+
+  /** A quiet "копировать" affordance that copies the current text to the clipboard on click. */
+  private fun copyLink(textSupplier: () -> String): JLabel = JLabel("копировать").apply {
+    font = com.intellij.util.ui.JBFont.label().deriveFont(Font.PLAIN, 10f)
+    foreground = META_FG
+    cursor = java.awt.Cursor.getPredefinedCursor(java.awt.Cursor.HAND_CURSOR)
+    toolTipText = "Скопировать текст сообщения"
+    addMouseListener(object : java.awt.event.MouseAdapter() {
+      override fun mouseClicked(e: java.awt.event.MouseEvent) {
+        com.intellij.openapi.ide.CopyPasteManager.getInstance().setContents(java.awt.datatransfer.StringSelection(textSupplier()))
+      }
+    })
   }
 
   private fun now(): String = LocalTime.now().format(DateTimeFormatter.ofPattern("HH:mm"))
@@ -1268,9 +1294,10 @@ class AgentPanel(private val project: Project) : JPanel(BorderLayout()), AcpClie
     if (threadId != null && fullText.isNotBlank()) {
       history.append(threadId, ChatMessageRecord(Role.ASSISTANT, fullText, at = nowIso()))
     }
-    val m = currentAgentMessage
-    currentAgentMessage = null
+    // currentAgentMessage is EDT-owned (appendAgentText also touches it on the EDT); read+clear it there.
     SwingUtilities.invokeLater {
+      val m = currentAgentMessage
+      currentAgentMessage = null
       if (m != null) {
         // Flush the tail the per-delta projections did not reach before the buffer was cleared.
         if (uiConsumed < fullText.length) m.append(fullText.substring(uiConsumed))
@@ -1357,6 +1384,10 @@ class AgentPanel(private val project: Project) : JPanel(BorderLayout()), AcpClie
         stepBuffer?.append(text)
         appendAgentText(text)
       }
+      "agent_thought_chunk" -> {
+        val text = u["content"]?.jsonObject?.get("text")?.jsonPrimitive?.contentOrNull ?: return
+        appendThought(text)
+      }
       "tool_call" -> {
         val call = toolCalls.onToolCall(u)
         if (call != null) { auditToolCall(AuditEvent.Action.TOOL_CALL_START, call); harvestMutation(call) }
@@ -1417,6 +1448,24 @@ class AgentPanel(private val project: Project) : JPanel(BorderLayout()), AcpClie
     SwingUtilities.invokeLater { terminalConsoles[terminalId]?.append(data) }
   }
 
+  /** Stream the agent's reasoning into a collapsible block on the turn's thread. */
+  private fun appendThought(text: String) {
+    val targetThread = (if (turnInFlight.get()) turnThreadId else null) ?: currentThreadId
+    SwingUtilities.invokeLater {
+      if (targetThread != currentThreadId) return@invokeLater
+      var block = thoughtsBlock
+      if (block == null) {
+        if (!turnInFlight.get()) return@invokeLater
+        block = ThoughtsBlock()
+        thoughtsBlock = block
+        messages.add(block)
+        recordRows.add(block)
+      }
+      block.append(text)
+      revalidateScroll()
+    }
+  }
+
   private fun markTerminalExit(terminalId: String, exitCode: Int?, signal: String?) {
     audit?.append(AuditEvent(System.currentTimeMillis(), AuditEvent.Action.TERMINAL, ok = exitCode == 0,
       meta = mapOf("exit" to (exitCode?.toString() ?: "signal:${signal ?: "?"}"))))
@@ -1431,9 +1480,10 @@ class AgentPanel(private val project: Project) : JPanel(BorderLayout()), AcpClie
   private fun harvestMutation(call: ToolCall) {
     val kind = call.kind
     val name = call.toolName
-    val isEdit = name != null && name in EDIT_TOOLS
-    if (isEdit || kind in MUTATING_KINDS) turnHadMutatingTool = true
-    if (isEdit) {
+    val isMutating = (name != null && name in EDIT_TOOLS) || kind in MUTATING_KINDS
+    if (isMutating) {
+      turnHadMutatingTool = true
+      // Harvest for ANY mutating call (edit/delete/move kinds too), not only name-matched edit tools.
       call.rawInput?.let { ri -> for (key in EDIT_PATH_KEYS) ri[key]?.jsonPrimitive?.contentOrNull?.let { changedPaths.add(it) } }
       // Agents that declare touched files via ACP `locations` widen coverage beyond fs/write.
       changedPaths.addAll(call.locations)
@@ -1526,7 +1576,8 @@ class AgentPanel(private val project: Project) : JPanel(BorderLayout()), AcpClie
       name to (o["value"]?.jsonPrimitive?.contentOrNull ?: "")
     }?.toMap() ?: emptyMap()
     val cwd = params["cwd"]?.jsonPrimitive?.contentOrNull
-    val outputByteLimit = params["outputByteLimit"]?.jsonPrimitive?.longOrNull
+    // Never unbounded: fall back to a cap when the agent omits outputByteLimit.
+    val outputByteLimit = params["outputByteLimit"]?.jsonPrimitive?.longOrNull ?: VibeAgentSettings.DEFAULT_TERMINAL_OUTPUT_BYTE_LIMIT
     // Destructive-command gate: same deterministic classifier as VibeIDE, asked before execution.
     val verdict = ShellSafetyAnalyzer.analyzeLine((listOf(command) + args).joinToString(" "))
     if (verdict != null) {
@@ -1599,13 +1650,9 @@ class AgentPanel(private val project: Project) : JPanel(BorderLayout()), AcpClie
   private companion object {
     const val NO_IMAGE_AGENT = "Агент не принимает изображения (promptCapabilities.image)"
     const val STOP_CANCELLED = "cancelled"
-    /** A mute agent binary must not hold the composer busy forever. */
-    const val HANDSHAKE_TIMEOUT_SEC = 60L
     const val KEY_OPEN_TABS = "vibe.chat.openTabs"
     /** Images ride the wire only for this many most recent user messages (cost + poison control). */
     const val MAX_IMAGE_HISTORY_MESSAGES = 4
-    /** Files larger than this are skipped by the secret scan (binary/generated noise). */
-    const val MAX_SCAN_FILE_BYTES = 512L * 1024L
     /** Truncation of a command preview shown in a destructive-command confirm dialog. */
     const val DESTRUCTIVE_PREVIEW_LEN = 300
     /** Checkpoint label preview length. */

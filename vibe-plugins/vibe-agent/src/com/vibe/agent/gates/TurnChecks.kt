@@ -35,10 +35,13 @@ object TurnChecks {
   private val PROTECTED_SUFFIXES = listOf(".pem", ".key", ".env")
   private val PROTECTED_NAMES = listOf(".env", "credentials", ".npmrc", ".pypirc")
 
-  /** @param files (path, content) of the turn's changed files (caller caps the count and size). */
-  fun scanSecretLeak(files: List<Pair<String, String>>): List<TurnFinding> {
+  /**
+   * @param files (path, content) of the turn's changed files (caller caps the count and size).
+   * @param maxFiles defensive ceiling on how many are scanned (caller may cap lower).
+   */
+  fun scanSecretLeak(files: List<Pair<String, String>>, maxFiles: Int = MAX_FILES_SCANNED): List<TurnFinding> {
     val findings = ArrayList<TurnFinding>()
-    for ((path, content) in files.take(MAX_FILES_SCANNED)) {
+    for ((path, content) in files.take(maxFiles)) {
       for ((label, re) in SECRET_PATTERNS) {
         if (re.containsMatchIn(content)) {
           findings.add(TurnFinding(TurnCheckId.NO_SECRET_LEAK, path, label))
@@ -52,7 +55,8 @@ object TurnChecks {
   fun scanProtectedPath(paths: List<String>): List<TurnFinding> {
     val findings = ArrayList<TurnFinding>()
     for (path in paths) {
-      val normalized = path.replace('\\', '/')
+      // Prepend '/' so a fragment like "/.git/" also matches a RELATIVE path ".git/config".
+      val normalized = "/" + path.replace('\\', '/').removePrefix("/")
       val name = normalized.substringAfterLast('/')
       val hit = PROTECTED_FRAGMENTS.any { normalized.contains(it) } ||
         PROTECTED_SUFFIXES.any { normalized.endsWith(it) } ||

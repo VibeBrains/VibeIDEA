@@ -113,9 +113,10 @@ class AcpClient(
   }
 
   private fun failPending(reason: String) {
-    val stale = pending.values.toList()
-    pending.clear()
-    stale.forEach { it.completeExceptionally(IllegalStateException(reason)) }
+    // Remove-and-fail each entry so a future put() racing between a snapshot and a clear()
+    // is still observed and failed, never orphaned forever incomplete.
+    val ids = pending.keys.toList()
+    for (id in ids) pending.remove(id)?.completeExceptionally(IllegalStateException(reason))
   }
 
   fun initializeAndOpenSession(): CompletableFuture<String> {

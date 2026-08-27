@@ -13,8 +13,13 @@ enum class HookVerdict { OK, NOTE, REFUSE, BROKEN }
 
 data class HookResult(val hook: Hook, val verdict: HookVerdict, val message: String?)
 
-/** Aggregated decision for one event's hook chain. `blocked` is true only for preToolUse. */
-data class HookDecision(val blocked: Boolean, val agentMessage: String?, val brokenHooks: List<String>)
+/**
+ * Aggregated decision for one event's hook chain. `blocked` is true only for
+ * preToolUse; `flagged` records that a hook actually refused (exit 2), even when
+ * that refusal cannot block (post/turnEnd) — the audit `ok` should reflect the
+ * refusal, not just whether the action was stopped.
+ */
+data class HookDecision(val blocked: Boolean, val flagged: Boolean, val agentMessage: String?, val brokenHooks: List<String>)
 
 object HookOutcome {
   const val REFUSE_EXIT_CODE = 2
@@ -57,11 +62,12 @@ object HookOutcome {
     return when {
       refuse != null -> HookDecision(
         blocked = event == HookEvent.PRE_TOOL_USE,
+        flagged = true,
         agentMessage = "$header ${refuse.message}",
         brokenHooks = broken,
       )
-      notes.isNotEmpty() -> HookDecision(false, notes.joinToString("\n"), broken)
-      else -> HookDecision(false, null, broken)
+      notes.isNotEmpty() -> HookDecision(false, flagged = false, agentMessage = notes.joinToString("\n"), brokenHooks = broken)
+      else -> HookDecision(false, flagged = false, agentMessage = null, brokenHooks = broken)
     }
   }
 

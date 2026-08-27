@@ -46,7 +46,7 @@ JSONL: одна строка — один JSON-объект, завершённ�
 | `circuit_breaker_opened` | Сработал защитный предохранитель | `breaker`, `reason` |
 | `circuit_breaker_recovered` | Пользователь снял предохранители | `cleared` |
 | `terminal` | Завершение/гейт терминала | `exit` или `gate`/`reasons`/`approved` |
-| `checkpoint` | Снят чекпоинт | — |
+| `checkpoint` | Снят чекпоинт | `hash` (первые 12 символов) |
 
 ## Ротация
 

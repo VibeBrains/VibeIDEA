@@ -42,8 +42,20 @@ object VibeAgentSettings {
   const val DEFAULT_CHECKS_MAX_ATTEMPTS = 2
   const val MIN_CHECKS_MAX_ATTEMPTS = 1
   const val MAX_CHECKS_MAX_ATTEMPTS = 10
+  const val DEFAULT_CHECKS_MAX_FILES = 40
+  const val MIN_CHECKS_MAX_FILES = 1
+  const val MAX_CHECKS_MAX_FILES = 5000
+  const val DEFAULT_CHECKS_MAX_FILE_KB = 512
+  const val MIN_CHECKS_MAX_FILE_KB = 16
+  const val MAX_CHECKS_MAX_FILE_KB = 65536
   // --- terminal (client-executed terminal/… for non-Claude agents) ---
   const val DEFAULT_TERMINAL_ENABLED = true
+  /** Fallback output cap when an agent's terminal/create omits outputByteLimit (never unbounded). */
+  const val DEFAULT_TERMINAL_OUTPUT_BYTE_LIMIT = 1_048_576L
+  // --- ACP handshake (a cold npx-launched agent can be slow to answer initialize) ---
+  const val DEFAULT_HANDSHAKE_TIMEOUT_SEC = 60
+  const val MIN_HANDSHAKE_TIMEOUT_SEC = 10
+  const val MAX_HANDSHAKE_TIMEOUT_SEC = 600
 
   private const val KEY_HOOKS_ENABLED = "vibe.agent.hooks.enabled"
   private const val KEY_AUDIT_ENABLED = "vibe.agent.audit.enabled"
@@ -54,7 +66,10 @@ object VibeAgentSettings {
   private const val KEY_VERIFY_TIMEOUT_MS = "vibe.agent.verifyGate.timeoutMs"
   private const val KEY_CHECKS_MODE = "vibe.agent.turnChecks.mode"
   private const val KEY_CHECKS_MAX_ATTEMPTS = "vibe.agent.turnChecks.maxAttempts"
+  private const val KEY_CHECKS_MAX_FILES = "vibe.agent.turnChecks.maxFiles"
+  private const val KEY_CHECKS_MAX_FILE_KB = "vibe.agent.turnChecks.maxFileKb"
   private const val KEY_TERMINAL_ENABLED = "vibe.agent.terminal.enabled"
+  private const val KEY_HANDSHAKE_TIMEOUT_SEC = "vibe.agent.handshakeTimeoutSec"
 
   private val props get() = PropertiesComponent.getInstance()
 
@@ -96,7 +111,21 @@ object VibeAgentSettings {
     get() = props.getInt(KEY_CHECKS_MAX_ATTEMPTS, DEFAULT_CHECKS_MAX_ATTEMPTS).coerceIn(MIN_CHECKS_MAX_ATTEMPTS, MAX_CHECKS_MAX_ATTEMPTS)
     set(value) = props.setValue(KEY_CHECKS_MAX_ATTEMPTS, value.coerceIn(MIN_CHECKS_MAX_ATTEMPTS, MAX_CHECKS_MAX_ATTEMPTS), DEFAULT_CHECKS_MAX_ATTEMPTS)
 
+  var checksMaxFiles: Int
+    get() = props.getInt(KEY_CHECKS_MAX_FILES, DEFAULT_CHECKS_MAX_FILES).coerceIn(MIN_CHECKS_MAX_FILES, MAX_CHECKS_MAX_FILES)
+    set(value) = props.setValue(KEY_CHECKS_MAX_FILES, value.coerceIn(MIN_CHECKS_MAX_FILES, MAX_CHECKS_MAX_FILES), DEFAULT_CHECKS_MAX_FILES)
+
+  var checksMaxFileKb: Int
+    get() = props.getInt(KEY_CHECKS_MAX_FILE_KB, DEFAULT_CHECKS_MAX_FILE_KB).coerceIn(MIN_CHECKS_MAX_FILE_KB, MAX_CHECKS_MAX_FILE_KB)
+    set(value) = props.setValue(KEY_CHECKS_MAX_FILE_KB, value.coerceIn(MIN_CHECKS_MAX_FILE_KB, MAX_CHECKS_MAX_FILE_KB), DEFAULT_CHECKS_MAX_FILE_KB)
+
+  val checksMaxFileBytes: Long get() = checksMaxFileKb.toLong() * 1024L
+
   var terminalEnabled: Boolean
     get() = props.getBoolean(KEY_TERMINAL_ENABLED, DEFAULT_TERMINAL_ENABLED)
     set(value) = props.setValue(KEY_TERMINAL_ENABLED, value, DEFAULT_TERMINAL_ENABLED)
+
+  var handshakeTimeoutSec: Int
+    get() = props.getInt(KEY_HANDSHAKE_TIMEOUT_SEC, DEFAULT_HANDSHAKE_TIMEOUT_SEC).coerceIn(MIN_HANDSHAKE_TIMEOUT_SEC, MAX_HANDSHAKE_TIMEOUT_SEC)
+    set(value) = props.setValue(KEY_HANDSHAKE_TIMEOUT_SEC, value.coerceIn(MIN_HANDSHAKE_TIMEOUT_SEC, MAX_HANDSHAKE_TIMEOUT_SEC), DEFAULT_HANDSHAKE_TIMEOUT_SEC)
 }

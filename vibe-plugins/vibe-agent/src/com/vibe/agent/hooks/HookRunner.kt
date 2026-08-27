@@ -132,7 +132,7 @@ class HookRunner(private val project: Project, private val onWarning: (String) -
   }
 
   companion object {
-    private val NOTHING = HookDecision(false, null, emptyList())
+    private val NOTHING = HookDecision(false, flagged = false, agentMessage = null, brokenHooks = emptyList())
 
     /** Seeded to `.vibe/hooks.example.jsonc`; rename to `hooks.json` and enable in settings. Spec: docs/vibe/manuals/hooksSpec.md. */
     private val EXAMPLE = """

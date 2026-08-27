@@ -84,6 +84,14 @@ class TerminalConsole(title: String) : JPanel(BorderLayout()) {
   /** Append a streamed chunk (called on the EDT). */
   fun append(data: String) {
     raw.append(stripAnsi(data))
+    // Cap the BACKING buffer too, or a chatty long-running command grows it without bound
+    // (and «копировать» would then copy megabytes). Keep head+tail, collapse the middle.
+    if (raw.length > RAW_CAP) {
+      val head = raw.substring(0, DISPLAY_CAP / 2)
+      val tail = raw.substring(raw.length - DISPLAY_CAP / 2)
+      raw.setLength(0)
+      raw.append(head).append("\n…\n").append(tail)
+    }
     render()
   }
 
@@ -109,6 +117,8 @@ class TerminalConsole(title: String) : JPanel(BorderLayout()) {
   companion object {
     /** VibeIDE reads 80 000 chars of terminal output; the live view mirrors that cap. */
     const val DISPLAY_CAP = 80_000
+    /** Hard ceiling on the backing buffer (head+tail retained above this). */
+    private const val RAW_CAP = DISPLAY_CAP * 2
     private val ANSI = Regex("\\[[0-9;?]*[ -/]*[@-~]")
     private fun stripAnsi(s: String): String = ANSI.replace(s, "").replace("\r\n", "\n").replace('\r', '\n')
 

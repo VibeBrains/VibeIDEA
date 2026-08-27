@@ -73,7 +73,7 @@ class AgentTerminalService(private val defaultCwd: String?) {
     return TerminalSnapshot(text, truncated, if (t.finished) t.exitCode else null, t.signal, t.finished)
   }
 
-  /** Blocks until the process exits (or the optional timeout elapses). Never call on the reader thread. */
+  /** Blocks until the process exits (ACP wait_for_exit semantics). Never call on the reader thread — kill/release/disposeAll unblock the waiter. */
   fun waitForExit(terminalId: String): ExitStatus? {
     val t = terminals[terminalId] ?: return null
     t.exitLatch.await()
@@ -104,7 +104,15 @@ class AgentTerminalService(private val defaultCwd: String?) {
   }
 
   fun disposeAll() {
-    terminals.values.forEach { runCatching { if (!it.finished) OSProcessUtil.killProcessTree(it.handler.process) } }
+    terminals.values.forEach {
+      runCatching {
+        if (!it.finished) {
+          OSProcessUtil.killProcessTree(it.handler.process)
+          // Unblock any waitForExit parked on the latch even if the listener is slow.
+          it.handler.destroyProcess()
+        }
+      }
+    }
     terminals.clear()
   }
 

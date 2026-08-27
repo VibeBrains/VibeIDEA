@@ -28,7 +28,10 @@ class VibeAgentConfigurable : Configurable, Configurable.NoScroll {
   private var verifyTimeoutSec: JBIntSpinner? = null
   private var checksMode: ComboBox<String>? = null
   private var checksMaxAttempts: JBIntSpinner? = null
+  private var checksMaxFiles: JBIntSpinner? = null
+  private var checksMaxFileKb: JBIntSpinner? = null
   private var terminalEnabled: JBCheckBox? = null
+  private var handshakeTimeout: JBIntSpinner? = null
 
   override fun getDisplayName(): String = "Агент"
 
@@ -42,7 +45,10 @@ class VibeAgentConfigurable : Configurable, Configurable.NoScroll {
     val vTimeout = JBIntSpinner(VibeAgentSettings.verifyTimeoutMs / 1000, VibeAgentSettings.MIN_VERIFY_TIMEOUT_MS / 1000, VibeAgentSettings.MAX_VERIFY_TIMEOUT_MS / 1000).also { verifyTimeoutSec = it }
     val cMode = ComboBox(VibeAgentSettings.CHECKS_MODES.toTypedArray()).apply { item = VibeAgentSettings.checksMode }.also { checksMode = it }
     val cAttempts = JBIntSpinner(VibeAgentSettings.checksMaxAttempts, VibeAgentSettings.MIN_CHECKS_MAX_ATTEMPTS, VibeAgentSettings.MAX_CHECKS_MAX_ATTEMPTS).also { checksMaxAttempts = it }
+    val cMaxFiles = JBIntSpinner(VibeAgentSettings.checksMaxFiles, VibeAgentSettings.MIN_CHECKS_MAX_FILES, VibeAgentSettings.MAX_CHECKS_MAX_FILES).also { checksMaxFiles = it }
+    val cMaxFileKb = JBIntSpinner(VibeAgentSettings.checksMaxFileKb, VibeAgentSettings.MIN_CHECKS_MAX_FILE_KB, VibeAgentSettings.MAX_CHECKS_MAX_FILE_KB).also { checksMaxFileKb = it }
     val terminal = JBCheckBox("Разрешать агентам исполнять терминал (ACP terminal/…)", VibeAgentSettings.terminalEnabled).also { terminalEnabled = it }
+    val handshake = JBIntSpinner(VibeAgentSettings.handshakeTimeoutSec, VibeAgentSettings.MIN_HANDSHAKE_TIMEOUT_SEC, VibeAgentSettings.MAX_HANDSHAKE_TIMEOUT_SEC).also { handshakeTimeout = it }
 
     return FormBuilder.createFormBuilder()
       .addComponent(section("Хуки проекта"))
@@ -67,10 +73,16 @@ class VibeAgentConfigurable : Configurable, Configurable.NoScroll {
       .addComponent(hint("Детерминированные проверки изменённых за ход файлов: утечка секрета и запись в защищённый путь. " +
         "<b>off</b> / <b>notify</b> (сообщить) / <b>enforce</b> (вернуть агента). LLM-судья не используется."))
       .addLabeledComponent("Попыток возврата (enforce):", cAttempts)
+      .addLabeledComponent("Макс. файлов на скан:", cMaxFiles)
+      .addLabeledComponent("Макс. размер файла, КБ:", cMaxFileKb)
+      .addComponent(hint("Больше файлов/крупнее лимита — не сканируются; о пропуске сообщается в ленте чата."))
       .addComponent(section("Терминал агента"))
       .addComponent(terminal)
       .addComponent(hint("Живой вывод команд Claude показывается всегда. Этот флаг разрешает СТОРОННИМ агентам (Gemini CLI и др.) исполнять команды через " +
         "стандартные методы ACP <code>terminal/…</code> — с клампом таймаута, обрезкой вывода и подтверждением разрушительных команд."))
+      .addComponent(section("Соединение"))
+      .addLabeledComponent("Таймаут рукопожатия агента, сек:", handshake)
+      .addComponent(hint("Сколько ждать ответа агента на initialize/session/new. Холодный запуск через npx может быть медленным."))
       .addComponentFillVertically(JPanel(), 0)
       .panel.apply { border = JBUI.Borders.empty(8) }
   }
@@ -92,7 +104,10 @@ class VibeAgentConfigurable : Configurable, Configurable.NoScroll {
     (verifyTimeoutSec?.number ?: 0) * 1000 != VibeAgentSettings.verifyTimeoutMs ||
     (checksMode?.item ?: VibeAgentSettings.checksMode) != VibeAgentSettings.checksMode ||
     checksMaxAttempts?.number != VibeAgentSettings.checksMaxAttempts ||
-    terminalEnabled?.isSelected != VibeAgentSettings.terminalEnabled
+    checksMaxFiles?.number != VibeAgentSettings.checksMaxFiles ||
+    checksMaxFileKb?.number != VibeAgentSettings.checksMaxFileKb ||
+    terminalEnabled?.isSelected != VibeAgentSettings.terminalEnabled ||
+    handshakeTimeout?.number != VibeAgentSettings.handshakeTimeoutSec
 
   override fun apply() {
     hooksEnabled?.let { VibeAgentSettings.hooksEnabled = it.isSelected }
@@ -104,7 +119,10 @@ class VibeAgentConfigurable : Configurable, Configurable.NoScroll {
     verifyTimeoutSec?.let { VibeAgentSettings.verifyTimeoutMs = it.number * 1000 }
     checksMode?.let { VibeAgentSettings.checksMode = it.item }
     checksMaxAttempts?.let { VibeAgentSettings.checksMaxAttempts = it.number }
+    checksMaxFiles?.let { VibeAgentSettings.checksMaxFiles = it.number }
+    checksMaxFileKb?.let { VibeAgentSettings.checksMaxFileKb = it.number }
     terminalEnabled?.let { VibeAgentSettings.terminalEnabled = it.isSelected }
+    handshakeTimeout?.let { VibeAgentSettings.handshakeTimeoutSec = it.number }
   }
 
   override fun reset() {
@@ -117,6 +135,9 @@ class VibeAgentConfigurable : Configurable, Configurable.NoScroll {
     verifyTimeoutSec?.number = VibeAgentSettings.verifyTimeoutMs / 1000
     checksMode?.item = VibeAgentSettings.checksMode
     checksMaxAttempts?.number = VibeAgentSettings.checksMaxAttempts
+    checksMaxFiles?.number = VibeAgentSettings.checksMaxFiles
+    checksMaxFileKb?.number = VibeAgentSettings.checksMaxFileKb
+    handshakeTimeout?.number = VibeAgentSettings.handshakeTimeoutSec
     terminalEnabled?.isSelected = VibeAgentSettings.terminalEnabled
   }
 }

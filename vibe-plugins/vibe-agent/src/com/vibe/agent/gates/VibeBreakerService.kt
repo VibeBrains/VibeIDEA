@@ -31,7 +31,13 @@ class VibeBreakerService : PersistentStateComponent<VibeBreakerService.State> {
 
   private var state = State()
 
-  override fun getState(): State = state
+  // Guarded on the same monitor as trip()/clearAll(): the platform calls these from the
+  // settings-save thread while a pooled gate thread may be mutating `tripped`. A defensive
+  // copy keeps the serializer from iterating a list that trip() concurrently appends to.
+  @Synchronized
+  override fun getState(): State = State().apply { tripped = ArrayList(state.tripped) }
+
+  @Synchronized
   override fun loadState(loaded: State) { state = loaded }
 
   /** Trip a protective breaker (idempotent per id — the first reason is kept). */

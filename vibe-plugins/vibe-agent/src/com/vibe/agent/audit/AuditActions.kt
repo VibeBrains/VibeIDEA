@@ -45,11 +45,21 @@ private class AuditViewerDialog(private val project: Project, private val log: A
 
   init {
     title = "Журнал аудита агента"
-    val lines = log.readRecent(RECENT_LIMIT)
-    area.text = if (lines.isEmpty()) "Журнал пуст (или аудит выключен: Settings → Tools → VibeIDEA → Агент)."
-                else lines.joinToString("\n")
+    area.text = "Загрузка…"
     setOKButtonText("Закрыть")
     init()
+    reload()
+  }
+
+  /** Load the tail OFF the EDT (disk IO), then marshal the text back. */
+  private fun reload() {
+    com.intellij.openapi.application.ApplicationManager.getApplication().executeOnPooledThread {
+      val lines = log.readRecent(RECENT_LIMIT)
+      com.intellij.openapi.application.ApplicationManager.getApplication().invokeLater {
+        area.text = if (lines.isEmpty()) "Журнал пуст (или аудит выключен: Settings → Tools → VibeIDEA → Агент)."
+                    else lines.joinToString("\n")
+      }
+    }
   }
 
   override fun createCenterPanel(): JComponent = JBScrollPane(area).apply {
@@ -64,8 +74,13 @@ private class AuditViewerDialog(private val project: Project, private val log: A
         val wrapper = FileChooserFactory.getInstance().createSaveFileDialog(descriptor, project)
           .save(null as java.nio.file.Path?, "vibeidea-audit.jsonl")
         if (wrapper != null) {
-          runCatching { log.exportTo(wrapper.file.toPath()) }
-            .onFailure { Messages.showErrorDialog(project, "Не удалось экспортировать: ${it.message}", "Аудит") }
+          val target = wrapper.file.toPath()
+          com.intellij.openapi.application.ApplicationManager.getApplication().executeOnPooledThread {
+            val err = runCatching { log.exportTo(target) }.exceptionOrNull()
+            if (err != null) com.intellij.openapi.application.ApplicationManager.getApplication().invokeLater {
+              Messages.showErrorDialog(project, "Не удалось экспортировать: ${err.message}", "Аудит")
+            }
+          }
         }
       }
     },
@@ -75,8 +90,10 @@ private class AuditViewerDialog(private val project: Project, private val log: A
           "Удалить весь журнал аудита (.vibe/audit.jsonl и сжатые сегменты)? Отменить нельзя.",
           "Очистка журнала аудита", "Удалить", "Отмена", Messages.getWarningIcon())
         if (confirm == Messages.YES) {
-          val n = log.deleteAll()
-          area.text = "Удалено файлов: $n. Журнал пуст."
+          com.intellij.openapi.application.ApplicationManager.getApplication().executeOnPooledThread {
+            val n = log.deleteAll()
+            com.intellij.openapi.application.ApplicationManager.getApplication().invokeLater { area.text = "Удалено файлов: $n. Журнал пуст." }
+          }
         }
       }
     },

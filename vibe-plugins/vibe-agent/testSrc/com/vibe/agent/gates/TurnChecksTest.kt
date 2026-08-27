@@ -60,6 +60,13 @@ class TurnChecksTest {
   }
 
   @Test
+  fun relativeProtectedPathsCaught() {
+    // Regression: fragments are anchored, so a RELATIVE path (no leading slash) still matches.
+    val f = TurnChecks.scanProtectedPath(listOf(".git/config", ".ssh/known_hosts", ".env"))
+    assertEquals(3, f.size)
+  }
+
+  @Test
   fun decisionByMode() {
     val f = listOf(TurnFinding(TurnCheckId.NO_SECRET_LEAK, "x", "приватный ключ"))
     assertEquals(TurnChecksDecision.COMPLETE, TurnChecks.decide("off", f, 0, 2))

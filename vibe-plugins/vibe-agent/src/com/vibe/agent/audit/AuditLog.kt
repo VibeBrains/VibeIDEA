@@ -28,6 +28,8 @@ class AuditLog(
   private val worker = Executors.newSingleThreadExecutor { r ->
     Thread(r, "vibe-audit-writer").apply { isDaemon = true }
   }
+  /** Every file touch (append, read, export, delete) takes this monitor so the log is never torn. */
+  private val ioLock = Any()
   @Volatile private var warned = false
 
   fun append(event: AuditEvent) {
@@ -44,34 +46,25 @@ class AuditLog(
   val path: Path get() = logFile
 
   /**
-   * Run a file operation on the SAME single-thread worker that append() uses, so
-   * the viewer's read/export/delete never interleaves with an in-flight write
-   * (which would tear a line or clobber a rotation). Falls back to inline after
-   * close() so a disposed log still answers reads.
+   * Last [limit] raw JSONL lines (newest last), for the viewer. Empty when no log
+   * yet. IO-bound — call OFF the EDT; the viewer marshals the result back.
    */
-  private fun <T> onWorker(fallback: T, block: () -> T): T = try {
-    worker.submit(java.util.concurrent.Callable { block() }).get()
-  } catch (e: java.util.concurrent.RejectedExecutionException) {
-    runCatching(block).getOrDefault(fallback)
-  }
-
-  /** Last [limit] raw JSONL lines (newest last), for the viewer. Empty when no log yet. */
-  fun readRecent(limit: Int): List<String> = onWorker(emptyList()) {
+  fun readRecent(limit: Int): List<String> = synchronized(ioLock) {
     if (!Files.isRegularFile(logFile)) emptyList()
     else runCatching { Files.readAllLines(logFile).filter { it.isNotBlank() }.takeLast(limit) }.getOrDefault(emptyList())
   }
 
-  /** Copy the whole live log to [target] (rotated .gz files are left in place). */
-  fun exportTo(target: Path): Unit = onWorker(Unit) {
+  /** Copy the whole live log to [target] (rotated .gz files are left in place). Call OFF the EDT. */
+  fun exportTo(target: Path): Unit = synchronized(ioLock) {
     if (Files.isRegularFile(logFile)) Files.copy(logFile, target, java.nio.file.StandardCopyOption.REPLACE_EXISTING)
     else Files.writeString(target, "")
   }
 
-  /** GDPR erase: delete the live log and every rotated segment. Returns how many files were removed. */
-  fun deleteAll(): Int = onWorker(0) {
+  /** GDPR erase: delete the live log and every rotated segment. Returns the count removed. Call OFF the EDT. */
+  fun deleteAll(): Int = synchronized(ioLock) {
     var removed = 0
     if (Files.deleteIfExists(logFile)) removed++
-    val dir = logFile.parent ?: return@onWorker removed
+    val dir = logFile.parent ?: return@synchronized removed
     runCatching {
       Files.list(dir).use { stream ->
         stream.filter { it.fileName.toString().matches(Regex("audit\\.\\d+\\.jsonl\\.gz")) }.forEach {
@@ -83,15 +76,17 @@ class AuditLog(
   }
 
   private fun writeLine(line: String) {
-    try {
-      Files.createDirectories(logFile.parent)
-      rotateIfNeeded(line.toByteArray(Charsets.UTF_8).size.toLong())
-      Files.writeString(logFile, line, StandardOpenOption.CREATE, StandardOpenOption.APPEND)
-    }
-    catch (e: Exception) {
-      if (!warned) {
-        warned = true
-        onWarning("аудит: запись не удалась (${e.message}) — журнал отключён до перезапуска")
+    synchronized(ioLock) {
+      try {
+        Files.createDirectories(logFile.parent)
+        rotateIfNeeded(line.toByteArray(Charsets.UTF_8).size.toLong())
+        Files.writeString(logFile, line, StandardOpenOption.CREATE, StandardOpenOption.APPEND)
+      }
+      catch (e: Exception) {
+        if (!warned) {
+          warned = true
+          onWarning("аудит: запись не удалась (${e.message}) — журнал отключён до перезапуска")
+        }
       }
     }
   }

@@ -66,10 +66,17 @@ class HookOutcomeTest {
   }
 
   @Test
-  fun postToolUseRefuseDoesNotBlock() {
+  fun postToolUseRefuseDoesNotBlockButIsFlagged() {
     val d = HookOutcome.decideHooks(HookEvent.POST_TOOL_USE, listOf(verdict(2, err = "чините")))
     assertFalse(d.blocked)
+    assertTrue(d.flagged) // a post refusal is a real problem even though it can't block → audit ok=false
     assertTrue(d.agentMessage!!.contains("только что сделано"))
+  }
+
+  @Test
+  fun notesAndCleanAreNotFlagged() {
+    assertFalse(HookOutcome.decideHooks(HookEvent.POST_TOOL_USE, listOf(verdict(0, out = "note"))).flagged)
+    assertFalse(HookOutcome.decideHooks(HookEvent.TURN_END, listOf(verdict(0))).flagged)
   }
 
   @Test
