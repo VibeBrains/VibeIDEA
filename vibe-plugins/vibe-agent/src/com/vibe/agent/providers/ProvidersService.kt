@@ -23,7 +23,15 @@ object ProvidersService {
     val global = loadFile(Path.of(System.getProperty("user.home"), ".vibe", "providers.json"), onWarning)
     val workspace = projectBase?.let { loadFile(Path.of(it, ".vibe", "providers.json"), onWarning) } ?: emptyList()
     val merged = ProvidersFile.merge(global, workspace)
-    return ProvidersFile.resolveExtends(merged, onWarning).filter { it.active }
+    val globalIds = global.mapTo(HashSet()) { it.id }
+    val workspaceIds = workspace.mapTo(HashSet()) { it.id }
+    return ProvidersFile.resolveExtends(merged, onWarning).filter { it.active }.map {
+      it.copy(origin = when {
+        it.id in workspaceIds && it.id in globalIds -> ProviderOrigin.OVERRIDDEN
+        it.id in workspaceIds -> ProviderOrigin.PROJECT
+        else -> ProviderOrigin.GLOBAL
+      })
+    }
   }
 
   private fun loadFile(path: Path, onWarning: (String) -> Unit): List<ProviderEntry> {

@@ -11,6 +11,7 @@ import com.intellij.ui.components.JBScrollPane
 import com.intellij.util.ui.JBUI
 import com.vibe.agent.providers.ApiKeyResolver
 import com.vibe.agent.providers.LlmClient
+import com.vibe.agent.providers.ProviderOrigin
 import com.vibe.agent.providers.ProviderEntry
 import com.vibe.agent.providers.ProvidersService
 import java.awt.BorderLayout
@@ -55,7 +56,12 @@ class VibeProvidersConfigurable(private val project: Project) : Configurable, Co
       val test = JButton("Проверить").apply {
         addActionListener { verify(p, status) }
       }
-      val hint = JBLabel("<html>Провайдер из providers.json (id: <code>${p.id}</code>${p.apiKeyEnv?.let { " · env: <code>$it</code>" } ?: ""}). Введите ключ здесь — он уйдёт в защищённое хранилище ОС, — или задайте его в .vibe/.env.</html>").apply {
+      val originLabel = when (p.origin) {
+        ProviderOrigin.PROJECT -> "проектный providers.json (&lt;проект&gt;/.vibe)"
+        ProviderOrigin.OVERRIDDEN -> "глобальный providers.json (~/.vibe) + проектное переопределение"
+        else -> "глобальный providers.json (~/.vibe)"
+      }
+      val hint = JBLabel("<html>Провайдер: $originLabel (id: <code>${p.id}</code>${p.apiKeyEnv?.let { " · env: <code>$it</code>" } ?: ""}). Введите ключ здесь — он уйдёт в защищённое хранилище ОС, — или задайте его в .vibe/.env.</html>").apply {
         font = com.intellij.util.ui.JBFont.label().deriveFont(11f)
         foreground = com.intellij.ui.JBColor.GRAY
         // Long html text must wrap to the card width, not dictate it.

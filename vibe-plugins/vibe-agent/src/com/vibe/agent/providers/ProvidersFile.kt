@@ -39,6 +39,9 @@ data class ModelEntry(
 
 data class AuthSpec(val type: String = "bearer", val name: String? = null)
 
+/** Which providers.json the entry ultimately came from (set after merge, not parsed). */
+enum class ProviderOrigin { GLOBAL, PROJECT, OVERRIDDEN }
+
 data class ProviderEntry(
   val id: String,
   val name: String = id,
@@ -57,6 +60,7 @@ data class ProviderEntry(
   val modelsFetch: String? = "",
   val models: List<ModelEntry> = emptyList(),
   val note: String? = null,
+  val origin: ProviderOrigin? = null,
 )
 
 object ProvidersFile {
