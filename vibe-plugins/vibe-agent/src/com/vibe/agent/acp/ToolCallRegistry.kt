@@ -1,0 +1,114 @@
+// Copyright 2026 VibeBrains. Use of this source code is governed by the Apache 2.0 license.
+package com.vibe.agent.acp
+
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
+import java.util.concurrent.ConcurrentHashMap
+
+/**
+ * One agent tool-call, assembled across `tool_call` (announce) and one or more
+ * `tool_call_update` frames. VibeIDEA needs this registry because — unlike
+ * VibeIDE, where the agent loop lives in the client — here the loop runs inside
+ * Claude Code and the only window onto it is the `session/update` stream keyed
+ * by `toolCallId`. Hooks, audit, the terminal stream and the fuses all read from
+ * this registry.
+ */
+data class ToolCall(
+  val id: String,
+  var title: String,
+  var kind: String?,
+  var status: String,
+  var toolName: String?,
+  var rawInput: JsonObject?,
+  /** Terminal id carried by the Claude adapter's `_meta.terminal_info`, if any. */
+  var terminalId: String? = null,
+) {
+  val isRunning: Boolean get() = status == STATUS_PENDING || status == STATUS_IN_PROGRESS
+  val isDone: Boolean get() = status == STATUS_COMPLETED || status == STATUS_FAILED
+
+  /** Raw params as `name → string value` for the privacy filter and hook payload. */
+  fun rawParamsFlat(): Map<String, String?> {
+    val obj = rawInput ?: return emptyMap()
+    return obj.mapValues { (_, v) -> (v as? JsonPrimitive)?.contentOrNull }
+  }
+
+  companion object {
+    const val STATUS_PENDING = "pending"
+    const val STATUS_IN_PROGRESS = "in_progress"
+    const val STATUS_COMPLETED = "completed"
+    const val STATUS_FAILED = "failed"
+  }
+}
+
+/**
+ * Thread-safe registry of the running turn's tool-calls. The reader thread
+ * mutates it as frames arrive; the EDT reads snapshots for rendering. Cleared at
+ * the start of every turn — tool-call ids are unique only within a turn.
+ */
+class ToolCallRegistry {
+  private val byId = ConcurrentHashMap<String, ToolCall>()
+
+  fun reset() = byId.clear()
+
+  operator fun get(id: String): ToolCall? = byId[id]
+
+  fun snapshot(): List<ToolCall> = byId.values.toList()
+
+  /** Upsert from a `tool_call` frame; returns the (new or updated) entry. */
+  fun onToolCall(update: JsonObject): ToolCall? {
+    val id = update["toolCallId"]?.jsonPrimitive?.contentOrNull ?: return null
+    val title = update["title"]?.jsonPrimitive?.contentOrNull
+    val kind = update["kind"]?.jsonPrimitive?.contentOrNull
+    val status = update["status"]?.jsonPrimitive?.contentOrNull ?: ToolCall.STATUS_PENDING
+    val name = update["name"]?.jsonPrimitive?.contentOrNull
+    val rawInput = update["rawInput"] as? JsonObject
+    val existing = byId[id]
+    val call = existing?.also {
+      title?.let { t -> it.title = t }
+      kind?.let { k -> it.kind = k }
+      it.status = status
+      name?.let { n -> it.toolName = n }
+      rawInput?.let { r -> it.rawInput = r }
+    } ?: ToolCall(
+      id = id,
+      title = title ?: name ?: kind ?: "инструмент",
+      kind = kind,
+      status = status,
+      toolName = name,
+      rawInput = rawInput,
+    ).also { byId[id] = it }
+    call.terminalId = call.terminalId ?: terminalIdOf(update)
+    return call
+  }
+
+  /** Apply a `tool_call_update` frame; returns the affected entry (may be created lazily). */
+  fun onToolCallUpdate(update: JsonObject): ToolCall? {
+    val id = update["toolCallId"]?.jsonPrimitive?.contentOrNull ?: return null
+    val call = byId.getOrPut(id) {
+      ToolCall(
+        id = id,
+        title = update["title"]?.jsonPrimitive?.contentOrNull ?: "инструмент",
+        kind = update["kind"]?.jsonPrimitive?.contentOrNull,
+        status = ToolCall.STATUS_IN_PROGRESS,
+        toolName = update["name"]?.jsonPrimitive?.contentOrNull,
+        rawInput = update["rawInput"] as? JsonObject,
+      )
+    }
+    update["status"]?.jsonPrimitive?.contentOrNull?.let { call.status = it }
+    update["title"]?.jsonPrimitive?.contentOrNull?.let { call.title = it }
+    (update["rawInput"] as? JsonObject)?.let { call.rawInput = it }
+    (terminalIdOf(update))?.let { call.terminalId = it }
+    return call
+  }
+
+  private fun terminalIdOf(update: JsonObject): String? {
+    val meta = update["_meta"] as? JsonObject ?: return null
+    (meta["terminal_info"] as? JsonObject)?.get("terminal_id")?.jsonPrimitive?.contentOrNull?.let { return it }
+    (meta["terminal_output"] as? JsonObject)?.get("terminal_id")?.jsonPrimitive?.contentOrNull?.let { return it }
+    (meta["terminal_exit"] as? JsonObject)?.get("terminal_id")?.jsonPrimitive?.contentOrNull?.let { return it }
+    return null
+  }
+}

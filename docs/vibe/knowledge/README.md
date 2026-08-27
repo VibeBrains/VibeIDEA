@@ -41,3 +41,4 @@
 | Файл | О чём |
 |---|---|
 | [acpClient.md](agents/acpClient.md) | [архитектура] Агентская обвязка = свой ACP-клиент: JetBrains AI Chat закрыт и в IC отсутствует; открыты спека ACP + Kotlin SDK (Apache-2.0). Референсы архитектур: Continue (core-процесс + JCEF), ProxyAI (чистый JVM), jetbrains-cc-gui. Точки расширения платформы для агентского плагина. |
+| [acpGatesTerminal.md](agents/acpGatesTerminal.md) | [архитектура] Перенос терминала/хуков/VERIFY-GATE/turn-checks в ACP-модель: цикл агента в процессе Claude Code → всё цепляется за `session/update` + `request_permission`, а не за свой tool-loop. Реестр tool-call'ов как предпосылка; Claude-терминал через `_meta.terminal_output` (стандартные `terminal/*` мертвы для CC); `wait_for_exit` уводить с reader-потока; preToolUse блокирует только в точках клиента; bounce = повторный `session/prompt`; предохранители переживают рестарт. |

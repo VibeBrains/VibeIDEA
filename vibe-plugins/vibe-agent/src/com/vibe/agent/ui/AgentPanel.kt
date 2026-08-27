@@ -16,9 +16,26 @@ import com.intellij.util.ui.JBUI
 import com.vibe.agent.acp.AcpClient
 import com.vibe.agent.acp.AcpConfig
 import com.vibe.agent.acp.AgentServerConfig
+import com.vibe.agent.acp.ContentBlock
 import com.vibe.agent.acp.IdeFileOps
+import com.vibe.agent.acp.ToolCall
+import com.vibe.agent.acp.ToolCallRegistry
+import com.vibe.agent.audit.AuditEvent
+import com.vibe.agent.audit.AuditLog
+import com.vibe.agent.audit.ToolCallAudit
 import com.vibe.agent.checkpoints.CheckpointService
 import com.vibe.agent.design.DesignContextFile
+import com.vibe.agent.gates.TurnChecks
+import com.vibe.agent.gates.TurnChecksDecision
+import com.vibe.agent.gates.VerifyGateDecision
+import com.vibe.agent.gates.VerifyGatePolicy
+import com.vibe.agent.gates.VerifyGateRunner
+import com.vibe.agent.gates.VibeBreakerService
+import com.vibe.agent.guard.ShellSafetyAnalyzer
+import com.vibe.agent.hooks.HookDecision
+import com.vibe.agent.hooks.HookEvent
+import com.vibe.agent.hooks.HookRunner
+import com.vibe.agent.terminal.AgentTerminalService
 import com.vibe.agent.history.ChatMessageRecord
 import com.vibe.agent.history.ChatThread
 import com.vibe.agent.history.Role
@@ -34,6 +51,7 @@ import com.vibe.agent.providers.ProviderEntry
 import com.vibe.agent.providers.ProviderGuard
 import com.vibe.agent.providers.ProvidersService
 import com.vibe.agent.settings.ModelVisibility
+import com.vibe.agent.settings.VibeAgentSettings
 import com.vibe.agent.settings.VibeChatSettings
 import com.vibe.agent.settings.VibeProvidersConfigurable
 import com.vibe.agent.ui.composer.ChatTarget
@@ -55,10 +73,14 @@ import com.intellij.ide.util.PropertiesComponent
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.longOrNull
 import kotlinx.serialization.json.put
 import java.awt.BorderLayout
 import java.awt.Component
@@ -127,9 +149,22 @@ class AgentPanel(private val project: Project) : JPanel(BorderLayout()), AcpClie
   /** Guards check-then-act on [client]: ensureClient (pooled), onProcessExit (exit thread), dispose (EDT). */
   private val clientLock = Any()
   private val checkpoints: CheckpointService? = project.basePath?.let { CheckpointService(it) }
+  private val audit: AuditLog? = project.basePath?.let {
+    AuditLog(it, { VibeAgentSettings.auditEnabled }, { VibeAgentSettings.auditRotationBytes }, { w -> systemLine("[аудит] $w") })
+  }
+  /** Tool-calls of the running turn, assembled from the session/update stream by id. */
+  private val toolCalls = ToolCallRegistry()
+  private val hooks = HookRunner(project) { systemLine("[хук] $it") }
+  private val terminals = AgentTerminalService(project.basePath)
+  /** Live terminal consoles by terminal id (Claude _meta.terminal_output stream). */
+  private val terminalConsoles = java.util.concurrent.ConcurrentHashMap<String, TerminalConsole>()
+  private val verifyRunner: VerifyGateRunner? = project.basePath?.let { VerifyGateRunner(it) }
+  private val breakers = VibeBreakerService.getInstance(project)
   @Volatile private var stepBuffer: StringBuilder? = null
   @Volatile private var currentAgentMessage: AgentMessage? = null
   private val changedPaths = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
+  /** Set when a turn ran an edit/command tool: its writes may be invisible to the client (agent-internal Bash). */
+  @Volatile private var turnHadMutatingTool = false
 
   /** CAS-guarded: concurrent finishers (reader/exit/pooled threads) must not double-finish. */
   private val turnInFlight = java.util.concurrent.atomic.AtomicBoolean(false)
@@ -202,6 +237,8 @@ class AgentPanel(private val project: Project) : JPanel(BorderLayout()), AcpClie
     systemLine("Vibe Agent готов. Агенты: ${agents.joinToString { it.name }}; провайдеры: ${providers.joinToString { it.name }.ifEmpty { "нет" }}.")
     systemLine("Ключи провайдеров: Settings → Tools → VibeIDEA → Провайдеры (или .vibe/.env). Реестры: ${AcpConfig.configPath()}, ~/.vibe/providers.json.")
     ProviderGuard.scan(providers).forEach { f -> systemLine("[guard:${f.severity}] ${f.message}") }
+    hooks.seedExampleIfNeeded()
+    if (hooks.hasHooksButDisabled()) systemLine("[хуки] в проекте есть .vibe/hooks.json, но хуки выключены — включить: Settings → Tools → VibeIDEA → Агент")
     rebuildTargets()
     fetchProviderModels()
     project.messageBus.connect(this).subscribe(FileEditorManagerListener.FILE_EDITOR_MANAGER, object : FileEditorManagerListener {
@@ -219,6 +256,8 @@ class AgentPanel(private val project: Project) : JPanel(BorderLayout()), AcpClie
     llmClient.cancel()
     composer.queue.clear()
     turnInFlight.set(false)
+    terminals.disposeAll()
+    audit?.close()
     synchronized(clientLock) {
       client?.stop()
       client = null
@@ -375,6 +414,8 @@ class AgentPanel(private val project: Project) : JPanel(BorderLayout()), AcpClie
         "Vibe Agent")
       return false
     }
+    // A latched security breaker blocks starting an agent turn until the user clears it (VibeIDE contract).
+    if (t is ChatTarget.Agent && breakers.isBlocking() && !confirmClearBreakers()) return false
     // The store is app-wide: an untagged thread can be open in another window too.
     if (!history.tryBeginTurn(threadId)) {
       systemLine("[тред] занят другим окном — дождитесь завершения его хода")
@@ -474,25 +515,191 @@ class AgentPanel(private val project: Project) : JPanel(BorderLayout()), AcpClie
     val design = DesignContextFile.load(project.basePath)
     val fullPrompt = if (design != null) DesignContextFile.promptBlock(design) + "\n" + text else text
     val c = ensureClient(t.config)
+    // A fresh turn: tool-call ids and the changed-files set are per-turn.
+    toolCalls.reset()
+    terminalConsoles.clear()
+    changedPaths.clear()
+    turnHadMutatingTool = false
+    audit?.append(AuditEvent(System.currentTimeMillis(), AuditEvent.Action.PROMPT, ok = true,
+      model = "acp/${t.config.name}", meta = mapOf("chars" to text.length.toString())))
     SwingUtilities.invokeLater {
       modePicker.setModes(c.modes)
       composer.setImagesAllowed(c.capabilities?.image != false, NO_IMAGE_AGENT)
     }
     if (images.isNotEmpty() && c.capabilities?.image != true) systemLine("[агент] не принимает изображения — отправлено без вложений")
     val blocks = ContextSerializer.acpBlocks(fullPrompt, loaded, images, c.capabilities)
+    promptAcpTurn(c, blocks, t, startedAt, verifyAttempt = 0, checkAttempt = 0)
+  }
+
+  /**
+   * Send one ACP prompt and, on end_turn, run the post-turn gates. A gate that
+   * BOUNCES re-prompts the same session with a synthetic corrective message
+   * (attempt counters carried forward) instead of ending the turn — this is how
+   * VERIFY-GATE/TURN-CHECKS enforce "not done until green" in the ACP model,
+   * where there is no `vibe_complete` tool to hang them on.
+   */
+  private fun promptAcpTurn(c: AcpClient, blocks: List<ContentBlock>, t: ChatTarget.Agent, startedAt: Long, verifyAttempt: Int, checkAttempt: Int) {
     c.prompt(blocks).whenComplete { result, error ->
-      val secs = (System.currentTimeMillis() - startedAt) / 1000.0
-      if (error != null) {
-        // Whatever streamed before the failure stays in the transcript.
-        finishAgentBubble(secs, "ошибка")
-        systemLine("[ошибка] ${error.message}")
+      // Any throw here (a non-object result, a re-prompt failing) must still END the turn — otherwise
+      // turnInFlight/history.activeTurns stay stuck and the panel wedges app-wide until restart.
+      try {
+        val secs = (System.currentTimeMillis() - startedAt) / 1000.0
+        if (error != null) {
+          finishAgentBubble(secs, "ошибка")
+          systemLine("[ошибка] ${error.message}")
+          audit?.append(AuditEvent(System.currentTimeMillis(), AuditEvent.Action.REPLY, ok = false,
+            model = "acp/${t.config.name}", latencyMs = System.currentTimeMillis() - startedAt,
+            meta = mapOf("error" to (error.message ?: "error"))))
+          finishTurn()
+          return@whenComplete
+        }
+        // Lenient: a null / non-object result (JsonNull from a `{"result":null}` reply) yields stop=null, not a throw.
+        val stop = (result as? JsonObject)?.get("stopReason")?.jsonPrimitive?.contentOrNull
+        if (stop == STOP_CANCELLED || llmCancel.get() || disposed) {
+          finishAgentBubble(secs, stop)
+          finishTurn()
+          return@whenComplete
+        }
+        // Gates may run a build command and read files — never on the reader thread that completed us.
+        ApplicationManager.getApplication().executeOnPooledThread {
+          try {
+            val bounce = evaluateGates(verifyAttempt, checkAttempt)
+            if (bounce != null && !llmCancel.get() && !disposed && c.isAlive) {
+              finishAgentBubble(secs, "проверка: возврат")
+              promptAcpTurn(c, listOf(ContentBlock.Text(bounce.message)), t, startedAt, bounce.verifyAttempt, bounce.checkAttempt)
+            }
+            else {
+              finishAgentBubble(secs, stop)
+              audit?.append(AuditEvent(System.currentTimeMillis(), AuditEvent.Action.REPLY, ok = true,
+                model = "acp/${t.config.name}", latencyMs = System.currentTimeMillis() - startedAt,
+                meta = mapOf("stopReason" to (stop ?: "end_turn"))))
+              runTurnEndHooks()
+              finishTurn()
+            }
+          }
+          catch (e: Exception) {
+            finishAgentBubble(secs, "ошибка")
+            systemLine("[ошибка] гейт/возврат: ${e.message}")
+            finishTurn()
+          }
+        }
       }
-      else {
-        val stop = result?.jsonObject?.get("stopReason")?.jsonPrimitive?.contentOrNull
-        finishAgentBubble(secs, stop)
+      catch (e: Exception) {
+        systemLine("[ошибка] завершение хода: ${e.message}")
+        finishTurn()
       }
-      finishTurn()
     }
+  }
+
+  private data class GateBounce(val message: String, val verifyAttempt: Int, val checkAttempt: Int)
+
+  /**
+   * Post-turn gates over the files this turn changed. Returns a bounce (synthetic
+   * follow-up prompt) or null to complete. Only runs when the turn mutated files.
+   */
+  private fun evaluateGates(verifyAttempt: Int, checkAttempt: Int): GateBounce? {
+    // A Bash/edit tool may have changed files the client never saw as fs/write, so the gate runs on
+    // any mutating turn — not only when changedPaths is populated.
+    if (changedPaths.isEmpty() && !turnHadMutatingTool) return null
+    val paths = changedPaths.toList()
+    val cMode = VibeAgentSettings.checksMode
+
+    // --- TURN-CHECKS: scan + trip FIRST, unconditionally. A leaked secret or a protected-path write
+    // is a present harm that must latch the breaker even if VERIFY-GATE bounces/stops this round. ---
+    val findings = if (cMode == VibeAgentSettings.CHECKS_OFF) emptyList() else {
+      val contents = paths.take(TurnChecks.MAX_FILES_SCANNED).mapNotNull { p -> readFileForScan(p)?.let { p to it } }
+      TurnChecks.scanSecretLeak(contents) + TurnChecks.scanProtectedPath(paths)
+    }
+    if (findings.isNotEmpty()) {
+      findings.forEach { f ->
+        val id = if (f.check == com.vibe.agent.gates.TurnCheckId.NO_SECRET_LEAK) VibeBreakerService.SECRET_LEAK else VibeBreakerService.PROTECTED_PATH
+        if (breakers.trip(id, "${f.detail}: ${f.path}", System.currentTimeMillis())) {
+          audit?.append(AuditEvent(System.currentTimeMillis(), AuditEvent.Action.CIRCUIT_BREAKER_OPENED, ok = false,
+            meta = mapOf("breaker" to id, "reason" to f.detail)))
+        }
+      }
+      audit?.append(AuditEvent(System.currentTimeMillis(), AuditEvent.Action.TURN_CHECK, ok = false,
+        meta = mapOf("findings" to findings.size.toString(), "mode" to cMode)))
+    }
+
+    // --- VERIFY-GATE (build/tests) ---
+    val vMode = VibeAgentSettings.verifyMode
+    if (vMode != VibeAgentSettings.VERIFY_OFF && verifyRunner != null && VibeAgentSettings.verifyCommand.isNotBlank()) {
+      val res = verifyRunner.run(VibeAgentSettings.verifyCommand, VibeAgentSettings.verifyTimeoutMs)
+      audit?.append(AuditEvent(System.currentTimeMillis(), AuditEvent.Action.VERIFY_GATE, ok = res.passed,
+        meta = mapOf("ran" to res.ran.toString(), "exit" to (res.exitCode?.toString() ?: "none"))))
+      when (VerifyGatePolicy.decide(vMode, res.ran, res.passed, verifyAttempt, VibeAgentSettings.verifyMaxAttempts)) {
+        VerifyGateDecision.BOUNCE -> return GateBounce(
+          "⛔ VERIFY-GATE: команда «${VibeAgentSettings.verifyCommand}» упала (exit ${res.exitCode ?: "timeout"}). Задача НЕ выполнена — исправь причину и продолжай (попытка ${verifyAttempt + 1} из ${maxOf(1, VibeAgentSettings.verifyMaxAttempts)}).\n${res.outputTail}",
+          verifyAttempt + 1, checkAttempt)
+        VerifyGateDecision.STOP -> {
+          // Terminal: giving up hands control to the user — do not then bounce on turn checks.
+          systemLine("⛔ VERIFY-GATE: проверка всё ещё падает после ${maxOf(1, VibeAgentSettings.verifyMaxAttempts)} попыток — прогон остановлен, доработайте вручную")
+          return null
+        }
+        VerifyGateDecision.WARN_COMPLETE ->
+          systemLine("⚠️ VERIFY-GATE (предупреждение): проверка не прошла (exit ${res.exitCode ?: "timeout"}), но ход завершён")
+        VerifyGateDecision.COMPLETE -> {}
+      }
+    }
+
+    // --- TURN-CHECKS decision (findings already scanned + tripped above) ---
+    when (TurnChecks.decide(cMode, findings, checkAttempt, VibeAgentSettings.checksMaxAttempts)) {
+      TurnChecksDecision.BOUNCE -> return GateBounce(
+        TurnChecks.renderCorrective(findings, checkAttempt + 1, maxOf(1, VibeAgentSettings.checksMaxAttempts)),
+        verifyAttempt, checkAttempt + 1)
+      TurnChecksDecision.STOP ->
+        systemLine("⛔ ПРОВЕРКИ ХОДА: после ${maxOf(1, VibeAgentSettings.checksMaxAttempts)} попыток проблемы остались — прогон остановлен")
+      TurnChecksDecision.NOTIFY_COMPLETE ->
+        systemLine("🔎 ПРОВЕРКИ ХОДА: " + findings.joinToString("; ") { "${it.detail}: ${it.path}" })
+      TurnChecksDecision.COMPLETE -> {}
+    }
+    return null
+  }
+
+  /** Read a changed file for the secret scan; skips huge/binary/unreadable files. */
+  private fun readFileForScan(path: String): String? = try {
+    val p = java.nio.file.Path.of(path)
+    if (!java.nio.file.Files.isRegularFile(p) || java.nio.file.Files.size(p) > MAX_SCAN_FILE_BYTES) null
+    else java.nio.file.Files.readString(p)
+  } catch (e: Exception) { null }
+
+  /** Confirm clearing latched security breakers before an agent turn (manual-only, VibeIDE contract). */
+  private fun confirmClearBreakers(): Boolean {
+    var cleared = false
+    ApplicationManager.getApplication().invokeAndWait {
+      val choice = Messages.showYesNoDialog(project,
+        "Сработал защитный предохранитель агента:\n\n${breakers.openReasons().joinToString("\n")}\n\nОн снимается только вашим решением. Снять и продолжить?",
+        "Vibe Agent: предохранитель", "Снять и продолжить", "Отмена", Messages.getWarningIcon())
+      cleared = choice == Messages.YES
+    }
+    if (cleared) {
+      val n = breakers.clearAll()
+      audit?.append(AuditEvent(System.currentTimeMillis(), AuditEvent.Action.CIRCUIT_BREAKER_RECOVERED, ok = true,
+        meta = mapOf("cleared" to n.toString())))
+      systemLine("[предохранитель] снят ($n) — можно продолжать")
+    }
+    return cleared
+  }
+
+  /** preToolUse/postToolUse gate for one tool-call: runs the chain, audits, surfaces messages. */
+  private fun runToolHook(event: HookEvent, tool: String?, params: JsonObject?): HookDecision {
+    val decision = hooks.run(event, tool, params, emptyList())
+    audit?.append(AuditEvent(System.currentTimeMillis(), AuditEvent.Action.HOOK, ok = !decision.blocked,
+      meta = mapOf("event" to event.wire, "tool" to (tool ?: ""), "blocked" to decision.blocked.toString(),
+        "broken" to decision.brokenHooks.size.toString())))
+    // Notes and post/turnEnd requirements are for the agent; the ACP model can't inject a mid-turn
+    // message, so we surface them in the feed (VibeIDE dropped preToolUse notes entirely — we don't).
+    decision.agentMessage?.takeIf { !decision.blocked }?.let { systemLine("🪝 $it") }
+    return decision
+  }
+
+  private fun runTurnEndHooks() {
+    val decision = hooks.run(HookEvent.TURN_END, null, null, changedPaths.toList())
+    audit?.append(AuditEvent(System.currentTimeMillis(), AuditEvent.Action.HOOK, ok = true,
+      meta = mapOf("event" to HookEvent.TURN_END.wire, "changedFiles" to changedPaths.size.toString(),
+        "broken" to decision.brokenHooks.size.toString())))
+    decision.agentMessage?.let { systemLine("🪝 ПРОВЕРКА ПРОЕКТА: $it") }
   }
 
   private fun sendToLlm(t: ChatTarget.Model, startedAt: Long) {
@@ -552,7 +759,7 @@ class AgentPanel(private val project: Project) : JPanel(BorderLayout()), AcpClie
       if (existing != null && existing.isAlive && existing.sessionId != null && clientConfig == config) return existing
       existing?.stop()
       systemLine("[агент] запускаю: ${config.command} ${config.args.joinToString(" ")}")
-      AcpClient(config, project.basePath, this).also {
+      AcpClient(config, project.basePath, this, advertiseTerminalExec = VibeAgentSettings.terminalEnabled).also {
         it.start()
         client = it
         clientConfig = config
@@ -1120,22 +1327,130 @@ class AgentPanel(private val project: Project) : JPanel(BorderLayout()), AcpClie
         stepBuffer?.append(text)
         appendAgentText(text)
       }
-      "tool_call" -> toolCard(u["title"]?.jsonPrimitive?.contentOrNull ?: u["kind"]?.jsonPrimitive?.contentOrNull ?: "инструмент")
+      "tool_call" -> {
+        val call = toolCalls.onToolCall(u)
+        if (call != null) { auditToolCall(AuditEvent.Action.TOOL_CALL_START, call); harvestMutation(call) }
+        toolCard(call?.title ?: u["title"]?.jsonPrimitive?.contentOrNull ?: u["kind"]?.jsonPrimitive?.contentOrNull ?: "инструмент")
+        // Claude adapter announces a terminal for this tool-call — open a live console.
+        terminalInfoId(u)?.let { openTerminalConsole(it, call?.title ?: "терминал") }
+      }
+      "tool_call_update" -> {
+        val call = toolCalls.onToolCallUpdate(u) ?: return
+        harvestMutation(call)
+        // Stream Claude Bash output / exit into the console for this terminal.
+        terminalOutputFrame(u)?.let { (id, data) -> appendTerminalOutput(id, data) }
+        terminalExitFrame(u)?.let { (id, code, sig) -> markTerminalExit(id, code, sig) }
+        if (call.isDone) {
+          auditToolCall(AuditEvent.Action.TOOL_CALL_DONE, call)
+          // postToolUse: the tool already ran and cannot be undone, so run the hook OFF the reader thread —
+          // a 30 s hook must not stall the session/update stream.
+          val tool = call.toolName ?: call.kind
+          val params = call.rawInput
+          ApplicationManager.getApplication().executeOnPooledThread { runToolHook(HookEvent.POST_TOOL_USE, tool, params) }
+        }
+      }
       "plan" -> toolCard("план обновлён")
       else -> {}
     }
   }
 
+  // --- Claude terminal stream (_meta.terminal_*) rendering ---
+
+  private fun metaObj(u: JsonObject): JsonObject? = u["_meta"]?.jsonObject
+  private fun terminalInfoId(u: JsonObject): String? =
+    metaObj(u)?.get("terminal_info")?.jsonObject?.get("terminal_id")?.jsonPrimitive?.contentOrNull
+  private fun terminalOutputFrame(u: JsonObject): Pair<String, String>? {
+    val o = metaObj(u)?.get("terminal_output")?.jsonObject ?: return null
+    val id = o["terminal_id"]?.jsonPrimitive?.contentOrNull ?: return null
+    return id to (o["data"]?.jsonPrimitive?.contentOrNull ?: "")
+  }
+  private fun terminalExitFrame(u: JsonObject): Triple<String, Int?, String?>? {
+    val o = metaObj(u)?.get("terminal_exit")?.jsonObject ?: return null
+    val id = o["terminal_id"]?.jsonPrimitive?.contentOrNull ?: return null
+    return Triple(id, o["exit_code"]?.jsonPrimitive?.intOrNull, o["signal"]?.jsonPrimitive?.contentOrNull)
+  }
+
+  private fun openTerminalConsole(terminalId: String, title: String) {
+    val targetThread = (if (turnInFlight.get()) turnThreadId else null) ?: currentThreadId
+    SwingUtilities.invokeLater {
+      if (targetThread != currentThreadId || terminalConsoles.containsKey(terminalId)) return@invokeLater
+      val console = TerminalConsole(title)
+      terminalConsoles[terminalId] = console
+      messages.add(console)
+      recordRows.add(console)
+      revalidateScroll()
+    }
+  }
+
+  private fun appendTerminalOutput(terminalId: String, data: String) {
+    if (data.isEmpty()) return
+    SwingUtilities.invokeLater { terminalConsoles[terminalId]?.append(data) }
+  }
+
+  private fun markTerminalExit(terminalId: String, exitCode: Int?, signal: String?) {
+    audit?.append(AuditEvent(System.currentTimeMillis(), AuditEvent.Action.TERMINAL, ok = exitCode == 0,
+      meta = mapOf("exit" to (exitCode?.toString() ?: "signal:${signal ?: "?"}"))))
+    SwingUtilities.invokeLater { terminalConsoles[terminalId]?.markExit(exitCode, signal) }
+  }
+
+  /**
+   * Note that a turn touched files. Client-side writes reach [changedPaths] via fs/write, but an
+   * agent's own edit tools and Bash do not — so mark the turn as mutating (so the gates still run)
+   * and harvest any declared edit path so turn-checks can scan it.
+   */
+  private fun harvestMutation(call: ToolCall) {
+    val kind = call.kind
+    val name = call.toolName
+    val isEdit = name != null && name in EDIT_TOOLS
+    if (isEdit || kind in MUTATING_KINDS) turnHadMutatingTool = true
+    if (isEdit) {
+      val ri = call.rawInput ?: return
+      for (key in EDIT_PATH_KEYS) ri[key]?.jsonPrimitive?.contentOrNull?.let { changedPaths.add(it) }
+    }
+  }
+
+  /** Emit a privacy-filtered tool-call audit record (no args/command bodies — only tool + target path). */
+  private fun auditToolCall(action: String, call: ToolCall) {
+    val log = audit ?: return
+    val tool = call.toolName ?: call.kind ?: "tool"
+    val target = ToolCallAudit.safeTargetPath(tool, call.rawParamsFlat())
+    log.append(AuditEvent(
+      ts = System.currentTimeMillis(),
+      action = action,
+      ok = call.status != ToolCall.STATUS_FAILED,
+      files = target?.let { listOf(it) },
+      meta = mapOf("tool" to tool, "status" to call.status),
+    ))
+  }
+
   override fun onRequestPermission(params: JsonObject): JsonElement {
-    val title = params["toolCall"]?.jsonObject?.get("title")?.jsonPrimitive?.contentOrNull ?: "Действие агента"
+    val toolCall = params["toolCall"]?.jsonObject
+    val title = toolCall?.get("title")?.jsonPrimitive?.contentOrNull ?: "Действие агента"
+    // preToolUse hook: this is one of the two points the client controls (the other is fs/write).
+    val hookTool = toolCall?.get("name")?.jsonPrimitive?.contentOrNull ?: toolCall?.get("kind")?.jsonPrimitive?.contentOrNull
+    val hookParams = toolCall?.get("rawInput") as? JsonObject
+    val preHook = runToolHook(HookEvent.PRE_TOOL_USE, hookTool, hookParams)
+    if (preHook.blocked) {
+      systemLine("🪝 ${preHook.agentMessage}")
+      return buildJsonObject { put("outcome", buildJsonObject { put("outcome", "cancelled") }) }
+    }
+    // Deterministic destructive-command warning for the agent's own command tools (Claude runs Bash itself).
+    val command = hookParams?.get("command")?.jsonPrimitive?.contentOrNull
+    val destructive = command?.let { ShellSafetyAnalyzer.analyzeLine(it) }
+    val dialogText = if (destructive != null)
+      "⚠️ Разрушительная команда (${destructive.reasons.joinToString(", ")}):\n${command.take(300)}\n\n$title"
+    else title
     val options = params["options"]?.jsonArray?.map { it.jsonObject } ?: emptyList()
     var selected: String? = null
     ApplicationManager.getApplication().invokeAndWait {
       val names = options.map { it["name"]?.jsonPrimitive?.contentOrNull ?: it.getValue("optionId").jsonPrimitive.content }
-      val choice = Messages.showDialog(project, title, "Vibe Agent: разрешение", names.toTypedArray(), 0, Messages.getQuestionIcon())
+      val choice = Messages.showDialog(project, dialogText, "Vibe Agent: разрешение", names.toTypedArray(), 0,
+        if (destructive != null) Messages.getWarningIcon() else Messages.getQuestionIcon())
       if (choice >= 0) selected = options[choice].getValue("optionId").jsonPrimitive.content
     }
     val chosen = selected
+    audit?.append(AuditEvent(System.currentTimeMillis(), AuditEvent.Action.PERMISSION, ok = chosen != null,
+      meta = mapOf("title" to title.take(120), "outcome" to if (chosen != null) "selected" else "cancelled")))
     return buildJsonObject {
       put("outcome", buildJsonObject {
         if (chosen != null) {
@@ -1153,8 +1468,82 @@ class AgentPanel(private val project: Project) : JPanel(BorderLayout()), AcpClie
   override fun onReadTextFile(params: JsonObject): JsonElement = fileOps.readTextFile(params)
 
   override fun onWriteTextFile(params: JsonObject): JsonElement {
-    params["path"]?.jsonPrimitive?.contentOrNull?.let { changedPaths.add(it) }
-    return fileOps.writeTextFile(params)
+    val path = params["path"]?.jsonPrimitive?.contentOrNull
+    // preToolUse hook on the client-controlled write path (WritePreview is the interactive gate;
+    // a blocking hook refuses before the diff even appears).
+    val preHook = runToolHook(HookEvent.PRE_TOOL_USE, "write_text_file", params)
+    if (preHook.blocked) {
+      systemLine("🪝 ${preHook.agentMessage}")
+      throw IllegalStateException(preHook.agentMessage ?: "запись отклонена хуком проекта")
+    }
+    path?.let { changedPaths.add(it) }
+    val result = fileOps.writeTextFile(params)
+    audit?.append(AuditEvent(System.currentTimeMillis(), AuditEvent.Action.FS_WRITE, ok = true,
+      files = path?.let { listOf(it.take(ToolCallAudit.MAX_TARGET_LEN)) }))
+    return result
+  }
+
+  // --- standard ACP terminal/… (non-Claude agents that delegate execution to us) ---
+
+  override fun onCreateTerminal(params: JsonObject): JsonElement {
+    if (!VibeAgentSettings.terminalEnabled) throw IllegalStateException("исполнение терминала выключено (Settings → Tools → VibeIDEA → Агент)")
+    val command = params["command"]?.jsonPrimitive?.contentOrNull ?: throw IllegalStateException("terminal/create без command")
+    val args = (params["args"] as? JsonArray)?.mapNotNull { it.jsonPrimitive.contentOrNull } ?: emptyList()
+    val env = (params["env"] as? JsonArray)?.mapNotNull { e ->
+      val o = e as? JsonObject ?: return@mapNotNull null
+      val name = o["name"]?.jsonPrimitive?.contentOrNull ?: return@mapNotNull null
+      name to (o["value"]?.jsonPrimitive?.contentOrNull ?: "")
+    }?.toMap() ?: emptyMap()
+    val cwd = params["cwd"]?.jsonPrimitive?.contentOrNull
+    val outputByteLimit = params["outputByteLimit"]?.jsonPrimitive?.longOrNull
+    // Destructive-command gate: same deterministic classifier as VibeIDE, asked before execution.
+    val verdict = ShellSafetyAnalyzer.analyzeLine((listOf(command) + args).joinToString(" "))
+    if (verdict != null) {
+      var approved = false
+      ApplicationManager.getApplication().invokeAndWait {
+        val choice = Messages.showYesNoDialog(project,
+          "Агент хочет выполнить разрушительную команду:\n\n${(listOf(command) + args).joinToString(" ").take(300)}\n\nПризнаки: ${verdict.reasons.joinToString(", ")}\n\nЭто действие может уничтожить данные, и отменить его нечем.",
+          "Vibe Agent: разрушительная команда", "Выполнить", "Отмена", Messages.getWarningIcon())
+        approved = choice == Messages.YES
+      }
+      audit?.append(AuditEvent(System.currentTimeMillis(), AuditEvent.Action.TERMINAL, ok = approved,
+        meta = mapOf("gate" to "destructive", "reasons" to verdict.reasons.joinToString(","), "approved" to approved.toString())))
+      if (!approved) throw IllegalStateException("пользователь отказался выполнять разрушительную команду (${verdict.reasons.joinToString(", ")})")
+    }
+    val terminalId = terminals.create(command, args, env, cwd, outputByteLimit)
+    return buildJsonObject { put("terminalId", terminalId) }
+  }
+
+  override fun onTerminalOutput(params: JsonObject): JsonElement {
+    val id = params["terminalId"]?.jsonPrimitive?.contentOrNull ?: throw IllegalStateException("terminal/output без terminalId")
+    val snap = terminals.output(id) ?: throw IllegalStateException("неизвестный terminalId: $id")
+    return buildJsonObject {
+      put("output", snap.output)
+      put("truncated", snap.truncated)
+      if (snap.finished) put("exitStatus", buildJsonObject {
+        if (snap.exitCode != null) put("exitCode", snap.exitCode) else put("exitCode", JsonNull)
+        if (snap.signal != null) put("signal", snap.signal) else put("signal", JsonNull)
+      })
+    }
+  }
+
+  override fun onWaitForTerminalExit(params: JsonObject): JsonElement {
+    val id = params["terminalId"]?.jsonPrimitive?.contentOrNull ?: throw IllegalStateException("terminal/wait_for_exit без terminalId")
+    val exit = terminals.waitForExit(id) ?: throw IllegalStateException("неизвестный terminalId: $id")
+    return buildJsonObject {
+      if (exit.exitCode != null) put("exitCode", exit.exitCode) else put("exitCode", JsonNull)
+      if (exit.signal != null) put("signal", exit.signal) else put("signal", JsonNull)
+    }
+  }
+
+  override fun onKillTerminal(params: JsonObject): JsonElement {
+    params["terminalId"]?.jsonPrimitive?.contentOrNull?.let { terminals.kill(it) }
+    return buildJsonObject { }
+  }
+
+  override fun onReleaseTerminal(params: JsonObject): JsonElement {
+    params["terminalId"]?.jsonPrimitive?.contentOrNull?.let { terminals.release(it) }
+    return buildJsonObject { }
   }
 
   override fun onProtocolLog(line: String) = systemLine(line)
@@ -1184,6 +1573,14 @@ class AgentPanel(private val project: Project) : JPanel(BorderLayout()), AcpClie
     const val KEY_OPEN_TABS = "vibe.chat.openTabs"
     /** Images ride the wire only for this many most recent user messages (cost + poison control). */
     const val MAX_IMAGE_HISTORY_MESSAGES = 4
+    /** Files larger than this are skipped by the secret scan (binary/generated noise). */
+    const val MAX_SCAN_FILE_BYTES = 512L * 1024L
+    /** ACP tool kinds that can change files (gates run when a turn used one). */
+    val MUTATING_KINDS = setOf("edit", "delete", "move", "execute")
+    /** Tool names known to write files — their declared path is harvested into the changed set. */
+    val EDIT_TOOLS = setOf("write_text_file", "Write", "Edit", "MultiEdit", "NotebookEdit",
+      "edit_file", "rewrite_file", "create_file_or_folder", "delete_file_or_folder")
+    val EDIT_PATH_KEYS = listOf("path", "file_path", "filePath", "uri")
     const val KEY_ACTIVE_TAB = "vibe.chat.activeTab"
     /** VibeIDE: the reveal highlight fades after 2600 ms. */
     const val REVEAL_HIGHLIGHT_MS = 2600

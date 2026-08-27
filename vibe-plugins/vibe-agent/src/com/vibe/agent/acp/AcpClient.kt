@@ -32,6 +32,8 @@ class AcpClient(
   private val config: AgentServerConfig,
   private val workingDir: String?,
   private val handler: Handler,
+  /** Announce the standard ACP `terminal` capability so non-Claude agents delegate execution to us. */
+  private val advertiseTerminalExec: Boolean = false,
 ) {
   interface Handler {
     fun onSessionUpdate(update: JsonObject)
@@ -41,6 +43,13 @@ class AcpClient(
     fun onRequestPermission(params: JsonObject): JsonElement
     fun onReadTextFile(params: JsonObject): JsonElement
     fun onWriteTextFile(params: JsonObject): JsonElement
+    // Standard ACP terminal/… (for agents that delegate execution). Default = not supported.
+    fun onCreateTerminal(params: JsonObject): JsonElement = throw UnsupportedOperationException("terminal not supported")
+    fun onTerminalOutput(params: JsonObject): JsonElement = throw UnsupportedOperationException("terminal not supported")
+    /** Blocking: returns once the process exits. Dispatched off the reader thread by [respond]. */
+    fun onWaitForTerminalExit(params: JsonObject): JsonElement = throw UnsupportedOperationException("terminal not supported")
+    fun onKillTerminal(params: JsonObject): JsonElement = throw UnsupportedOperationException("terminal not supported")
+    fun onReleaseTerminal(params: JsonObject): JsonElement = throw UnsupportedOperationException("terminal not supported")
     fun onProtocolLog(line: String)
     /** The process of [client] ended on its own; deliberate [stop] calls do not report. */
     fun onProcessExit(client: AcpClient, code: Int)
@@ -117,6 +126,10 @@ class AcpClient(
           put("readTextFile", true)
           put("writeTextFile", true)
         })
+        // Standard terminal/… execution: only when the user allows agents to run commands via us.
+        if (advertiseTerminalExec) put("terminal", true)
+        // Claude adapter streams Bash output to us via _meta.terminal_output (read-only display, always on).
+        put("_meta", buildJsonObject { put("terminal_output", true) })
       })
     }
     return request("initialize", init).thenCompose { initResult ->
@@ -268,11 +281,21 @@ class AcpClient(
   }
 
   private fun respond(id: Long, method: String, params: JsonObject) {
+    // Methods that block on a modal dialog or a subprocess must run OFF the reader thread, or the
+    // whole session/update stream (including live terminal output) stalls behind them.
+    when (method) {
+      "terminal/wait_for_exit" -> return respondAsync(id, "vibe-acp-terminal-wait") { handler.onWaitForTerminalExit(params) }
+      "session/request_permission" -> return respondAsync(id, "vibe-acp-permission") { handler.onRequestPermission(params) }
+      "terminal/create" -> return respondAsync(id, "vibe-acp-terminal-create") { handler.onCreateTerminal(params) }
+      "fs/write_text_file" -> return respondAsync(id, "vibe-acp-fs-write") { handler.onWriteTextFile(params) }
+    }
+    // Fast, non-blocking methods answer inline.
     val result: JsonElement = try {
       when (method) {
-        "session/request_permission" -> handler.onRequestPermission(params)
         "fs/read_text_file" -> handler.onReadTextFile(params)
-        "fs/write_text_file" -> handler.onWriteTextFile(params)
+        "terminal/output" -> handler.onTerminalOutput(params)
+        "terminal/kill" -> handler.onKillTerminal(params)
+        "terminal/release" -> handler.onReleaseTerminal(params)
         else -> {
           sendError(id, -32601, "Method not supported by this client: $method")
           return
@@ -283,6 +306,18 @@ class AcpClient(
       sendError(id, -32603, e.message ?: e.javaClass.simpleName)
       return
     }
+    sendResult(id, result)
+  }
+
+  /** Run a blocking handler call off the reader thread, then answer the request (result or error). */
+  private fun respondAsync(id: Long, threadName: String, producer: () -> JsonElement) {
+    Thread({
+      try { sendResult(id, producer()) }
+      catch (e: Exception) { sendError(id, -32603, e.message ?: e.javaClass.simpleName) }
+    }, threadName).apply { isDaemon = true }.start()
+  }
+
+  private fun sendResult(id: Long, result: JsonElement) {
     send(buildJsonObject {
       put("jsonrpc", "2.0")
       put("id", id)
