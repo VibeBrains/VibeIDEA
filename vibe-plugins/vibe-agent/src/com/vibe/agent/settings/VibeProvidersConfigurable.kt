@@ -29,7 +29,9 @@ import javax.swing.SwingUtilities
  * source won (хранилище / .vibe/.env проекта / ~/.vibe/.env / окружение), and
  * «Проверить» pings the model catalog for real.
  */
-class VibeProvidersConfigurable(private val project: Project) : Configurable {
+// NoScroll: the page scrolls itself — the platform's extra scroll pane would size the view by the
+// unwrapped preferred width of the html hints and give the settings card a horizontal scrollbar.
+class VibeProvidersConfigurable(private val project: Project) : Configurable, Configurable.NoScroll {
   private class Card(val provider: ProviderEntry, val field: JBPasswordField, val status: JBLabel)
   private val cards = ArrayList<Card>()
   private val llm = LlmClient()
@@ -74,7 +76,7 @@ class VibeProvidersConfigurable(private val project: Project) : Configurable {
     }
     return JPanel(BorderLayout()).apply {
       border = JBUI.Borders.empty(8)
-      add(JBScrollPane(ViewportWidthPanel(list)), BorderLayout.CENTER)
+      add(JBScrollPane(TracksViewportWidthPanel(list)), BorderLayout.CENTER)
     }
   }
 
@@ -126,16 +128,6 @@ class VibeProvidersConfigurable(private val project: Project) : Configurable {
       }
       c.status.text = sourceLine(c.provider)
     }
-  }
-
-  /** Content follows the viewport width (vertical scroll only) — same fix as the chat feed. */
-  private class ViewportWidthPanel(content: JComponent) : JPanel(BorderLayout()), Scrollable {
-    init { add(content, BorderLayout.NORTH) }
-    override fun getPreferredScrollableViewportSize(): Dimension = preferredSize
-    override fun getScrollableUnitIncrement(r: Rectangle, o: Int, d: Int): Int = JBUI.scale(16)
-    override fun getScrollableBlockIncrement(r: Rectangle, o: Int, d: Int): Int = r.height
-    override fun getScrollableTracksViewportWidth(): Boolean = true
-    override fun getScrollableTracksViewportHeight(): Boolean = false
   }
 
   private companion object {

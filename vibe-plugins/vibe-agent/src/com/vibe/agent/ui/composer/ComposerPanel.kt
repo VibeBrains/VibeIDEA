@@ -113,6 +113,7 @@ class ComposerPanel(
   private val pillsRight = JPanel(FlowLayout(FlowLayout.RIGHT, JBUI.scale(PILL_GAP), 0)).apply { isOpaque = false }
 
   private val mention: MentionPopup
+  private val slash: SlashPopup
   private var focused = false
   private var imagesAllowed = true
   private var imagesBlockedReason: String? = null
@@ -166,7 +167,11 @@ class ComposerPanel(
       isOpaque = false
       border = JBUI.Borders.compound(JBUI.Borders.customLineTop(SEPARATOR), JBUI.Borders.emptyTop(PILL_GAP))
       add(pillsLeft, BorderLayout.CENTER)
-      add(pillsRight, BorderLayout.EAST)
+      // EAST stretches to the row height; GridBag keeps the history pill vertically centred in it.
+      add(JPanel(java.awt.GridBagLayout()).apply {
+        isOpaque = false
+        add(pillsRight)
+      }, BorderLayout.EAST)
     }
     val box = RoundedBox().apply {
       add(top, BorderLayout.NORTH)
@@ -176,6 +181,7 @@ class ComposerPanel(
     add(box, BorderLayout.CENTER)
 
     mention = MentionPopup(project, input, parentDisposable, { EditorContext.currentSelection(project) }) { addContext(it) }
+    slash = SlashPopup(project, input, parentDisposable)
     installKeys(parentDisposable)
     installTransfer()
     input.document.addDocumentListener(object : DocumentListener {
@@ -254,7 +260,7 @@ class ComposerPanel(
   // --- sending ---
 
   private fun submit() {
-    if (mention.isShowing) return
+    if (mention.isShowing || slash.isShowing) return
     val message = composed()
     if (message.isEmpty) return
     if (busy) {
@@ -301,8 +307,14 @@ class ComposerPanel(
       enabled = { !mention.isShowing && context.isNotEmpty() },
       perform = ::clearContext)
     localShortcut(KeyStroke.getKeyStroke(KeyEvent.VK_ESCAPE, 0), parentDisposable,
-      enabled = { mention.isShowing || busy },
-      perform = { if (mention.isShowing) mention.close() else if (busy) listener.onStop() })
+      enabled = { mention.isShowing || slash.isShowing || busy },
+      perform = {
+        when {
+          mention.isShowing -> mention.close()
+          slash.isShowing -> slash.close()
+          busy -> listener.onStop()
+        }
+      })
   }
 
   private fun localShortcut(key: KeyStroke, parentDisposable: Disposable, enabled: () -> Boolean, perform: () -> Unit) {

@@ -20,7 +20,9 @@ import javax.swing.JPanel
  * (side-map persisted, survives providers.json edits). Counters in group
  * headers switch to «найдено/всего» while filtering — the VibeIDE behavior.
  */
-class VibeModelsConfigurable(private val project: Project) : Configurable {
+// NoScroll: the page scrolls itself (see VibeProvidersConfigurable — the platform wrapper would
+// add a horizontal scrollbar sized by unwrapped label widths).
+class VibeModelsConfigurable(private val project: Project) : Configurable, Configurable.NoScroll {
   private data class Row(val provider: String, val model: String, val box: JBCheckBox)
   private val rows = ArrayList<Row>()
   private val groups = LinkedHashMap<String, Pair<JPanel, JBLabel>>()
@@ -67,7 +69,7 @@ class VibeModelsConfigurable(private val project: Project) : Configurable {
     return JPanel(BorderLayout(0, JBUI.scale(6))).apply {
       border = JBUI.Borders.empty(8)
       add(search, BorderLayout.NORTH)
-      add(JBScrollPane(JPanel(BorderLayout()).apply { add(list, BorderLayout.NORTH) }), BorderLayout.CENTER)
+      add(JBScrollPane(TracksViewportWidthPanel(list)), BorderLayout.CENTER)
     }
   }
 
