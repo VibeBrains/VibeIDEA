@@ -540,9 +540,9 @@ class AgentPanel(private val project: Project) : JPanel(BorderLayout()), AcpClie
     // A fresh turn: tool-call ids and the changed-files set are per-turn.
     toolCalls.reset()
     terminalConsoles.clear()
-    thoughtsBlock = null
     changedPaths.clear()
     turnHadMutatingTool = false
+    // thoughtsBlock is EDT-owned (created/read in appendThought's invokeLater) — reset it there, not here.
     audit?.append(AuditEvent(System.currentTimeMillis(), AuditEvent.Action.PROMPT, ok = true,
       model = "acp/${t.config.name}", meta = mapOf("chars" to text.length.toString())))
     SwingUtilities.invokeLater {
@@ -638,8 +638,9 @@ class AgentPanel(private val project: Project) : JPanel(BorderLayout()), AcpClie
       // A silently-unscanned file weakens the secret-leak guarantee — say so rather than hide it.
       val skippedByCount = paths.size - scanned.size
       val skippedBySize = scanned.size - contents.size
+      // Only the CONTENT (secret) scan is capped; protected-path checks every path below.
       if (skippedByCount > 0 || skippedBySize > 0) systemLine(
-        "[проверки хода] не просканировано файлов: ${skippedByCount + skippedBySize}" +
+        "[проверки хода] на утечку секретов не просканировано файлов: ${skippedByCount + skippedBySize}" +
           (if (skippedByCount > 0) " (сверх лимита $maxFiles)" else "") +
           (if (skippedBySize > 0) " (крупнее ${VibeAgentSettings.checksMaxFileKb} КБ)" else ""))
       TurnChecks.scanSecretLeak(contents, maxFiles) + TurnChecks.scanProtectedPath(paths)
@@ -709,6 +710,7 @@ class AgentPanel(private val project: Project) : JPanel(BorderLayout()), AcpClie
     }
     if (cleared) {
       val n = breakers.clearAll()
+      status.set(VibeAgentStatusService.State.IDLE)
       audit?.append(AuditEvent(System.currentTimeMillis(), AuditEvent.Action.CIRCUIT_BREAKER_RECOVERED, ok = true,
         meta = mapOf("cleared" to n.toString())))
       systemLine("[предохранитель] снят ($n) — можно продолжать")
@@ -1176,12 +1178,14 @@ class AgentPanel(private val project: Project) : JPanel(BorderLayout()), AcpClie
   }
 
   private inner class AgentMessage {
+    /** Raw streamed text lives here; on finish it may be re-rendered into prose + code blocks. */
     val text = proseArea()
+    private var fullText = ""
     val meta = metaLabel("Агент · ${now()}", right = false)
     private val metaRow = JPanel(BorderLayout()).apply {
       isOpaque = false
       add(meta, BorderLayout.WEST)
-      add(copyLink { text.text }, BorderLayout.EAST)
+      add(copyLink { fullText.ifEmpty { text.text } }, BorderLayout.EAST)
     }
     val row: JPanel = object : ChatRow(BorderLayout(0, JBUI.scale(2))) {
       // better than the original: cap the text column so lines stay readable in a wide panel
@@ -1193,8 +1197,26 @@ class AgentPanel(private val project: Project) : JPanel(BorderLayout()), AcpClie
       add(metaRow, BorderLayout.SOUTH)
     }
     fun append(s: String) { text.append(s) }
+
+    /** Swap the plain text area for a prose+code-block stack when the message has fenced code. */
+    fun renderSegments(content: String) {
+      fullText = content
+      if (!MessageSegments.hasCode(content)) return
+      val stack = JPanel().apply { layout = BoxLayout(this, BoxLayout.Y_AXIS); isOpaque = false; alignmentX = Component.LEFT_ALIGNMENT }
+      for (seg in MessageSegments.parse(content)) when (seg) {
+        is MessageSegment.Prose -> stack.add(proseArea().also { it.text = seg.text; it.alignmentX = Component.LEFT_ALIGNMENT })
+        is MessageSegment.Code -> stack.add(CodeBlockPanel(seg.lang, seg.code))
+      }
+      (text.parent as? java.awt.Container)?.let { c ->
+        c.remove(text)
+        c.add(stack, BorderLayout.CENTER)
+        c.revalidate(); c.repaint()
+      }
+    }
+
     fun finish(seconds: Double, suffix: String?) {
       meta.text = "Агент · ${now()} · ${"%.1f".format(seconds)} с${suffix?.let { " · $it" } ?: ""}"
+      renderSegments(text.text)
     }
   }
 
@@ -1231,6 +1253,7 @@ class AgentPanel(private val project: Project) : JPanel(BorderLayout()), AcpClie
   private fun buildAssistantRow(text: String, time: String): JPanel = AgentMessage().let { m ->
     m.append(text)
     m.meta.text = "Агент · $time"
+    m.renderSegments(text)
     m.row
   }
 
@@ -1298,6 +1321,8 @@ class AgentPanel(private val project: Project) : JPanel(BorderLayout()), AcpClie
     SwingUtilities.invokeLater {
       val m = currentAgentMessage
       currentAgentMessage = null
+      // Each response (turn or gate sub-turn) gets its own reasoning block; reset on the EDT.
+      thoughtsBlock = null
       if (m != null) {
         // Flush the tail the per-delta projections did not reach before the buffer was cleared.
         if (uiConsumed < fullText.length) m.append(fullText.substring(uiConsumed))
@@ -1480,12 +1505,14 @@ class AgentPanel(private val project: Project) : JPanel(BorderLayout()), AcpClie
   private fun harvestMutation(call: ToolCall) {
     val kind = call.kind
     val name = call.toolName
-    val isMutating = (name != null && name in EDIT_TOOLS) || kind in MUTATING_KINDS
-    if (isMutating) {
-      turnHadMutatingTool = true
-      // Harvest for ANY mutating call (edit/delete/move kinds too), not only name-matched edit tools.
+    val isNamedEdit = name != null && name in EDIT_TOOLS
+    // execute-kind (a command) may change files invisibly → mark the turn mutating so the gate runs…
+    if (isNamedEdit || kind in MUTATING_KINDS) turnHadMutatingTool = true
+    // …but only tools that actually WRITE contribute paths. ACP `locations` is read-inclusive, so
+    // harvesting it for a command (`grep KEY .env`) would wrongly trip the protected-path breaker.
+    val isWrite = isNamedEdit || kind == "edit" || kind == "delete" || kind == "move"
+    if (isWrite) {
       call.rawInput?.let { ri -> for (key in EDIT_PATH_KEYS) ri[key]?.jsonPrimitive?.contentOrNull?.let { changedPaths.add(it) } }
-      // Agents that declare touched files via ACP `locations` widen coverage beyond fs/write.
       changedPaths.addAll(call.locations)
     }
   }

@@ -39,6 +39,17 @@ class TerminalOutputBufferTest {
   }
 
   @Test
+  fun incrementalByteCountStaysConsistentAcrossManyAppends() {
+    // Regression: the byte count is tracked incrementally (O(chunk)); the retained tail must stay exact.
+    val b = TerminalOutputBuffer(10)
+    repeat(100) { b.append("ab") } // 200 chars, cap 10
+    val (text, truncated) = b.snapshot()
+    assertTrue(truncated)
+    assertEquals(10, text.length)
+    assertEquals("abababababababababab".takeLast(10), text)
+  }
+
+  @Test
   fun multiByteBoundaryRespected() {
     // Each emoji is 4 UTF-8 bytes; a 5-byte budget can hold exactly one.
     val b = TerminalOutputBuffer(5)

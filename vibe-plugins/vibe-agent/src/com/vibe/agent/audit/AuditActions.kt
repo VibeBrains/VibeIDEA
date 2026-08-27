@@ -40,7 +40,8 @@ class VibeAuditLogAction : DumbAwareAction() {
 private class AuditViewerDialog(private val project: Project, private val log: AuditLog) : DialogWrapper(project) {
   private val area = JTextArea().apply {
     isEditable = false
-    font = com.intellij.util.ui.JBFont.create(java.awt.Font(java.awt.Font.MONOSPACED, java.awt.Font.PLAIN, 12))
+    // HiDPI-scaled like the other monospace surfaces (terminal/code blocks).
+    font = java.awt.Font(java.awt.Font.MONOSPACED, java.awt.Font.PLAIN, com.intellij.util.ui.JBUI.scaleFontSize(12f))
   }
 
   init {

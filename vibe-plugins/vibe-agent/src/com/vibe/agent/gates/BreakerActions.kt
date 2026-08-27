@@ -27,6 +27,8 @@ class VibeBreakersAction : DumbAwareAction() {
       "Предохранители агента", "Снять", "Отмена", Messages.getWarningIcon())
     if (confirm == Messages.YES) {
       val n = breakers.clearAll()
+      // Clear the ⛔ status-bar state left by the last blocked turn.
+      com.vibe.agent.ui.VibeAgentStatusService.getInstance(project).set(com.vibe.agent.ui.VibeAgentStatusService.State.IDLE)
       Messages.showInfoMessage(project, "Снято предохранителей: $n.", "Предохранители агента")
     }
   }

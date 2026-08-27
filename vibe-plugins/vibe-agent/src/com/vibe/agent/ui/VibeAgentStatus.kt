@@ -22,15 +22,17 @@ class VibeAgentStatusService {
 
   @Volatile var state: State = State.IDLE
     private set
-  @Volatile private var onChange: (() -> Unit)? = null
+  // A set, not a single slot: one project can have a status bar per open window/frame.
+  private val listeners = java.util.concurrent.CopyOnWriteArraySet<() -> Unit>()
 
   fun set(newState: State) {
     if (state == newState) return
     state = newState
-    onChange?.invoke()
+    listeners.forEach { it() }
   }
 
-  fun bind(listener: (() -> Unit)?) { onChange = listener }
+  fun addListener(listener: () -> Unit) { listeners.add(listener) }
+  fun removeListener(listener: () -> Unit) { listeners.remove(listener) }
 
   /** Widget label: empty when idle so the widget stays quiet during normal editing. */
   fun label(): String = when (state) {
@@ -50,17 +52,18 @@ private const val WIDGET_ID = "VibeAgentStatus"
 class VibeAgentStatusWidget(private val project: Project) : StatusBarWidget, StatusBarWidget.TextPresentation {
   private val service = VibeAgentStatusService.getInstance(project)
   private var statusBar: StatusBar? = null
+  private val onChange: () -> Unit = { statusBar?.updateWidget(WIDGET_ID) }
 
   override fun ID(): String = WIDGET_ID
   override fun getPresentation(): StatusBarWidget.WidgetPresentation = this
 
   override fun install(statusBar: StatusBar) {
     this.statusBar = statusBar
-    service.bind { statusBar.updateWidget(WIDGET_ID) }
+    service.addListener(onChange)
   }
 
   override fun dispose() {
-    service.bind(null)
+    service.removeListener(onChange)
     statusBar = null
   }
 

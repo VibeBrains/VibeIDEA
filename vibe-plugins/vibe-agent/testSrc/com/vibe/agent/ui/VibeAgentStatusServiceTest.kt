@@ -25,7 +25,7 @@ class VibeAgentStatusServiceTest {
   fun listenerFiresOnlyOnChange() {
     val s = VibeAgentStatusService()
     var fired = 0
-    s.bind { fired++ }
+    s.addListener { fired++ }
     s.set(VibeAgentStatusService.State.RUNNING)
     s.set(VibeAgentStatusService.State.RUNNING) // no change → no fire
     s.set(VibeAgentStatusService.State.IDLE)
@@ -33,12 +33,23 @@ class VibeAgentStatusServiceTest {
   }
 
   @Test
-  fun unbindStopsNotifications() {
+  fun removeListenerStopsNotifications() {
     val s = VibeAgentStatusService()
     var fired = 0
-    s.bind { fired++ }
-    s.bind(null)
+    val l: () -> Unit = { fired++ }
+    s.addListener(l)
+    s.removeListener(l)
     s.set(VibeAgentStatusService.State.RUNNING)
     assertEquals(0, fired)
+  }
+
+  @Test
+  fun multipleListenersAllFire() {
+    val s = VibeAgentStatusService()
+    var a = 0; var b = 0
+    s.addListener { a++ }
+    s.addListener { b++ }
+    s.set(VibeAgentStatusService.State.RUNNING)
+    assertEquals(1, a); assertEquals(1, b)
   }
 }

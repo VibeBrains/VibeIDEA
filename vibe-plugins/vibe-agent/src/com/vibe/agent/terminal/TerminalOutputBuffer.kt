@@ -11,10 +11,13 @@ package com.vibe.agent.terminal
 class TerminalOutputBuffer(private val byteLimit: Long?) {
   private val sb = StringBuilder()
   private var truncated = false
+  /** Running UTF-8 size of [sb] — maintained incrementally so append() stays O(chunk), not O(total). */
+  private var byteCount = 0L
 
   @Synchronized
   fun append(chunk: String) {
     sb.append(chunk)
+    byteCount += utf8Size(chunk)
     enforceLimit()
   }
 
@@ -23,17 +26,14 @@ class TerminalOutputBuffer(private val byteLimit: Long?) {
 
   private fun enforceLimit() {
     val limit = byteLimit ?: return
-    if (limit <= 0) return
-    var bytes = utf8Size(sb)
-    if (bytes <= limit) return
+    if (limit <= 0 || byteCount <= limit) return
     truncated = true
     // Drop whole code points from the front until within the byte budget.
     var start = 0
-    while (start < sb.length && bytes > limit) {
+    while (start < sb.length && byteCount > limit) {
       val cp = sb.codePointAt(start)
-      val charCount = Character.charCount(cp)
-      bytes -= utf8Bytes(cp)
-      start += charCount
+      byteCount -= utf8Bytes(cp)
+      start += Character.charCount(cp)
     }
     sb.delete(0, start)
   }
