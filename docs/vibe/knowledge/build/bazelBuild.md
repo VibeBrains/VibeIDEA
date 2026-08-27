@@ -25,3 +25,10 @@
 
 `eap="false"` в `*ApplicationInfo.xml` требует `majorReleaseDate="YYYYMMDD"` на теге `<build>` — иначе инсталлятор падает в `ApplicationInfoPropertiesImpl`: «majorReleaseDate may be omitted only for EAP». Побочный эффект `eap="true"` — суффикс «-EAP» в имени бандла macOS (`MacDistributionBuilder.substitutePlaceholdersInInfoPlist`).
 
+
+## Иконки дистрибутива: SVG ≠ Dock (проверено 2026-08-27)
+
+- SVG из `<icon svg=…>` в ApplicationInfo работают только **внутри** приложения (About, welcome, заголовок). Иконку macOS-бандла (Dock, Finder) сборка берёт из **`.icns`** через `MacDistributionCustomizer.icnsPath`/`icnsPathForEAP`; без переопределения наследуется стоковый `build/idea-community-images/mac/product.icns` — брендированный дистрибутив уедет с чужим Dock-лого. Наш путь: `vibeidea-customization/resources/mac/vibeidea.icns`, прописан в `VibeIdeaProperties.createMacCustomizer` (путь резолвится относительно корня репо).
+- `.icns` из SVG без внешних утилит: временная копия SVG с `width/height=1024` → `qlmanage -t -s 1024` → `sips -z` в размеры iconset (16…1024, для 16/32 — рендер упрощённого `*_16.svg`) → `iconutil -c icns`.
+- **Сборка dmg требует ≥ ~10 ГБ свободного диска** сверх артефактов: `hdiutil create/convert` падает «на устройстве нет больше места» при ~6 ГБ. Быстрое лекарство: снести регенерируемое — `out/*/temp`, старые dmg/sit, `maven-artifacts`, чужой `out/idea-ce`.
+- Брендированный инсталлятор — **только** `./vibeidea-installers.cmd` (→ `out/vibeidea/`); `./installers.cmd` собирает стоковую IntelliJ (→ `out/idea-ce/`) — легко перепутать, продукт внешне отличим лишь по product-info/иконке.

@@ -58,6 +58,8 @@ open class VibeIdeaProperties(communityHomeDir: Path) : IdeaCommunityProperties(
     bundleIdentifier = "com.vibe.vibeidea"
     urlSchemes = listOf("vibeidea")
     rootDirectoryName { _, _ -> "VibeIDEA.app" }
+    icnsPath = "vibeidea-customization/resources/mac/vibeidea.icns"
+    icnsPathForEAP = "vibeidea-customization/resources/mac/vibeidea.icns"
   }
 
   override fun createWindowsCustomizer(projectHome: Path): WindowsDistributionCustomizer = ideaCommunityWindowsCustomizer(projectHome) {

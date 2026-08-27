@@ -6,7 +6,7 @@
 
 *(наследуемое от intellij-community описывается только там, где мы меняем поведение)*
 
-- **Собственный дистрибутив VibeIDEA** — продукт собирается из исходников в неподписанный dmg/sit (macOS arm64): свой product code `VI`, `VibeIDEA.app`, свои иконки; вендорные mcpserver и featuresTrainer из комплекта исключены. Сборка: `./vibeidea-installers.cmd -Dintellij.build.target.os=current`.
+- **Собственный дистрибутив VibeIDEA** — продукт собирается из исходников в неподписанный dmg/sit (macOS arm64): свой product code `VI`, `VibeIDEA.app`, своё лого «терминал + искра ИИ» (промпт `>`, строка ввода и четырёхлучевая искра, неон циан→фиолет→маджента) — в приложении (About/welcome, SVG) и в macOS Dock (`.icns`); вендорные mcpserver и featuresTrainer из комплекта исключены. Сборка: `./vibeidea-installers.cmd -Dintellij.build.target.os=current`.
 
 ## 🌐 Языки
 
