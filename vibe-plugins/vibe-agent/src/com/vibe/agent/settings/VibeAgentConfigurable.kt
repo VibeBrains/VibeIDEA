@@ -6,6 +6,7 @@ import com.intellij.openapi.ui.ComboBox
 import com.intellij.ui.JBIntSpinner
 import com.intellij.ui.components.JBCheckBox
 import com.intellij.ui.components.JBLabel
+import com.intellij.ui.components.JBScrollPane
 import com.intellij.ui.components.JBTextField
 import com.intellij.util.ui.FormBuilder
 import com.intellij.util.ui.JBUI
@@ -15,8 +16,9 @@ import javax.swing.JPanel
 /**
  * Settings → Tools → VibeIDEA → Агент: hooks, audit, verify-gate and turn-checks
  * knobs. Security-shaped switches (hooks, audit) are off by default and labelled
- * as such. NoScroll: the page sizes itself; the platform's extra scroll pane
- * would give html hints a horizontal scrollbar (same lesson as Providers).
+ * as such. NoScroll + our own scroll pane: the platform's wrapper sizes the view by
+ * the unwrapped width of the html hints and adds a horizontal scrollbar (the Providers
+ * lesson), but the page is taller than the dialog, so vertical scrolling is on us.
  */
 class VibeAgentConfigurable : Configurable, Configurable.NoScroll {
   private var hooksEnabled: JBCheckBox? = null
@@ -85,6 +87,11 @@ class VibeAgentConfigurable : Configurable, Configurable.NoScroll {
       .addComponent(hint("Сколько ждать ответа агента на initialize/session/new. Холодный запуск через npx может быть медленным."))
       .addComponentFillVertically(JPanel(), 0)
       .panel.apply { border = JBUI.Borders.empty(8) }
+      // NoScroll only removes the platform's wrapper — the scrolling itself is ours, or the page
+      // simply gets cut off at the window edge (it is taller than a settings dialog).
+      // TracksViewportWidthPanel keeps the html hints wrapping to the width instead of demanding
+      // a horizontal scrollbar — the reason the platform wrapper was refused in the first place.
+      .let { form -> JBScrollPane(TracksViewportWidthPanel(form)).apply { border = JBUI.Borders.empty() } }
   }
 
   private fun section(text: String): JBLabel = JBLabel("<html><b>$text</b></html>").apply { border = JBUI.Borders.emptyTop(8) }
