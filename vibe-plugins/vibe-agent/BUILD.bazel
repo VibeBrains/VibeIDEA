@@ -14,6 +14,8 @@ jvm_library(
     resource_strip_prefix = "resources",
     resources = glob(
         ["resources/**/*"],
+        # vibeDefaults is a git submodule (VibeBrains); its gitlink file is not a resource.
+        exclude = ["resources/vibeDefaults/.git"],
     ),
     visibility = ["//visibility:public"],
     deps = [

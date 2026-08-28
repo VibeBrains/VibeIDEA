@@ -24,6 +24,12 @@
 - Платформенные файлы **запрещено** править ради стиля/линта/формата — merge-налог навсегда. Точечная правка платформы допустима только за реальный баг/проводку фичи/security — и **каждая** фиксируется записью в [FORK_CHANGES.md](FORK_CHANGES.md) (что, где, почему).
 - Подробно: [docs/vibe/knowledge/architecture/upstreamBoundary.md](docs/vibe/knowledge/architecture/upstreamBoundary.md).
 
+## Общие сиды `.vibe` — submodule VibeBrains
+
+- `vibe-plugins/vibe-agent/resources/vibeDefaults` — **git submodule** репозитория VibeBrains: канонический образ `.vibe`, общий с VibeIDE (локальный клон: `/Users/borodatych/Projects/VibeCode/VibeBrains`; URL заменить на GitHub, когда репо появится в org). После свежего клона форка: `git submodule update --init`.
+- **Перед любой работой с сидами или сеялкой** (`VibeDefaults`/`VibeDefaultsSeeder`, содержимое `vibeDefaults/`) — сперва подтянуть набор: `git submodule update --remote vibe-plugins/vibe-agent/resources/vibeDefaults` (мог измениться из VibeIDE).
+- Правки сидов коммитятся **в VibeBrains** (прямо внутри submodule-каталога), затем в форке коммитится bump указателя. Новый/удалённый файл набора — синхронно правка манифеста `VibeDefaults.MANIFEST`: гейт манифест↔ресурсы (`VibeDefaultsTest.manifestMatchesEmbeddedResourcesExactly`) валит тест при дрейфе.
+
 ## Сборка (Bazel)
 
 IC переходит на Bazel (сборка «только средствами IDE» уже не поддерживается); JDK/Bazel вручную не ставятся — тулчейн герметичный (bazelisk + JBR качаются сами). Факты и команды: [docs/vibe/knowledge/build/bazelBuild.md](docs/vibe/knowledge/build/bazelBuild.md).
