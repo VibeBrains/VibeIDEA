@@ -45,16 +45,22 @@ class VibeDefaultsTest {
     val emptyGlobal = Files.createTempDirectory("vibe-empty-global")
     val providers = com.vibe.agent.providers.ProvidersService.loadFrom(
       emptyGlobal, java.nio.file.Path.of(base, ".vibe")) { warnings.add(it) }
-    // The owner's base set is active out of the box; everything else stays dormant.
-    assertEquals(
-      setOf("opencode-go", "opencode-zen", "openrouter", "minimax", "zai", "kimi", "deepseek"),
-      providers.map { it.id }.toSet())
+    // Everything ships switched on (owner's call): what stays off is only the copy-me template
+    // and the tariff that feeds prompts to the vendor's training.
+    val ids = providers.map { it.id }.toSet()
+    assertTrue(ids.containsAll(setOf("opencode-go", "opencode-zen", "openrouter", "minimax",
+                                     "zai", "kimi", "deepseek", "openai", "anthropic", "ollama")),
+               "ids=$ids")
+    assertTrue("my-provider" !in ids, "шаблон-образец не должен попадать в реестр")
+    assertTrue("meta-muse-contributor" !in ids, "contributor-тариф включается только руками")
     // Every seeded file parsed cleanly — a JSONC typo anywhere in the catalog shows up here.
     assertTrue(warnings.isEmpty(), "warnings=$warnings")
-    // Keys never live in the files; every active provider names where its key comes from.
+    // Keys never live in the files: every provider that needs one names where it comes from.
+    // Local endpoints (auth "none") legitimately need no key at all.
     for (p in providers) {
-      assertTrue(p.apiKeyEnv != null || p.apiKeyRef != null, "provider '${p.id}' has no key source")
       assertTrue(!p.baseURL.isNullOrBlank(), "provider '${p.id}' has no baseURL")
+      if (p.auth.type == "none") continue
+      assertTrue(p.apiKeyEnv != null || p.apiKeyRef != null, "provider '${p.id}' has no key source")
     }
   }
 
@@ -127,7 +133,10 @@ class VibeDefaultsTest {
     val pristine = "// historical seed content\n"
     Files.writeString(vibe.resolve("providers/old-a.jsonc"), pristine)
     Files.writeString(vibe.resolve("providers/old-b.jsonc"), "// user-edited content\n")
-    val journal = mutableMapOf("providers/old-a.jsonc" to "x", "providers/old-b.jsonc" to "y")
+    val journal = mutableMapOf(
+      "providers/old-a.jsonc" to VibeDefaults.JournalEntry("x"),
+      "providers/old-b.jsonc" to VibeDefaults.JournalEntry("y"),
+    )
     val spec = """{"deprecated":[
       {"path":"providers/old-a.jsonc","sha256":["${VibeDefaults.sha256(pristine)}"]},
       {"path":"providers/old-b.jsonc","sha256":["${VibeDefaults.sha256(pristine)}"]},

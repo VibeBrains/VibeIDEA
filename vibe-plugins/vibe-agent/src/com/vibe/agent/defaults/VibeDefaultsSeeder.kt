@@ -19,9 +19,21 @@ class VibeDefaultsSeeder : ProjectActivity {
         ".vibe defaults seeded: +${report.created}, kept ${report.kept}" +
           (if (report.removed.isNotEmpty()) ", removed stale ${report.removed}" else ""))
     }
+    if (report.updated.isNotEmpty()) {
+      logger<VibeDefaultsSeeder>().info(".vibe defaults refreshed from release: ${report.updated}")
+    }
     if (report.keptModified.isNotEmpty()) {
       logger<VibeDefaultsSeeder>().warn(
         ".vibe stale seeds kept (user-edited, delete manually if unwanted): ${report.keptModified}")
+    }
+    if (report.setDrift.isNotEmpty()) {
+      logger<VibeDefaultsSeeder>().warn(
+        ".vibe set drift — content moved without a revision bump (run bump.mjs in VibeBrains): ${report.setDrift}")
+    }
+    // The one case seeding cannot decide: their copy differs AND the release moved on.
+    if (report.conflicts.isNotEmpty()) {
+      logger<VibeDefaultsSeeder>().info(".vibe conflicts: ${report.conflicts.map { it.path }}")
+      SeedConflictNotifier.notify(project, base, report.conflicts)
     }
   }
 }

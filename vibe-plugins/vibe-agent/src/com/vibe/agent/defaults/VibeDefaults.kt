@@ -2,8 +2,10 @@
 package com.vibe.agent.defaults
 
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
@@ -102,12 +104,20 @@ object VibeDefaults {
   private const val RESOURCE_ROOT = "/vibeDefaults/"
   private const val JOURNAL = ".seeded.json"
   private const val DEPRECATED = "deprecated.json"
+  private const val VERSIONS = "versions.json"
 
   /** Resource names of the manifest — the resources↔manifest gate test compares them with the embedded set. */
   internal fun manifestResourceNames(): List<String> = MANIFEST.map { it.first }
 
-  /** Set files that serve the seeders themselves and are never seeded into projects. */
-  internal val SET_METADATA = setOf(DEPRECATED)
+  /** Set files that serve the set itself (registries, its bump script) and are never seeded. */
+  internal val SET_METADATA = setOf(DEPRECATED, VERSIONS, "bump.mjs")
+
+  /** What we recorded about a file we seeded: content, the revision it came from, and the
+   *  revision the user last said «keep mine» about (so a conflict is not raised twice). */
+  data class JournalEntry(val sha: String, val version: Int? = null, val reconciled: Int? = null)
+
+  /** One file the release moved on while the user's copy differs — needs a human decision. */
+  data class SeedConflict(val path: String, val fromVersion: Int?, val toVersion: Int)
 
   data class SeedReport(
     val created: Int,
@@ -116,32 +126,99 @@ object VibeDefaults {
     val removed: List<String> = emptyList(),
     /** Stale seeds LEFT in place: the user edited them, deleting would lose work. */
     val keptModified: List<String> = emptyList(),
+    /** Untouched copies of older revisions, silently refreshed to the current one. */
+    val updated: List<String> = emptyList(),
+    /** Edited copies whose revision moved in the set — reported, never overwritten. */
+    val conflicts: List<SeedConflict> = emptyList(),
+    /** Set-discipline errors: content moved without a revision bump (bump.mjs not run). */
+    val setDrift: List<String> = emptyList(),
   )
 
-  /** Seed `.vibe/` under [projectBase]. Idempotent; call OFF the EDT. */
+  /**
+   * Seed `.vibe/` under [projectBase]. Idempotent; call OFF the EDT.
+   *
+   * Per file the set's revision registry decides (see [SeedRevisions]): missing → create,
+   * untouched copy of an older revision → refresh silently, the user's own edit → never touch
+   * (reported as a conflict when the set has moved on, so the caller can offer a comparison).
+   */
   fun seed(projectBase: String): SeedReport {
     val vibeDir = Path.of(projectBase, ".vibe")
     var created = 0
     var kept = 0
+    val updated = ArrayList<String>()
+    val conflicts = ArrayList<SeedConflict>()
+    val drift = ArrayList<String>()
     val journal = loadJournal(vibeDir).toMutableMap()
+    val revisions = SeedRevisions.parse(readResource(VERSIONS))
     runCatching { Files.createDirectories(vibeDir) }.onFailure { return SeedReport(0, 0) }
     for ((resource, relative) in MANIFEST) {
       val target = vibeDir.resolve(relative)
-      if (Files.exists(target)) { kept++; continue }
       val content = readResource(resource) ?: continue
-      val ok = runCatching {
-        target.parent?.let { Files.createDirectories(it) }
-        Files.writeString(target, content)
-      }.isSuccess
-      if (ok) {
-        created++
-        journal[relative] = sha256(content)
+      val revision = revisions[resource]
+      val recorded = journal[relative]
+      val onDisk = if (Files.isRegularFile(target)) runCatching { Files.readAllBytes(target) }.getOrNull() else null
+      val verdict = SeedRevisions.verdict(
+        revision = revision,
+        localSha = onDisk?.let { sha256(it) },
+        localShaLf = onDisk?.let { sha256(String(it, Charsets.UTF_8).replace("\r\n", "\n")) },
+        journalSha = recorded?.sha,
+        journalVersion = recorded?.version,
+        reconciledVersion = recorded?.reconciled,
+      )
+      when (verdict) {
+        SeedVerdict.CREATE -> if (write(target, content)) {
+          created++
+          journal[relative] = JournalEntry(sha256(content), revision?.version)
+        }
+        SeedVerdict.UPDATE -> if (write(target, content)) {
+          updated.add(relative)
+          journal[relative] = JournalEntry(sha256(content), revision?.version)
+        }
+        SeedVerdict.SAME -> {
+          kept++
+          // Keep the recorded revision current so a later bump is measured from here.
+          if (revision != null && recorded?.version != revision.version) {
+            journal[relative] = JournalEntry(sha256(content), revision.version, recorded?.reconciled)
+          }
+        }
+        SeedVerdict.CONFLICT -> {
+          kept++
+          conflicts.add(SeedConflict(relative, recorded?.version, revision?.version ?: 0))
+        }
+        SeedVerdict.SET_DRIFT -> { kept++; drift.add(relative) }
+        SeedVerdict.USER_EDIT -> kept++
       }
     }
     val (removed, keptModified) = cleanupDeprecated(vibeDir, journal, readResource(DEPRECATED))
-    if (created > 0 || removed.isNotEmpty()) saveJournal(vibeDir, journal)
-    return SeedReport(created, kept, removed, keptModified)
+    if (created > 0 || updated.isNotEmpty() || removed.isNotEmpty() || journal != loadJournal(vibeDir)) {
+      saveJournal(vibeDir, journal)
+    }
+    return SeedReport(created, kept, removed, keptModified, updated, conflicts, drift)
   }
+
+  private fun write(target: Path, content: String): Boolean = runCatching {
+    target.parent?.let { Files.createDirectories(it) }
+    Files.writeString(target, content)
+  }.isSuccess
+
+  /** Records «keep mine» for [paths] at the set's current revision — the conflict stays quiet
+   *  until the set moves again. Called from the notification action. */
+  fun markReconciled(projectBase: String, paths: List<String>) {
+    val vibeDir = Path.of(projectBase, ".vibe")
+    val revisions = SeedRevisions.parse(readResource(VERSIONS))
+    val byTarget = MANIFEST.associate { (resource, relative) -> relative to resource }
+    val journal = loadJournal(vibeDir).toMutableMap()
+    for (path in paths) {
+      val version = byTarget[path]?.let { revisions[it]?.version } ?: continue
+      val current = journal[path]
+      journal[path] = JournalEntry(current?.sha ?: "", current?.version, reconciled = version)
+    }
+    saveJournal(vibeDir, journal)
+  }
+
+  /** The release's content for a seeded path (left side of the comparison). */
+  fun releaseContent(relativePath: String): String? =
+    MANIFEST.firstOrNull { it.second == relativePath }?.let { readResource(it.first) }
 
   /**
    * Delete stale seeds (files dropped/renamed in the shared set) — but ONLY when the
@@ -149,7 +226,7 @@ object VibeDefaults {
    * an edited file is the user's work and stays untouched (reported instead).
    * [spec] is a parameter (not read inline) so tests can drive both branches.
    */
-  internal fun cleanupDeprecated(vibeDir: Path, journal: MutableMap<String, String>, spec: String?): Pair<List<String>, List<String>> {
+  internal fun cleanupDeprecated(vibeDir: Path, journal: MutableMap<String, JournalEntry>, spec: String?): Pair<List<String>, List<String>> {
     val removed = ArrayList<String>()
     val keptModified = ArrayList<String>()
     if (spec == null) return removed to keptModified
@@ -183,19 +260,42 @@ object VibeDefaults {
   private fun readResource(name: String): String? =
     VibeDefaults::class.java.getResourceAsStream(RESOURCE_ROOT + name)?.use { it.readBytes().toString(Charsets.UTF_8) }
 
-  private fun loadJournal(vibeDir: Path): Map<String, String> {
+  /**
+   * Reads `.seeded.json` in either shape: the original flat `path → sha` (projects seeded before
+   * revisions existed — their entries still work, just without a revision) and the current
+   * `{version, files: {path: {sha, rev, reconciled}}}`.
+   */
+  internal fun loadJournal(vibeDir: Path): Map<String, JournalEntry> {
     val file = vibeDir.resolve(JOURNAL)
     if (!Files.isRegularFile(file)) return emptyMap()
     return runCatching {
-      Json.parseToJsonElement(Files.readString(file)).jsonObject
-        .mapNotNull { (k, v) -> v.jsonPrimitive.contentOrNull?.let { k to it } }.toMap()
+      val root = Json.parseToJsonElement(Files.readString(file)).jsonObject
+      val files = root["files"]?.jsonObject ?: root // legacy: the root IS the map
+      files.mapNotNull { (path, el) ->
+        when (el) {
+          is kotlinx.serialization.json.JsonPrimitive -> el.contentOrNull?.let { path to JournalEntry(it) }
+          is JsonObject -> el["sha"]?.jsonPrimitive?.contentOrNull?.let {
+            path to JournalEntry(it, el["rev"]?.jsonPrimitive?.intOrNull, el["reconciled"]?.jsonPrimitive?.intOrNull)
+          }
+          else -> null
+        }
+      }.toMap()
     }.getOrDefault(emptyMap())
   }
 
-  private fun saveJournal(vibeDir: Path, journal: Map<String, String>) {
+  private fun saveJournal(vibeDir: Path, journal: Map<String, JournalEntry>) {
     runCatching {
       Files.writeString(vibeDir.resolve(JOURNAL), buildJsonObject {
-        journal.forEach { (k, v) -> put(k, v) }
+        put("version", 2)
+        put("files", buildJsonObject {
+          journal.toSortedMap().forEach { (path, e) ->
+            put(path, buildJsonObject {
+              put("sha", e.sha)
+              e.version?.let { put("rev", it) }
+              e.reconciled?.let { put("reconciled", it) }
+            })
+          }
+        })
       }.toString() + "\n")
     }
   }
