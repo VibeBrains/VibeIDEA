@@ -182,6 +182,7 @@ class MentionPopup(
         override fun onClosed(event: LightweightWindowEvent) = onPopupClosed()
       })
       .createPopup()
+      .also { com.vibe.agent.ui.VibeScroll.thinAllIn(it.content) }
     popup = created
     lastRefresh = null to ""
     showRows(rootRows(), filter = "")

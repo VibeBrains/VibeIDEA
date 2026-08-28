@@ -3,7 +3,6 @@ package com.vibe.agent.ui
 
 import com.intellij.icons.AllIcons
 import com.intellij.ui.JBColor
-import com.intellij.ui.components.JBScrollPane
 import com.intellij.util.ui.JBFont
 import com.intellij.util.ui.JBUI
 import java.awt.BorderLayout
@@ -48,7 +47,7 @@ class ChatTabsStrip(private val callbacks: Callbacks) : JPanel(BorderLayout()) {
     isOpaque = false
     preferredSize = Dimension(0, JBUI.scale(STRIP_HEIGHT))
     border = JBUI.Borders.customLineBottom(SEPARATOR)
-    val scroll = JBScrollPane(tabsRow).apply {
+    val scroll = com.vibe.agent.ui.VibeScroll.pane(tabsRow).apply {
       border = JBUI.Borders.empty()
       horizontalScrollBarPolicy = ScrollPaneConstants.HORIZONTAL_SCROLLBAR_NEVER
       verticalScrollBarPolicy = ScrollPaneConstants.VERTICAL_SCROLLBAR_NEVER

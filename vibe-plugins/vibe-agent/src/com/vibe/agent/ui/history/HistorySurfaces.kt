@@ -10,7 +10,6 @@ import com.intellij.openapi.ui.popup.JBPopupFactory
 import com.intellij.openapi.util.Disposer
 import com.intellij.ui.DocumentAdapter
 import com.intellij.ui.JBColor
-import com.intellij.ui.components.JBScrollPane
 import com.intellij.ui.components.JBTextField
 import com.intellij.util.ui.JBFont
 import com.intellij.util.ui.JBUI
@@ -54,7 +53,7 @@ object HistoryPopup {
       border = JBUI.Borders.empty(8)
       preferredSize = Dimension(JBUI.scale(WIDTH), JBUI.scale(HEIGHT))
       add(search, BorderLayout.NORTH)
-      add(JBScrollPane(JPanel(BorderLayout()).apply {
+      add(com.vibe.agent.ui.VibeScroll.pane(JPanel(BorderLayout()).apply {
         isOpaque = false
         add(list, BorderLayout.NORTH)
       }).apply {
@@ -68,6 +67,7 @@ object HistoryPopup {
       .setResizable(true)
       .setCancelOnClickOutside(true)
       .createPopup()
+      .also { com.vibe.agent.ui.VibeScroll.thinAllIn(it.content) }
     popup.addListener(object : com.intellij.openapi.ui.popup.JBPopupListener {
       override fun onClosed(event: com.intellij.openapi.ui.popup.LightweightWindowEvent) = Disposer.dispose(panelDisposable)
     })
@@ -122,7 +122,7 @@ class HistoryRail(
       add(search, BorderLayout.CENTER)
     }
     add(top, BorderLayout.NORTH)
-    add(JBScrollPane(JPanel(BorderLayout()).apply {
+    add(com.vibe.agent.ui.VibeScroll.pane(JPanel(BorderLayout()).apply {
       isOpaque = false
       add(list, BorderLayout.NORTH)
     }).apply {

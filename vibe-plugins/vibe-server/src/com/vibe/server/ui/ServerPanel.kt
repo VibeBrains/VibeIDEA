@@ -4,6 +4,7 @@ package com.vibe.server.ui
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.project.Project
 import com.intellij.ui.components.JBScrollPane
+import com.intellij.ui.components.JBThinOverlappingScrollBar
 import com.intellij.util.ui.JBUI
 import com.vibe.server.ServerEntry
 import com.vibe.server.ServerRunner
@@ -62,8 +63,15 @@ class ServerPanel(private val project: Project) : JPanel(BorderLayout()) {
       add(startAll); add(stopAll); add(startOne); add(reload)
     }
     add(buttons, BorderLayout.NORTH)
-    add(JSplitPane(JSplitPane.VERTICAL_SPLIT, JBScrollPane(list), JBScrollPane(log)).apply { resizeWeight = 0.4 }, BorderLayout.CENTER)
+    // Тонкие скроллы — как во всём нашем UI (решение владельца). Обёртки VibeScroll здесь нет:
+    // она живёт в плагине vibe-agent, а тянуть межплагинную зависимость ради двух панелей незачем.
+    add(JSplitPane(JSplitPane.VERTICAL_SPLIT, thinScroll(list), thinScroll(log)).apply { resizeWeight = 0.4 }, BorderLayout.CENTER)
     reload()
+  }
+
+  private fun thinScroll(view: java.awt.Component): JBScrollPane = JBScrollPane(view).apply {
+    verticalScrollBar = JBThinOverlappingScrollBar(java.awt.Adjustable.VERTICAL)
+    horizontalScrollBar = JBThinOverlappingScrollBar(java.awt.Adjustable.HORIZONTAL)
   }
 
   private fun reload() {

@@ -9,7 +9,6 @@ import com.intellij.openapi.project.DumbAwareAction
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.ui.DialogWrapper
 import com.intellij.openapi.ui.Messages
-import com.intellij.ui.components.JBScrollPane
 import com.intellij.util.ui.JBUI
 import java.awt.Dimension
 import java.nio.file.Path
@@ -63,7 +62,7 @@ private class AuditViewerDialog(private val project: Project, private val log: A
     }
   }
 
-  override fun createCenterPanel(): JComponent = JBScrollPane(area).apply {
+  override fun createCenterPanel(): JComponent = com.vibe.agent.ui.VibeScroll.pane(area).apply {
     preferredSize = Dimension(JBUI.scale(760), JBUI.scale(460))
   }
 

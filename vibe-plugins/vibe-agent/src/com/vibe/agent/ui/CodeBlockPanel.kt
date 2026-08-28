@@ -91,7 +91,7 @@ class CodeBlockPanel(project: Project?, lang: String?, rawCode: String) : JPanel
       lineWrap = false
       border = JBUI.Borders.empty(6, 8)
     }
-    return com.intellij.ui.components.JBScrollPane(area).apply {
+    return com.vibe.agent.ui.VibeScroll.pane(area).apply {
       horizontalScrollBarPolicy = javax.swing.ScrollPaneConstants.HORIZONTAL_SCROLLBAR_AS_NEEDED
       verticalScrollBarPolicy = javax.swing.ScrollPaneConstants.VERTICAL_SCROLLBAR_NEVER
       border = JBUI.Borders.empty()

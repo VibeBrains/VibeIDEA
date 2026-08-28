@@ -7,7 +7,6 @@ import com.intellij.openapi.project.Project
 import com.intellij.ui.IdeBorderFactory
 import com.intellij.ui.components.JBLabel
 import com.intellij.ui.components.JBPasswordField
-import com.intellij.ui.components.JBScrollPane
 import com.intellij.util.ui.JBUI
 import com.vibe.agent.providers.ApiKeyResolver
 import com.vibe.agent.providers.LlmClient
@@ -51,15 +50,16 @@ class VibeProvidersConfigurable(private val project: Project) : Configurable, Co
     }
     for (p in providers) {
       val field = JBPasswordField()
-      val stored = ApiKeyResolver.storedKey(p) != null
-      if (stored) field.text = STORED_PLACEHOLDER
-      val status = JBLabel(sourceLine(p)).apply {
+      // PasswordSafe и .env — это IO (@RequiresBackgroundThread): читаем в фоне, карточка
+      // рождается с заглушкой и дозаполняется. На EDT чтение подвешивало открытие страницы
+      // (Keychain на macOS умеет спросить пароль) — на 16 провайдерах это заметно.
+      val status = JBLabel("читаю состояние ключа…").apply {
         font = com.intellij.util.ui.JBFont.label().deriveFont(11f)
         foreground = com.intellij.ui.JBColor.GRAY
         minimumSize = Dimension(0, 0)
       }
-      val test = JButton("Проверить").apply {
-        addActionListener { verify(p, status) }
+      val test = JButton("Проверить и сохранить").apply {
+        toolTipText = "Запросить каталог моделей введённым ключом и, если провайдер его принял, сохранить в хранилище ОС"
       }
       val originLabel = when (p.origin) {
         ProviderOrigin.PROJECT -> "проектная запись (&lt;проект&gt;/.vibe)"
@@ -82,12 +82,33 @@ class VibeProvidersConfigurable(private val project: Project) : Configurable, Co
         add(hint, BorderLayout.CENTER)
         add(status, BorderLayout.SOUTH)
       }
-      cards.add(Card(p, field, status, initiallyStored = stored))
+      val cardState = Card(p, field, status, initiallyStored = false)
+      test.addActionListener { verify(cardState, status) }
+      cards.add(cardState)
       list.add(card)
     }
+    loadKeyStatesInBackground()
     return JPanel(BorderLayout()).apply {
       border = JBUI.Borders.empty(8)
-      add(JBScrollPane(TracksViewportWidthPanel(list)), BorderLayout.CENTER)
+      add(com.vibe.agent.ui.VibeScroll.pane(TracksViewportWidthPanel(list)), BorderLayout.CENTER)
+    }
+  }
+
+  /** Fills every card's key state off the EDT — see the note in createComponent. */
+  private fun loadKeyStatesInBackground() {
+    val snapshot = cards.toList()
+    ApplicationManager.getApplication().executeOnPooledThread {
+      val states = snapshot.map { it to (ApiKeyResolver.storedKey(it.provider) != null) }
+      val lines = snapshot.associateWith { sourceLine(it.provider) }
+      SwingUtilities.invokeLater {
+        if (project.isDisposed) return@invokeLater
+        for ((card, stored) in states) {
+          card.initiallyStored = stored
+          // Не затираем то, что пользователь успел набрать, пока читалось хранилище.
+          if (stored && String(card.field.password).isEmpty()) card.field.text = STORED_PLACEHOLDER
+          card.status.text = lines[card] ?: ""
+        }
+      }
     }
   }
 
@@ -104,23 +125,63 @@ class VibeProvidersConfigurable(private val project: Project) : Configurable, Co
     }
   }
 
-  private fun verify(p: ProviderEntry, status: JBLabel) {
+  /**
+   * Checks the key the user is looking at — the one just typed into the field, not only what is
+   * already stored — and SAVES it when the provider accepts it. That is what «проверил, работает»
+   * means to a person: a valid key nobody stored is a key that still does not fetch any models.
+   * A successful check therefore also publishes [ProvidersChangeListener], so the Модели page and
+   * an open chat panel pick the catalog up right away instead of after a restart.
+   */
+  private fun verify(card: Card, status: JBLabel) {
+    val p = card.provider
+    val typed = String(card.field.password).takeIf { it.isNotEmpty() && it != STORED_PLACEHOLDER }
     status.text = "Проверяю…"
     ApplicationManager.getApplication().executeOnPooledThread {
-      val resolved = ProvidersService.resolve(p, project.basePath) { }
+      val resolved = ProvidersService.resolve(p, project.basePath) { }?.let {
+        if (typed != null) it.copy(apiKey = typed) else it
+      }
+      // Ключ участвует в запросе только когда провайдер вообще авторизуется: у auth "none"
+      // (локальные серверы) каталог ответит и на пустой ключ, и «ключ действителен» было бы ложью.
+      val keyUsed = resolved != null && resolved.apiKey != null && p.auth.type != "none"
+      var ok = false
       val text = when {
         resolved == null -> "Провайдер без baseURL — проверять нечего"
         resolved.apiKey == null && !resolved.isLocal -> sourceLine(p)
         else -> try {
           val n = llm.listModels(resolved, p.modelsFetch?.url).size
-          if (n > 0) "Ключ действителен · каталог отдал $n моделей · ${sourceLine(p).substringAfter("· ").ifEmpty { "" }}"
-          else "Endpoint ответил, но каталог пуст — ключ не проверяется (static-список)"
+          ok = true
+          when {
+            n > 0 && keyUsed -> "Ключ действителен · каталог отдал $n моделей"
+            n > 0 -> "Каталог отдал $n моделей · ключ этому endpoint не нужен"
+            keyUsed -> "Endpoint ответил, каталог пуст — ключ принят (модели только из файла)"
+            else -> "Endpoint ответил, но каталог пуст — ключ не проверяется (static-список)"
+          }
         }
         catch (e: Exception) {
           "Проверка не прошла: ${e.message?.take(120)}"
         }
       }
-      SwingUtilities.invokeLater { status.text = text }
+      SwingUtilities.invokeLater {
+        if (project.isDisposed) return@invokeLater
+        status.text = text
+        // Сохраняем только на EDT и только если пользователь не тронул поле, пока шёл запрос:
+        // иначе медленный ответ воскрешал бы стёртый ключ или затирал только что введённый.
+        val fieldUnchanged = String(card.field.password) == (typed ?: "")
+        if (ok && typed != null && fieldUnchanged) {
+          ApiKeyResolver.storeKey(p, typed)
+          // Общий apiKeyRef (OpenCode Go/Zen) = одна запись в хранилище: близнецы должны
+          // немедленно узнать, что ключ у них теперь есть, иначе их статус врёт, а пустое
+          // поле близнеца на Apply сотрёт только что сохранённый ключ.
+          val ref = p.apiKeyRef ?: p.id
+          for (twin in cards.filter { (it.provider.apiKeyRef ?: it.provider.id) == ref }) {
+            twin.initiallyStored = true
+            if (String(twin.field.password).isEmpty() || twin === card) twin.field.text = STORED_PLACEHOLDER
+            twin.status.text = sourceLine(twin.provider)
+          }
+          status.text = "$text · ключ сохранён"
+          project.messageBus.syncPublisher(ProvidersChangeListener.TOPIC).providersChanged()
+        }
+      }
     }
   }
 

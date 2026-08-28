@@ -85,6 +85,7 @@ class ComposerPanel(
       return d
     }
   }.apply {
+    com.vibe.agent.ui.VibeScroll.thin(this) // подкласс ради getPreferredSize — бары меняем на месте
     border = JBUI.Borders.empty()
     viewportBorder = JBUI.Borders.empty()
     horizontalScrollBarPolicy = ScrollPaneConstants.HORIZONTAL_SCROLLBAR_NEVER

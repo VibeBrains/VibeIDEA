@@ -86,6 +86,9 @@ class ModelPicker(private val onChoose: (ChatTarget) -> Unit, private val onOpen
         onChoose(t)
       }
       .createPopup()
+      // The popup builds its own scroll pane deep inside and never exposes it — reach for it
+      // through the component tree so the list scrolls with the same thin bar as everything else.
+      .also { com.vibe.agent.ui.VibeScroll.thinAllIn(it.content) }
       .showUnderneathOf(pill)
   }
 
@@ -124,6 +127,7 @@ class ModePicker(private val onChoose: (modeId: String) -> Unit) {
       })
       .setItemChosenCallback { mode -> onChoose(mode.id) }
       .createPopup()
+      .also { com.vibe.agent.ui.VibeScroll.thinAllIn(it.content) }
       .showUnderneathOf(pill)
   }
 }

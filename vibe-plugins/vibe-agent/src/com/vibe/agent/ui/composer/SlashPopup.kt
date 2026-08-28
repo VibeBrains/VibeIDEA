@@ -144,6 +144,7 @@ class SlashPopup(
         }
       })
       .createPopup()
+      .also { com.vibe.agent.ui.VibeScroll.thinAllIn(it.content) }
     popup = created
     created.showInScreenCoordinates(textArea, placement(created.content.preferredSize))
   }

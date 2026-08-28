@@ -11,7 +11,6 @@ import com.intellij.openapi.options.ShowSettingsUtil
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.ui.Messages
 import com.intellij.ui.JBColor
-import com.intellij.ui.components.JBScrollPane
 import com.intellij.util.ui.JBUI
 import com.vibe.agent.acp.AcpClient
 import com.vibe.agent.acp.AcpConfig
@@ -132,7 +131,7 @@ class AgentPanel(private val project: Project) : JPanel(BorderLayout()), AcpClie
     override fun getScrollableTracksViewportHeight(): Boolean = false
   }
 
-  private val scroll = JBScrollPane(FeedView().apply {
+  private val scroll = VibeScroll.pane(FeedView().apply {
     add(messages, BorderLayout.NORTH)
   }).apply {
     horizontalScrollBarPolicy = javax.swing.ScrollPaneConstants.HORIZONTAL_SCROLLBAR_NEVER
