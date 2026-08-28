@@ -28,6 +28,11 @@
 **Причина:** латентный баг апстрима — `loadConsentsForEditing` получает от `ConsentOptions` иммутабельный список, когда у продукта нет бандленных согласий (вендор не JetBrains), и `removeTraceConsents`/`removeIf` падают с `UnsupportedOperationException`; ломает шаг `search_index` (traverseUI) при сборке нашего дистрибутива.
 **Изменено:** `var result = options.consents.first` → `…first.toMutableList()` (+ комментарий-маркер `[VibeIDEA]`). Кандидат на отправку апстриму.
 
+### platform/platform-api/src/com/intellij/ui/components/JBScrollBar.java
+**Причина:** продуктовое решение владельца 2026-08-28 — тонкие скроллы во ВСЁМ интерфейсе VibeIDEA (дерево проекта, редактор, панели платформы), не только в наших панелях. Другого рычага нет: толщина зашита в конструкторы `ThinScrollBarUI`/`ThinMacScrollBarUI`, а выбор тонкого варианта делает `JBScrollBar.isThin()`, недоступный ни теме, ни настройкам.
+**Изменено:** `isThin()` возвращает `vibeScrollBarThickness() > 0` вместо `false`; `createUI` передаёт толщину в тонкие UI; добавлен `vibeScrollBarThickness()` — чтение ключа `vibe.scrollbar.thickness` (дефолт 4, `0` возвращает штатные скроллы платформы). Ключ объявлен в `vibe-agent/plugin.xml` (EP `registryKey`), настройка — Settings → Tools → VibeIDEA → Интерфейс; `registry.properties` платформы не тронут. Комментарии-маркеры `[VibeIDEA]`.
+**При синке:** конфликт вероятен только если апстрим сам правит эти два метода — проверять `./vibe-plugins/tools/checkVibeUi.sh`.
+
 ### Добавлено для Фазы 2 (языки)
 - `vibe-plugins/vibe-lsp/` — плагин `com.vibe.lsp`: vtsls (TS) + Phpactor (PHP) через LSP4IJ (optional depends). **Причина:** плагины PhpStorm/WebStorm закрыты; LSP — лицензионно чистый путь.
 - `vibe-plugins/deps/` — пиненная загрузка LSP4IJ 0.20.1 с GitHub releases (sha256), раскладывается в `plugins/lsp4ij/` на сборке.
@@ -48,7 +53,7 @@
   переименование/удаление класса даёт либо ошибку компиляции, либо — в попапах, где мы обходим
   дерево компонентов, — молчаливый возврат к толстым барам. **Гейт:**
   `./vibe-plugins/tools/checkVibeUi.sh` (проверяет и наличие класса, и что ни один наш скролл
-  не создан в обход тонких баров).
+  не создан в обход тонких баров, и что правка `JBScrollBar` на месте).
 
 ## Запланированные изменения
 

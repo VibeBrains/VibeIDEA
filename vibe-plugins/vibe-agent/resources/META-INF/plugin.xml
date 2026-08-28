@@ -19,6 +19,11 @@
     <projectConfigurable parentId="com.vibe.settings" displayName="Модели" id="com.vibe.agent.models" instance="com.vibe.agent.settings.VibeModelsConfigurable"/>
     <applicationConfigurable parentId="com.vibe.settings" displayName="Агент" id="com.vibe.agent.behavior" instance="com.vibe.agent.settings.VibeAgentConfigurable"/>
     <applicationConfigurable parentId="com.vibe.settings" displayName="Чат" id="com.vibe.agent.chat" instance="com.vibe.agent.settings.VibeChatConfigurable"/>
+    <applicationConfigurable parentId="com.vibe.settings" displayName="Интерфейс" id="com.vibe.agent.ui" instance="com.vibe.agent.settings.VibeUiConfigurable"/>
+    <!-- Толщину читает пропатченный JBScrollBar платформы (см. FORK_CHANGES.md): платформа не может
+         зависеть от плагина, поэтому мостом служит Registry, а ключ объявляем здесь. -->
+    <registryKey key="vibe.scrollbar.thickness" defaultValue="4" restartRequired="false"
+                 description="Толщина скроллбаров VibeIDEA в пикселях (0 — штатные скроллы платформы)"/>
     <postStartupActivity implementation="com.vibe.agent.history.VibeHistoryWarmUp"/>
     <postStartupActivity implementation="com.vibe.agent.defaults.VibeDefaultsSeeder"/>
     <postStartupActivity implementation="com.vibe.agent.providers.VibeProvidersWatcherStarter"/>

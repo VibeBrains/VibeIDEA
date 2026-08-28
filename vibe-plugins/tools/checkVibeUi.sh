@@ -45,5 +45,14 @@ if [[ -n "$offenders" ]]; then
   status=1
 fi
 
-[[ $status -eq 0 ]] && echo "UI-гейт: тонкие скроллы на месте, обходов VibeScroll нет"
+# 3. Правка платформы, раздающая тонкий вид всей IDE (FORK_CHANGES.md). Синк может её снести —
+#    внешне это выглядит как «скроллы в дереве проекта опять толстые», без единой ошибки сборки.
+jbscrollbar="$root/platform/platform-api/src/com/intellij/ui/components/JBScrollBar.java"
+if ! grep -q 'vibeScrollBarThickness' "$jbscrollbar" 2>/dev/null; then
+  echo "ОШИБКА: в JBScrollBar.java нет правки [VibeIDEA] (vibeScrollBarThickness)."
+  echo "  Скроллы платформы вернутся к штатным 10-14px. См. FORK_CHANGES.md — восстановите правку."
+  status=1
+fi
+
+[[ $status -eq 0 ]] && echo "UI-гейт: тонкие скроллы на месте (наши панели + правка платформы), обходов VibeScroll нет"
 exit $status

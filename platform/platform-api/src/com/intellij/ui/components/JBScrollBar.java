@@ -2,6 +2,7 @@
 package com.intellij.ui.components;
 
 import com.intellij.openapi.util.Key;
+import com.intellij.openapi.util.registry.Registry;
 import com.intellij.openapi.util.SystemInfo;
 import com.intellij.openapi.wm.IdeGlassPane.TopComponent;
 import com.intellij.ui.ClientProperty;
@@ -121,13 +122,28 @@ public class JBScrollBar extends JScrollBar implements TopComponent, Interpolabl
   @SuppressWarnings("UnusedParameters")
   public static @NotNull ScrollBarUI createUI(JComponent c, boolean isThin) {
     IslandsPainterProvider provider = IslandsPainterProvider.getInstance();
+    // [VibeIDEA] Тонкие скроллы во всём продукте (решение владельца 2026-08-28): толщина берётся
+    // из ключа vibe.scrollbar.thickness (0 — вернуть штатные скроллы платформы).
+    int thickness = vibeScrollBarThickness();
     if (SystemInfo.isMac || (provider != null && provider.useMacScrollBar())) {
-      return isThin ? new ThinMacScrollBarUI() : new MacScrollBarUI();
+      return isThin ? new ThinMacScrollBarUI(thickness, thickness, thickness) : new MacScrollBarUI();
     }
     else {
-      return isThin ? new ThinScrollBarUI() : new DefaultScrollBarUI();
+      return isThin ? new ThinScrollBarUI(thickness, thickness, thickness) : new DefaultScrollBarUI();
     }
   }
+
+  /**
+   * [VibeIDEA] Толщина тонкого скроллбара в пикселях; 0 отключает тонкий режим целиком.
+   * Ключ намеренно читается без регистрации в registry.properties — платформенный файл
+   * трогать незачем, а значение по умолчанию задаёт продукт.
+   */
+  public static int vibeScrollBarThickness() {
+    return Registry.intValue("vibe.scrollbar.thickness", VIBE_DEFAULT_THIN_THICKNESS);
+  }
+
+  /** [VibeIDEA] 4px: тоньше штатных 10–14, но по полосе ещё можно попасть мышью. */
+  private static final int VIBE_DEFAULT_THIN_THICKNESS = 4;
 
   /**
    * Computes the unit increment for scrolling if the viewport's view.
@@ -355,7 +371,10 @@ public class JBScrollBar extends JScrollBar implements TopComponent, Interpolabl
   }
 
   public boolean isThin() {
-    return false;
+    // [VibeIDEA] Все скроллбары продукта — тонкие: дерево проекта, редактор, панели платформы.
+    // Наши собственные панели используют VibeScroll поверх JBThinOverlappingScrollBar и приходят
+    // сюда с isThin() = true и так; этот дефолт распространяет тот же вид на остальную IDE.
+    return vibeScrollBarThickness() > 0;
   }
 
   private static final class Model extends DefaultBoundedRangeModel {

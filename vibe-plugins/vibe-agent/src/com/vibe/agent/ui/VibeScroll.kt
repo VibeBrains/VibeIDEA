@@ -1,6 +1,7 @@
 // Copyright 2026 VibeBrains. Use of this source code is governed by the Apache 2.0 license.
 package com.vibe.agent.ui
 
+import com.intellij.ui.components.JBScrollBar
 import com.intellij.ui.components.JBScrollPane
 import com.intellij.ui.components.JBThinOverlappingScrollBar
 import java.awt.Adjustable
@@ -40,4 +41,22 @@ object VibeScroll {
 
   /** Convenience for builders that hand back a [JComponent] root. */
   fun thinAllIn(root: JComponent) = thinAllIn(root as Component)
+
+  /**
+   * Rebuilds the UI of every scrollbar in every open window — the platform's own `updateUI()`
+   * keeps a `DefaultScrollBarUI` as is, so a thickness change would otherwise only show up in
+   * components created afterwards (i.e. after a restart).
+   */
+  fun refreshAllScrollBars() {
+    for (window in java.awt.Window.getWindows()) rebuildScrollBars(window)
+  }
+
+  private fun rebuildScrollBars(component: Component) {
+    if (component is JBScrollBar) {
+      component.setUI(JBScrollBar.createUI(component, component.isThin))
+      component.revalidate()
+      component.repaint()
+    }
+    if (component is Container) component.components.forEach { rebuildScrollBars(it) }
+  }
 }
