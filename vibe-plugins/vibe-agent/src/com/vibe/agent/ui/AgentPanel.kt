@@ -276,7 +276,7 @@ class AgentPanel(private val project: Project) : JPanel(BorderLayout()), AcpClie
         if (disposed) return@invokeLater
         providers = loadedProviders
         staticModelIds = loadedProviders.associate { p -> p.id to p.models.map { it.id }.toSet() }
-        systemLine("[providers] настройки применены — перечитываю провайдеров и каталоги моделей")
+        systemLine("[providers] конфигурация изменилась — перечитываю провайдеров и каталоги моделей")
         guardFindings.forEach { f -> systemLine("[guard:${f.severity}] ${f.message}") }
         rebuildTargets()
         fetchProviderModels()

@@ -61,7 +61,7 @@
 6. [x] VERIFY-GATE поверх задач сборки — ✅ (2026-08-27, next) политика VibeIDE как есть (off/warn/enforce, bounce до maxAttempts, stop; launch-fail=инертен), команда/режим/попытки/таймаут в настройках; триггер — конец хода с мутацией файлов (устраняет дефект «гейт только на vibe_complete»). Классы: `gates/VerifyGatePolicy` (чистая) + `gates/VerifyGateRunner`; bounce-цикл в `AgentPanel.promptAcpTurn`. 64 юнит-теста на чистую логику всех четырёх пунктов.
 7. [ ] HTTP API loopback (Host-check до токена, constant-time, коды отказов) — S/M
 8. [ ] Защита от отравления контекста + детекция секретов + нормализация tool-call'ов — S
-9. [ ] providers.json: кэш последнего набора + вотчер (AsyncFileListener) — S
+9. [x] providers: вотчер файлов — ✅ (2026-08-28) `VibeProvidersWatcher` (VFS-события обоих уровней; ~/.vibe через addRootToWatch+refresh; дебаунс 500 мс → ProvidersChangeListener.TOPIC → панель перечитывает сама); кэш последнего набора не переносим осознанно (решение №26, YAGNI). Чистый матчер путей + 3 теста (214 зелёных).
 10. [ ] Skills (SKILL.md, открытый стандарт) + валидатор — S/M
 11. [x] Чекпоинты — ✅ (2026-08-23) CheckpointService: снимок дерева через временный индекс (write-tree/commit-tree, HEAD/индекс не трогаются), журнал .vibe/checkpoints.jsonl, откат с подтверждением + VFS refresh; UI-кнопка со списком
 12. [ ] Диспетчерская + `agent-runs.jsonl` (heartbeat, «Проверить запуск») — S/M
