@@ -56,6 +56,9 @@ object VibeDefaults {
   private const val RESOURCE_ROOT = "/vibeDefaults/"
   private const val JOURNAL = ".seeded.json"
 
+  /** Resource names of the manifest — the resources↔manifest gate test compares them with the embedded set. */
+  internal fun manifestResourceNames(): List<String> = MANIFEST.map { it.first }
+
   data class SeedReport(val created: Int, val kept: Int)
 
   /** Seed `.vibe/` under [projectBase]. Idempotent; call OFF the EDT. */

@@ -5,7 +5,8 @@
 //
 // МОДЕЛИ TEXT-ONLY: картинку модель не примет — ошибка придёт от провайдера.
 // Чтобы композер блокировал вложения заранее, зафиксируйте модель кастомной записью
-// с "vision": false (рецепт — _template-openai-compatible.jsonc).
+// с "vision": false — готовые записи закомментированы ниже.
+// Старые id deepseek-chat / deepseek-reasoner отключены провайдером 2026-07-24.
 {
   "version": 1,
   "providers": [
@@ -18,7 +19,21 @@
       "auth": "bearer",
       "apiKeyEnv": "DEEPSEEK_API_KEY",
       "order": 60,
-      "models": { "fetch": true }
+      "models": {
+        "fetch": true
+
+        // ── Кастомные записи V4 (характеристики из каталога VibeIDE) ─────────────
+        // Раскомментируйте, чтобы зафиксировать text-only и декларации. Знание о
+        // кэше: кэширование контекста у DeepSeek включено ПО УМОЛЧАНИЮ и в агентном
+        // цикле срабатывает почти на каждом ходе (системный промпт, длинный документ);
+        // кэш-хит у V4-Flash в ~50 раз дешевле промаха (проверено 2026-08-05).
+        // "static": [
+        //   { "id": "deepseek-v4-pro", "name": "DeepSeek V4-Pro (1M)", "default": true, "pinned": true,
+        //     "contextWindow": 1000000, "maxOutputTokens": 32768, "vision": false },
+        //   { "id": "deepseek-v4-flash", "name": "DeepSeek V4-Flash (1M)",
+        //     "contextWindow": 1000000, "maxOutputTokens": 32768, "vision": false }
+        // ]
+      }
     }
   ]
 }

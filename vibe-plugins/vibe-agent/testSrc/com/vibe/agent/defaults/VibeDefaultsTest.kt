@@ -56,6 +56,42 @@ class VibeDefaultsTest {
   }
 
   @Test
+  fun manifestMatchesEmbeddedResourcesExactly() {
+    // The seed set will live in a shared submodule (VibeBrains): a file added there without a
+    // manifest entry would silently never be seeded, and a manifest entry without a file would
+    // silently seed nothing — both must fail loudly here.
+    val resources = listEmbeddedResources()
+    val manifest = VibeDefaults.manifestResourceNames().toSet()
+    assertEquals(emptySet(), manifest - resources, "манифест ссылается на несуществующие ресурсы")
+    assertEquals(emptySet(), resources - manifest, "ресурс без записи в манифесте — не будет засеян")
+  }
+
+  private fun listEmbeddedResources(): Set<String> {
+    val url = VibeDefaults::class.java.getResource("/vibeDefaults") ?: error("нет /vibeDefaults в classpath")
+    return when (url.protocol) {
+      "file" -> {
+        val root = java.nio.file.Path.of(url.toURI())
+        java.nio.file.Files.walk(root).use { s ->
+          s.filter { Files.isRegularFile(it) }.map { root.relativize(it).toString() }.toList()
+        }.toSet()
+      }
+      "jar" -> {
+        // IntelliJ's test classloader returns its own URLConnection — parse the jar path
+        // out of the URL (jar:file:/path/to.jar!/vibeDefaults) instead of casting.
+        val jarPath = java.net.URLDecoder.decode(
+          url.toString().substringAfter("jar:file:").substringBefore("!"), Charsets.UTF_8)
+        java.util.zip.ZipFile(jarPath).use { zip ->
+          zip.entries().asSequence()
+            .filter { !it.isDirectory && it.name.startsWith("vibeDefaults/") }
+            .map { it.name.removePrefix("vibeDefaults/") }
+            .toSet()
+        }
+      }
+      else -> error("неожиданный протокол ресурсов: ${url.protocol}")
+    }
+  }
+
+  @Test
   fun secondSeedKeepsEverythingUntouched() {
     val base = tempProject()
     VibeDefaults.seed(base)

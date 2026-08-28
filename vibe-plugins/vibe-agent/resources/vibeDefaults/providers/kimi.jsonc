@@ -3,9 +3,8 @@
 //
 // ЭКОНОМИКА K3: выключить размышление у kimi-k3 нельзя, и на простую задачу уходит
 // порядка 13 тысяч токенов рассуждений — для рутины модель невыгодна, берите её под
-// фронтенд-задачи. Тумблер thinking у Moonshot — отдельное поле в теле запроса:
-// задаётся кастомной моделью с "extraBody": { "thinking": { "type": "enabled" } }
-// (рецепт — _template-openai-compatible.jsonc).
+// фронтенд-задачи (лидер Frontend Code arena). Тумблер thinking у Moonshot — отдельное
+// поле в теле запроса: кастомная запись с extraBody, образец закомментирован ниже.
 {
   "version": 1,
   "providers": [
@@ -18,7 +17,20 @@
       "auth": "bearer",
       "apiKeyEnv": "MOONSHOT_API_KEY",
       "order": 50,
-      "models": { "fetch": true }
+      "models": {
+        "fetch": true
+
+        // ── Кастомные записи (характеристики из каталога VibeIDE) ────────────────
+        // K2.7 Code: thinking включается вендоро-специфичным полем в extraBody —
+        // оно уходит в тело запроса как есть.
+        // "static": [
+        //   { "id": "kimi-k3", "name": "Kimi K3 (1M, фронтенд)", "pinned": true,
+        //     "contextWindow": 1048576, "maxOutputTokens": 32768 },
+        //   { "id": "kimi-k2.7-code", "name": "Kimi K2.7 Code", "default": true,
+        //     "contextWindow": 262144, "maxOutputTokens": 32768,
+        //     "extraBody": { "thinking": { "type": "enabled" } } }
+        // ]
+      }
     }
   ]
 }
