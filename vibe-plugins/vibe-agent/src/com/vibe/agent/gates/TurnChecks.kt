@@ -79,9 +79,6 @@ object TurnChecks {
     return if (attemptsUsed < ceiling) TurnChecksDecision.BOUNCE else TurnChecksDecision.STOP
   }
 
-  /** True when any finding is a security violation that should trip a latching breaker. */
-  fun hasSecurityFinding(findings: List<TurnFinding>): Boolean = findings.isNotEmpty()
-
   fun renderCorrective(findings: List<TurnFinding>, attempt: Int, maxAttempts: Int): String =
     "⛔ ПРОВЕРКИ ХОДА нашли проблемы (попытка $attempt из $maxAttempts):\n" +
       findings.joinToString("\n") { "• ${it.detail}: ${it.path}" } +

@@ -1,13 +1,11 @@
 // Copyright 2026 VibeBrains. Use of this source code is governed by the Apache 2.0 license.
 package com.vibe.agent.ui
 
-import com.intellij.openapi.ide.CopyPasteManager
 import com.intellij.ui.JBColor
 import com.intellij.util.ui.JBUI
 import java.awt.BorderLayout
 import java.awt.Component
 import java.awt.Font
-import java.awt.datatransfer.StringSelection
 import javax.swing.JLabel
 import javax.swing.JPanel
 import javax.swing.JTextArea
@@ -23,13 +21,8 @@ class TerminalConsole(title: String) : JPanel(BorderLayout()) {
   private var exitBadge: String? = null
   private var collapsed = false
   private val header = JLabel("▾ ▹ $titleText")
-  private val copy = JLabel("копировать").apply {
-    font = com.intellij.util.ui.JBFont.label().deriveFont(Font.PLAIN, 10f)
-    foreground = JBColor.namedColor("Vibe.Chat.metaForeground", JBColor.GRAY)
-    border = JBUI.Borders.empty(3, 6)
-    cursor = java.awt.Cursor.getPredefinedCursor(java.awt.Cursor.HAND_CURSOR)
-    toolTipText = "Скопировать вывод терминала"
-  }
+  // Shared factory (ChatTheme): the same affordance as message/code copy links.
+  private val copy = ChatTheme.copyLabel("Скопировать вывод терминала") { raw.toString() }
   private val area = JTextArea().apply {
     isEditable = false
     font = Font(Font.MONOSPACED, Font.PLAIN, JBUI.scaleFontSize(11f))
@@ -53,11 +46,6 @@ class TerminalConsole(title: String) : JPanel(BorderLayout()) {
     header.toolTipText = "Свернуть/развернуть вывод"
     header.addMouseListener(object : java.awt.event.MouseAdapter() {
       override fun mouseClicked(e: java.awt.event.MouseEvent) = toggleCollapsed()
-    })
-    copy.addMouseListener(object : java.awt.event.MouseAdapter() {
-      override fun mouseClicked(e: java.awt.event.MouseEvent) {
-        CopyPasteManager.getInstance().setContents(StringSelection(raw.toString()))
-      }
     })
     val bar = JPanel(BorderLayout()).apply {
       isOpaque = false
@@ -122,10 +110,11 @@ class TerminalConsole(title: String) : JPanel(BorderLayout()) {
     private val ANSI = Regex("\\[[0-9;?]*[ -/]*[@-~]")
     private fun stripAnsi(s: String): String = ANSI.replace(s, "").replace("\r\n", "\n").replace('\r', '\n')
 
-    private val CONSOLE_BG = JBColor.namedColor("Vibe.Chat.terminalBackground", JBColor(0xF7F7F7, 0x1E1F22))
-    private val CONSOLE_FG = JBColor.namedColor("Vibe.Chat.terminalForeground", JBColor(0x2B2B2B, 0xBCBEC4))
-    private val BORDER = JBColor.namedColor("Vibe.Chat.terminalBorder", JBColor(0xD8D8D8, 0x2B2D30))
-    private val OK_FG = JBColor.namedColor("Vibe.Chat.terminalOk", JBColor(0x3A8A3A, 0x5FAD5F))
-    private val ERR_FG = JBColor.namedColor("Vibe.Chat.terminalError", JBColor(0xC0392B, 0xE06C5A))
+    // Shared chat-surface tokens (single fallback definition in ChatTheme).
+    private val CONSOLE_BG get() = ChatTheme.TERMINAL_BG
+    private val CONSOLE_FG get() = ChatTheme.TERMINAL_FG
+    private val BORDER get() = ChatTheme.TERMINAL_BORDER
+    private val OK_FG get() = ChatTheme.TERMINAL_OK
+    private val ERR_FG get() = ChatTheme.TERMINAL_ERR
   }
 }

@@ -4,7 +4,6 @@ package com.vibe.agent.ui
 import com.intellij.openapi.editor.ex.EditorEx
 import com.intellij.openapi.fileTypes.FileTypeManager
 import com.intellij.openapi.fileTypes.UnknownFileType
-import com.intellij.openapi.ide.CopyPasteManager
 import com.intellij.openapi.project.Project
 import com.intellij.ui.EditorTextField
 import com.intellij.ui.JBColor
@@ -12,7 +11,6 @@ import com.intellij.util.ui.JBUI
 import java.awt.BorderLayout
 import java.awt.Component
 import java.awt.Font
-import java.awt.datatransfer.StringSelection
 import javax.swing.JComponent
 import javax.swing.JLabel
 import javax.swing.JPanel
@@ -39,15 +37,7 @@ class CodeBlockPanel(project: Project?, lang: String?, rawCode: String) : JPanel
       background = HEADER_BG
       isOpaque = true
       add(label(lang?.lowercase() ?: "код"), BorderLayout.WEST)
-      add(label("копировать").apply {
-        cursor = java.awt.Cursor.getPredefinedCursor(java.awt.Cursor.HAND_CURSOR)
-        toolTipText = "Скопировать код"
-        addMouseListener(object : java.awt.event.MouseAdapter() {
-          override fun mouseClicked(e: java.awt.event.MouseEvent) {
-            CopyPasteManager.getInstance().setContents(StringSelection(code))
-          }
-        })
-      }, BorderLayout.EAST)
+      add(ChatTheme.copyLabel("Скопировать код") { code }, BorderLayout.EAST)
     }
     add(header, BorderLayout.NORTH)
     add(highlighted(project, lang, code) ?: plain(code), BorderLayout.CENTER)
@@ -115,12 +105,13 @@ class CodeBlockPanel(project: Project?, lang: String?, rawCode: String) : JPanel
     private const val MAX_CODE_CHARS = 200_000
     /** Above this, skip the highlighting editor (too heavy) and use the plain area. */
     private const val MAX_HIGHLIGHT_CHARS = 40_000
-    private const val HEADER_FONT_PT = 10f
+    private const val HEADER_FONT_PT = ChatTheme.CAPTION_FONT_PT
     private const val BODY_FONT_PT = 12f
-    private val BG = JBColor.namedColor("Vibe.Chat.terminalBackground", JBColor(0xF7F7F7, 0x1E1F22))
-    private val HEADER_BG = JBColor.namedColor("Vibe.Chat.toolCardBackground", JBColor(0xF2F2F2, 0x26282E))
-    private val FG_CODE = JBColor.namedColor("Vibe.Chat.terminalForeground", JBColor(0x2B2B2B, 0xBCBEC4))
-    private val BORDER = JBColor.namedColor("Vibe.Chat.terminalBorder", JBColor(0xD8D8D8, 0x2B2D30))
-    private val FG = JBColor.namedColor("Vibe.Chat.metaForeground", JBColor.GRAY)
+    // Shared chat-surface tokens: one fallback definition for terminal AND code (ChatTheme).
+    private val BG get() = ChatTheme.TERMINAL_BG
+    private val HEADER_BG get() = ChatTheme.CARD_BG
+    private val FG_CODE get() = ChatTheme.TERMINAL_FG
+    private val BORDER get() = ChatTheme.TERMINAL_BORDER
+    private val FG get() = ChatTheme.META_FG
   }
 }

@@ -87,12 +87,25 @@ class CheckpointService(private val projectBase: String) {
       pb.redirectErrorStream(true)
       pb.environment().putAll(env)
       val p = pb.start()
-      val out = p.inputStream.bufferedReader().readText()
-      if (!p.waitFor(60, TimeUnit.SECONDS)) { p.destroy(); return -1 to "timeout" }
-      p.exitValue() to out
+      // Drain on a side thread and bound the wait FIRST — reading to EOF inline would make the
+      // timeout unreachable for a hung git (same lesson as the hook/verify runners).
+      val out = com.vibe.agent.util.ProcessSupport.drain(p.inputStream, "vibe-checkpoint-git-drain")
+      if (!p.waitFor(GIT_TIMEOUT_SEC, TimeUnit.SECONDS)) {
+        runCatching { com.intellij.execution.process.OSProcessUtil.killProcessTree(p) }
+        p.destroyForcibly()
+        return -1 to "timeout"
+      }
+      val text = runCatching {
+        out.get(com.vibe.agent.util.ProcessSupport.DRAIN_JOIN_TIMEOUT_SEC, TimeUnit.SECONDS)
+      }.getOrDefault("")
+      p.exitValue() to text
     }
     catch (e: Exception) {
       -1 to (e.message ?: "")
     }
+  }
+
+  private companion object {
+    const val GIT_TIMEOUT_SEC = 60L
   }
 }

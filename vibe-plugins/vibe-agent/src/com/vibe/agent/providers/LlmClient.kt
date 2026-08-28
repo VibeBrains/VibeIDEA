@@ -152,7 +152,7 @@ class LlmClient(private val http: HttpClient = HttpClient.newBuilder().connectTi
       put("prompt", prefix)
       put("suffix", suffix)
       put("stream", false)
-      put("max_tokens", if (provider.isLocal) 96 else 300)
+      put("max_tokens", if (provider.isLocal) FIM_MAX_TOKENS_LOCAL else FIM_MAX_TOKENS_CLOUD)
       if (stop.isNotEmpty()) put("stop", JsonArray(stop.map { kotlinx.serialization.json.JsonPrimitive(it) }))
     }, model.extraBody)
     val request = requestBuilder(provider, "completions")
@@ -222,7 +222,7 @@ class LlmClient(private val http: HttpClient = HttpClient.newBuilder().connectTi
     val body = withExtras(buildJsonObject {
       put("model", model.id)
       put("stream", true)
-      put("max_tokens", model.maxOutputTokens ?: 8192)
+      put("max_tokens", model.maxOutputTokens ?: DEFAULT_MAX_OUTPUT_TOKENS)
       model.temperature?.let { put("temperature", it) }
       model.topP?.let { put("top_p", it) }
       model.topK?.let { put("top_k", it) }
@@ -305,5 +305,10 @@ class LlmClient(private val http: HttpClient = HttpClient.newBuilder().connectTi
     const val STOPPED_BY_USER = "остановлено пользователем"
     /** Default per-request timeout when a provider does not set `timeoutMs` (10 min). */
     const val DEFAULT_REQUEST_TIMEOUT_MS = 600_000L
+    /** FIM completion budget, VibeIDE parity: local models are latency-bound, cloud can afford more. */
+    const val FIM_MAX_TOKENS_LOCAL = 96
+    const val FIM_MAX_TOKENS_CLOUD = 300
+    /** Anthropic requires max_tokens; used when the model entry does not set maxOutputTokens. */
+    const val DEFAULT_MAX_OUTPUT_TOKENS = 8192
   }
 }

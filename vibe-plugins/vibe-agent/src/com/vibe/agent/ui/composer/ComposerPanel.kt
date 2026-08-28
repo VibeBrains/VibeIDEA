@@ -109,8 +109,23 @@ class ComposerPanel(
     isVisible = false
   }
   private val spinner = AsyncProcessIcon("vibe-composer-busy").apply { isVisible = false }
+  /** Context-window usage (ACP usage_update): «⛁ 34%», hidden until the agent reports it. */
+  private val usageLabel = javax.swing.JLabel().apply {
+    font = com.intellij.util.ui.JBFont.label().deriveFont(java.awt.Font.PLAIN, 10f)
+    foreground = USAGE_FG
+    isVisible = false
+  }
   private val pillsLeft = JPanel(WrapLayout(FlowLayout.LEFT, JBUI.scale(PILL_GAP), JBUI.scale(PILL_GAP))).apply { isOpaque = false }
   private val pillsRight = JPanel(FlowLayout(FlowLayout.RIGHT, JBUI.scale(PILL_GAP), 0)).apply { isOpaque = false }
+
+  /** Show/update the context-usage chip; null hides it (e.g. a new session). EDT only. */
+  fun setUsage(text: String?, tooltip: String?, warn: Boolean) {
+    usageLabel.isVisible = text != null
+    usageLabel.text = text.orEmpty()
+    usageLabel.toolTipText = tooltip
+    usageLabel.foreground = if (warn) USAGE_WARN_FG else USAGE_FG
+    pillsRight.revalidate(); pillsRight.repaint()
+  }
 
   private val mention: MentionPopup
   private val slash: SlashPopup
@@ -162,6 +177,7 @@ class ComposerPanel(
       add(scroll, BorderLayout.CENTER)
       add(iconColumn, BorderLayout.EAST)
     }
+    pillsRight.add(usageLabel)
     pillsRight.add(spinner)
     val pills = JPanel(BorderLayout()).apply {
       isOpaque = false
@@ -467,5 +483,7 @@ class ComposerPanel(
     val BORDER: Color = JBColor.namedColor("Vibe.Composer.border", JBColor.namedColor("Component.borderColor", JBColor.border()))
     val FOCUS_BORDER: Color = JBColor.namedColor("Vibe.Composer.focusBorder", JBColor.namedColor("Component.focusedBorderColor", JBColor.BLUE))
     val SEPARATOR: Color = JBColor.namedColor("Vibe.Composer.separator", JBColor.namedColor("Separator.separatorColor", JBColor.border()))
+    val USAGE_FG: Color = JBColor.namedColor("Vibe.Composer.usageForeground", JBColor.namedColor("Label.infoForeground", JBColor.GRAY))
+    val USAGE_WARN_FG: Color = JBColor.namedColor("Vibe.Composer.usageWarnForeground", JBColor(0xB8860B, 0xE0A030))
   }
 }

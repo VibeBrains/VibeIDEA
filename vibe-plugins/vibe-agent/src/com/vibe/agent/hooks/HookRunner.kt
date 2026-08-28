@@ -119,7 +119,10 @@ class HookRunner(private val project: Project, private val onWarning: (String) -
       // deadlocks; and bound the wait BEFORE reading, or a hanging process outlives its timeout.
       val out = ProcessSupport.drain(process.inputStream, "vibe-hook-drain")
       val err = ProcessSupport.drain(process.errorStream, "vibe-hook-drain")
-      runCatching { process.outputStream.use { it.write(payload.toByteArray(Charsets.UTF_8)) } }
+      // stdin on its own thread too: a hook that ignores stdin + a payload larger than the OS pipe
+      // buffer would otherwise park THIS thread before waitFor, making the timeout unenforceable.
+      Thread({ runCatching { process.outputStream.use { it.write(payload.toByteArray(Charsets.UTF_8)) } } }, "vibe-hook-stdin")
+        .apply { isDaemon = true }.start()
       val finished = process.waitFor(hook.timeoutMs, TimeUnit.MILLISECONDS)
       if (!finished) {
         runCatching { com.intellij.execution.process.OSProcessUtil.killProcessTree(process) }

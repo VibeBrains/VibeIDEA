@@ -137,10 +137,11 @@ class AgentPanel(private val project: Project) : JPanel(BorderLayout()), AcpClie
     horizontalScrollBarPolicy = javax.swing.ScrollPaneConstants.HORIZONTAL_SCROLLBAR_NEVER
   }
 
-  private val agents: List<AgentServerConfig> = AcpConfig.load { systemLine("[конфиг] $it") }
-  @Volatile private var providers: List<ProviderEntry> = ProvidersService.load(project.basePath) { systemLine("[providers] $it") }
+  // Loaded OFF the EDT in init (config files on disk); empty until then.
+  @Volatile private var agents: List<AgentServerConfig> = emptyList()
+  @Volatile private var providers: List<ProviderEntry> = emptyList()
   /** Models declared in providers.json (before any catalog fetch) — they get the «providers.json» mark. */
-  private val staticModelIds: Map<String, Set<String>> = providers.associate { p -> p.id to p.models.map { it.id }.toSet() }
+  @Volatile private var staticModelIds: Map<String, Set<String>> = emptyMap()
   private val llmClient = LlmClient()
   private val llmCancel = java.util.concurrent.atomic.AtomicBoolean(false)
   private val fileOps = IdeFileOps(project)
@@ -236,13 +237,26 @@ class AgentPanel(private val project: Project) : JPanel(BorderLayout()), AcpClie
     relayout()
     applyRailVisibility()
     history.addListener(this) { onHistoryChanged() }
-    systemLine("Vibe Agent готов. Агенты: ${agents.joinToString { it.name }}; провайдеры: ${providers.joinToString { it.name }.ifEmpty { "нет" }}.")
     systemLine("Ключи провайдеров: Settings → Tools → VibeIDEA → Провайдеры (или .vibe/.env). Реестры: ${AcpConfig.configPath()}, ~/.vibe/providers.json.")
-    ProviderGuard.scan(providers).forEach { f -> systemLine("[guard:${f.severity}] ${f.message}") }
-    hooks.seedExampleIfNeeded()
-    if (hooks.hasHooksButDisabled()) systemLine("[хуки] в проекте есть .vibe/hooks.json, но хуки выключены — включить: Settings → Tools → VibeIDEA → Агент")
-    rebuildTargets()
-    fetchProviderModels()
+    // Config files live on disk — never read (or seed) them on the EDT; publish results back here.
+    ApplicationManager.getApplication().executeOnPooledThread {
+      val loadedAgents = AcpConfig.load { systemLine("[конфиг] $it") }
+      val loadedProviders = ProvidersService.load(project.basePath) { systemLine("[providers] $it") }
+      hooks.seedExampleIfNeeded()
+      val hooksDisabled = hooks.hasHooksButDisabled()
+      val guardFindings = ProviderGuard.scan(loadedProviders)
+      SwingUtilities.invokeLater {
+        if (disposed) return@invokeLater
+        agents = loadedAgents
+        providers = loadedProviders
+        staticModelIds = loadedProviders.associate { p -> p.id to p.models.map { it.id }.toSet() }
+        systemLine("Vibe Agent готов. Агенты: ${loadedAgents.joinToString { it.name }}; провайдеры: ${loadedProviders.joinToString { it.name }.ifEmpty { "нет" }}.")
+        guardFindings.forEach { f -> systemLine("[guard:${f.severity}] ${f.message}") }
+        if (hooksDisabled) systemLine("[хуки] в проекте есть .vibe/hooks.json, но хуки выключены — включить: Settings → Tools → VibeIDEA → Агент")
+        rebuildTargets()
+        fetchProviderModels()
+      }
+    }
     project.messageBus.connect(this).subscribe(FileEditorManagerListener.FILE_EDITOR_MANAGER, object : FileEditorManagerListener {
       override fun selectionChanged(event: FileEditorManagerEvent) = updateLanding()
     })
@@ -623,6 +637,8 @@ class AgentPanel(private val project: Project) : JPanel(BorderLayout()), AcpClie
    * follow-up prompt) or null to complete. Only runs when the turn mutated files.
    */
   private fun evaluateGates(verifyAttempt: Int, checkAttempt: Int): GateBounce? {
+    // Stop pressed → the user is done with this turn; do not launch a minutes-long verify build.
+    if (llmCancel.get() || disposed) return null
     // A Bash/edit tool may have changed files the client never saw as fs/write, so the gate runs on
     // any mutating turn — not only when changedPaths is populated.
     if (changedPaths.isEmpty() && !turnHadMutatingTool) return null
@@ -660,9 +676,11 @@ class AgentPanel(private val project: Project) : JPanel(BorderLayout()), AcpClie
     // --- VERIFY-GATE (build/tests) ---
     val vMode = VibeAgentSettings.verifyMode
     if (vMode != VibeAgentSettings.VERIFY_OFF && verifyRunner != null && VibeAgentSettings.verifyCommand.isNotBlank()) {
-      val res = verifyRunner.run(VibeAgentSettings.verifyCommand, VibeAgentSettings.verifyTimeoutMs)
+      val res = verifyRunner.run(VibeAgentSettings.verifyCommand, VibeAgentSettings.verifyTimeoutMs) { llmCancel.get() || disposed }
       audit?.append(AuditEvent(System.currentTimeMillis(), AuditEvent.Action.VERIFY_GATE, ok = res.passed,
         meta = mapOf("ran" to res.ran.toString(), "exit" to (res.exitCode?.toString() ?: "none"))))
+      // Stop pressed while the build ran → complete the turn, do not bounce the agent again.
+      if (llmCancel.get() || disposed) return null
       when (VerifyGatePolicy.decide(vMode, res.ran, res.passed, verifyAttempt, VibeAgentSettings.verifyMaxAttempts)) {
         VerifyGateDecision.BOUNCE -> return GateBounce(
           "⛔ VERIFY-GATE: команда «${VibeAgentSettings.verifyCommand}» упала (exit ${res.exitCode ?: "timeout"}). Задача НЕ выполнена — исправь причину и продолжай (попытка ${verifyAttempt + 1} из ${maxOf(1, VibeAgentSettings.verifyMaxAttempts)}).\n${res.outputTail}",
@@ -815,6 +833,8 @@ class AgentPanel(private val project: Project) : JPanel(BorderLayout()), AcpClie
       throw IllegalStateException("агент не ответил на initialize/session/new за $handshakeSec с — проверьте команду и ACP-флаг в ${AcpConfig.configPath()}")
     }
     systemLine("[агент] сессия открыта" + (fresh.modes?.let { m -> " · режим: ${m.available.firstOrNull { it.id == m.currentModeId }?.name ?: m.currentModeId}" } ?: ""))
+    // A fresh session starts a fresh context — drop the stale usage chip until the agent reports anew.
+    SwingUtilities.invokeLater { composer.setUsage(null, null, warn = false) }
     return fresh
   }
 
@@ -1227,18 +1247,9 @@ class AgentPanel(private val project: Project) : JPanel(BorderLayout()), AcpClie
     }
   }
 
-  /** A quiet "копировать" affordance that copies the current text to the clipboard on click. */
-  private fun copyLink(textSupplier: () -> String): JLabel = JLabel("копировать").apply {
-    font = com.intellij.util.ui.JBFont.label().deriveFont(Font.PLAIN, 10f)
-    foreground = META_FG
-    cursor = java.awt.Cursor.getPredefinedCursor(java.awt.Cursor.HAND_CURSOR)
-    toolTipText = "Скопировать текст сообщения"
-    addMouseListener(object : java.awt.event.MouseAdapter() {
-      override fun mouseClicked(e: java.awt.event.MouseEvent) {
-        com.intellij.openapi.ide.CopyPasteManager.getInstance().setContents(java.awt.datatransfer.StringSelection(textSupplier()))
-      }
-    })
-  }
+  /** A quiet "копировать" affordance (shared factory — see ChatTheme). */
+  private fun copyLink(textSupplier: () -> String): JLabel =
+    ChatTheme.copyLabel("Скопировать текст сообщения", textSupplier)
 
   private fun now(): String = LocalTime.now().format(DateTimeFormatter.ofPattern("HH:mm"))
 
@@ -1399,11 +1410,13 @@ class AgentPanel(private val project: Project) : JPanel(BorderLayout()), AcpClie
   }
 
   private fun revalidateScroll() {
+    // Stick-to-bottom only when the user was already at (or near) the bottom — a reader scrolled
+    // up through history must not be yanked down by every streaming delta.
+    val bar = scroll.verticalScrollBar
+    val wasAtBottom = bar.value + bar.visibleAmount >= bar.maximum - JBUI.scale(STICK_TO_BOTTOM_SLACK)
     messages.revalidate()
     messages.repaint()
-    SwingUtilities.invokeLater {
-      scroll.verticalScrollBar.value = scroll.verticalScrollBar.maximum
-    }
+    if (wasAtBottom) SwingUtilities.invokeLater { bar.value = bar.maximum }
   }
 
   // --- AcpClient.Handler (reader thread) ---
@@ -1420,6 +1433,7 @@ class AgentPanel(private val project: Project) : JPanel(BorderLayout()), AcpClie
         val text = u["content"]?.jsonObject?.get("text")?.jsonPrimitive?.contentOrNull ?: return
         appendThought(text)
       }
+      "usage_update" -> onUsageUpdate(u)
       "tool_call" -> {
         val call = toolCalls.onToolCall(u)
         if (call != null) { auditToolCall(AuditEvent.Action.TOOL_CALL_START, call); harvestMutation(call) }
@@ -1480,6 +1494,26 @@ class AgentPanel(private val project: Project) : JPanel(BorderLayout()), AcpClie
     SwingUtilities.invokeLater { terminalConsoles[terminalId]?.append(data) }
   }
 
+  /** ACP usage_update {used, size, cost?} → compact context chip in the composer. */
+  private fun onUsageUpdate(u: JsonObject) {
+    val used = u["used"]?.jsonPrimitive?.longOrNull ?: return
+    val size = u["size"]?.jsonPrimitive?.longOrNull ?: return
+    if (size <= 0) return
+    val pct = (used * 100 / size).toInt().coerceIn(0, 100)
+    val cost = (u["cost"] as? JsonObject)?.let { c ->
+      val amount = c["amount"]?.jsonPrimitive?.contentOrNull?.toDoubleOrNull()
+      val currency = c["currency"]?.jsonPrimitive?.contentOrNull ?: ""
+      amount?.let { " · %.2f %s".format(it, currency).trimEnd() }
+    } ?: ""
+    SwingUtilities.invokeLater {
+      composer.setUsage(
+        text = "⛁ $pct%",
+        tooltip = "Контекст: %,d / %,d токенов$cost".format(used, size),
+        warn = pct >= USAGE_WARN_PCT,
+      )
+    }
+  }
+
   /** Stream the agent's reasoning into a collapsible block on the turn's thread. */
   private fun appendThought(text: String) {
     val targetThread = (if (turnInFlight.get()) turnThreadId else null) ?: currentThreadId
@@ -1490,7 +1524,9 @@ class AgentPanel(private val project: Project) : JPanel(BorderLayout()), AcpClie
         if (!turnInFlight.get()) return@invokeLater
         block = ThoughtsBlock()
         thoughtsBlock = block
-        messages.add(block)
+        // Reasoning precedes the answer: when the answer row already streams, insert ABOVE it.
+        val answerIdx = currentAgentMessage?.row?.let { messages.components.indexOf(it as Component) } ?: -1
+        if (answerIdx >= 0) messages.add(block, answerIdx) else messages.add(block)
         // Not added to recordRows: reasoning is not a history record (would shift the reveal index).
       }
       block.append(text)
@@ -1687,6 +1723,10 @@ class AgentPanel(private val project: Project) : JPanel(BorderLayout()), AcpClie
     const val KEY_OPEN_TABS = "vibe.chat.openTabs"
     /** Images ride the wire only for this many most recent user messages (cost + poison control). */
     const val MAX_IMAGE_HISTORY_MESSAGES = 4
+    /** Context-usage chip turns warning-coloured at this fill percentage. */
+    const val USAGE_WARN_PCT = 80
+    /** «У низа» для прилипания скролла: столько px недоскролла всё ещё считается низом. */
+    const val STICK_TO_BOTTOM_SLACK = 48
     /** Truncation of a command preview shown in a destructive-command confirm dialog. */
     const val DESTRUCTIVE_PREVIEW_LEN = 300
     /** Checkpoint label preview length. */

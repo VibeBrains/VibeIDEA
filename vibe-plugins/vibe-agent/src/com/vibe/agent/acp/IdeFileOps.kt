@@ -39,7 +39,8 @@ internal class IdeFileOps(private val project: Project) {
     var content = text ?: Files.readString(Path.of(path))
     if (line != null || limit != null) {
       var lines = content.lines()
-      if (line != null) lines = lines.drop(line)
+      // ACP `line` is 1-based: line=1 starts at the first line, so drop (line-1).
+      if (line != null) lines = lines.drop((line - 1).coerceAtLeast(0))
       if (limit != null) lines = lines.take(limit)
       content = lines.joinToString("\n")
     }
