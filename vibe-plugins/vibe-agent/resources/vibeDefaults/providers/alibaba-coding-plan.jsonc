@@ -1,0 +1,44 @@
+// Alibaba Cloud AI Coding Plan — один ключ на четыре семейства (Qwen, GLM, Kimi, MiniMax).
+// Подписка: лимит считается в ЗАПРОСАХ (6 000 за 5 часов, 45 000 в неделю, 90 000 в месяц),
+// поэтому «дорогая» модель стоит столько же, сколько дешёвая.
+// Ключ: DASHSCOPE_API_KEY=sk-sp-... в .vibe/.env — это ключ ПЛАНА (он отличается от обычного
+// ключа Model Studio и начинается с sk-sp-). Взять: консоль Coding Plan → API key.
+//
+// ТРИ ВЕЩИ, О КОТОРЫХ ЛЕГКО СПОТКНУТЬСЯ:
+//  1. Список моделей ВШИТ НИЖЕ НАМЕРЕННО — единственное такое исключение в каталоге.
+//     Каталог /models у плана врёт: возвращает модели, которых в плане нет, а имена
+//     сверяются ПОСИМВОЛЬНО (в плане именно kimi-k2.5 и MiniMax-M2.5 — свежих K3/M3 НЕТ,
+//     сколько бы их ни было у самих вендоров).
+//  2. GLM без "tool_stream" молча не вызывает инструменты: DashScope возвращает tool_calls
+//     для GLM только при extraBody {"tool_stream": true}. Иначе модель отвечает прозой, и
+//     выглядит это как «модель тупит», а не как ошибка. Поэтому extraBody у обеих GLM ниже.
+//  3. Условия плана запрещают неинтерактивные сценарии (automated scripts, backends).
+//     Работа в редакторе подходит; фоновые агенты и запуски по расписанию — нет: для них
+//     берите обычный ключ Model Studio с оплатой за токены.
+{
+  "version": 1,
+  "providers": [
+    {
+      "id": "alibaba-coding",
+      "name": "Alibaba Coding Plan",
+      "active": false,
+      "protocol": "openai",
+      "baseURL": "https://coding-intl.dashscope.aliyuncs.com/v1",
+      "auth": "bearer",
+      "apiKeyEnv": "DASHSCOPE_API_KEY",
+      "order": 80,
+      "models": {
+        "fetch": false, // см. пункт 1 в шапке: каталог плана возвращает лишнее
+        "static": [
+          { "id": "qwen3.7-plus", "name": "Qwen 3.7 Plus", "default": true, "pinned": true, "contextWindow": 1000000 },
+          { "id": "qwen3-coder-next", "name": "Qwen 3 Coder Next", "contextWindow": 1000000 },
+          // Без extraBody GLM не вернёт ни одного tool_call — см. пункт 2 в шапке.
+          { "id": "glm-5", "name": "GLM-5", "contextWindow": 204800, "extraBody": { "tool_stream": true } },
+          { "id": "glm-4.7", "name": "GLM-4.7", "contextWindow": 204800, "extraBody": { "tool_stream": true } },
+          { "id": "kimi-k2.5", "name": "Kimi K2.5", "contextWindow": 262144 },
+          { "id": "MiniMax-M2.5", "name": "MiniMax M2.5", "contextWindow": 204800 }
+        ]
+      }
+    }
+  ]
+}

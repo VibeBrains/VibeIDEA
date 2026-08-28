@@ -1,0 +1,24 @@
+// Kimi (Moonshot) — OpenAI-совместимый API, «думающие» модели.
+// Ключ: MOONSHOT_API_KEY=<ключ> в .vibe/.env (взять: platform.moonshot.ai/console/api-keys).
+//
+// ЭКОНОМИКА K3: выключить размышление у kimi-k3 нельзя, и на простую задачу уходит
+// порядка 13 тысяч токенов рассуждений — для рутины модель невыгодна, берите её под
+// фронтенд-задачи. Тумблер thinking у Moonshot — отдельное поле в теле запроса:
+// задаётся кастомной моделью с "extraBody": { "thinking": { "type": "enabled" } }
+// (рецепт — _template-openai-compatible.jsonc).
+{
+  "version": 1,
+  "providers": [
+    {
+      "id": "kimi",
+      "name": "Kimi (Moonshot)",
+      "active": true,
+      "protocol": "openai",
+      "baseURL": "https://api.moonshot.ai/v1",
+      "auth": "bearer",
+      "apiKeyEnv": "MOONSHOT_API_KEY",
+      "order": 50,
+      "models": { "fetch": true }
+    }
+  ]
+}

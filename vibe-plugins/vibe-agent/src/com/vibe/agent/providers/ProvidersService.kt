@@ -13,31 +13,76 @@ data class ResolvedProvider(
 )
 
 /**
- * Loads and merges `~/.vibe/providers.json` + `<project>/.vibe/providers.json`.
- * The two files are parsed independently — a broken workspace file never
- * disables global providers (VibeIDE contract). Locality is determined by the
- * endpoint host, not by a hardcoded vendor list.
+ * Loads and merges the provider registry from four layers, weakest first:
+ * seeded catalog (`*.jsonc` files of the `providers` dir; global, then project;
+ * alphabetical within a dir, a later file overrides an earlier one by id) →
+ * global `providers.json` → project `providers.json`. The catalog plays the role
+ * VibeIDE gave to built-in providers, so like built-ins it stays UNDER both user
+ * files — a seeded entry can never silence or rewrite a user's `providers.json`
+ * (review of decision №24). Same-id entries patch field-by-field; every file is
+ * parsed independently — one broken file never disables providers from the others.
+ * `extends` resolves once, over the fully merged registry; `active` is filtered
+ * last, so `extends`/patches work against inactive catalog entries. Locality is
+ * determined by the endpoint host, not by a hardcoded vendor list.
  */
 object ProvidersService {
-  fun load(projectBase: String?, onWarning: (String) -> Unit): List<ProviderEntry> {
-    val global = loadFile(Path.of(System.getProperty("user.home"), ".vibe", "providers.json"), onWarning)
-    val workspace = projectBase?.let { loadFile(Path.of(it, ".vibe", "providers.json"), onWarning) } ?: emptyList()
-    val merged = ProvidersFile.merge(global, workspace)
-    val globalIds = global.mapTo(HashSet()) { it.id }
-    val workspaceIds = workspace.mapTo(HashSet()) { it.id }
+  fun load(projectBase: String?, onWarning: (String) -> Unit): List<ProviderEntry> =
+    loadFrom(
+      globalVibeDir = Path.of(System.getProperty("user.home"), ".vibe"),
+      projectVibeDir = projectBase?.let { Path.of(it, ".vibe") },
+      onWarning = onWarning,
+    )
+
+  /** Same as [load], with explicit scope directories — the seam unit tests drive. */
+  fun loadFrom(globalVibeDir: Path, projectVibeDir: Path?, onWarning: (String) -> Unit): List<ProviderEntry> {
+    val globalCatalog = loadCatalog(globalVibeDir, onWarning)
+    val projectCatalog = projectVibeDir?.let { loadCatalog(it, onWarning) } ?: emptyList()
+    val globalJson = loadFile(globalVibeDir.resolve("providers.json"), "providers.json", onWarning)
+    val projectJson = projectVibeDir?.let { loadFile(it.resolve("providers.json"), "providers.json", onWarning) }
+                      ?: emptyList()
+    val merged = ProvidersFile.merge(
+      ProvidersFile.merge(ProvidersFile.merge(globalCatalog, projectCatalog), globalJson),
+      projectJson,
+    )
+    // Origin describes which scope contributed to the entry (for the settings hint).
+    val globalIds = HashSet<String>().apply { globalCatalog.mapTo(this) { it.id }; globalJson.mapTo(this) { it.id } }
+    val projectIds = HashSet<String>().apply { projectCatalog.mapTo(this) { it.id }; projectJson.mapTo(this) { it.id } }
     return ProvidersFile.resolveExtends(merged, onWarning).filter { it.active }.map {
       it.copy(origin = when {
-        it.id in workspaceIds && it.id in globalIds -> ProviderOrigin.OVERRIDDEN
-        it.id in workspaceIds -> ProviderOrigin.PROJECT
+        it.id in projectIds && it.id in globalIds -> ProviderOrigin.OVERRIDDEN
+        it.id in projectIds -> ProviderOrigin.PROJECT
         else -> ProviderOrigin.GLOBAL
       })
     }
   }
 
-  private fun loadFile(path: Path, onWarning: (String) -> Unit): List<ProviderEntry> {
+  private fun loadCatalog(vibeDir: Path, onWarning: (String) -> Unit): List<ProviderEntry> {
+    var acc = emptyList<ProviderEntry>()
+    for (file in catalogFiles(vibeDir.resolve("providers"), onWarning)) {
+      acc = ProvidersFile.merge(acc, loadFile(file, "providers/${file.fileName}", onWarning))
+    }
+    return acc
+  }
+
+  private fun catalogFiles(dir: Path, onWarning: (String) -> Unit): List<Path> {
+    if (!Files.isDirectory(dir)) return emptyList()
+    return runCatching {
+      Files.newDirectoryStream(dir).use { stream ->
+        stream.filter { p ->
+          val name = p.fileName.toString()
+          Files.isRegularFile(p) && (name.endsWith(".jsonc") || name.endsWith(".json"))
+        }.sortedBy { it.fileName.toString() }
+      }
+    }.getOrElse { e ->
+      onWarning("$dir не прочитан: ${e.message} — каталог провайдеров пропущен")
+      emptyList()
+    }
+  }
+
+  private fun loadFile(path: Path, source: String, onWarning: (String) -> Unit): List<ProviderEntry> {
     if (!Files.isRegularFile(path)) return emptyList()
     return try {
-      ProvidersFile.resolveExtends(ProvidersFile.parse(Files.readString(path), onWarning), onWarning)
+      ProvidersFile.parse(Files.readString(path), source = source, onWarning = onWarning)
     }
     catch (e: Exception) {
       onWarning("$path не разобран: ${e.message} — провайдеры из этого файла пропущены")

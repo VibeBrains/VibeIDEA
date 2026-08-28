@@ -13,16 +13,46 @@ class VibeDefaultsTest {
   fun seedsFullEnvironmentIntoEmptyProject() {
     val base = tempProject()
     val report = VibeDefaults.seed(base)
-    assertTrue(report.created >= 9, "created=${report.created}")
+    assertTrue(report.created >= 23, "created=${report.created}")
     val vibe = java.nio.file.Path.of(base, ".vibe")
     for (f in listOf("README.md", ".gitignore", "rules.md", "hooks.example.jsonc",
-                     "pipelines.example.jsonc", "servers.example.jsonc", "providers.example.jsonc",
-                     "design/components.md", "design/uiKit.md", ".seeded.json")) {
+                     "pipelines.example.jsonc", "servers.example.jsonc",
+                     "design/components.md", "design/uiKit.md", ".seeded.json",
+                     "providers/README.md", "providers/_template-openai-compatible.jsonc",
+                     "providers/opencode-go.jsonc", "providers/opencode-zen.jsonc",
+                     "providers/openrouter.jsonc", "providers/minimax.jsonc",
+                     "providers/zai.jsonc", "providers/kimi.jsonc", "providers/deepseek.jsonc",
+                     "providers/openai.jsonc", "providers/anthropic.jsonc",
+                     "providers/alibaba-coding-plan.jsonc", "providers/meta-muse.jsonc",
+                     "providers/muse-glimmer-local.jsonc", "providers/ollama.jsonc")) {
       assertTrue(Files.isRegularFile(vibe.resolve(f)), "missing $f")
     }
+    // The provider catalog replaced the old commented-out example (decision №24).
+    assertTrue(!Files.exists(vibe.resolve("providers.example.jsonc")))
     // Runtime artifacts are git-ignored from the very first seed.
     val gitignore = Files.readString(vibe.resolve(".gitignore"))
     assertTrue(gitignore.contains("audit.jsonl") && gitignore.contains("checkpoints.jsonl"))
+  }
+
+  @Test
+  fun seededProviderCatalogIsValidAndActivatesTheBase() {
+    val base = tempProject()
+    VibeDefaults.seed(base)
+    val warnings = mutableListOf<String>()
+    val emptyGlobal = Files.createTempDirectory("vibe-empty-global")
+    val providers = com.vibe.agent.providers.ProvidersService.loadFrom(
+      emptyGlobal, java.nio.file.Path.of(base, ".vibe")) { warnings.add(it) }
+    // The owner's base set is active out of the box; everything else stays dormant.
+    assertEquals(
+      setOf("opencode-go", "opencode-zen", "openrouter", "minimax", "zai", "kimi", "deepseek"),
+      providers.map { it.id }.toSet())
+    // Every seeded file parsed cleanly — a JSONC typo anywhere in the catalog shows up here.
+    assertTrue(warnings.isEmpty(), "warnings=$warnings")
+    // Keys never live in the files; every active provider names where its key comes from.
+    for (p in providers) {
+      assertTrue(p.apiKeyEnv != null || p.apiKeyRef != null, "provider '${p.id}' has no key source")
+      assertTrue(!p.baseURL.isNullOrBlank(), "provider '${p.id}' has no baseURL")
+    }
   }
 
   @Test

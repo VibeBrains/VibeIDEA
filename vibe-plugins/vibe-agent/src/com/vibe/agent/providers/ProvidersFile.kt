@@ -22,6 +22,8 @@ import kotlinx.serialization.json.contentOrNull
 data class ModelEntry(
   val id: String,
   val name: String = id,
+  /** An entry without `active` counts as ON — deliberately NOT tri-state: a user's own
+   *  entry layered over an inactive seeded one must come out alive (see the spec). */
   val active: Boolean = true,
   val default: Boolean = false,
   val pinned: Boolean = false,
@@ -42,9 +44,15 @@ data class AuthSpec(val type: String = "bearer", val name: String? = null)
 /** Which providers.json the entry ultimately came from (set after merge, not parsed). */
 enum class ProviderOrigin { GLOBAL, PROJECT, OVERRIDDEN }
 
+/** `models.fetch` decoded: absent entry = null on the field (defaults to enabled). */
+data class ModelsFetch(val enabled: Boolean, val url: String? = null)
+
 data class ProviderEntry(
   val id: String,
   val name: String = id,
+  /** An entry without `active` counts as ON — deliberately NOT tri-state: a user's own
+   *  entry layered over an inactive seeded one must come out alive (see the spec). A patch
+   *  that must NOT activate its target repeats `"active": false` explicitly. */
   val active: Boolean = true,
   val order: Int? = null,
   val protocol: String? = null,
@@ -56,8 +64,8 @@ data class ProviderEntry(
   val query: Map<String, String> = emptyMap(),
   val timeoutMs: Long? = null,
   val extendsId: String? = null,
-  /** models.fetch: true (default) = `<baseURL>/models`; string = full URL; false = static only. */
-  val modelsFetch: String? = "",
+  /** models.fetch: absent = null (counts as enabled, `<baseURL>/models`); explicit true/false/URL survive overlays. */
+  val modelsFetch: ModelsFetch? = null,
   val models: List<ModelEntry> = emptyList(),
   val note: String? = null,
   val origin: ProviderOrigin? = null,
@@ -90,10 +98,10 @@ object ProvidersFile {
     return Regex(",(\\s*[}\\]])").replace(sb.toString(), "$1")
   }
 
-  fun parse(text: String, onWarning: (String) -> Unit): List<ProviderEntry> {
+  fun parse(text: String, source: String = "providers.json", onWarning: (String) -> Unit): List<ProviderEntry> {
     val root = json.parseToJsonElement(stripJsonc(text)).jsonObject
     val providers = root["providers"]?.jsonArray ?: run {
-      onWarning("providers.json: нет массива providers")
+      onWarning("$source: нет массива providers")
       return emptyList()
     }
     val result = ArrayList<ProviderEntry>()
@@ -101,11 +109,11 @@ object ProvidersFile {
       try {
         val o = el.jsonObject
         val id = o["id"]?.jsonPrimitive?.contentOrNull
-        if (id.isNullOrBlank()) { onWarning("providers.json: запись без id пропущена"); continue }
+        if (id.isNullOrBlank()) { onWarning("$source: запись без id пропущена"); continue }
         result.add(parseProvider(id, o))
       }
       catch (e: Exception) {
-        onWarning("providers.json: запись пропущена: ${e.message}")
+        onWarning("$source: запись пропущена: ${e.message}")
       }
     }
     return result
@@ -122,11 +130,11 @@ object ProvidersFile {
     }
     val modelsObj = o["models"]?.jsonObject
     val fetchEl = modelsObj?.get("fetch")
-    val modelsFetch: String? = when {
-      fetchEl == null -> ""
-      fetchEl is kotlinx.serialization.json.JsonPrimitive && fetchEl.booleanOrNull == false -> null
-      fetchEl is kotlinx.serialization.json.JsonPrimitive && fetchEl.booleanOrNull == true -> ""
-      else -> fetchEl.jsonPrimitive.contentOrNull ?: ""
+    val modelsFetch: ModelsFetch? = when {
+      fetchEl == null -> null
+      fetchEl is kotlinx.serialization.json.JsonPrimitive && fetchEl.booleanOrNull == false -> ModelsFetch(enabled = false)
+      fetchEl is kotlinx.serialization.json.JsonPrimitive && fetchEl.booleanOrNull == true -> ModelsFetch(enabled = true)
+      else -> ModelsFetch(enabled = true, url = fetchEl.jsonPrimitive.contentOrNull)
     }
     val models = modelsObj?.get("static")?.jsonArray?.mapNotNull { m ->
       val mo = m.jsonObject
@@ -168,13 +176,17 @@ object ProvidersFile {
     )
   }
 
-  /** Resolve `extends` within one list (no builtin providers exist in VibeIDEA yet). */
+  /**
+   * Resolve `extends` over the fully merged registry — a single strict pass, so the
+   * semantics are uniform: the base is always the final (post-merge) entry, whichever
+   * file or scope it came from, active or not. Single-level (no chains), as specced.
+   */
   fun resolveExtends(entries: List<ProviderEntry>, onWarning: (String) -> Unit): List<ProviderEntry> {
     val byId = entries.associateBy { it.id }
     return entries.map { e ->
       val base = e.extendsId?.let { byId[it] }
       if (e.extendsId != null && base == null) {
-        onWarning("providers.json: extends '${e.extendsId}' у '${e.id}' не найден — игнорирую")
+        onWarning("реестр провайдеров: extends '${e.extendsId}' у '${e.id}' не найден — игнорирую")
       }
       if (base == null || base === e) e.copy(extendsId = null)
       else overlay(base, e).copy(id = e.id, extendsId = null)
@@ -205,6 +217,9 @@ object ProvidersFile {
     return ProviderEntry(
       id = base.id,
       name = if (over.name != over.id) over.name else base.name,
+      // Deliberately the override alone: an entry without `active` is ON, so a user's own
+      // entry over an inactive seed comes out alive; a patch that must stay inactive
+      // repeats `"active": false` (documented in the spec).
       active = over.active,
       order = over.order ?: base.order,
       protocol = over.protocol ?: base.protocol,
@@ -215,8 +230,10 @@ object ProvidersFile {
       headers = base.headers + over.headers,
       query = base.query + over.query,
       timeoutMs = over.timeoutMs ?: base.timeoutMs,
-      extendsId = null,
-      modelsFetch = if (over.modelsFetch != "") over.modelsFetch else base.modelsFetch,
+      // An unresolved `extends` must survive layer merges: the single strict pass runs
+      // over the fully merged registry, so the base may live in another file or scope.
+      extendsId = over.extendsId ?: base.extendsId,
+      modelsFetch = over.modelsFetch ?: base.modelsFetch,
       models = mergedModels.values.toList(),
       note = over.note ?: base.note,
     )

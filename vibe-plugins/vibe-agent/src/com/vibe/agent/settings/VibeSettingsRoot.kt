@@ -15,8 +15,8 @@ class VibeSettingsRoot : Configurable {
     .addComponent(JBLabel("<html><b>Настройки VibeIDEA</b><br>" +
       "Провайдеры — ключи API и статус их проверки.<br>" +
       "Модели — какие модели видны в списках выбора.<br><br>" +
-      "Реестры на диске: ~/.vibe/providers.json (глобальный) и .vibe/providers.json проекта; " +
-      "ключи хранятся только в защищённом хранилище ОС или .vibe/.env.</html>"))
+      "Реестр на диске: каталог .vibe/providers/*.jsonc (тумблер active) + providers.json поверх, " +
+      "глобальный ~/.vibe и проектный уровни; ключи хранятся только в защищённом хранилище ОС или .vibe/.env.</html>"))
     .addComponentFillVertically(JPanel(), 0)
     .panel.apply { border = JBUI.Borders.empty(8) }
   override fun isModified(): Boolean = false

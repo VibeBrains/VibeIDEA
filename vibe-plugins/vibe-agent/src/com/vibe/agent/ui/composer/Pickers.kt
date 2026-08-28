@@ -22,7 +22,7 @@ sealed interface ChatTarget {
     override val label: String get() = config.name
   }
 
-  /** [static] = declared in providers.json (VibeIDE shows the «✎» badge), false = pulled from the catalog. */
+  /** [static] = hand-declared in a providers file (shown with the «кастом» badge), false = pulled from the provider's live catalog. */
   data class Model(val provider: ProviderEntry, val model: ModelEntry, val static: Boolean) : ChatTarget {
     override val id: String get() = "llm:${provider.id}/${model.id}"
     override val label: String get() = model.name
@@ -31,8 +31,9 @@ sealed interface ChatTarget {
 
 /**
  * «Модель ▾» pill (VibeIDE §6.2): one searchable list with agents first, then models
- * (name + provider in gray, ✓ at the current one, «providers.json» mark on static entries).
- * With nothing to choose from the pill turns into «Нужен провайдер» and opens settings.
+ * (name + provider in gray, ✓ at the current one, «кастом» mark on hand-declared entries —
+ * the model may no longer exist at the provider, the user must be able to tell).
+ * With nothing to choose from the pill turns into «Нужен ключ провайдера» and opens settings.
  */
 class ModelPicker(private val onChoose: (ChatTarget) -> Unit, private val onOpenSettings: () -> Unit) {
   private var targets: List<ChatTarget> = emptyList()
@@ -71,7 +72,7 @@ class ModelPicker(private val onChoose: (ChatTarget) -> Unit, private val onOpen
             is ChatTarget.Agent -> append("  агент ACP", SimpleTextAttributes.GRAYED_ATTRIBUTES)
             is ChatTarget.Model -> {
               append("  ${value.provider.name}", SimpleTextAttributes.GRAYED_ATTRIBUTES)
-              if (value.static) append("  · providers.json", SimpleTextAttributes.GRAYED_SMALL_ATTRIBUTES)
+              if (value.static) append("  · кастом", SimpleTextAttributes.GRAYED_SMALL_ATTRIBUTES)
             }
           }
         }
@@ -89,7 +90,8 @@ class ModelPicker(private val onChoose: (ChatTarget) -> Unit, private val onOpen
   }
 
   private companion object {
-    const val NONE_LABEL = "Нужен провайдер"
+    // Providers are seeded active out of the box, so an empty target list usually means «no key yet».
+    const val NONE_LABEL = "Нужен ключ провайдера"
   }
 }
 

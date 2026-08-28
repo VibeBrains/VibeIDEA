@@ -1,0 +1,21 @@
+// OpenCode Zen — шлюз OpenCode с оплатой за токены; есть бесплатные модели
+// (MiniMax M2.5 Free, Ling 2.6 Flash и др. — документация: opencode.ai/docs/zen).
+// Аккаунт тот же, что у OpenCode Go; ключ один на оба провайдера (apiKeyRef ниже).
+// Взять ключ: opencode.ai/zen.
+{
+  "version": 1,
+  "providers": [
+    {
+      "id": "opencode-zen",
+      "name": "OpenCode Zen",
+      "active": true,
+      "protocol": "openai",
+      "baseURL": "https://opencode.ai/zen/v1",
+      "auth": "bearer",
+      "apiKeyRef": "opencode", // один ключ на Go и Zen в защищённом хранилище
+      "apiKeyEnv": "OPENCODE_API_KEY", // либо OPENCODE_API_KEY=... в .vibe/.env
+      "order": 11,
+      "models": { "fetch": true }
+    }
+  ]
+}

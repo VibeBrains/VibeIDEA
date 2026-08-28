@@ -1,0 +1,19 @@
+// OpenRouter — агрегатор: сотни моделей разных вендоров одним ключом по OpenAI-совместимому API.
+// Каталог большой — лишнее удобно прятать в Settings → Tools → VibeIDEA → Модели.
+// Ключ: openrouter.ai/settings/keys; лимиты: openrouter.ai/docs/api-reference/limits.
+{
+  "version": 1,
+  "providers": [
+    {
+      "id": "openrouter",
+      "name": "OpenRouter",
+      "active": true,
+      "protocol": "openai",
+      "baseURL": "https://openrouter.ai/api/v1",
+      "auth": "bearer",
+      "apiKeyEnv": "OPENROUTER_API_KEY", // ключ: OPENROUTER_API_KEY=sk-or-... в .vibe/.env
+      "order": 20,
+      "models": { "fetch": true }
+    }
+  ]
+}

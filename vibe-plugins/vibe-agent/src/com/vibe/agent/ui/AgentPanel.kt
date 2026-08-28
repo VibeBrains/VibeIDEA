@@ -49,6 +49,7 @@ import com.vibe.agent.providers.LlmClient
 import com.vibe.agent.providers.ModelEntry
 import com.vibe.agent.providers.ProviderEntry
 import com.vibe.agent.providers.ProviderGuard
+import com.vibe.agent.providers.ProvidersChangeListener
 import com.vibe.agent.providers.ProvidersService
 import com.vibe.agent.settings.ModelVisibility
 import com.vibe.agent.settings.VibeAgentSettings
@@ -140,7 +141,7 @@ class AgentPanel(private val project: Project) : JPanel(BorderLayout()), AcpClie
   // Loaded OFF the EDT in init (config files on disk); empty until then.
   @Volatile private var agents: List<AgentServerConfig> = emptyList()
   @Volatile private var providers: List<ProviderEntry> = emptyList()
-  /** Models declared in providers.json (before any catalog fetch) — they get the «providers.json» mark. */
+  /** Models hand-declared in providers files (before any catalog fetch) — they get the «кастом» mark. */
   @Volatile private var staticModelIds: Map<String, Set<String>> = emptyMap()
   private val llmClient = LlmClient()
   private val llmCancel = java.util.concurrent.atomic.AtomicBoolean(false)
@@ -237,7 +238,7 @@ class AgentPanel(private val project: Project) : JPanel(BorderLayout()), AcpClie
     relayout()
     applyRailVisibility()
     history.addListener(this) { onHistoryChanged() }
-    systemLine("Ключи провайдеров: Settings → Tools → VibeIDEA → Провайдеры (или .vibe/.env). Реестры: ${AcpConfig.configPath()}, ~/.vibe/providers.json.")
+    systemLine("Ключи провайдеров: Settings → Tools → VibeIDEA → Провайдеры (или .vibe/.env). Реестры: ${AcpConfig.configPath()}, каталог .vibe/providers/ (+ providers.json).")
     // Config files live on disk — never read (or seed) them on the EDT; publish results back here.
     ApplicationManager.getApplication().executeOnPooledThread {
       val loadedAgents = AcpConfig.load { systemLine("[конфиг] $it") }
@@ -260,6 +261,27 @@ class AgentPanel(private val project: Project) : JPanel(BorderLayout()), AcpClie
     project.messageBus.connect(this).subscribe(FileEditorManagerListener.FILE_EDITOR_MANAGER, object : FileEditorManagerListener {
       override fun selectionChanged(event: FileEditorManagerEvent) = updateLanding()
     })
+    // Applying a key in Settings → Провайдеры must bring the models in without an IDE restart.
+    project.messageBus.connect(this).subscribe(ProvidersChangeListener.TOPIC, ProvidersChangeListener {
+      reloadProviderRegistry()
+    })
+  }
+
+  /** Re-read the provider registry and re-pull model catalogs (e.g. after a key was applied in Settings). */
+  private fun reloadProviderRegistry() {
+    ApplicationManager.getApplication().executeOnPooledThread {
+      val loadedProviders = ProvidersService.load(project.basePath) { systemLine("[providers] $it") }
+      val guardFindings = ProviderGuard.scan(loadedProviders)
+      SwingUtilities.invokeLater {
+        if (disposed) return@invokeLater
+        providers = loadedProviders
+        staticModelIds = loadedProviders.associate { p -> p.id to p.models.map { it.id }.toSet() }
+        systemLine("[providers] настройки применены — перечитываю провайдеров и каталоги моделей")
+        guardFindings.forEach { f -> systemLine("[guard:${f.severity}] ${f.message}") }
+        rebuildTargets()
+        fetchProviderModels()
+      }
+    }
   }
 
   /** The tool window points its preferred focus here (otherwise a read-only bubble wins after re-activation). */
@@ -417,7 +439,7 @@ class AgentPanel(private val project: Project) : JPanel(BorderLayout()), AcpClie
   private fun startTurn(message: ComposedMessage, threadId: String = currentThreadId): Boolean {
     if (disposed) return false
     val t = target ?: run {
-      systemLine("[ошибка] некому отправлять: добавьте агента в ${AcpConfig.configPath()} или провайдера в ~/.vibe/providers.json")
+      systemLine("[ошибка] некому отправлять: добавьте агента в ${AcpConfig.configPath()} или включите провайдера в .vibe/providers/ (active: true)")
       return false
     }
     if (turnInFlight.get()) {
@@ -1144,10 +1166,10 @@ class AgentPanel(private val project: Project) : JPanel(BorderLayout()), AcpClie
     ApplicationManager.getApplication().executeOnPooledThread {
       var changed = false
       val updated = providers.map { p ->
-        if (p.modelsFetch == null) return@map p
+        if (p.modelsFetch?.enabled == false) return@map p // absent = fetch on (default)
         val resolved = ProvidersService.resolve(p, project.basePath) { } ?: return@map p
         try {
-          val ids = llmClient.listModels(resolved, p.modelsFetch.ifBlank { null })
+          val ids = llmClient.listModels(resolved, p.modelsFetch?.url)
           val known = p.models.map { it.id }.toSet()
           val extra = ids.filter { it !in known }.map { ModelEntry(id = it) }
           if (extra.isNotEmpty()) { changed = true; p.copy(models = p.models + extra) } else p

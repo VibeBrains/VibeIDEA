@@ -1,0 +1,44 @@
+// Шаблон: свой OpenAI-совместимый провайдер «с нуля» (прокси, self-host, новый вендор).
+// Замените id/name/baseURL/apiKeyEnv на свои и поставьте "active": true.
+// auth: "bearer" | "none" | { "type": "header", "name": "x-api-key" } | { "type": "query", "name": "key" }.
+// models.fetch: true — авто-список моделей с <baseURL>/models; строка — свой полный URL
+// каталога; false — только кастомные из static. Полная спека — docs/vibe/manuals/providersSpec.md.
+{
+  "version": 1,
+  "providers": [
+    {
+      "id": "my-provider",
+      "name": "Мой провайдер",
+      "active": false,
+      "protocol": "openai", // openai (дефолт) | anthropic | gemini
+      "baseURL": "https://api.example.com/v1",
+      "auth": "bearer",
+      "apiKeyEnv": "MY_PROVIDER_API_KEY", // ключ: MY_PROVIDER_API_KEY=... в .vibe/.env
+      "order": 100,
+      "models": {
+        "fetch": true
+
+        // ── Кастомная модель (для гиков) ─────────────────────────────────────
+        // Обычно static не нужен: модели приходят из каталога провайдера. Кастомная
+        // запись нужна, когда модели нет в каталоге или ей нужны фиксированные
+        // параметры. В списке она помечается бейджем «кастом»: перестала отвечать —
+        // возможно, у провайдера её уже нет. Раскомментируйте и подставьте своё:
+        // "static": [
+        //   {
+        //     "id": "model-id-как-у-api",       // единственное обязательное поле
+        //     "name": "Моя модель",
+        //     "default": true,                  // авто-выбор по умолчанию
+        //     "pinned": true,                   // показывать вверху списка
+        //     "contextWindow": 128000,          // декларация для себя (в запрос не уходит)
+        //     "maxOutputTokens": 16384,
+        //     "temperature": 0.7,               // фикс-параметры уходят в каждый запрос
+        //     "topP": 0.95,
+        //     "vision": false,                  // text-only: композер заблокирует картинки
+        //     "fim": true,                      // отдать модель inline-автодополнению (openai-протокол)
+        //     "extraBody": { "thinking": { "type": "enabled" } } // вендоро-специфика в тело запроса как есть
+        //   }
+        // ]
+      }
+    }
+  ]
+}

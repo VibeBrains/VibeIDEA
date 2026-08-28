@@ -1,0 +1,73 @@
+// Meta Model API (Muse Spark) — платный API Meta. Ключ: MODEL_API_KEY=<ключ> в .vibe/.env
+// (так переменная названа в документации Meta; взять: консоль Model API → API keys,
+// новым аккаунтам дают $20 кредитов).
+//
+// ДОСТУП ТОЛЬКО ИЗ США: preview открыт американским разработчикам, остальным — лист
+// ожидания. Если запросы падают на авторизации из другой страны — дело не в конфиге.
+//
+// Каталога моделей у API нет (fetch: false) — при включении раскомментируйте кастомную
+// модель в static. Три маршрута одним ключом: OpenAI-совместимый (первый блок), нативный
+// Anthropic-совместимый (второй) и Contributor-тариф (третий — читайте предупреждение).
+{
+  "version": 1,
+  "providers": [
+    {
+      "id": "meta-muse",
+      "name": "Meta Muse Spark",
+      "active": false,
+      "protocol": "openai",
+      "baseURL": "https://api.meta.ai/v1",
+      "auth": "bearer",
+      "apiKeyRef": "meta-muse", // общий ref: один ключ на все три маршрута этого файла
+      "apiKeyEnv": "MODEL_API_KEY",
+      "order": 90,
+      "models": {
+        "fetch": false
+        // "static": [
+        //   { "id": "muse-spark-1.2", "name": "Muse Spark 1.2 (1M)", "default": true, "contextWindow": 1000000 }
+        // ]
+      }
+    },
+
+    // Тот же ключ и та же модель, но запросы идут в формате Anthropic Messages
+    // (клиент допишет к baseURL путь /messages), инструменты — anthropic-стилем.
+    {
+      "id": "meta-muse-anthropic",
+      "extends": "meta-muse",
+      "name": "Meta Muse Spark (Anthropic-протокол)",
+      "active": false,
+      "protocol": "anthropic",
+      "baseURL": "https://api.meta.ai/v1",
+      "auth": { "type": "header", "name": "x-api-key" },
+      "apiKeyRef": "meta-muse", // тот же ключ, что у основного маршрута
+      "order": 91,
+      "models": {
+        "fetch": false
+        // "static": [
+        //   { "id": "muse-spark-1.2", "name": "Muse Spark 1.2 (Anthropic, 1M)", "default": true, "contextWindow": 1000000 }
+        // ]
+      }
+    },
+
+    // ⚠️ ЧЕМ ПЛАТИТЕ ЗА СКИДКУ. Чекпоинт тот же, цена ниже в 12,5 раза на входе и в 21 раз
+    // на выходе — но Meta оставляет за собой право использовать промпты и ответы для
+    // обучения будущих моделей. Для кода под NDA это дисквалифицирует тариф целиком;
+    // для личных экспериментов и опенсорса — честная сделка. Второе отличие: лимит
+    // 60 запросов/мин против 3000 на стандартном тарифе — агент упрётся в 429 быстрее,
+    // чем человек в чате. Включайте осознанно.
+    {
+      "id": "meta-muse-contributor",
+      "extends": "meta-muse",
+      "name": "Meta Muse Spark (Contributor — данные идут на обучение)",
+      "active": false,
+      "apiKeyRef": "meta-muse", // тот же ключ, что у основного маршрута
+      "order": 92,
+      "models": {
+        "fetch": false
+        // "static": [
+        //   { "id": "muse-spark-1.2-contributor", "name": "Muse Spark 1.2 (Contributor, 1M)", "default": true, "contextWindow": 1000000 }
+        // ]
+      }
+    }
+  ]
+}

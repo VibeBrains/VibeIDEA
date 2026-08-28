@@ -122,12 +122,26 @@ class LlmClient(private val http: HttpClient = HttpClient.newBuilder().connectTi
 
   /** GET model catalog; openai-style {data:[{id}]} and gemini-style {models:[{name}]} are both understood. */
   fun listModels(provider: ResolvedProvider, fetchUrl: String?): List<String> {
-    val url = if (!fetchUrl.isNullOrBlank()) fetchUrl else provider.baseUrl.trimEnd('/') + "/models"
+    val entry = provider.entry
+    var url = if (!fetchUrl.isNullOrBlank()) fetchUrl else provider.baseUrl.trimEnd('/') + "/models"
+    // Same auth/header/query treatment as chat requests — the catalog endpoint is not special.
+    val queryParams = LinkedHashMap(entry.query)
+    if (entry.auth.type == "query" && entry.auth.name != null && provider.apiKey != null) {
+      queryParams[entry.auth.name] = provider.apiKey
+    }
+    if (queryParams.isNotEmpty()) {
+      url += (if ('?' in url) "&" else "?") + queryParams.entries.joinToString("&") {
+        URLEncoder.encode(it.key, StandardCharsets.UTF_8) + "=" + URLEncoder.encode(it.value, StandardCharsets.UTF_8)
+      }
+    }
     val builder = HttpRequest.newBuilder(URI.create(url)).timeout(Duration.ofSeconds(30)).GET()
+    entry.headers.forEach { (k, v) -> builder.header(k, v) }
+    // Anthropic rejects any request without the version header, /v1/models included.
+    if (provider.protocol == "anthropic") builder.header("anthropic-version", "2023-06-01")
     provider.apiKey?.let { key ->
-      when (provider.entry.auth.type) {
-        "header" -> builder.header(provider.entry.auth.name ?: "x-api-key", key)
-        "query" -> {} // the key must already be part of fetchUrl
+      when (entry.auth.type) {
+        "header" -> builder.header(entry.auth.name ?: "x-api-key", key)
+        "query", "none" -> {}
         else -> builder.header("Authorization", "Bearer " + key)
       }
     }

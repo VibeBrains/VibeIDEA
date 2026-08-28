@@ -1,0 +1,24 @@
+// DeepSeek — OpenAI-совместимый API. «Умный и дешёвый»: V4-Pro — лучший open-weights
+// результат SWE-bench при цене на порядок ниже флагманов; учтите, модель многословна
+// (примерно вдвое больше выходных токенов, чем у сопоставимых).
+// Ключ: DEEPSEEK_API_KEY=<ключ> в .vibe/.env (взять: platform.deepseek.com/api_keys).
+//
+// МОДЕЛИ TEXT-ONLY: картинку модель не примет — ошибка придёт от провайдера.
+// Чтобы композер блокировал вложения заранее, зафиксируйте модель кастомной записью
+// с "vision": false (рецепт — _template-openai-compatible.jsonc).
+{
+  "version": 1,
+  "providers": [
+    {
+      "id": "deepseek",
+      "name": "DeepSeek",
+      "active": true,
+      "protocol": "openai",
+      "baseURL": "https://api.deepseek.com/v1",
+      "auth": "bearer",
+      "apiKeyEnv": "DEEPSEEK_API_KEY",
+      "order": 60,
+      "models": { "fetch": true }
+    }
+  ]
+}

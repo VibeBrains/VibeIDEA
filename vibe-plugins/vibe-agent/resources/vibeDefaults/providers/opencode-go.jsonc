@@ -1,0 +1,21 @@
+// OpenCode Go — подписка OpenCode: фиксированная плата, модели Qwen, DeepSeek V4 и другие.
+// Аккаунт тот же, что у OpenCode Zen; ключ один на оба провайдера (см. apiKeyRef ниже —
+// введённый в настройках ключ подхватят и Go, и Zen). Взять ключ: opencode.ai/zen,
+// список моделей Go: dev.opencode.ai/docs/go.
+{
+  "version": 1,
+  "providers": [
+    {
+      "id": "opencode-go",
+      "name": "OpenCode Go",
+      "active": true,
+      "protocol": "openai",
+      "baseURL": "https://opencode.ai/zen/go/v1",
+      "auth": "bearer",
+      "apiKeyRef": "opencode", // один ключ на Go и Zen в защищённом хранилище
+      "apiKeyEnv": "OPENCODE_API_KEY", // либо OPENCODE_API_KEY=... в .vibe/.env
+      "order": 10,
+      "models": { "fetch": true }
+    }
+  ]
+}

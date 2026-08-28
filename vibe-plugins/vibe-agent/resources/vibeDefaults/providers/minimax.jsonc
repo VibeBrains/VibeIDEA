@@ -1,0 +1,45 @@
+// MiniMax — два маршрута к одним моделям:
+//   1) "minimax" — OpenAI-совместимый API (включён);
+//   2) "minimax-anthropic" — клон через extends по нативному Anthropic-совместимому
+//      эндпоинту вендора (выключен; для гиков — обходит расхождения OpenAI-слоя в tool-use).
+// Ключ один на оба: MINIMAX_API_KEY в .vibe/.env или поле в настройках.
+{
+  "version": 1,
+  "providers": [
+    {
+      "id": "minimax",
+      "name": "MiniMax",
+      "active": true,
+      "protocol": "openai",
+      "baseURL": "https://api.minimax.io/v1",
+      "auth": "bearer",
+      "apiKeyRef": "minimax", // общий ref: ключ из настроек достаётся и Anthropic-клону ниже
+      "apiKeyEnv": "MINIMAX_API_KEY",
+      "order": 30,
+      "models": { "fetch": true }
+    },
+
+    // ── MiniMax по нативному протоколу Anthropic ──────────────────────────────
+    // ВНИМАНИЕ: baseURL обязан заканчиваться на /v1 — клиент дописывает РОВНО
+    // «/messages» (проверено живьём 06.08.2026: без /v1 запрос уходил на
+    // /anthropic/messages и вендор отвечал 404). Каталога моделей на этом эндпоинте
+    // нет — модель задаётся кастомной записью (раскомментируйте static при включении).
+    {
+      "id": "minimax-anthropic",
+      "extends": "minimax",
+      "name": "MiniMax (Anthropic-протокол)",
+      "active": false,
+      "protocol": "anthropic",
+      "baseURL": "https://api.minimax.io/anthropic/v1",
+      "auth": { "type": "header", "name": "x-api-key" },
+      "apiKeyRef": "minimax", // тот же ключ, что у основного маршрута
+      "order": 31,
+      "models": {
+        "fetch": false
+        // "static": [
+        //   { "id": "MiniMax-M3", "name": "MiniMax M3 (Anthropic, 1M)", "default": true, "contextWindow": 1000000 }
+        // ]
+      }
+    }
+  ]
+}

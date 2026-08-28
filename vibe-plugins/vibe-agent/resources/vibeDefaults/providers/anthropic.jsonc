@@ -1,0 +1,20 @@
+// Anthropic (Claude) — прямой API по нативному протоколу Anthropic.
+// Claude в VibeIDEA прежде всего живёт как ACP-агент (Claude Code) — с инструментами,
+// сессиями и режимами; этот провайдер — для прямого чата с API, если есть свой ключ.
+// Ключ: ANTHROPIC_API_KEY=<ключ> в .vibe/.env (взять: console.anthropic.com).
+{
+  "version": 1,
+  "providers": [
+    {
+      "id": "anthropic",
+      "name": "Anthropic (Claude)",
+      "active": false,
+      "protocol": "anthropic",
+      "baseURL": "https://api.anthropic.com/v1",
+      "auth": { "type": "header", "name": "x-api-key" },
+      "apiKeyEnv": "ANTHROPIC_API_KEY",
+      "order": 71,
+      "models": { "fetch": true }
+    }
+  ]
+}

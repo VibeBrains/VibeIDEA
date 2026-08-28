@@ -32,9 +32,25 @@ object VibeDefaults {
     "hooks.example.jsonc" to "hooks.example.jsonc",
     "pipelines.example.jsonc" to "pipelines.example.jsonc",
     "servers.example.jsonc" to "servers.example.jsonc",
-    "providers.example.jsonc" to "providers.example.jsonc",
     "design/components.md" to "design/components.md",
     "design/uiKit.md" to "design/uiKit.md",
+    // Provider catalog: auto-loaded by ProvidersService (unlike the *.example.jsonc seeds
+    // above), `active` is the toggle — owner's decision №24. One file per provider.
+    "providers/README.md" to "providers/README.md",
+    "providers/_template-openai-compatible.jsonc" to "providers/_template-openai-compatible.jsonc",
+    "providers/opencode-go.jsonc" to "providers/opencode-go.jsonc",
+    "providers/opencode-zen.jsonc" to "providers/opencode-zen.jsonc",
+    "providers/openrouter.jsonc" to "providers/openrouter.jsonc",
+    "providers/minimax.jsonc" to "providers/minimax.jsonc",
+    "providers/zai.jsonc" to "providers/zai.jsonc",
+    "providers/kimi.jsonc" to "providers/kimi.jsonc",
+    "providers/deepseek.jsonc" to "providers/deepseek.jsonc",
+    "providers/openai.jsonc" to "providers/openai.jsonc",
+    "providers/anthropic.jsonc" to "providers/anthropic.jsonc",
+    "providers/alibaba-coding-plan.jsonc" to "providers/alibaba-coding-plan.jsonc",
+    "providers/meta-muse.jsonc" to "providers/meta-muse.jsonc",
+    "providers/muse-glimmer-local.jsonc" to "providers/muse-glimmer-local.jsonc",
+    "providers/ollama.jsonc" to "providers/ollama.jsonc",
   )
 
   private const val RESOURCE_ROOT = "/vibeDefaults/"
