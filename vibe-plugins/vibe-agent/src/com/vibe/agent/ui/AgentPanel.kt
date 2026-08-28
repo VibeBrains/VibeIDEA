@@ -351,7 +351,12 @@ class AgentPanel(private val project: Project) : JPanel(BorderLayout()), AcpClie
   private fun buildTargets(): List<ChatTarget> = buildList {
     agents.forEach { add(ChatTarget.Agent(it)) }
     providers.forEach { p ->
-      p.models.filter { it.active && !ModelVisibility.isHidden(p.id, it.id) }
+      // Curated list: a catalog-only model is hidden until enabled on the «Модели» page,
+      // a hand-declared one is visible by default (VibeIDE §7); explicit toggles win.
+      p.models.filter { m ->
+        val custom = staticModelIds[p.id]?.contains(m.id) == true
+        m.active && !ModelVisibility.isHidden(p.id, m.id, defaultHidden = !custom)
+      }
         .sortedWith(compareByDescending<ModelEntry> { it.default }.thenByDescending { it.pinned }.thenBy { it.name })
         .forEach { m -> add(ChatTarget.Model(p, m, static = staticModelIds[p.id]?.contains(m.id) == true)) }
     }
@@ -1184,6 +1189,16 @@ class AgentPanel(private val project: Project) : JPanel(BorderLayout()), AcpClie
           providers = updated
           rebuildTargets()
           systemLine("[providers] каталоги моделей подтянуты")
+          // Catalog models are hidden by default (curated picker) — say where to turn them on.
+          val dormant = updated.filter { p ->
+            p.models.isNotEmpty() && p.models.none { m ->
+              val custom = staticModelIds[p.id]?.contains(m.id) == true
+              m.active && !ModelVisibility.isHidden(p.id, m.id, defaultHidden = !custom)
+            }
+          }
+          if (dormant.isNotEmpty()) {
+            systemLine("[providers] ${dormant.joinToString { it.name }}: модели каталога скрыты по умолчанию — включите нужные: Settings → Tools → VibeIDEA → Модели")
+          }
         }
       }
     }

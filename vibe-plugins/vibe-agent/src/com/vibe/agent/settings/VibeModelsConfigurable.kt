@@ -33,9 +33,9 @@ import javax.swing.SwingUtilities
 // NoScroll: the page scrolls itself (see VibeProvidersConfigurable — the platform wrapper would
 // add a horizontal scrollbar sized by unwrapped label widths).
 class VibeModelsConfigurable(private val project: Project) : Configurable, Configurable.NoScroll {
-  private class Row(val providerId: String, val modelId: String, val hay: String, val box: JBCheckBox)
+  private class Row(val providerId: String, val modelId: String, val hay: String, val defaultHidden: Boolean, val box: JBCheckBox)
 
-  private class Group(val providerId: String, val name: String, val header: JBLabel, val body: JPanel, val container: JPanel) {
+  private class Group(val providerId: String, val name: String, val header: JBLabel, val body: JPanel, val container: JPanel, val filteredOutHint: JBLabel) {
     var expanded = false // manual state; searching temporarily force-expands matching groups
   }
 
@@ -72,7 +72,11 @@ class VibeModelsConfigurable(private val project: Project) : Configurable, Confi
         add(header, BorderLayout.NORTH)
         add(body, BorderLayout.CENTER)
       }
-      val group = Group(p.id, p.name, header, body, container)
+      val filteredOutHint = JBLabel("все модели скрыты — выключите тумблер «активные», чтобы включить модели из каталога").apply {
+        foreground = com.intellij.ui.JBColor.GRAY
+        isVisible = false
+      }
+      val group = Group(p.id, p.name, header, body, container, filteredOutHint)
       header.addMouseListener(object : MouseAdapter() {
         override fun mouseClicked(e: MouseEvent) {
           group.expanded = !group.expanded
@@ -80,8 +84,10 @@ class VibeModelsConfigurable(private val project: Project) : Configurable, Confi
         }
       })
       for (m in p.models) {
-        addRow(group, m.id, ModelRows.label(m.name, m.id, ModelRows.badges(m, custom = true)))
+        // Hand-declared models are visible by default; catalog-only ones (added below) are not.
+        addRow(group, m.id, ModelRows.label(m.name, m.id, ModelRows.badges(m, custom = true)), defaultHidden = false)
       }
+      body.add(filteredOutHint)
       if (p.models.isEmpty()) {
         val hint = JBLabel("каталог моделей загружается… (нужен ключ — Провайдеры)").apply {
           foreground = com.intellij.ui.JBColor.GRAY
@@ -111,14 +117,14 @@ class VibeModelsConfigurable(private val project: Project) : Configurable, Confi
     }
   }
 
-  private fun addRow(group: Group, modelId: String, label: String) {
-    val box = JBCheckBox(label, !ModelVisibility.isHidden(group.providerId, modelId))
+  private fun addRow(group: Group, modelId: String, label: String, defaultHidden: Boolean) {
+    val box = JBCheckBox(label, !ModelVisibility.isHidden(group.providerId, modelId, defaultHidden))
     box.toolTipText = if (box.isSelected) "Показать в списке" else "Скрыт из списка"
     box.addActionListener {
       box.toolTipText = if (box.isSelected) "Показать в списке" else "Скрыт из списка"
       if (activesOnly.isSelected) update()
     }
-    rows.add(Row(group.providerId, modelId, "${group.name} ${group.providerId} $label", box))
+    rows.add(Row(group.providerId, modelId, "${group.name} ${group.providerId} $label", defaultHidden, box))
     group.body.add(box)
   }
 
@@ -138,6 +144,7 @@ class VibeModelsConfigurable(private val project: Project) : Configurable, Confi
       // otherwise the manual collapsed/expanded state rules (collapsed by default).
       group.container.isVisible = !searching || found.isNotEmpty()
       group.body.isVisible = if (searching) true else group.expanded
+      group.filteredOutHint.isVisible = !searching && activesOnly.isSelected && groupRows.isNotEmpty() && afterActives.isEmpty()
     }
     listPanel?.revalidate(); listPanel?.repaint()
   }
@@ -159,7 +166,7 @@ class VibeModelsConfigurable(private val project: Project) : Configurable, Confi
         SwingUtilities.invokeLater {
           val group = groups[p.id] ?: return@invokeLater
           catalogHints.remove(p.id)?.let { group.body.remove(it) }
-          for (id in extra) addRow(group, id, id)
+          for (id in extra) addRow(group, id, id, defaultHidden = true)
           update()
         }
       }
@@ -173,13 +180,13 @@ class VibeModelsConfigurable(private val project: Project) : Configurable, Confi
     }
   }
 
-  override fun isModified(): Boolean = rows.any { ModelVisibility.isHidden(it.providerId, it.modelId) == it.box.isSelected }
+  override fun isModified(): Boolean = rows.any { ModelVisibility.isHidden(it.providerId, it.modelId, it.defaultHidden) == it.box.isSelected }
 
   override fun apply() {
     var changed = false
     for (r in rows) {
       val hide = !r.box.isSelected
-      if (ModelVisibility.isHidden(r.providerId, r.modelId) != hide) {
+      if (ModelVisibility.isHidden(r.providerId, r.modelId, r.defaultHidden) != hide) {
         ModelVisibility.setHidden(r.providerId, r.modelId, hide)
         changed = true
       }

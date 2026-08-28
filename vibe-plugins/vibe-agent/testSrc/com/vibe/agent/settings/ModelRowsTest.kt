@@ -52,4 +52,14 @@ class ModelRowsTest {
     assertEquals("(12)", ModelRows.counter(found = 12, totalAfterActives = 12, searching = false))
     assertEquals("(3/12)", ModelRows.counter(found = 3, totalAfterActives = 12, searching = true))
   }
+
+  @Test
+  fun visibilityDefaultsHideCatalogModelsUntilExplicitlyEnabled() {
+    // No stored decision: a catalog-only model falls back to hidden, a custom one to visible.
+    assertTrue(ModelVisibility.effectiveHidden(stored = null, defaultHidden = true))
+    assertFalse(ModelVisibility.effectiveHidden(stored = null, defaultHidden = false))
+    // An explicit user toggle always beats the default — in both directions.
+    assertFalse(ModelVisibility.effectiveHidden(stored = "false", defaultHidden = true))
+    assertTrue(ModelVisibility.effectiveHidden(stored = "true", defaultHidden = false))
+  }
 }
