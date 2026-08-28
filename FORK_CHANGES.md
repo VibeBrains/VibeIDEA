@@ -22,7 +22,7 @@
 ### Добавлено (наш неймспейс)
 - `CLAUDE.md`, `FORK_CHANGES.md` — дисциплина форка. **Причина:** свежий клон продолжает работу без внешнего состояния.
 - `docs/vibe/**` — пакет документации форка (свой неймспейс: у апстрима есть собственный `docs/`) (концепт, roadmap, решения, база знаний). **Причина:** та же.
-- `.gitmodules` (корень) — submodule `vibe-plugins/vibe-agent/resources/vibeDefaults` → репо VibeBrains (канонический образ `.vibe`, общий с VibeIDE; решение №25). **Причина:** один набор сидов на оба продукта; у апстрима `.gitmodules` нет — merge-конфликтов не даёт. После клона: `git submodule update --init`; URL пока локальный путь — заменить на GitHub-URL org VibeBrains.
+- `.gitmodules` (корень) — submodule `vibe-plugins/vibe-agent/resources/vibeDefaults` → репо VibeBrains (канонический образ `.vibe`, общий с VibeIDE; решение №25). **Причина:** один набор сидов на оба продукта; у апстрима `.gitmodules` нет — merge-конфликтов не даёт. После клона: `git submodule update --init`; URL — https://github.com/VibeBrains/VibeBrains.git.
 
 ### platform/platform-impl/src/com/intellij/ui/AppUIUtil.kt
 **Причина:** латентный баг апстрима — `loadConsentsForEditing` получает от `ConsentOptions` иммутабельный список, когда у продукта нет бандленных согласий (вендор не JetBrains), и `removeTraceConsents`/`removeIf` падают с `UnsupportedOperationException`; ломает шаг `search_index` (traverseUI) при сборке нашего дистрибутива.
