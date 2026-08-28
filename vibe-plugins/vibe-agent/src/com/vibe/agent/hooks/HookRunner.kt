@@ -42,19 +42,8 @@ class HookRunner(private val project: Project, private val onWarning: (String) -
   fun hasHooksButDisabled(): Boolean =
     !VibeAgentSettings.hooksEnabled && hooksFile?.let { Files.isRegularFile(it) } == true
 
-  /**
-   * Drop a commented example next to a project that already uses `.vibe/`, so the
-   * format is discoverable without reading the spec. Never creates `.vibe/` itself
-   * (that would litter every opened project) and never overwrites an existing file.
-   */
-  fun seedExampleIfNeeded() {
-    val root = base ?: return
-    val vibeDir = Path.of(root, ".vibe")
-    if (!Files.isDirectory(vibeDir)) return
-    val example = vibeDir.resolve("hooks.example.jsonc")
-    if (Files.exists(example)) return
-    runCatching { Files.writeString(example, EXAMPLE) }
-  }
+  // The hooks example is seeded by VibeDefaults together with the rest of `.vibe/`
+  // (owner's decision 2026-08-28: unconditional environment seeding, VibeIDE model).
 
   fun run(event: HookEvent, tool: String?, params: JsonObject?, changedFiles: List<String>): HookDecision {
     return try {
@@ -148,22 +137,5 @@ class HookRunner(private val project: Project, private val onWarning: (String) -
   companion object {
     private val NOTHING = HookDecision(false, flagged = false, agentMessage = null, brokenHooks = emptyList())
     private const val MAX_HOOKS_BYTES = 512L * 1024L
-
-    /** Seeded to `.vibe/hooks.example.jsonc`; rename to `hooks.json` and enable in settings. Spec: docs/vibe/manuals/hooksSpec.md. */
-    private val EXAMPLE = """
-      // Пример хуков VibeIDEA. Переименуйте в hooks.json и включите:
-      // Settings -> Tools -> VibeIDEA -> Агент -> «Включить хуки проекта».
-      // Полная спека: docs/vibe/manuals/hooksSpec.md
-      {
-        "hooks": [
-          // preToolUse блокирует только когда агент спрашивает разрешение или пишет через клиента.
-          { "event": "preToolUse", "command": "sh -c 'echo ok'", "tools": ["write_text_file"], "label": "пример: пропустить запись" },
-          // postToolUse не отменяет сделанное — формулирует требование исправить.
-          { "event": "postToolUse", "command": "npm run lint --silent", "tools": ["write_text_file"], "timeoutMs": 60000, "label": "линтер после записи" },
-          // turnEnd срабатывает в конце хода; changedFiles приходит в stdin-JSON.
-          { "event": "turnEnd", "command": "npm test --silent", "timeoutMs": 300000, "label": "тесты в конце хода" }
-        ]
-      }
-    """.trimIndent()
   }
 }

@@ -242,7 +242,7 @@ class AgentPanel(private val project: Project) : JPanel(BorderLayout()), AcpClie
     ApplicationManager.getApplication().executeOnPooledThread {
       val loadedAgents = AcpConfig.load { systemLine("[конфиг] $it") }
       val loadedProviders = ProvidersService.load(project.basePath) { systemLine("[providers] $it") }
-      hooks.seedExampleIfNeeded()
+      // .vibe seeding lives in VibeDefaultsSeeder (project open), not here.
       val hooksDisabled = hooks.hasHooksButDisabled()
       val guardFindings = ProviderGuard.scan(loadedProviders)
       SwingUtilities.invokeLater {

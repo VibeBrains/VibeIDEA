@@ -1,0 +1,6 @@
+# VibeIDEA runtime artifacts — machine-local, never for git.
+audit.jsonl
+audit.*.jsonl.gz
+checkpoints.jsonl
+.seeded.json
+.env

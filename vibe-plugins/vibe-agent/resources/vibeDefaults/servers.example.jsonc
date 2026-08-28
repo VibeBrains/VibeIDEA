@@ -1,0 +1,25 @@
+// ─────────────────────────────────────────────────────────────────────────────
+//  .vibe/servers.json — декларативный дев-стек (формат VibeIDE)
+//
+//  Это ПРИМЕР. Чтобы включить: скопируйте в .vibe/servers.json (строгий JSON,
+//  без комментариев). Управление — тулвиндоу «Vibe Server».
+//  kind: "service" (живёт, есть readyCheck по порту/логу) или "task" (отработал и вышел).
+//  dependsOn строит волны запуска топосортом; skipIf пропускает уже готовое.
+//  Полная спека: docs/vibe/manuals/serversSpec.md.
+// ─────────────────────────────────────────────────────────────────────────────
+{
+  "version": 1,
+  "servers": [
+    // Инфраструктура — это task (+readyCheck exit +skipIf), не service!
+    { "id": "colima", "kind": "task", "command": "colima start",
+      "readyCheck": "exit", "skipIf": "docker info" },
+
+    { "id": "api", "dir": "api", "command": "yarn dev", "port": 3000,
+      "readyTimeoutMs": 180000, "dependsOn": ["colima"],
+      "pathPrepend": ["/opt/homebrew/opt/node@20/bin"],
+      "stopCommand": "docker compose down" },
+
+    { "id": "web", "dir": "web", "command": "npm run dev", "port": 5173,
+      "readyCheck": "log", "readyPattern": "Ready in", "readyTimeoutMs": 420000 }
+  ]
+}

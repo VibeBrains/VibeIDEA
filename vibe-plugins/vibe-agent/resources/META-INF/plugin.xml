@@ -20,6 +20,7 @@
     <applicationConfigurable parentId="com.vibe.settings" displayName="Агент" id="com.vibe.agent.behavior" instance="com.vibe.agent.settings.VibeAgentConfigurable"/>
     <applicationConfigurable parentId="com.vibe.settings" displayName="Чат" id="com.vibe.agent.chat" instance="com.vibe.agent.settings.VibeChatConfigurable"/>
     <postStartupActivity implementation="com.vibe.agent.history.VibeHistoryWarmUp"/>
+    <postStartupActivity implementation="com.vibe.agent.defaults.VibeDefaultsSeeder"/>
     <statusBarWidgetFactory id="VibeAgentStatus" implementation="com.vibe.agent.ui.VibeAgentStatusWidgetFactory" order="last"/>
   </extensions>
   <actions>
