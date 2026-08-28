@@ -24,33 +24,78 @@ import java.security.MessageDigest
  * never breaks project open.
  */
 object VibeDefaults {
-  /** Embedded default files: resource name under /vibeDefaults/ → target path inside `.vibe/`. */
+  /**
+   * Embedded default files: resource name under /vibeDefaults/ → target path inside `.vibe/`.
+   * The set is the VibeBrains submodule (shared with VibeIDE) and is seeded IN FULL — the
+   * environment must come out identical whichever product seeded it first. Kept in sync with
+   * the submodule by the resources↔manifest gate test. The only special mapping is
+   * `gitignore.seed` → `.gitignore` (a dotfile can't live in resources as-is).
+   */
   private val MANIFEST = listOf(
     "README.md" to "README.md",
-    "gitignore.seed" to ".gitignore", // dotfile can't live in resources as-is
-    "rules.md" to "rules.md",
-    "hooks.example.jsonc" to "hooks.example.jsonc",
-    "pipelines.example.jsonc" to "pipelines.example.jsonc",
-    "servers.example.jsonc" to "servers.example.jsonc",
+    "agents.example.jsonc" to "agents.example.jsonc",
     "design/components.md" to "design/components.md",
     "design/uiKit.md" to "design/uiKit.md",
-    // Provider catalog: auto-loaded by ProvidersService (unlike the *.example.jsonc seeds
-    // above), `active` is the toggle — owner's decision №24. One file per provider.
+    "gitignore.seed" to ".gitignore",
+    "hooks.example.jsonc" to "hooks.example.jsonc",
+    "learning/MISSION.example.md" to "learning/MISSION.example.md",
+    "pipelines.example.jsonc" to "pipelines.example.jsonc",
+    "prompts/CLAUDE-FABLE-5.md" to "prompts/CLAUDE-FABLE-5.md",
+    "prompts/deep-review.md" to "prompts/deep-review.md",
+    "prompts/example.md" to "prompts/example.md",
+    "prompts/pipeline.md" to "prompts/pipeline.md",
+    "providers.example.jsonc" to "providers.example.jsonc",
+    // Provider catalog: auto-loaded by ProvidersService (unlike the *.example.jsonc seeds),
+    // `active` is the toggle — owner's decision №24. One file per provider.
     "providers/README.md" to "providers/README.md",
     "providers/_template-openai-compatible.jsonc" to "providers/_template-openai-compatible.jsonc",
+    "providers/alibaba-coding-plan.jsonc" to "providers/alibaba-coding-plan.jsonc",
+    "providers/anthropic.jsonc" to "providers/anthropic.jsonc",
+    "providers/deepseek.jsonc" to "providers/deepseek.jsonc",
+    "providers/kimi.jsonc" to "providers/kimi.jsonc",
+    "providers/meta-muse.jsonc" to "providers/meta-muse.jsonc",
+    "providers/minimax.jsonc" to "providers/minimax.jsonc",
+    "providers/muse-glimmer-local.jsonc" to "providers/muse-glimmer-local.jsonc",
+    "providers/ollama.jsonc" to "providers/ollama.jsonc",
+    "providers/openai.jsonc" to "providers/openai.jsonc",
     "providers/opencode-go.jsonc" to "providers/opencode-go.jsonc",
     "providers/opencode-zen.jsonc" to "providers/opencode-zen.jsonc",
     "providers/openrouter.jsonc" to "providers/openrouter.jsonc",
-    "providers/minimax.jsonc" to "providers/minimax.jsonc",
     "providers/zai.jsonc" to "providers/zai.jsonc",
-    "providers/kimi.jsonc" to "providers/kimi.jsonc",
-    "providers/deepseek.jsonc" to "providers/deepseek.jsonc",
-    "providers/openai.jsonc" to "providers/openai.jsonc",
-    "providers/anthropic.jsonc" to "providers/anthropic.jsonc",
-    "providers/alibaba-coding-plan.jsonc" to "providers/alibaba-coding-plan.jsonc",
-    "providers/meta-muse.jsonc" to "providers/meta-muse.jsonc",
-    "providers/muse-glimmer-local.jsonc" to "providers/muse-glimmer-local.jsonc",
-    "providers/ollama.jsonc" to "providers/ollama.jsonc",
+    "rules.md" to "rules.md",
+    "rules/clean-rules.mdc" to "rules/clean-rules.mdc",
+    "rules/dev-engine.mdc" to "rules/dev-engine.mdc",
+    "rules/knowledge.mdc" to "rules/knowledge.mdc",
+    "rules/nginx.mdc" to "rules/nginx.mdc",
+    "rules/pipeline.mdc" to "rules/pipeline.mdc",
+    "rules/providers-json.mdc" to "rules/providers-json.mdc",
+    "rules/release.mdc" to "rules/release.mdc",
+    "rules/roadmap-autopilot.mdc" to "rules/roadmap-autopilot.mdc",
+    "rules/roadmap.mdc" to "rules/roadmap.mdc",
+    "rules/script-save.mdc" to "rules/script-save.mdc",
+    "rules/spec-first.mdc" to "rules/spec-first.mdc",
+    "rules/ui-kit.mdc" to "rules/ui-kit.mdc",
+    "rules/verification.mdc" to "rules/verification.mdc",
+    "rules/versioning.mdc" to "rules/versioning.mdc",
+    "servers.example.jsonc" to "servers.example.jsonc",
+    "skills/design-vocabulary/SKILL.md" to "skills/design-vocabulary/SKILL.md",
+    "skills/example/SKILL.md" to "skills/example/SKILL.md",
+    "skills/grill/SKILL.md" to "skills/grill/SKILL.md",
+    "skills/implement-specs/SKILL.md" to "skills/implement-specs/SKILL.md",
+    "skills/optimize-by-metric/SKILL.md" to "skills/optimize-by-metric/SKILL.md",
+    "skills/party/SKILL.md" to "skills/party/SKILL.md",
+    "skills/resolve-merge-conflicts/SKILL.md" to "skills/resolve-merge-conflicts/SKILL.md",
+    "skills/resolve-merge-conflicts/scripts/extract_conflict_context.py" to "skills/resolve-merge-conflicts/scripts/extract_conflict_context.py",
+    "skills/review-pr/SKILL.md" to "skills/review-pr/SKILL.md",
+    "skills/roadmap-autopilot/SKILL.md" to "skills/roadmap-autopilot/SKILL.md",
+    "skills/spec-driven-implementation/SKILL.md" to "skills/spec-driven-implementation/SKILL.md",
+    "skills/teach/SKILL.md" to "skills/teach/SKILL.md",
+    "skills/update-skill/SKILL.md" to "skills/update-skill/SKILL.md",
+    "skills/update-skill/references/best-practices.md" to "skills/update-skill/references/best-practices.md",
+    "skills/write-product-spec/SKILL.md" to "skills/write-product-spec/SKILL.md",
+    "skills/write-product-spec/references/PRODUCT.skeleton.md" to "skills/write-product-spec/references/PRODUCT.skeleton.md",
+    "skills/write-tech-spec/SKILL.md" to "skills/write-tech-spec/SKILL.md",
+    "skills/write-tech-spec/references/TECH.skeleton.md" to "skills/write-tech-spec/references/TECH.skeleton.md",
   )
 
   private const val RESOURCE_ROOT = "/vibeDefaults/"

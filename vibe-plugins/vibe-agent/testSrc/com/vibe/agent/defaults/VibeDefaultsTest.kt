@@ -13,11 +13,16 @@ class VibeDefaultsTest {
   fun seedsFullEnvironmentIntoEmptyProject() {
     val base = tempProject()
     val report = VibeDefaults.seed(base)
-    assertTrue(report.created >= 23, "created=${report.created}")
+    assertTrue(report.created >= 62, "created=${report.created}")
     val vibe = java.nio.file.Path.of(base, ".vibe")
+    // Spot checks across every section of the shared VibeBrains set — the full
+    // resources↔manifest correspondence is guarded by the gate test above.
     for (f in listOf("README.md", ".gitignore", "rules.md", "hooks.example.jsonc",
                      "pipelines.example.jsonc", "servers.example.jsonc",
                      "design/components.md", "design/uiKit.md", ".seeded.json",
+                     "agents.example.jsonc", "providers.example.jsonc",
+                     "learning/MISSION.example.md", "prompts/pipeline.md",
+                     "rules/verification.mdc", "skills/review-pr/SKILL.md",
                      "providers/README.md", "providers/_template-openai-compatible.jsonc",
                      "providers/opencode-go.jsonc", "providers/opencode-zen.jsonc",
                      "providers/openrouter.jsonc", "providers/minimax.jsonc",
@@ -27,8 +32,6 @@ class VibeDefaultsTest {
                      "providers/muse-glimmer-local.jsonc", "providers/ollama.jsonc")) {
       assertTrue(Files.isRegularFile(vibe.resolve(f)), "missing $f")
     }
-    // The provider catalog replaced the old commented-out example (decision №24).
-    assertTrue(!Files.exists(vibe.resolve("providers.example.jsonc")))
     // Runtime artifacts are git-ignored from the very first seed.
     val gitignore = Files.readString(vibe.resolve(".gitignore"))
     assertTrue(gitignore.contains("audit.jsonl") && gitignore.contains("checkpoints.jsonl"))
