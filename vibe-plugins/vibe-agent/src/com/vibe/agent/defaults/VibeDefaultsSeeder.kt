@@ -14,8 +14,14 @@ class VibeDefaultsSeeder : ProjectActivity {
   override suspend fun execute(project: Project) {
     val base = project.basePath ?: return
     val report = VibeDefaults.seed(base)
-    if (report.created > 0) {
-      logger<VibeDefaultsSeeder>().info(".vibe defaults seeded: +${report.created}, kept ${report.kept}")
+    if (report.created > 0 || report.removed.isNotEmpty()) {
+      logger<VibeDefaultsSeeder>().info(
+        ".vibe defaults seeded: +${report.created}, kept ${report.kept}" +
+          (if (report.removed.isNotEmpty()) ", removed stale ${report.removed}" else ""))
+    }
+    if (report.keptModified.isNotEmpty()) {
+      logger<VibeDefaultsSeeder>().warn(
+        ".vibe stale seeds kept (user-edited, delete manually if unwanted): ${report.keptModified}")
     }
   }
 }

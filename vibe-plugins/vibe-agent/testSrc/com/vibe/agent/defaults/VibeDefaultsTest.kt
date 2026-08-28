@@ -66,7 +66,9 @@ class VibeDefaultsTest {
     val resources = listEmbeddedResources()
     val manifest = VibeDefaults.manifestResourceNames().toSet()
     assertEquals(emptySet(), manifest - resources, "манифест ссылается на несуществующие ресурсы")
-    assertEquals(emptySet(), resources - manifest, "ресурс без записи в манифесте — не будет засеян")
+    // Set-metadata files (deprecated.json) serve the seeders and are never seeded.
+    assertEquals(emptySet(), resources - manifest - VibeDefaults.SET_METADATA,
+                 "ресурс без записи в манифесте — не будет засеян")
   }
 
   private fun listEmbeddedResources(): Set<String> {
@@ -116,6 +118,51 @@ class VibeDefaultsTest {
     assertTrue(report.created > 0)
     assertTrue(report.kept >= 1)
     assertEquals("pre-existing", Files.readString(vibe.resolve("hooks.example.jsonc")))
+  }
+
+  @Test
+  fun staleSeedIsRemovedOnlyWhenByteIdenticalToAKnownVersion() {
+    val vibe = Files.createTempDirectory("vibe-deprecated-test")
+    Files.createDirectories(vibe.resolve("providers"))
+    val pristine = "// historical seed content\n"
+    Files.writeString(vibe.resolve("providers/old-a.jsonc"), pristine)
+    Files.writeString(vibe.resolve("providers/old-b.jsonc"), "// user-edited content\n")
+    val journal = mutableMapOf("providers/old-a.jsonc" to "x", "providers/old-b.jsonc" to "y")
+    val spec = """{"deprecated":[
+      {"path":"providers/old-a.jsonc","sha256":["${VibeDefaults.sha256(pristine)}"]},
+      {"path":"providers/old-b.jsonc","sha256":["${VibeDefaults.sha256(pristine)}"]},
+      {"path":"providers/old-c.jsonc","sha256":["${VibeDefaults.sha256(pristine)}"]}
+    ]}"""
+    // CRLF checkout of a known version must also count as untouched.
+    Files.createDirectories(vibe.resolve("crlf"))
+    Files.writeString(vibe.resolve("crlf/old-d.jsonc"), pristine.replace("\n", "\r\n"))
+    val specD = """{"deprecated":[{"path":"crlf/old-d.jsonc","sha256":["${VibeDefaults.sha256(pristine)}"]}]}"""
+    val (removedD, _) = VibeDefaults.cleanupDeprecated(vibe, mutableMapOf(), specD)
+    assertEquals(listOf("crlf/old-d.jsonc"), removedD)
+
+    val (removed, keptModified) = VibeDefaults.cleanupDeprecated(vibe, journal, spec)
+    // Byte-identical to a known version — deleted, journal entry gone.
+    assertEquals(listOf("providers/old-a.jsonc"), removed)
+    assertTrue(!Files.exists(vibe.resolve("providers/old-a.jsonc")))
+    assertTrue(!journal.containsKey("providers/old-a.jsonc"))
+    // Edited — kept and reported; absent — silently nothing.
+    assertEquals(listOf("providers/old-b.jsonc"), keptModified)
+    assertTrue(Files.exists(vibe.resolve("providers/old-b.jsonc")))
+    assertTrue(journal.containsKey("providers/old-b.jsonc"))
+  }
+
+  @Test
+  fun realDeprecatedManifestIsWellFormed() {
+    // The embedded deprecated.json (VibeBrains set metadata) must parse and carry hashes.
+    val vibe = Files.createTempDirectory("vibe-deprecated-real")
+    val spec = checkNotNull(
+      VibeDefaultsTest::class.java.getResourceAsStream("/vibeDefaults/deprecated.json")) { "нет deprecated.json" }
+      .use { it.readBytes().toString(Charsets.UTF_8) }
+    // No stale files on disk → nothing removed, nothing reported, no crash.
+    val (removed, keptModified) = VibeDefaults.cleanupDeprecated(vibe, mutableMapOf(), spec)
+    assertEquals(emptyList(), removed)
+    assertEquals(emptyList(), keptModified)
+    assertTrue(spec.contains("openai-gpt56") && spec.contains("sha256"))
   }
 
   @Test

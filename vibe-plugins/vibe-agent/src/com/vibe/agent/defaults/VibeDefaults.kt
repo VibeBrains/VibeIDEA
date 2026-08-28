@@ -4,6 +4,7 @@ package com.vibe.agent.defaults
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
@@ -100,11 +101,22 @@ object VibeDefaults {
 
   private const val RESOURCE_ROOT = "/vibeDefaults/"
   private const val JOURNAL = ".seeded.json"
+  private const val DEPRECATED = "deprecated.json"
 
   /** Resource names of the manifest — the resources↔manifest gate test compares them with the embedded set. */
   internal fun manifestResourceNames(): List<String> = MANIFEST.map { it.first }
 
-  data class SeedReport(val created: Int, val kept: Int)
+  /** Set files that serve the seeders themselves and are never seeded into projects. */
+  internal val SET_METADATA = setOf(DEPRECATED)
+
+  data class SeedReport(
+    val created: Int,
+    val kept: Int,
+    /** Stale seeds deleted because their content matched a known historical version. */
+    val removed: List<String> = emptyList(),
+    /** Stale seeds LEFT in place: the user edited them, deleting would lose work. */
+    val keptModified: List<String> = emptyList(),
+  )
 
   /** Seed `.vibe/` under [projectBase]. Idempotent; call OFF the EDT. */
   fun seed(projectBase: String): SeedReport {
@@ -126,8 +138,46 @@ object VibeDefaults {
         journal[relative] = sha256(content)
       }
     }
-    if (created > 0) saveJournal(vibeDir, journal)
-    return SeedReport(created, kept)
+    val (removed, keptModified) = cleanupDeprecated(vibeDir, journal, readResource(DEPRECATED))
+    if (created > 0 || removed.isNotEmpty()) saveJournal(vibeDir, journal)
+    return SeedReport(created, kept, removed, keptModified)
+  }
+
+  /**
+   * Delete stale seeds (files dropped/renamed in the shared set) — but ONLY when the
+   * on-disk copy byte-matches a known historical version from `deprecated.json`:
+   * an edited file is the user's work and stays untouched (reported instead).
+   * [spec] is a parameter (not read inline) so tests can drive both branches.
+   */
+  internal fun cleanupDeprecated(vibeDir: Path, journal: MutableMap<String, String>, spec: String?): Pair<List<String>, List<String>> {
+    val removed = ArrayList<String>()
+    val keptModified = ArrayList<String>()
+    if (spec == null) return removed to keptModified
+    runCatching {
+      val entries = Json.parseToJsonElement(spec).jsonObject["deprecated"]?.jsonArray ?: return removed to keptModified
+      for (el in entries) {
+        val o = el.jsonObject
+        val rel = o["path"]?.jsonPrimitive?.contentOrNull ?: continue
+        val target = vibeDir.resolve(rel)
+        if (!Files.isRegularFile(target)) continue
+        val known = o["sha256"]?.jsonArray?.mapNotNull { it.jsonPrimitive.contentOrNull } ?: emptyList()
+        // Reference hashes are taken from LF files; also try the LF-normalized digest so a
+        // CRLF checkout (Windows, text=auto) does not masquerade as a user edit.
+        val bytes = Files.readAllBytes(target)
+        val actual = sha256(bytes)
+        val actualLf = sha256(String(bytes, Charsets.UTF_8).replace("\r\n", "\n"))
+        if (actual in known || actualLf in known) {
+          if (runCatching { Files.delete(target) }.isSuccess) {
+            journal.remove(rel)
+            removed.add(rel)
+          }
+        }
+        else {
+          keptModified.add(rel)
+        }
+      }
+    }
+    return removed to keptModified
   }
 
   private fun readResource(name: String): String? =
@@ -150,6 +200,8 @@ object VibeDefaults {
     }
   }
 
-  fun sha256(s: String): String =
-    MessageDigest.getInstance("SHA-256").digest(s.toByteArray(Charsets.UTF_8)).joinToString("") { "%02x".format(it) }
+  fun sha256(s: String): String = sha256(s.toByteArray(Charsets.UTF_8))
+
+  fun sha256(bytes: ByteArray): String =
+    MessageDigest.getInstance("SHA-256").digest(bytes).joinToString("") { "%02x".format(it) }
 }
