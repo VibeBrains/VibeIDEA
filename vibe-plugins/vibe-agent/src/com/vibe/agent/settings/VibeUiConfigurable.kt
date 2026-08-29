@@ -4,6 +4,7 @@ package com.vibe.agent.settings
 import com.intellij.openapi.options.Configurable
 import com.intellij.openapi.util.registry.Registry
 import com.intellij.ui.JBIntSpinner
+import com.intellij.ui.components.JBCheckBox
 import com.intellij.ui.components.JBLabel
 import com.intellij.util.ui.FormBuilder
 import com.intellij.util.ui.JBUI
@@ -22,6 +23,7 @@ import javax.swing.JPanel
  */
 class VibeUiConfigurable : Configurable {
   private var thickness: JBIntSpinner? = null
+  private var promo: JBCheckBox? = null
 
   override fun getDisplayName(): String = "Интерфейс"
 
@@ -34,13 +36,32 @@ class VibeUiConfigurable : Configurable {
         foreground = com.intellij.ui.JBColor.GRAY
         font = com.intellij.util.ui.JBFont.label().deriveFont(11f)
       })
+      .addComponent(JBCheckBox("Предлагать платные IDE JetBrains для «неподдерживаемых» файлов", VibePromoSettings.isEnabled())
+        .also { promo = it })
+      .addComponent(JBLabel("<html>Платформа умеет показывать в редакторе баннер «*.tsx files are supported by WebStorm». " +
+        "В VibeIDEA такие файлы поддержаны через LSP, поэтому предложение выключено по умолчанию.</html>").apply {
+        foreground = com.intellij.ui.JBColor.GRAY
+        font = com.intellij.util.ui.JBFont.label().deriveFont(11f)
+      })
       .addComponentFillVertically(JPanel(), 0)
       .panel.apply { border = JBUI.Borders.empty(8) }
   }
 
-  override fun isModified(): Boolean = (thickness?.number ?: currentThickness()) != currentThickness()
+  override fun isModified(): Boolean =
+    (thickness?.number ?: currentThickness()) != currentThickness() ||
+    (promo?.isSelected ?: VibePromoSettings.isEnabled()) != VibePromoSettings.isEnabled()
 
   override fun apply() {
+    promo?.let {
+      if (it.isSelected != VibePromoSettings.isEnabled()) {
+        VibePromoSettings.setEnabled(it.isSelected)
+        // A banner already painted in an open editor survives the flag — ask for a repaint,
+        // same reasoning as the scrollbars below: a settings page must not need a restart.
+        com.intellij.openapi.project.ProjectManager.getInstance().openProjects.forEach { project ->
+          com.intellij.ui.EditorNotifications.getInstance(project).updateAllNotifications()
+        }
+      }
+    }
     val value = thickness?.number ?: return
     Registry.get(KEY).setValue(value)
     // Existing scrollbars keep the UI they were built with — rebuild them so the change is visible
@@ -50,6 +71,7 @@ class VibeUiConfigurable : Configurable {
 
   override fun reset() {
     thickness?.value = currentThickness()
+    promo?.isSelected = VibePromoSettings.isEnabled()
   }
 
   private fun currentThickness(): Int = Registry.intValue(KEY, DEFAULT_THICKNESS)

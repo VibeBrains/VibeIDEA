@@ -25,6 +25,7 @@
     <registryKey key="vibe.scrollbar.thickness" defaultValue="4" restartRequired="false"
                  description="Толщина скроллбаров VibeIDEA в пикселях (0 — штатные скроллы платформы)"/>
     <postStartupActivity implementation="com.vibe.agent.history.VibeHistoryWarmUp"/>
+    <postStartupActivity implementation="com.vibe.agent.settings.VibePromoDefaults"/>
     <postStartupActivity implementation="com.vibe.agent.defaults.VibeDefaultsSeeder"/>
     <postStartupActivity implementation="com.vibe.agent.providers.VibeProvidersWatcherStarter"/>
     <statusBarWidgetFactory id="VibeAgentStatus" implementation="com.vibe.agent.ui.VibeAgentStatusWidgetFactory" order="last"/>
