@@ -1,6 +1,7 @@
 // Copyright 2026 VibeBrains. Use of this source code is governed by the Apache 2.0 license.
 package com.vibe.agent.ui
 
+import com.vibe.agent.i18n.VibeI18n.t
 import com.intellij.icons.AllIcons
 import com.intellij.openapi.Disposable
 import com.intellij.openapi.application.ApplicationManager
@@ -159,7 +160,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
   private val audit: AuditLog? = com.vibe.agent.audit.VibeAuditService.getInstance(project).get()
   /** Tool-calls of the running turn, assembled from the session/update stream by id. */
   private val toolCalls = ToolCallRegistry()
-  private val hooks = HookRunner(project) { systemLine("[хук] $it") }
+  private val hooks = HookRunner(project) { systemLine(t("chat.hookNotice", "text" to it)) }
   private val terminals = AgentTerminalService(project.basePath)
   /** Live terminal consoles by terminal id (Claude _meta.terminal_output stream). */
   private val terminalConsoles = java.util.concurrent.ConcurrentHashMap<String, TerminalConsole>()
@@ -201,7 +202,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
   private val composer = ComposerPanel(project, this, object : ComposerPanel.Listener {
     override fun onSend(message: ComposedMessage): Boolean = if (handleWatchCommand(message)) true else startTurn(message)
     override fun onStop() = cancelTurn()
-    override fun onNotice(text: String) = systemLine("[композер] $text")
+    override fun onNotice(text: String) = systemLine(t("chat.composerNotice", "text" to text))
   })
   private val modelPicker = ModelPicker({ selectTarget(it) }, { openSettings() })
   private val modePicker = ModePicker { modeId -> switchMode(modeId) }
@@ -212,7 +213,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
   private val landingList = ThreadListPanel(project, ThreadListPanel.Mode.LANDING, this, historyCallbacks)
   private val landing = LandingBlock(landingList) { text -> startTurn(ComposedMessage(text)) }
   private val historyPill = PillButton(icon = AllIcons.Vcs.History, dropdown = true) { openHistoryPopup() }.apply {
-    toolTipText = "История чатов"
+    toolTipText = t("chat.historyPill")
   }
   private val tabsStrip = ChatTabsStrip(object : ChatTabsStrip.Callbacks {
     override fun onSelect(threadId: String) = activateThread(threadId)
@@ -232,8 +233,8 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     border = JBUI.Borders.empty(4)
     composer.addPill(modePicker.pill)
     composer.addPill(modelPicker.pill)
-    composer.addPill(PillButton(icon = AllIcons.Actions.RunAll) { choosePipeline() }.apply { toolTipText = "Пайплайн… (.vibe/pipelines.json)" })
-    composer.addPill(PillButton(icon = AllIcons.General.Settings) { openSettings() }.apply { toolTipText = "Провайдеры и ключи API (Settings → Tools → VibeIDEA)" })
+    composer.addPill(PillButton(icon = AllIcons.Actions.RunAll) { choosePipeline() }.apply { toolTipText = t("chat.pipelinePill") })
+    composer.addPill(PillButton(icon = AllIcons.General.Settings) { openSettings() }.apply { toolTipText = t("chat.settingsPill") })
     composer.addRightPill(historyPill)
     add(tabsStrip, BorderLayout.NORTH)
     add(centerWrap, BorderLayout.CENTER)
@@ -245,7 +246,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     systemLine("Ключи провайдеров: Settings → Tools → VibeIDEA → Провайдеры (или .vibe/.env). Реестры: ${AcpConfig.configPath()}, каталог .vibe/providers/ (+ providers.json).")
     // Config files live on disk — never read (or seed) them on the EDT; publish results back here.
     ApplicationManager.getApplication().executeOnPooledThread {
-      val loadedAgents = AcpConfig.load { systemLine("[конфиг] $it") }
+      val loadedAgents = AcpConfig.load { systemLine(t("chat.configNotice", "text" to it)) }
       val loadedProviders = ProvidersService.load(project.basePath) { systemLine("[providers] $it") }
       val catalogCache = ModelCatalogCache.load()
       // .vibe seeding lives in VibeDefaultsSeeder (project open), not here.
@@ -264,7 +265,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
         if (com.vibe.agent.security.ForeignProjectNotice.noticeOnce(project.basePath)) {
           systemLine("🛡 " + com.vibe.agent.security.ForeignProjectNotice.TEXT)
         }
-        if (hooksDisabled) systemLine("[хуки] в проекте есть .vibe/hooks.json, но хуки выключены — включить: Settings → Tools → VibeIDEA → Агент")
+        if (hooksDisabled) systemLine(t("chat.hooksDisabled"))
         rebuildTargets()
         fetchProviderModels()
       }
@@ -290,7 +291,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
         if (disposed) return@invokeLater
         staticModelIds = loadedProviders.associate { p -> p.id to p.models.map { it.id }.toSet() }
         providers = applyCatalogCache(loadedProviders, catalogCache)
-        systemLine("[providers] конфигурация изменилась — перечитываю провайдеров и каталоги моделей")
+        systemLine(t("chat.providersChanged"))
         guardFindings.forEach { f -> systemLine("[guard:${f.severity}] ${f.message}") }
         rebuildTargets()
         fetchProviderModels()
@@ -452,12 +453,12 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     ApplicationManager.getApplication().executeOnPooledThread {
       try {
         c.setMode(modeId).whenComplete { _, error ->
-          if (error != null) systemLine("[агент] режим не переключён: ${error.message}")
+          if (error != null) systemLine(t("chat.modeNotSwitched", "reason" to error.message))
           SwingUtilities.invokeLater { modePicker.setModes(c.modes) }
         }
       }
       catch (e: Exception) {
-        systemLine("[агент] режим не переключён: ${e.message}")
+        systemLine(t("chat.modeNotSwitched", "reason" to e.message))
       }
     }
   }
@@ -482,7 +483,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     }
     val target = target
     val hint = com.vibe.agent.watch.WatchInput.classify(command.source)
-    // Vision gate BEFORE the pipeline: downloading a lecture to then say "смените модель" wastes
+    // Vision gate BEFORE the pipeline: downloading a lecture to then say t("chat.switchModel") wastes
     // minutes. Audio needs no vision model, so it is not gated.
     if (hint != com.vibe.agent.watch.WatchInput.Kind.AUDIO && !targetAcceptsImages(target)) {
       systemLine("[watch] " + com.vibe.agent.i18n.VibeI18n.t("watch.noVisionTarget"))
@@ -555,12 +556,12 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     for (id in ids) {
       val entry = com.vibe.agent.skills.SkillsStore.find(project.basePath, id)
       if (entry == null) {
-        systemLine("[скиллы] «$id» не найден: ожидается ${com.vibe.agent.skills.SkillPackage.SKILLS_DIR}/$id/${com.vibe.agent.skills.SkillPackage.SKILL_FILE}")
+        systemLine(t("chat.skillNotFound", "id" to id, "path" to "${com.vibe.agent.skills.SkillPackage.SKILLS_DIR}/$id/${com.vibe.agent.skills.SkillPackage.SKILL_FILE}"))
         continue
       }
       if (entry.isBroken) {
         val errors = entry.findings.filter { it.level == com.vibe.agent.skills.SkillValidator.Level.ERROR }
-        systemLine("[скиллы] «$id» не отправлен: " + errors.joinToString("; ") { it.message })
+        systemLine(t("chat.skillBroken", "id" to id, "reasons" to errors.joinToString("; ") { it.message }))
         continue
       }
       // A skill is text from disk like any other — same guard as project files.
@@ -568,7 +569,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
       if (clean.findings.isNotEmpty()) reportContextFindings("$id/${com.vibe.agent.skills.SkillPackage.SKILL_FILE}", clean.findings)
       resolved.add(ContextSerializer.LoadedSkill(id, clean.text))
     }
-    if (resolved.isNotEmpty()) systemLine("[скиллы] применены: " + resolved.joinToString { it.id })
+    if (resolved.isNotEmpty()) systemLine(t("chat.skillsApplied", "ids" to resolved.joinToString { it.id }))
     return resolved
   }
 
@@ -583,13 +584,13 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     val name = path.substringAfterLast('/')
     val parts = findings.map { finding ->
       when (finding.kind) {
-        com.vibe.agent.security.ContextSanitizer.Kind.INVISIBLE -> "вырезано невидимых символов: ${finding.count}"
-        com.vibe.agent.security.ContextSanitizer.Kind.BIDI -> "вырезано bidi-переопределений: ${finding.count}"
-        com.vibe.agent.security.ContextSanitizer.Kind.INSTRUCTION -> "внутри есть текст, похожий на инструкцию агенту — прочтите файл глазами"
-        com.vibe.agent.security.ContextSanitizer.Kind.SECRET -> "похоже на секрет (${finding.detail})"
+        com.vibe.agent.security.ContextSanitizer.Kind.INVISIBLE -> t("guard.invisible", "count" to finding.count)
+        com.vibe.agent.security.ContextSanitizer.Kind.BIDI -> t("guard.bidi", "count" to finding.count)
+        com.vibe.agent.security.ContextSanitizer.Kind.INSTRUCTION -> t("guard.instruction")
+        com.vibe.agent.security.ContextSanitizer.Kind.SECRET -> t("guard.secret", "detail" to finding.detail)
       }
     }
-    systemLine("🛡 контекст $name: " + parts.joinToString("; "))
+    systemLine(t("guard.contextLine", "file" to name, "items" to parts.joinToString("; ")))
   }
 
   // --- external tasks (incoming HTTP API) ---
@@ -630,7 +631,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     val started = java.util.concurrent.CompletableFuture<String>()
     SwingUtilities.invokeLater {
       if (disposed) {
-        started.completeExceptionally(IllegalStateException("панель закрыта"))
+        started.completeExceptionally(IllegalStateException(t("chat.panelClosed")))
         return@invokeLater
       }
       val threadId = sessionId?.takeIf { history.get(it) != null }
@@ -641,7 +642,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
       if (startTurn(ComposedMessage(text = task), threadId)) started.complete(threadId)
       else {
         externalWaiters.remove(threadId)
-        started.completeExceptionally(IllegalStateException("ход не запущен — некому отправлять (нет агента или провайдера)"))
+        started.completeExceptionally(IllegalStateException(t("chat.noTargetForTurn")))
       }
     }
     val threadId = started.get(SUBMIT_TIMEOUT_SEC, java.util.concurrent.TimeUnit.SECONDS)
@@ -657,8 +658,8 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     val timeout = VibeAgentSettings.DEFAULT_HTTP_API_WAIT_TIMEOUT_SEC.toLong()
     if (!latch.await(timeout, java.util.concurrent.TimeUnit.SECONDS)) {
       externalWaiters.remove(threadId)
-      runs.finished(externalRuns.remove(threadId), com.vibe.agent.runs.AgentRunLedger.Status.FAILED, "не завершился за $timeout с")
-      throw IllegalStateException("ход не завершился за $timeout с")
+      runs.finished(externalRuns.remove(threadId), com.vibe.agent.runs.AgentRunLedger.Status.FAILED, t("chat.turnTimeout", "seconds" to timeout))
+      throw IllegalStateException(t("chat.turnTimeout", "seconds" to timeout))
     }
     return threadId
   }
@@ -684,7 +685,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     if (t is ChatTarget.Agent && breakers.isBlocking() && !confirmClearBreakers()) return false
     // The store is app-wide: an untagged thread can be open in another window too.
     if (!history.tryBeginTurn(threadId)) {
-      systemLine("[тред] занят другим окном — дождитесь завершения его хода")
+      systemLine(t("chat.threadBusy"))
       return false
     }
     turnInFlight.set(true)
@@ -713,20 +714,20 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
           MentionResolver(project).resolve(tokens, selection)
         }).expireWith(this).executeSynchronously()
         resolution?.unresolved?.takeIf { it.isNotEmpty() }?.let { bad ->
-          systemLine("[контекст] не удалось разрешить ссылки: ${bad.joinToString(", ")} — проверьте путь или имя символа")
+          systemLine(t("chat.contextUnresolved", "items" to bad.joinToString(", ")))
         }
         val refs = (message.context + resolution?.refs.orEmpty()).distinctBy { it.key }
         val loaded = ReadAction.nonBlocking(Callable { ContextSerializer.load(project, refs, VibeAgentSettings.maskSecretsInContext) })
           .expireWith(this).executeSynchronously()
         loaded.forEach { reportContextFindings(it.relPath, it.findings) }
         val skills = resolveSkills(message.text)
-        if (refs.isNotEmpty()) systemLine("[контекст] приложено: ${refs.joinToString { it.label }}")
+        if (refs.isNotEmpty()) systemLine(t("chat.contextAttached", "items" to refs.joinToString { it.label }))
         // The wire text (with inlined context) becomes known only now — fill it into the stored record.
         if (t is ChatTarget.Model) {
           history.setLastUserWireText(threadId, ContextSerializer.llmText(message.text, loaded, skills).takeIf { it != displayText })
         }
         if (llmCancel.get() || disposed) {
-          systemLine("[стоп] ход отменён до отправки")
+          systemLine(t("chat.cancelledBeforeSend"))
           finishTurn()
           return@executeOnPooledThread
         }
@@ -736,7 +737,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
         }
       }
       catch (e: Exception) {
-        systemLine("[ошибка] ${e.message}")
+        systemLine(t("chat.error", "reason" to e.message))
         finishTurn()
       }
     }
@@ -754,7 +755,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
       // A caller blocked on `wait: true` must be released on ANY ending — done, cancelled, failed.
       externalWaiters.remove(it)?.countDown()
       externalRuns.remove(it)?.let { runId ->
-        runs.finished(runId, com.vibe.agent.runs.AgentRunLedger.Status.COMPLETED, "ход завершён")
+        runs.finished(runId, com.vibe.agent.runs.AgentRunLedger.Status.COMPLETED, t("chat.turnFinished"))
       }
     }
     status.set(if (breakers.isBlocking()) VibeAgentStatusService.State.BLOCKED else VibeAgentStatusService.State.IDLE)
@@ -778,7 +779,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
       if (active) return@invokeLater
       com.intellij.notification.NotificationGroupManager.getInstance()
         .getNotificationGroup("Vibe Agent")
-        .createNotification("Vibe Agent завершил ход", com.intellij.notification.NotificationType.INFORMATION)
+        .createNotification(t("chat.turnDoneNotification"), com.intellij.notification.NotificationType.INFORMATION)
         .notify(project)
     }
   }
@@ -790,7 +791,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     // download would keep going after the user gave up on it.
     watchCancel?.set(true)
     val c = client
-    systemLine("[стоп] прерываю ход…")
+    systemLine(t("chat.stopping"))
     if (c == null) return
     // Off the EDT: send() is synchronized and may sit behind a multi-megabyte prompt write.
     ApplicationManager.getApplication().executeOnPooledThread {
@@ -810,7 +811,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     images: List<ImageAttachment>, startedAt: Long,
     skills: List<ContextSerializer.LoadedSkill> = emptyList(),
   ) {
-    checkpoints?.create("сообщение: ${text.take(CHECKPOINT_LABEL_LEN)}")?.let {
+    checkpoints?.create(t("chat.checkpointLabel", "text" to text.take(CHECKPOINT_LABEL_LEN)))?.let {
       checkpointLine(it)
       audit?.append(AuditEvent(System.currentTimeMillis(), AuditEvent.Action.CHECKPOINT, ok = true,
         meta = mapOf("hash" to it.hash.take(12))))
@@ -830,7 +831,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
       modePicker.setModes(c.modes)
       composer.setImagesAllowed(c.capabilities?.image != false, NO_IMAGE_AGENT)
     }
-    if (images.isNotEmpty() && c.capabilities?.image != true) systemLine("[агент] не принимает изображения — отправлено без вложений")
+    if (images.isNotEmpty() && c.capabilities?.image != true) systemLine(t("chat.noImagesAgent"))
     val blocks = ContextSerializer.acpBlocks(fullPrompt, loaded, images, c.capabilities, skills)
     promptAcpTurn(c, blocks, t, startedAt, verifyAttempt = 0, checkAttempt = 0)
   }
@@ -849,7 +850,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
       try {
         val secs = (System.currentTimeMillis() - startedAt) / 1000.0
         if (error != null) {
-          finishAgentBubble(secs, "ошибка")
+          finishAgentBubble(secs, t("chat.failed"))
           systemLine("[ошибка] ${error.message}")
           audit?.append(AuditEvent(System.currentTimeMillis(), AuditEvent.Action.REPLY, ok = false,
             model = "acp/${t.config.name}", latencyMs = System.currentTimeMillis() - startedAt,
@@ -884,7 +885,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
             }
           }
           catch (e: Exception) {
-            finishAgentBubble(secs, "ошибка")
+            finishAgentBubble(secs, t("chat.failed"))
             systemLine("[ошибка] гейт/возврат: ${e.message}")
             finishTurn()
           }
@@ -1017,7 +1018,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     ApplicationManager.getApplication().invokeAndWait {
       val choice = Messages.showYesNoDialog(project,
         "Сработал защитный предохранитель агента:\n\n${breakers.openReasons().joinToString("\n")}\n\nОн снимается только вашим решением. Снять и продолжить?",
-        "Vibe Agent: предохранитель", "Снять и продолжить", "Отмена", Messages.getWarningIcon())
+        t("chat.breakerTitle"), t("chat.breakerClear"), t("common.cancel"), Messages.getWarningIcon())
       cleared = choice == Messages.YES
     }
     if (cleared) {
@@ -1025,7 +1026,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
       status.set(VibeAgentStatusService.State.IDLE)
       audit?.append(AuditEvent(System.currentTimeMillis(), AuditEvent.Action.CIRCUIT_BREAKER_RECOVERED, ok = true,
         meta = mapOf("cleared" to n.toString())))
-      systemLine("[предохранитель] снят ($n) — можно продолжать")
+      systemLine(t("chat.breakerCleared", "count" to n))
     }
     return cleared
   }
@@ -1049,7 +1050,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     audit?.append(AuditEvent(System.currentTimeMillis(), AuditEvent.Action.HOOK, ok = !decision.flagged,
       meta = mapOf("event" to HookEvent.TURN_END.wire, "changedFiles" to changedPaths.size.toString(),
         "broken" to decision.brokenHooks.size.toString())))
-    decision.agentMessage?.let { systemLine("🪝 ПРОВЕРКА ПРОЕКТА: $it") }
+    decision.agentMessage?.let { systemLine(t("chat.projectCheck", "text" to it)) }
   }
 
   private fun sendToLlm(t: ChatTarget.Model, startedAt: Long) {
@@ -1063,7 +1064,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
         systemLine("[providers] нет ключа для '${t.provider.id}': Settings → Tools → VibeIDEA → Провайдеры, либо .vibe/.env")
         return
       }
-      if (resolved.isLocal) systemLine("[локальная модель]")
+      if (resolved.isLocal) systemLine(t("chat.localModel"))
       // The conversation so far (this turn's user record included) — rebuilt from the thread each time,
       // so reopening an old thread resumes with its full context.
       val threadId = turnThreadId ?: return
@@ -1086,14 +1087,14 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     }
     catch (e: java.io.InterruptedIOException) {
       // The partial answer stays in the transcript — a stop is not amnesia.
-      finishAgentBubble((System.currentTimeMillis() - startedAt) / 1000.0, "прервано")
+      finishAgentBubble((System.currentTimeMillis() - startedAt) / 1000.0, t("chat.interrupted"))
       systemLine("[стоп] ${e.message}")
     }
     catch (e: Exception) {
-      finishAgentBubble((System.currentTimeMillis() - startedAt) / 1000.0, "ошибка")
+      finishAgentBubble((System.currentTimeMillis() - startedAt) / 1000.0, t("chat.failed"))
       // A rejected payload must not poison every later request in this thread.
-      turnThreadId?.let { if (history.dropImagesFromLastUser(it)) systemLine("[история] картинки убраны из последнего сообщения — провайдер отверг запрос") }
-      systemLine("[ошибка] ${e.message}")
+      turnThreadId?.let { if (history.dropImagesFromLastUser(it)) systemLine(t("chat.imagesDropped")) }
+      systemLine(t("chat.error", "reason" to e.message))
     }
     finally {
       finishTurn()
@@ -1104,7 +1105,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     val fresh = synchronized(clientLock) {
       // Checked INSIDE the lock: dispose() completes under it, so a racing turn thread
       // cannot spawn an orphan process after the panel is gone.
-      check(!disposed) { "панель закрыта" }
+      check(!disposed) { t("chat.panelClosed") }
       val existing = client
       if (existing != null && existing.isAlive && existing.sessionId != null && clientConfig == config) return existing
       existing?.stop()
@@ -1126,7 +1127,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
       }
       throw IllegalStateException("агент не ответил на initialize/session/new за $handshakeSec с — проверьте команду и ACP-флаг в ${AcpConfig.configPath()}")
     }
-    systemLine("[агент] сессия открыта" + (fresh.modes?.let { m -> " · режим: ${m.available.firstOrNull { it.id == m.currentModeId }?.name ?: m.currentModeId}" } ?: ""))
+    systemLine(t("chat.sessionOpen") + (fresh.modes?.let { m -> " · режим: ${m.available.firstOrNull { it.id == m.currentModeId }?.name ?: m.currentModeId}" } ?: ""))
     // A fresh session starts a fresh context — drop the stale usage chip until the agent reports anew.
     SwingUtilities.invokeLater { composer.setUsage(null, null, warn = false) }
     return fresh
@@ -1349,7 +1350,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
 
   private fun choosePipeline() {
     if (turnInFlight.get()) {
-      systemLine("[pipelines] дождитесь окончания текущего хода")
+      systemLine(t("chat.pipelineBusy"))
       return
     }
     val pipelines = PipelinesFile.load(project.basePath) { systemLine("[pipelines] $it") }
@@ -1365,7 +1366,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
 
   private fun runPipeline(pipeline: com.vibe.agent.pipelines.Pipeline, agent: AgentServerConfig) {
     if (!history.tryBeginTurn(currentThreadId)) {
-      systemLine("[тред] занят другим окном — дождитесь завершения его хода")
+      systemLine(t("chat.threadBusy"))
       return
     }
     systemLine("═══ Пайплайн «${pipeline.name}» — ${pipeline.steps.size} шагов ═══")
@@ -2043,7 +2044,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
       ApplicationManager.getApplication().invokeAndWait {
         val choice = Messages.showYesNoDialog(project,
           "Агент хочет выполнить разрушительную команду:\n\n${(listOf(command) + args).joinToString(" ").take(DESTRUCTIVE_PREVIEW_LEN)}\n\nПризнаки: ${verdict.reasons.joinToString(", ")}\n\nЭто действие может уничтожить данные, и отменить его нечем.",
-          "Vibe Agent: разрушительная команда", "Выполнить", "Отмена", Messages.getWarningIcon())
+          "Vibe Agent: разрушительная команда", "Выполнить", t("common.cancel"), Messages.getWarningIcon())
         approved = choice == Messages.YES
       }
       audit?.append(AuditEvent(System.currentTimeMillis(), AuditEvent.Action.TERMINAL, ok = approved,
