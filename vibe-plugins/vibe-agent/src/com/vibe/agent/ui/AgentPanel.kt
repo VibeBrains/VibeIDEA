@@ -763,6 +763,9 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     status.set(if (breakers.isBlocking()) VibeAgentStatusService.State.BLOCKED else VibeAgentStatusService.State.IDLE)
     if (disposed) return
     notifyTurnEndIfAway()
+    // The sound is for someone who looked away; the policy inside decides whether to play at all.
+    com.vibe.agent.sound.VibeSoundService.getInstance()
+      .play(com.vibe.agent.sound.SoundPolicy.Event.TURN_FINISHED, project)
     SwingUtilities.invokeLater {
       if (disposed) return@invokeLater
       composer.busy = false
@@ -962,6 +965,8 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
         VerifyGateDecision.STOP -> {
           // Terminal: giving up hands control to the user — do not then bounce on turn checks.
           systemLine(t("chat.verify.stop", "max" to maxOf(1, VibeAgentSettings.verifyMaxAttempts)))
+          com.vibe.agent.sound.VibeSoundService.getInstance()
+            .play(com.vibe.agent.sound.SoundPolicy.Event.TURN_STOPPED, project)
           return null
         }
         VerifyGateDecision.WARN_COMPLETE ->
@@ -1970,6 +1975,9 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
   }
 
   override fun onRequestPermission(params: JsonObject): JsonElement {
+    // The most important of the three events: here a person is needed RIGHT NOW, and they left.
+    com.vibe.agent.sound.VibeSoundService.getInstance()
+      .play(com.vibe.agent.sound.SoundPolicy.Event.AWAITING_PERMISSION, project)
     val toolCall = params["toolCall"]?.jsonObject
     val title = toolCall?.get("title")?.jsonPrimitive?.contentOrNull ?: "Действие агента"
     // preToolUse hook: this is one of the two points the client controls (the other is fs/write).

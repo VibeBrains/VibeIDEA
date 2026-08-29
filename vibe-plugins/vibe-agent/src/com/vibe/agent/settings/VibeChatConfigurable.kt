@@ -16,6 +16,13 @@ class VibeChatConfigurable : Configurable {
   private var continueField: JBTextField? = null
   private var tabsSpinner: JBIntSpinner? = null
   private var messagesSpinner: JBIntSpinner? = null
+  private var soundEnabled: com.intellij.ui.components.JBCheckBox? = null
+  private var soundFinished: com.intellij.ui.components.JBCheckBox? = null
+  private var soundStopped: com.intellij.ui.components.JBCheckBox? = null
+  private var soundPermission: com.intellij.ui.components.JBCheckBox? = null
+  private var soundMuteFocused: com.intellij.ui.components.JBCheckBox? = null
+  private var soundVolume: JBIntSpinner? = null
+  private var soundPath: JBTextField? = null
 
   override fun getDisplayName(): String = t("settings.chat.title")
 
@@ -36,16 +43,60 @@ class VibeChatConfigurable : Configurable {
       .addComponent(hint(t("settings.chat.maxTabsHint")))
       .addLabeledComponent(t("settings.chat.maxMessages"), messages)
       .addComponent(hint(t("settings.chat.maxMessagesHint")))
+      .addComponent(com.intellij.ui.components.JBCheckBox(t("settings.sound.enabled"), VibeChatSettings.soundEnabled).also { soundEnabled = it })
+      .addComponent(com.intellij.ui.components.JBCheckBox(t("settings.sound.onFinished"), VibeChatSettings.soundOnTurnFinished).also { soundFinished = it })
+      .addComponent(com.intellij.ui.components.JBCheckBox(t("settings.sound.onStopped"), VibeChatSettings.soundOnTurnStopped).also { soundStopped = it })
+      .addComponent(com.intellij.ui.components.JBCheckBox(t("settings.sound.onPermission"), VibeChatSettings.soundOnAwaitingPermission).also { soundPermission = it })
+      .addComponent(com.intellij.ui.components.JBCheckBox(t("settings.sound.muteWhenFocused"), VibeChatSettings.soundMuteWhenFocused).also { soundMuteFocused = it })
+      .addLabeledComponent(t("settings.sound.volume"), JBIntSpinner(VibeChatSettings.soundVolume, 0, 100).also { soundVolume = it })
+      .addLabeledComponent(t("settings.sound.customPath"), JBTextField(VibeChatSettings.soundCustomPath, 24).also { soundPath = it })
+      .addComponent(com.intellij.ui.components.ActionLink(t("settings.sound.preview")) { previewSound() })
+      .addComponent(hint(t("settings.sound.hint")))
       .addComponentFillVertically(JPanel(), 0)
       .panel.apply { border = JBUI.Borders.empty(8) }
   }
 
+  /**
+   * Plays the sound the way the settings describe it — checking a custom file BEFORE saving, so a
+   * file the JDK cannot read is named as such instead of silently producing nothing.
+   */
+  private fun previewSound() {
+    val path = soundPath?.text?.trim().orEmpty()
+    if (path.isNotEmpty()) {
+      com.vibe.agent.sound.VibeSoundService.canPlay(path).onFailure {
+        com.intellij.openapi.ui.Messages.showWarningDialog(
+          t("settings.sound.cannotPlay", "reason" to it.message), t("settings.sound.section"))
+        return
+      }
+    }
+    VibeChatSettings.soundCustomPath = path
+    VibeChatSettings.soundVolume = soundVolume?.number ?: VibeChatSettings.soundVolume
+    com.vibe.agent.sound.VibeSoundService.getInstance().preview().onFailure {
+      com.intellij.openapi.ui.Messages.showWarningDialog(
+        t("settings.sound.previewFailed", "reason" to it.message), t("settings.sound.section"))
+    }
+  }
+
   override fun isModified(): Boolean =
+    soundEnabled?.isSelected != VibeChatSettings.soundEnabled ||
+    soundFinished?.isSelected != VibeChatSettings.soundOnTurnFinished ||
+    soundStopped?.isSelected != VibeChatSettings.soundOnTurnStopped ||
+    soundPermission?.isSelected != VibeChatSettings.soundOnAwaitingPermission ||
+    soundMuteFocused?.isSelected != VibeChatSettings.soundMuteWhenFocused ||
+    soundVolume?.number != VibeChatSettings.soundVolume ||
+    (soundPath?.text?.trim() ?: VibeChatSettings.soundCustomPath) != VibeChatSettings.soundCustomPath ||
     (continueField?.text?.trim() ?: VibeChatSettings.continueText) != VibeChatSettings.continueText ||
     (tabsSpinner?.number ?: VibeChatSettings.maxOpenTabs) != VibeChatSettings.maxOpenTabs ||
     (messagesSpinner?.number ?: VibeChatSettings.maxMessagesPerThread) != VibeChatSettings.maxMessagesPerThread
 
   override fun apply() {
+    soundEnabled?.let { VibeChatSettings.soundEnabled = it.isSelected }
+    soundFinished?.let { VibeChatSettings.soundOnTurnFinished = it.isSelected }
+    soundStopped?.let { VibeChatSettings.soundOnTurnStopped = it.isSelected }
+    soundPermission?.let { VibeChatSettings.soundOnAwaitingPermission = it.isSelected }
+    soundMuteFocused?.let { VibeChatSettings.soundMuteWhenFocused = it.isSelected }
+    soundVolume?.let { VibeChatSettings.soundVolume = it.number }
+    soundPath?.let { VibeChatSettings.soundCustomPath = it.text }
     VibeChatSettings.continueText = continueField?.text ?: return
     continueField?.text = VibeChatSettings.continueText
     tabsSpinner?.let { VibeChatSettings.maxOpenTabs = it.number }
@@ -53,6 +104,13 @@ class VibeChatConfigurable : Configurable {
   }
 
   override fun reset() {
+    soundEnabled?.isSelected = VibeChatSettings.soundEnabled
+    soundFinished?.isSelected = VibeChatSettings.soundOnTurnFinished
+    soundStopped?.isSelected = VibeChatSettings.soundOnTurnStopped
+    soundPermission?.isSelected = VibeChatSettings.soundOnAwaitingPermission
+    soundMuteFocused?.isSelected = VibeChatSettings.soundMuteWhenFocused
+    soundVolume?.number = VibeChatSettings.soundVolume
+    soundPath?.text = VibeChatSettings.soundCustomPath
     continueField?.text = VibeChatSettings.continueText
     tabsSpinner?.number = VibeChatSettings.maxOpenTabs
     messagesSpinner?.number = VibeChatSettings.maxMessagesPerThread

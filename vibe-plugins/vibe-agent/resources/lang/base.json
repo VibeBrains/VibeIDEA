@@ -240,5 +240,17 @@
   "chat.provider.noKey": "[providers] нет ключа для '{id}': Settings → Tools → VibeIDEA → Провайдеры, либо .vibe/.env",
   "chat.stopError": "[стоп] {reason}",
   "chat.agentStarting": "[агент] запускаю: {command}",
-  "chat.handshakeTimeout": "агент не ответил на initialize/session/new за {seconds} с — проверьте команду и ACP-флаг в {path}"
+  "chat.handshakeTimeout": "агент не ответил на initialize/session/new за {seconds} с — проверьте команду и ACP-флаг в {path}",
+  "settings.sound.section": "Звук уведомления",
+  "settings.sound.enabled": "Звук при событиях агента",
+  "settings.sound.onFinished": "ход завершён",
+  "settings.sound.onStopped": "ход остановлен гейтом",
+  "settings.sound.onPermission": "агент ждёт подтверждения",
+  "settings.sound.muteWhenFocused": "Молчать, когда окно активно",
+  "settings.sound.volume": "Громкость, %:",
+  "settings.sound.customPath": "Свой файл (пусто — встроенный сигнал):",
+  "settings.sound.preview": "Прослушать",
+  "settings.sound.hint": "Встроенный сигнал синтезируется на месте: нет ни ассетов, ни зависимостей, и он одинаков на всех платформах. Свой файл проверяется <b>попыткой открыть</b>, а не по расширению — что именно умеет проигрывать JDK, зависит от машины. По умолчанию звук молчит, пока окно активно: он нужен тому, кто отвернулся, а сигнал в лицо смотрящему на экран человеку заканчивается тем, что звук выключают совсем. Подряд идущие события (шаги пайплайна) объединяются окном в 1,5 секунды.",
+  "settings.sound.cannotPlay": "Этот файл не проигрывается: {reason}",
+  "settings.sound.previewFailed": "Не удалось воспроизвести: {reason}"
 }

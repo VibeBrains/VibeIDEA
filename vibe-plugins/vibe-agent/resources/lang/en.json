@@ -240,5 +240,17 @@
   "chat.provider.noKey": "[providers] no key for '{id}': Settings → Tools → VibeIDEA → Providers, or .vibe/.env",
   "chat.stopError": "[stop] {reason}",
   "chat.agentStarting": "[agent] starting: {command}",
-  "chat.handshakeTimeout": "the agent did not answer initialize/session/new within {seconds} s — check the command and its ACP flag in {path}"
+  "chat.handshakeTimeout": "the agent did not answer initialize/session/new within {seconds} s — check the command and its ACP flag in {path}",
+  "settings.sound.section": "Notification sound",
+  "settings.sound.enabled": "Sound on agent events",
+  "settings.sound.onFinished": "turn finished",
+  "settings.sound.onStopped": "turn stopped by a gate",
+  "settings.sound.onPermission": "the agent is waiting for confirmation",
+  "settings.sound.muteWhenFocused": "Stay silent while the window is focused",
+  "settings.sound.volume": "Volume, %:",
+  "settings.sound.customPath": "Custom file (empty — the built-in chime):",
+  "settings.sound.preview": "Play it",
+  "settings.sound.hint": "The built-in chime is synthesised on the spot: no assets, no dependencies, and it sounds the same on every platform. A custom file is validated by <b>trying to open it</b> rather than by its extension — what the JDK can play depends on the machine. By default the sound stays silent while the window is focused: it is meant for someone who looked away, and beeping at a person watching the screen ends with the sound being turned off for good. Events in a row (pipeline steps) are merged by a 1.5-second window.",
+  "settings.sound.cannotPlay": "This file cannot be played: {reason}",
+  "settings.sound.previewFailed": "Could not play: {reason}"
 }

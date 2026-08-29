@@ -47,4 +47,47 @@ object VibeChatSettings {
 
   fun rememberedTarget(project: Project): String? = PropertiesComponent.getInstance(project).getValue(KEY_TARGET)
   fun rememberedModel(project: Project): String? = PropertiesComponent.getInstance(project).getValue(KEY_MODEL)
+
+  /** Local shorthand — the file already reaches PropertiesComponent directly everywhere above. */
+  private val props get() = PropertiesComponent.getInstance()
+
+  // --- notification sound ---
+  /** On by default: the whole point is to free the person from watching a running turn. */
+  const val DEFAULT_SOUND_ENABLED = true
+  const val DEFAULT_SOUND_VOLUME = 60
+  private const val KEY_SOUND_ENABLED = "vibe.chat.sound.enabled"
+  private const val KEY_SOUND_FINISHED = "vibe.chat.sound.onFinished"
+  private const val KEY_SOUND_STOPPED = "vibe.chat.sound.onStopped"
+  private const val KEY_SOUND_PERMISSION = "vibe.chat.sound.onPermission"
+  private const val KEY_SOUND_MUTE_FOCUSED = "vibe.chat.sound.muteWhenFocused"
+  private const val KEY_SOUND_VOLUME = "vibe.chat.sound.volume"
+  private const val KEY_SOUND_PATH = "vibe.chat.sound.customPath"
+
+  var soundEnabled: Boolean
+    get() = props.getBoolean(KEY_SOUND_ENABLED, DEFAULT_SOUND_ENABLED)
+    set(value) = props.setValue(KEY_SOUND_ENABLED, value, DEFAULT_SOUND_ENABLED)
+
+  var soundOnTurnFinished: Boolean
+    get() = props.getBoolean(KEY_SOUND_FINISHED, true)
+    set(value) = props.setValue(KEY_SOUND_FINISHED, value, true)
+
+  var soundOnTurnStopped: Boolean
+    get() = props.getBoolean(KEY_SOUND_STOPPED, true)
+    set(value) = props.setValue(KEY_SOUND_STOPPED, value, true)
+
+  var soundOnAwaitingPermission: Boolean
+    get() = props.getBoolean(KEY_SOUND_PERMISSION, true)
+    set(value) = props.setValue(KEY_SOUND_PERMISSION, value, true)
+
+  var soundMuteWhenFocused: Boolean
+    get() = props.getBoolean(KEY_SOUND_MUTE_FOCUSED, true)
+    set(value) = props.setValue(KEY_SOUND_MUTE_FOCUSED, value, true)
+
+  var soundVolume: Int
+    get() = props.getInt(KEY_SOUND_VOLUME, DEFAULT_SOUND_VOLUME).coerceIn(0, 100)
+    set(value) = props.setValue(KEY_SOUND_VOLUME, value.coerceIn(0, 100), DEFAULT_SOUND_VOLUME)
+
+  var soundCustomPath: String
+    get() = props.getValue(KEY_SOUND_PATH, "")
+    set(value) = props.setValue(KEY_SOUND_PATH, value.trim(), "")
 }
