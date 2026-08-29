@@ -243,7 +243,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     relayout()
     applyRailVisibility()
     history.addListener(this) { onHistoryChanged() }
-    systemLine("Ключи провайдеров: Settings → Tools → VibeIDEA → Провайдеры (или .vibe/.env). Реестры: ${AcpConfig.configPath()}, каталог .vibe/providers/ (+ providers.json).")
+    systemLine(t("chat.greeting.keys", "acp" to AcpConfig.configPath()))
     // Config files live on disk — never read (or seed) them on the EDT; publish results back here.
     ApplicationManager.getApplication().executeOnPooledThread {
       val loadedAgents = AcpConfig.load { systemLine(t("chat.configNotice", "text" to it)) }
@@ -259,7 +259,9 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
         // models, and passing them off as hand-declared would leak them into the curated picker.
         staticModelIds = loadedProviders.associate { p -> p.id to p.models.map { it.id }.toSet() }
         providers = applyCatalogCache(loadedProviders, catalogCache)
-        systemLine("Vibe Agent готов. Агенты: ${loadedAgents.joinToString { it.name }}; провайдеры: ${loadedProviders.joinToString { it.name }.ifEmpty { "нет" }}.")
+        systemLine(t("chat.greeting.ready",
+          "agents" to loadedAgents.joinToString { it.name },
+          "providers" to loadedProviders.joinToString { it.name }.ifEmpty { t("chat.greeting.none") }))
         guardFindings.forEach { f -> systemLine("[guard:${f.severity}] ${f.message}") }
         // A repository seen for the first time gets one line about what its files can and cannot do.
         if (com.vibe.agent.security.ForeignProjectNotice.noticeOnce(project.basePath)) {
@@ -430,7 +432,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
       is ChatTarget.Model -> {
         VibeChatSettings.rememberChoice(project, "llm:${t.provider.id}", t.model.id)
         modePicker.setModes(null)
-        composer.setImagesAllowed(t.model.vision != false, "Модель ${t.model.name} не принимает изображения (vision: false в providers.json)")
+        composer.setImagesAllowed(t.model.vision != false, com.vibe.agent.i18n.VibeI18n.t("chat.model.noVision", "model" to t.model.name))
       }
       null -> {
         modePicker.setModes(null)
@@ -668,7 +670,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
   private fun startTurn(message: ComposedMessage, threadId: String = currentThreadId): Boolean {
     if (disposed) return false
     val t = target ?: run {
-      systemLine("[ошибка] некому отправлять: добавьте агента в ${AcpConfig.configPath()} или включите провайдера в .vibe/providers/ (active: true)")
+      systemLine(t("chat.noTargetHint", "path" to AcpConfig.configPath()))
       return false
     }
     if (turnInFlight.get()) {
@@ -677,7 +679,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     }
     if (t is ChatTarget.Model && t.model.vision == false && message.images.isNotEmpty()) {
       Messages.showErrorDialog(project,
-        "Выбранная модель (${t.provider.name}/${t.model.name}) не поддерживает изображения. Переключитесь на vision-модель либо удалите вложение.",
+        com.vibe.agent.i18n.VibeI18n.t("chat.model.noVisionDialog", "provider" to t.provider.name, "model" to t.model.name),
         "Vibe Agent")
       return false
     }
@@ -851,7 +853,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
         val secs = (System.currentTimeMillis() - startedAt) / 1000.0
         if (error != null) {
           finishAgentBubble(secs, t("chat.failed"))
-          systemLine("[ошибка] ${error.message}")
+          systemLine(t("chat.error", "reason" to error.message))
           audit?.append(AuditEvent(System.currentTimeMillis(), AuditEvent.Action.REPLY, ok = false,
             model = "acp/${t.config.name}", latencyMs = System.currentTimeMillis() - startedAt,
             meta = mapOf("error" to (error.message ?: "error"))))
@@ -872,7 +874,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
             val bounce = evaluateGates(verifyAttempt, checkAttempt, designAttempt)
             if (bounce == null) status.set(VibeAgentStatusService.State.RUNNING)
             if (bounce != null && !llmCancel.get() && !disposed && c.isAlive) {
-              finishAgentBubble(secs, "проверка: возврат")
+              finishAgentBubble(secs, t("chat.checkBounceLabel"))
               promptAcpTurn(c, listOf(ContentBlock.Text(bounce.message)), t, startedAt, bounce.verifyAttempt, bounce.checkAttempt, bounce.designAttempt)
             }
             else {
@@ -886,13 +888,13 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
           }
           catch (e: Exception) {
             finishAgentBubble(secs, t("chat.failed"))
-            systemLine("[ошибка] гейт/возврат: ${e.message}")
+            systemLine(t("chat.gateError", "reason" to e.message))
             finishTurn()
           }
         }
       }
       catch (e: Exception) {
-        systemLine("[ошибка] завершение хода: ${e.message}")
+        systemLine(t("chat.turnEndError", "reason" to e.message))
         finishTurn()
       }
     }
@@ -924,9 +926,10 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
       val skippedBySize = scanned.size - contents.size
       // Only the CONTENT (secret) scan is capped; protected-path checks every path below.
       if (skippedByCount > 0 || skippedBySize > 0) systemLine(
-        "[проверки хода] на утечку секретов не просканировано файлов: ${skippedByCount + skippedBySize}" +
-          (if (skippedByCount > 0) " (сверх лимита $maxFiles)" else "") +
-          (if (skippedBySize > 0) " (крупнее ${VibeAgentSettings.checksMaxFileKb} КБ)" else ""))
+        t("chat.checks.notScanned",
+          "count" to (skippedByCount + skippedBySize),
+          "details" to (if (skippedByCount > 0) t("chat.checks.overCount", "max" to maxFiles) else "") +
+                       (if (skippedBySize > 0) t("chat.checks.overSize", "kb" to VibeAgentSettings.checksMaxFileKb) else "")))
       TurnChecks.scanSecretLeak(contents, maxFiles) + TurnChecks.scanProtectedPath(paths)
     }
     if (findings.isNotEmpty()) {
@@ -951,15 +954,18 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
       if (llmCancel.get() || disposed) return null
       when (VerifyGatePolicy.decide(vMode, res.ran, res.passed, verifyAttempt, VibeAgentSettings.verifyMaxAttempts)) {
         VerifyGateDecision.BOUNCE -> return GateBounce(
-          "⛔ VERIFY-GATE: команда «${VibeAgentSettings.verifyCommand}» упала (exit ${res.exitCode ?: "timeout"}). Задача НЕ выполнена — исправь причину и продолжай (попытка ${verifyAttempt + 1} из ${maxOf(1, VibeAgentSettings.verifyMaxAttempts)}).\n${res.outputTail}",
+          t("chat.verify.bounce",
+            "command" to VibeAgentSettings.verifyCommand, "code" to (res.exitCode ?: "timeout"),
+            "attempt" to (verifyAttempt + 1), "max" to maxOf(1, VibeAgentSettings.verifyMaxAttempts),
+            "output" to res.outputTail),
           verifyAttempt + 1, checkAttempt, designAttempt)
         VerifyGateDecision.STOP -> {
           // Terminal: giving up hands control to the user — do not then bounce on turn checks.
-          systemLine("⛔ VERIFY-GATE: проверка всё ещё падает после ${maxOf(1, VibeAgentSettings.verifyMaxAttempts)} попыток — прогон остановлен, доработайте вручную")
+          systemLine(t("chat.verify.stop", "max" to maxOf(1, VibeAgentSettings.verifyMaxAttempts)))
           return null
         }
         VerifyGateDecision.WARN_COMPLETE ->
-          systemLine("⚠️ VERIFY-GATE (предупреждение): проверка не прошла (exit ${res.exitCode ?: "timeout"}), но ход завершён")
+          systemLine(t("chat.verify.warn", "code" to (res.exitCode ?: "timeout")))
         VerifyGateDecision.COMPLETE -> {}
       }
     }
@@ -970,9 +976,9 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
         TurnChecks.renderCorrective(findings, checkAttempt + 1, maxOf(1, VibeAgentSettings.checksMaxAttempts)),
         verifyAttempt, checkAttempt + 1, designAttempt)
       TurnChecksDecision.STOP ->
-        systemLine("⛔ ПРОВЕРКИ ХОДА: после ${maxOf(1, VibeAgentSettings.checksMaxAttempts)} попыток проблемы остались — прогон остановлен")
+        systemLine(t("chat.checks.stop", "max" to maxOf(1, VibeAgentSettings.checksMaxAttempts)))
       TurnChecksDecision.NOTIFY_COMPLETE ->
-        systemLine("🔎 ПРОВЕРКИ ХОДА: " + findings.joinToString("; ") { "${it.detail}: ${it.path}" })
+        systemLine(t("chat.checks.notify", "items" to findings.joinToString("; ") { "${it.detail}: ${it.path}" }))
       TurnChecksDecision.COMPLETE -> {}
     }
 
@@ -988,7 +994,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
       val designFindings = measured.findings
       if (designFindings == null) {
         // Why the detector is silent must be said: silence otherwise reads as "страница в порядке".
-        systemLine("🎨 ДИЗАЙН-ГЕЙТ: замер не выполнен — ${measured.reason}")
+        systemLine(t("chat.design.notMeasured", "reason" to measured.reason))
       }
       else {
         when (DesignHookPolicy.decide(designMode, designFindings, designAttempt, VibeAgentSettings.designMaxAttempts)) {
@@ -996,7 +1002,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
             DesignHookPolicy.corrective(designFindings, designAttempt + 1, VibeAgentSettings.designMaxAttempts),
             verifyAttempt, checkAttempt, designAttempt + 1)
           DesignHookPolicy.Decision.STOP ->
-            systemLine("⛔ ДИЗАЙН-ГЕЙТ: после ${VibeAgentSettings.designMaxAttempts} попыток нарушения пола качества остались — прогон остановлен")
+            systemLine(t("chat.design.stop", "max" to VibeAgentSettings.designMaxAttempts))
           DesignHookPolicy.Decision.REPORT -> systemLine("🎨 " + DesignReview.summary(designFindings))
           DesignHookPolicy.Decision.SKIP -> {}
         }
@@ -1017,7 +1023,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     var cleared = false
     ApplicationManager.getApplication().invokeAndWait {
       val choice = Messages.showYesNoDialog(project,
-        "Сработал защитный предохранитель агента:\n\n${breakers.openReasons().joinToString("\n")}\n\nОн снимается только вашим решением. Снять и продолжить?",
+        t("chat.breakerDialog", "reasons" to breakers.openReasons().joinToString("\n")),
         t("chat.breakerTitle"), t("chat.breakerClear"), t("common.cancel"), Messages.getWarningIcon())
       cleared = choice == Messages.YES
     }
@@ -1057,11 +1063,11 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     try {
       val resolved = ProvidersService.resolve(t.provider, project.basePath) { systemLine("[providers] $it") }
       if (resolved == null) {
-        systemLine("[providers] у '${t.provider.id}' нет baseURL — отправлять некуда")
+        systemLine(com.vibe.agent.i18n.VibeI18n.t("chat.provider.noBaseUrl", "id" to t.provider.id))
         return
       }
       if (resolved.apiKey == null && !resolved.isLocal) {
-        systemLine("[providers] нет ключа для '${t.provider.id}': Settings → Tools → VibeIDEA → Провайдеры, либо .vibe/.env")
+        systemLine(com.vibe.agent.i18n.VibeI18n.t("chat.provider.noKey", "id" to t.provider.id))
         return
       }
       if (resolved.isLocal) systemLine(t("chat.localModel"))
@@ -1088,7 +1094,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     catch (e: java.io.InterruptedIOException) {
       // The partial answer stays in the transcript — a stop is not amnesia.
       finishAgentBubble((System.currentTimeMillis() - startedAt) / 1000.0, t("chat.interrupted"))
-      systemLine("[стоп] ${e.message}")
+      systemLine(t("chat.stopError", "reason" to e.message))
     }
     catch (e: Exception) {
       finishAgentBubble((System.currentTimeMillis() - startedAt) / 1000.0, t("chat.failed"))
@@ -1109,7 +1115,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
       val existing = client
       if (existing != null && existing.isAlive && existing.sessionId != null && clientConfig == config) return existing
       existing?.stop()
-      systemLine("[агент] запускаю: ${config.command} ${config.args.joinToString(" ")}")
+      systemLine(t("chat.agentStarting", "command" to (config.command + " " + config.args.joinToString(" "))))
       AcpClient(config, project.basePath, this, advertiseTerminalExec = VibeAgentSettings.terminalEnabled).also {
         it.start()
         client = it
@@ -1125,7 +1131,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
         fresh.stop()
         if (client === fresh) { client = null; clientConfig = null }
       }
-      throw IllegalStateException("агент не ответил на initialize/session/new за $handshakeSec с — проверьте команду и ACP-флаг в ${AcpConfig.configPath()}")
+      throw IllegalStateException(t("chat.handshakeTimeout", "seconds" to handshakeSec, "path" to AcpConfig.configPath()))
     }
     systemLine(t("chat.sessionOpen") + (fresh.modes?.let { m -> " · режим: ${m.available.firstOrNull { it.id == m.currentModeId }?.name ?: m.currentModeId}" } ?: ""))
     // A fresh session starts a fresh context — drop the stale usage chip until the agent reports anew.
