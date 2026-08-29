@@ -24,6 +24,8 @@ import com.vibe.agent.audit.AuditLog
 import com.vibe.agent.audit.ToolCallAudit
 import com.vibe.agent.checkpoints.CheckpointService
 import com.vibe.agent.design.DesignContextFile
+import com.vibe.agent.design.DesignHookPolicy
+import com.vibe.agent.design.DesignReview
 import com.vibe.agent.gates.TurnChecks
 import com.vibe.agent.gates.TurnChecksDecision
 import com.vibe.agent.gates.VerifyGateDecision
@@ -526,6 +528,14 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
 
   override val projectName: String get() = project.name
 
+  override fun putIntoComposer(text: String) {
+    SwingUtilities.invokeLater {
+      if (disposed) return@invokeLater
+      composer.appendDraft(text)
+      com.intellij.openapi.wm.ToolWindowManager.getInstance(project).getToolWindow("VibeAgent")?.activate(null)
+    }
+  }
+
   override fun ownsSession(sessionId: String): Boolean =
     history.get(sessionId)?.let { history.matchesWorkspace(it, project.basePath) } == true
 
@@ -752,7 +762,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
    * VERIFY-GATE/TURN-CHECKS enforce "not done until green" in the ACP model,
    * where there is no `vibe_complete` tool to hang them on.
    */
-  private fun promptAcpTurn(c: AcpClient, blocks: List<ContentBlock>, t: ChatTarget.Agent, startedAt: Long, verifyAttempt: Int, checkAttempt: Int) {
+  private fun promptAcpTurn(c: AcpClient, blocks: List<ContentBlock>, t: ChatTarget.Agent, startedAt: Long, verifyAttempt: Int, checkAttempt: Int, designAttempt: Int = 0) {
     c.prompt(blocks).whenComplete { result, error ->
       // Any throw here (a non-object result, a re-prompt failing) must still END the turn — otherwise
       // turnInFlight/history.activeTurns stay stuck and the panel wedges app-wide until restart.
@@ -778,11 +788,11 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
         ApplicationManager.getApplication().executeOnPooledThread {
           try {
             status.set(VibeAgentStatusService.State.GATE)
-            val bounce = evaluateGates(verifyAttempt, checkAttempt)
+            val bounce = evaluateGates(verifyAttempt, checkAttempt, designAttempt)
             if (bounce == null) status.set(VibeAgentStatusService.State.RUNNING)
             if (bounce != null && !llmCancel.get() && !disposed && c.isAlive) {
               finishAgentBubble(secs, "проверка: возврат")
-              promptAcpTurn(c, listOf(ContentBlock.Text(bounce.message)), t, startedAt, bounce.verifyAttempt, bounce.checkAttempt)
+              promptAcpTurn(c, listOf(ContentBlock.Text(bounce.message)), t, startedAt, bounce.verifyAttempt, bounce.checkAttempt, bounce.designAttempt)
             }
             else {
               finishAgentBubble(secs, stop)
@@ -807,13 +817,13 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     }
   }
 
-  private data class GateBounce(val message: String, val verifyAttempt: Int, val checkAttempt: Int)
+  private data class GateBounce(val message: String, val verifyAttempt: Int, val checkAttempt: Int, val designAttempt: Int = 0)
 
   /**
    * Post-turn gates over the files this turn changed. Returns a bounce (synthetic
    * follow-up prompt) or null to complete. Only runs when the turn mutated files.
    */
-  private fun evaluateGates(verifyAttempt: Int, checkAttempt: Int): GateBounce? {
+  private fun evaluateGates(verifyAttempt: Int, checkAttempt: Int, designAttempt: Int = 0): GateBounce? {
     // Stop pressed → the user is done with this turn; do not launch a minutes-long verify build.
     if (llmCancel.get() || disposed) return null
     // A Bash/edit tool may have changed files the client never saw as fs/write, so the gate runs on
@@ -861,7 +871,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
       when (VerifyGatePolicy.decide(vMode, res.ran, res.passed, verifyAttempt, VibeAgentSettings.verifyMaxAttempts)) {
         VerifyGateDecision.BOUNCE -> return GateBounce(
           "⛔ VERIFY-GATE: команда «${VibeAgentSettings.verifyCommand}» упала (exit ${res.exitCode ?: "timeout"}). Задача НЕ выполнена — исправь причину и продолжай (попытка ${verifyAttempt + 1} из ${maxOf(1, VibeAgentSettings.verifyMaxAttempts)}).\n${res.outputTail}",
-          verifyAttempt + 1, checkAttempt)
+          verifyAttempt + 1, checkAttempt, designAttempt)
         VerifyGateDecision.STOP -> {
           // Terminal: giving up hands control to the user — do not then bounce on turn checks.
           systemLine("⛔ VERIFY-GATE: проверка всё ещё падает после ${maxOf(1, VibeAgentSettings.verifyMaxAttempts)} попыток — прогон остановлен, доработайте вручную")
@@ -877,12 +887,39 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     when (TurnChecks.decide(cMode, findings, checkAttempt, VibeAgentSettings.checksMaxAttempts)) {
       TurnChecksDecision.BOUNCE -> return GateBounce(
         TurnChecks.renderCorrective(findings, checkAttempt + 1, maxOf(1, VibeAgentSettings.checksMaxAttempts)),
-        verifyAttempt, checkAttempt + 1)
+        verifyAttempt, checkAttempt + 1, designAttempt)
       TurnChecksDecision.STOP ->
         systemLine("⛔ ПРОВЕРКИ ХОДА: после ${maxOf(1, VibeAgentSettings.checksMaxAttempts)} попыток проблемы остались — прогон остановлен")
       TurnChecksDecision.NOTIFY_COMPLETE ->
         systemLine("🔎 ПРОВЕРКИ ХОДА: " + findings.joinToString("; ") { "${it.detail}: ${it.path}" })
       TurnChecksDecision.COMPLETE -> {}
+    }
+
+    // --- DESIGN GATE: measure the page after a turn that touched the interface ---
+    val designMode = when (VibeAgentSettings.designMode) {
+      VibeAgentSettings.DESIGN_NOTIFY -> DesignHookPolicy.Mode.NOTIFY
+      VibeAgentSettings.DESIGN_ENFORCE_FLOOR -> DesignHookPolicy.Mode.ENFORCE_FLOOR
+      else -> DesignHookPolicy.Mode.OFF
+    }
+    if (designMode != DesignHookPolicy.Mode.OFF && DesignHookPolicy.touchesUi(paths)) {
+      val measured = com.vibe.agent.design.DesignMeasurementService.getInstance(project)
+        .measure(VibeAgentSettings.DESIGN_MEASURE_TIMEOUT_MS)
+      val designFindings = measured.findings
+      if (designFindings == null) {
+        // Why the detector is silent must be said: silence otherwise reads as "страница в порядке".
+        systemLine("🎨 ДИЗАЙН-ГЕЙТ: замер не выполнен — ${measured.reason}")
+      }
+      else {
+        when (DesignHookPolicy.decide(designMode, designFindings, designAttempt, VibeAgentSettings.designMaxAttempts)) {
+          DesignHookPolicy.Decision.BOUNCE -> return GateBounce(
+            DesignHookPolicy.corrective(designFindings, designAttempt + 1, VibeAgentSettings.designMaxAttempts),
+            verifyAttempt, checkAttempt, designAttempt + 1)
+          DesignHookPolicy.Decision.STOP ->
+            systemLine("⛔ ДИЗАЙН-ГЕЙТ: после ${VibeAgentSettings.designMaxAttempts} попыток нарушения пола качества остались — прогон остановлен")
+          DesignHookPolicy.Decision.REPORT -> systemLine("🎨 " + DesignReview.summary(designFindings))
+          DesignHookPolicy.Decision.SKIP -> {}
+        }
+      }
     }
     return null
   }

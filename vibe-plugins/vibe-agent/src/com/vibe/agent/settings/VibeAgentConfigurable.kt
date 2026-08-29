@@ -33,6 +33,8 @@ class VibeAgentConfigurable : Configurable, Configurable.NoScroll {
   private var checksMaxFileKb: JBIntSpinner? = null
   private var terminalEnabled: JBCheckBox? = null
   private var handshakeTimeout: JBIntSpinner? = null
+  private var designMode: com.intellij.openapi.ui.ComboBox<String>? = null
+  private var designAttempts: JBIntSpinner? = null
   private var fimEnabled: JBCheckBox? = null
   private var fimDebounce: JBIntSpinner? = null
   private var fimCache: JBIntSpinner? = null
@@ -59,6 +61,10 @@ class VibeAgentConfigurable : Configurable, Configurable.NoScroll {
     val cMaxFiles = JBIntSpinner(VibeAgentSettings.checksMaxFiles, VibeAgentSettings.MIN_CHECKS_MAX_FILES, VibeAgentSettings.MAX_CHECKS_MAX_FILES).also { checksMaxFiles = it }
     val cMaxFileKb = JBIntSpinner(VibeAgentSettings.checksMaxFileKb, VibeAgentSettings.MIN_CHECKS_MAX_FILE_KB, VibeAgentSettings.MAX_CHECKS_MAX_FILE_KB).also { checksMaxFileKb = it }
     val terminal = JBCheckBox("Разрешать агентам исполнять терминал (ACP terminal/…)", VibeAgentSettings.terminalEnabled).also { terminalEnabled = it }
+    val design = com.intellij.openapi.ui.ComboBox(VibeAgentSettings.DESIGN_MODES.toTypedArray())
+      .also { it.item = VibeAgentSettings.designMode; designMode = it }
+    val designTries = JBIntSpinner(VibeAgentSettings.designMaxAttempts, VibeAgentSettings.MIN_DESIGN_MAX_ATTEMPTS, VibeAgentSettings.MAX_DESIGN_MAX_ATTEMPTS)
+      .also { designAttempts = it }
     val fim = JBCheckBox("Автодополнение FIM", VibeAgentSettings.fimEnabled).also { fimEnabled = it }
     val fimDelay = JBIntSpinner(VibeAgentSettings.fimDebounceMs, VibeAgentSettings.MIN_FIM_DEBOUNCE_MS, VibeAgentSettings.MAX_FIM_DEBOUNCE_MS)
       .also { fimDebounce = it }
@@ -106,6 +112,12 @@ class VibeAgentConfigurable : Configurable, Configurable.NoScroll {
       .addComponent(terminal)
       .addComponent(hint("Живой вывод команд Claude показывается всегда. Этот флаг разрешает СТОРОННИМ агентам (Gemini CLI и др.) исполнять команды через " +
         "стандартные методы ACP <code>terminal/…</code> — с клампом таймаута, обрезкой вывода и подтверждением разрушительных команд."))
+      .addComponent(section("Дизайн-гейт"))
+      .addLabeledComponent("Режим:", design)
+      .addLabeledComponent("Попыток исправления:", designTries)
+      .addComponent(hint("После хода, менявшего файлы интерфейса (<code>.tsx</code>, <code>.css</code>, <code>.svg</code>… — тесты не считаются), страница замеряется в тулвиндоу «Дизайн». " +
+        "<b>notify</b> — сводка в ленте, ход завершается в любом случае. <b>enforceFloor</b> — агент возвращается к работе, пока остаются нарушения ПОЛА КАЧЕСТВА (контраст, зоны нажатия, обрезание): " +
+        "вкусовые находки не блокируют никогда, иначе мнение стало бы блокировкой и дало бы циклы по стилю. Если панель «Дизайн» закрыта, гейт скажет об этом словами, а не промолчит."))
       .addComponent(section("Автодополнение (FIM)"))
       .addComponent(fim)
       .addLabeledComponent("Задержка перед запросом, мс:", fimDelay)
@@ -168,6 +180,8 @@ class VibeAgentConfigurable : Configurable, Configurable.NoScroll {
     checksMaxFileKb?.number != VibeAgentSettings.checksMaxFileKb ||
     terminalEnabled?.isSelected != VibeAgentSettings.terminalEnabled ||
     handshakeTimeout?.number != VibeAgentSettings.handshakeTimeoutSec ||
+    (designMode?.item ?: VibeAgentSettings.designMode) != VibeAgentSettings.designMode ||
+    designAttempts?.number != VibeAgentSettings.designMaxAttempts ||
     fimEnabled?.isSelected != VibeAgentSettings.fimEnabled ||
     fimDebounce?.number != VibeAgentSettings.fimDebounceMs ||
     fimCache?.number != VibeAgentSettings.fimCacheSize ||
@@ -193,6 +207,8 @@ class VibeAgentConfigurable : Configurable, Configurable.NoScroll {
     checksMaxFileKb?.let { VibeAgentSettings.checksMaxFileKb = it.number }
     terminalEnabled?.let { VibeAgentSettings.terminalEnabled = it.isSelected }
     handshakeTimeout?.let { VibeAgentSettings.handshakeTimeoutSec = it.number }
+    designMode?.let { VibeAgentSettings.designMode = it.item }
+    designAttempts?.let { VibeAgentSettings.designMaxAttempts = it.number }
     fimEnabled?.let { VibeAgentSettings.fimEnabled = it.isSelected }
     fimDebounce?.let { VibeAgentSettings.fimDebounceMs = it.number }
     fimCache?.let { VibeAgentSettings.fimCacheSize = it.number }
@@ -229,6 +245,8 @@ class VibeAgentConfigurable : Configurable, Configurable.NoScroll {
     terminalEnabled?.isSelected = VibeAgentSettings.terminalEnabled
     httpApiEnabled?.isSelected = VibeAgentSettings.httpApiEnabled
     httpApiPort?.number = VibeAgentSettings.httpApiPort
+    designMode?.item = VibeAgentSettings.designMode
+    designAttempts?.number = VibeAgentSettings.designMaxAttempts
     fimEnabled?.isSelected = VibeAgentSettings.fimEnabled
     fimDebounce?.number = VibeAgentSettings.fimDebounceMs
     fimCache?.number = VibeAgentSettings.fimCacheSize

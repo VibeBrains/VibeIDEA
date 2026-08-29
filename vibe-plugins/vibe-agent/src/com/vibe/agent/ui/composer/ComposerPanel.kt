@@ -245,6 +245,20 @@ class ComposerPanel(
     focusInput()
   }
 
+  /**
+   * Appends text to whatever is being typed, without sending anything.
+   *
+   * Used by the design overlay: a picked finding becomes a note in the composer and the person
+   * decides what to ask about it. Sending for them would take the decision away and spend a
+   * request nobody asked for.
+   */
+  fun appendDraft(text: String) {
+    val current = input.text
+    input.text = if (current.isBlank()) text else current.trimEnd() + "\n\n" + text
+    input.caretPosition = input.text.length
+    focusInput()
+  }
+
   fun addContext(ref: ContextRef) {
     context[ref.key] = ref
     renderContext()

@@ -52,6 +52,18 @@ object VibeAgentSettings {
   const val DEFAULT_TERMINAL_ENABLED = true
   /** Fallback output cap when an agent's terminal/create omits outputByteLimit (never unbounded). */
   const val DEFAULT_TERMINAL_OUTPUT_BYTE_LIMIT = 1_048_576L
+  // --- design gate ---
+  const val DESIGN_OFF = "off"
+  const val DESIGN_NOTIFY = "notify"
+  const val DESIGN_ENFORCE_FLOOR = "enforceFloor"
+  val DESIGN_MODES = listOf(DESIGN_OFF, DESIGN_NOTIFY, DESIGN_ENFORCE_FLOOR)
+  /** Off by default: measuring needs an open preview, and a gate that cannot run must not nag. */
+  const val DEFAULT_DESIGN_MODE = DESIGN_OFF
+  const val DEFAULT_DESIGN_MAX_ATTEMPTS = 2
+  const val MIN_DESIGN_MAX_ATTEMPTS = 1
+  const val MAX_DESIGN_MAX_ATTEMPTS = 5
+  const val DESIGN_MEASURE_TIMEOUT_MS = 20_000L
+
   // --- FIM autocomplete ---
   const val DEFAULT_FIM_ENABLED = true
   const val DEFAULT_FIM_DEBOUNCE_MS = 250
@@ -103,6 +115,8 @@ object VibeAgentSettings {
   private const val KEY_CHECKS_MAX_FILE_KB = "vibe.agent.turnChecks.maxFileKb"
   private const val KEY_TERMINAL_ENABLED = "vibe.agent.terminal.enabled"
   private const val KEY_HANDSHAKE_TIMEOUT_SEC = "vibe.agent.handshakeTimeoutSec"
+  private const val KEY_DESIGN_MODE = "vibe.agent.design.mode"
+  private const val KEY_DESIGN_MAX_ATTEMPTS = "vibe.agent.design.maxAttempts"
   private const val KEY_FIM_ENABLED = "vibe.agent.fim.enabled"
   private const val KEY_FIM_DEBOUNCE_MS = "vibe.agent.fim.debounceMs"
   private const val KEY_FIM_CACHE_SIZE = "vibe.agent.fim.cacheSize"
@@ -222,4 +236,12 @@ object VibeAgentSettings {
   var fimCacheSize: Int
     get() = props.getInt(KEY_FIM_CACHE_SIZE, DEFAULT_FIM_CACHE_SIZE).coerceIn(MIN_FIM_CACHE_SIZE, MAX_FIM_CACHE_SIZE)
     set(value) = props.setValue(KEY_FIM_CACHE_SIZE, value.coerceIn(MIN_FIM_CACHE_SIZE, MAX_FIM_CACHE_SIZE), DEFAULT_FIM_CACHE_SIZE)
+
+  var designMode: String
+    get() = props.getValue(KEY_DESIGN_MODE, DEFAULT_DESIGN_MODE).let { if (it in DESIGN_MODES) it else DEFAULT_DESIGN_MODE }
+    set(value) = props.setValue(KEY_DESIGN_MODE, if (value in DESIGN_MODES) value else DEFAULT_DESIGN_MODE, DEFAULT_DESIGN_MODE)
+
+  var designMaxAttempts: Int
+    get() = props.getInt(KEY_DESIGN_MAX_ATTEMPTS, DEFAULT_DESIGN_MAX_ATTEMPTS).coerceIn(MIN_DESIGN_MAX_ATTEMPTS, MAX_DESIGN_MAX_ATTEMPTS)
+    set(value) = props.setValue(KEY_DESIGN_MAX_ATTEMPTS, value.coerceIn(MIN_DESIGN_MAX_ATTEMPTS, MAX_DESIGN_MAX_ATTEMPTS), DEFAULT_DESIGN_MAX_ATTEMPTS)
 }

@@ -27,6 +27,13 @@ class VibeAgentGateway {
      * Blocking when [wait]; must never be called on the EDT.
      */
     fun runExternalTask(task: String, sessionId: String?, wait: Boolean): String
+
+    /**
+     * Puts text into the composer WITHOUT starting a turn — the design overlay hands over a
+     * finding, and the person decides what to ask about it. Starting a turn for them would take
+     * the decision away and spend a request they did not ask for.
+     */
+    fun putIntoComposer(text: String) {}
   }
 
   private val targets = Collections.synchronizedList(ArrayList<Target>())
@@ -58,6 +65,13 @@ class VibeAgentGateway {
     val session = target.runExternalTask(task, sessionId, wait)
     register(target) // moves it to the end: the next task without a session lands here too
     return session
+  }
+
+  /** Delivers text to the most recently used window's composer; false when there is no window. */
+  fun putIntoComposer(text: String): Boolean {
+    val target = targets.toList().lastOrNull() ?: return false
+    target.putIntoComposer(text)
+    return true
   }
 
   companion object {

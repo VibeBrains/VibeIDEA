@@ -14,6 +14,7 @@ import com.intellij.ui.components.JBTextField
 import com.intellij.ui.content.ContentFactory
 import com.intellij.ui.jcef.JBCefApp
 import com.intellij.ui.jcef.JBCefBrowser
+import com.intellij.ui.jcef.JBCefJSQuery
 import com.intellij.util.ui.JBFont
 import com.intellij.util.ui.JBUI
 import com.vibe.agent.ui.VibeScroll
@@ -42,6 +43,16 @@ class DesignPreviewPanel(private val project: Project) : JPanel(BorderLayout()),
   private val results = JPanel().apply { layout = BoxLayout(this, BoxLayout.Y_AXIS); isOpaque = false }
   private val browser: JBCefBrowser? = if (JBCefApp.isSupported()) JBCefBrowser() else null
 
+  /** Last measured findings — the overlay redraws from them without re-measuring the page. */
+  private var lastFindings: List<Finding> = emptyList()
+  private var overlayVisible = true
+
+  /**
+   * The click channel of the overlay. Created ONCE and kept: a per-draw query would leak a handler
+   * on every measurement, and the page would end up calling a function that no longer exists.
+   */
+  private val pickQuery: JBCefJSQuery? = browser?.let { JBCefJSQuery.create(it as com.intellij.ui.jcef.JBCefBrowserBase) }
+
   init {
     border = JBUI.Borders.empty(6)
     val toolbar = JPanel(FlowLayout(FlowLayout.LEFT, 6, 0)).apply {
@@ -50,6 +61,7 @@ class DesignPreviewPanel(private val project: Project) : JPanel(BorderLayout()),
       add(urlField)
       add(ActionLink("Открыть") { open() })
       add(ActionLink("Замерить") { measure() })
+      add(ActionLink("⚑ разметка") { toggleOverlay() })
     }
     val header = JPanel().apply {
       layout = BoxLayout(this, BoxLayout.Y_AXIS)
@@ -58,6 +70,17 @@ class DesignPreviewPanel(private val project: Project) : JPanel(BorderLayout()),
       add(status.apply { alignmentX = Component.LEFT_ALIGNMENT })
     }
     add(header, BorderLayout.NORTH)
+
+    pickQuery?.let { query ->
+      Disposer.register(this, query)
+      query.addHandler { payload -> onFindingPicked(payload); null }
+    }
+
+    // The turn gate measures through this panel: it owns the browser, and a second one would
+    // measure a different page.
+    val measurer = DesignMeasurementService.Measurer { timeout -> measureForGate(timeout) }
+    DesignMeasurementService.getInstance(project).register(measurer)
+    Disposer.register(this) { DesignMeasurementService.getInstance(project).unregister(measurer) }
 
     val center = JPanel(BorderLayout())
     if (browser != null) {
@@ -135,8 +158,84 @@ class DesignPreviewPanel(private val project: Project) : JPanel(BorderLayout()),
       if (findings.isEmpty()) results.add(hint("Находок нет."))
       else findings.forEach { results.add(row(it)) }
       results.revalidate(); results.repaint()
+      lastFindings = findings
+      if (overlayVisible) drawOverlay()
     }
   }
+
+
+  /**
+   * Blocking measurement for the turn gate: both viewports, then the rules.
+   *
+   * Blocking on purpose — the gate has to decide before the turn ends, and an asynchronous answer
+   * arriving later would be a report about a run that is already over.
+   */
+  private fun measureForGate(timeoutMs: Long): List<Finding>? {
+    val browser = browser ?: return null
+    val script = COLLECTOR ?: return null
+    val latch = java.util.concurrent.CountDownLatch(1)
+    val snapshots = java.util.Collections.synchronizedList(ArrayList<DocumentSnapshot>())
+    DesignBridge.evaluate(browser, script) { text ->
+      text?.let { DesignSnapshotCodec.parse(it, Viewport.DESKTOP) }?.let { snapshots.add(it) }
+      latch.countDown()
+    }
+    if (!latch.await(timeoutMs, java.util.concurrent.TimeUnit.MILLISECONDS)) return null
+    if (snapshots.isEmpty()) return null
+    val accepted = DesignContextFile.load(project.basePath)?.acceptedDrift.orEmpty()
+      .map { DesignReview.Accepted(it.ruleId, it.reason) }
+    val findings = DesignReview.merge(snapshots.map { DesignReview.run(it, accepted) })
+    SwingUtilities.invokeLater {
+      lastFindings = findings
+      status.text = DesignReview.summary(findings)
+      results.removeAll()
+      findings.forEach { results.add(row(it)) }
+      results.revalidate(); results.repaint()
+      if (overlayVisible) drawOverlay()
+    }
+    return findings
+  }
+
+  // --- overlay ---
+
+  private fun toggleOverlay() {
+    overlayVisible = !overlayVisible
+    if (overlayVisible) drawOverlay() else clearOverlay()
+    status.text = if (overlayVisible) "Разметка находок включена" else "Разметка находок убрана"
+  }
+
+  private fun drawOverlay() {
+    val browser = browser ?: return
+    val query = pickQuery ?: return
+    val script = OVERLAY ?: return
+    if (lastFindings.isEmpty()) return
+    // The page gets the findings as DATA and a callback name — never as code it should trust.
+    val payload = DesignOverlay.encode(lastFindings).replace("\\", "\\\\").replace("'", "\\'")
+    val install = "(function(){window['" + DesignOverlay.PICK_CALLBACK + "'] = function(payload){" +
+                  query.inject("payload") + "};(" + script + ")('" + payload + "','" +
+                  DesignOverlay.PICK_CALLBACK + "');})();"
+    browser.cefBrowser.executeJavaScript(install, browser.cefBrowser.url, 0)
+  }
+
+  private fun clearOverlay() {
+    val browser = browser ?: return
+    browser.cefBrowser.executeJavaScript(
+      "(function(){var n=document.getElementById('" + DesignOverlay.CONTAINER_ID + "'); if(n) n.remove();})();",
+      browser.cefBrowser.url, 0,
+    )
+  }
+
+  /** A label on the page was clicked: hand that finding to the composer, do not send anything. */
+  private fun onFindingPicked(payload: String?) {
+    if (payload.isNullOrBlank()) return
+    val rule = Regex("\"rule\":\"([^\"]+)\"").find(payload)?.groupValues?.get(1) ?: return
+    val selector = Regex("\"selector\":\"([^\"]+)\"").find(payload)?.groupValues?.get(1)
+    val finding = lastFindings.firstOrNull { it.rule == rule && (selector == null || it.selector == selector) } ?: return
+    val delivered = com.vibe.agent.http.VibeAgentGateway.getInstance().putIntoComposer(DesignOverlay.asChatNote(finding))
+    SwingUtilities.invokeLater {
+      status.text = if (delivered) "Находка «" + rule + "» отправлена в композер" else "Панель VibeAgent не открыта — некуда отправить"
+    }
+  }
+
 
   private fun hint(text: String) = JBLabel("<html>$text</html>").apply {
     foreground = JBColor.GRAY
@@ -176,9 +275,11 @@ class DesignPreviewPanel(private val project: Project) : JPanel(BorderLayout()),
 
     const val RELAYOUT_PAUSE_MS = 400L
 
-    val COLLECTOR: String? by lazy {
-      DesignPreviewPanel::class.java.getResourceAsStream("/design/collect.js")?.bufferedReader()?.readText()
-    }
+    val COLLECTOR: String? by lazy { resource("/design/collect.js") }
+    val OVERLAY: String? by lazy { resource("/design/overlay.js") }
+
+    private fun resource(path: String): String? =
+      DesignPreviewPanel::class.java.getResourceAsStream(path)?.bufferedReader()?.readText()
   }
 }
 
