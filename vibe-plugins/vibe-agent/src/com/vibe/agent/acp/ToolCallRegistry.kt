@@ -38,6 +38,36 @@ data class ToolCall(
   }
 
   companion object {
+    /**
+     * Kinds we act on. The agent may send anything it likes; hooks, the audit log and the fuses
+     * decide by this value, so it is pinned to a closed list instead of being trusted verbatim.
+     */
+    val KNOWN_KINDS = setOf("read", "edit", "delete", "move", "search", "execute", "think", "fetch", "other")
+
+    /** Longest title we keep: it goes into balloons, the audit log and hook payloads. */
+    const val MAX_TITLE_CHARS = 200
+
+    /** Unknown kind → `other`; the original is not lost, it stays in [ToolCall.toolName]/rawInput. */
+    fun normalizeKind(raw: String?): String? {
+      val value = raw?.trim()?.lowercase() ?: return null
+      return if (value in KNOWN_KINDS) value else "other"
+    }
+
+    /**
+     * A title is a label, not a document: one line, no invisible or bidi characters, capped.
+     * Without this an agent could push newlines into the audit log (forging a record) or hide
+     * text inside a confirmation the user is about to approve.
+     */
+    fun normalizeTitle(raw: String?): String? {
+      val value = raw ?: return null
+      val flat = com.vibe.agent.security.ContextSanitizer.sanitize(value).text
+        .replace('\n', ' ').replace('\r', ' ').replace('\t', ' ')
+        .replace(Regex(" {2,}"), " ")
+        .trim()
+      if (flat.isEmpty()) return null
+      return if (flat.length <= MAX_TITLE_CHARS) flat else flat.take(MAX_TITLE_CHARS - 1) + "…"
+    }
+
     const val STATUS_PENDING = "pending"
     const val STATUS_IN_PROGRESS = "in_progress"
     const val STATUS_COMPLETED = "completed"
@@ -62,10 +92,12 @@ class ToolCallRegistry {
   /** Upsert from a `tool_call` frame; returns the (new or updated) entry. */
   fun onToolCall(update: JsonObject): ToolCall? {
     val id = update["toolCallId"]?.jsonPrimitive?.contentOrNull ?: return null
-    val title = update["title"]?.jsonPrimitive?.contentOrNull
-    val kind = update["kind"]?.jsonPrimitive?.contentOrNull
+    // Everything the agent sends is data, not fact: titles and kinds are normalised before they
+    // reach the audit log, the hooks and the fuses.
+    val title = ToolCall.normalizeTitle(update["title"]?.jsonPrimitive?.contentOrNull)
+    val kind = ToolCall.normalizeKind(update["kind"]?.jsonPrimitive?.contentOrNull)
     val status = update["status"]?.jsonPrimitive?.contentOrNull ?: ToolCall.STATUS_PENDING
-    val name = update["name"]?.jsonPrimitive?.contentOrNull
+    val name = ToolCall.normalizeTitle(update["name"]?.jsonPrimitive?.contentOrNull)
     val rawInput = update["rawInput"] as? JsonObject
     val existing = byId[id]
     val call = existing?.also {
@@ -93,8 +125,8 @@ class ToolCallRegistry {
     val call = byId.getOrPut(id) {
       ToolCall(
         id = id,
-        title = update["title"]?.jsonPrimitive?.contentOrNull ?: "инструмент",
-        kind = update["kind"]?.jsonPrimitive?.contentOrNull,
+        title = ToolCall.normalizeTitle(update["title"]?.jsonPrimitive?.contentOrNull) ?: "инструмент",
+        kind = ToolCall.normalizeKind(update["kind"]?.jsonPrimitive?.contentOrNull),
         status = ToolCall.STATUS_IN_PROGRESS,
         toolName = update["name"]?.jsonPrimitive?.contentOrNull,
         rawInput = update["rawInput"] as? JsonObject,

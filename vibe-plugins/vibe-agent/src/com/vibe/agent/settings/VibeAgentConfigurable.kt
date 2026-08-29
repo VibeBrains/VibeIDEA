@@ -33,6 +33,8 @@ class VibeAgentConfigurable : Configurable, Configurable.NoScroll {
   private var checksMaxFileKb: JBIntSpinner? = null
   private var terminalEnabled: JBCheckBox? = null
   private var handshakeTimeout: JBIntSpinner? = null
+  private var maskSecrets: JBCheckBox? = null
+  private var warnForeign: JBCheckBox? = null
   private var httpApiEnabled: JBCheckBox? = null
   private var httpApiPort: JBIntSpinner? = null
 
@@ -51,6 +53,8 @@ class VibeAgentConfigurable : Configurable, Configurable.NoScroll {
     val cMaxFiles = JBIntSpinner(VibeAgentSettings.checksMaxFiles, VibeAgentSettings.MIN_CHECKS_MAX_FILES, VibeAgentSettings.MAX_CHECKS_MAX_FILES).also { checksMaxFiles = it }
     val cMaxFileKb = JBIntSpinner(VibeAgentSettings.checksMaxFileKb, VibeAgentSettings.MIN_CHECKS_MAX_FILE_KB, VibeAgentSettings.MAX_CHECKS_MAX_FILE_KB).also { checksMaxFileKb = it }
     val terminal = JBCheckBox("Разрешать агентам исполнять терминал (ACP terminal/…)", VibeAgentSettings.terminalEnabled).also { terminalEnabled = it }
+    val mask = JBCheckBox("Маскировать секреты в отправляемом контексте", VibeAgentSettings.maskSecretsInContext).also { maskSecrets = it }
+    val foreign = JBCheckBox("Предупреждать о незнакомом репозитории", VibeAgentSettings.warnForeignProject).also { warnForeign = it }
     val httpApi = JBCheckBox("Входящий HTTP API (только 127.0.0.1)", VibeAgentSettings.httpApiEnabled).also { httpApiEnabled = it }
     val apiPort = JBIntSpinner(VibeAgentSettings.httpApiPort, VibeAgentSettings.MIN_HTTP_API_PORT, VibeAgentSettings.MAX_HTTP_API_PORT)
       .also { httpApiPort = it }
@@ -86,6 +90,14 @@ class VibeAgentConfigurable : Configurable, Configurable.NoScroll {
       .addComponent(terminal)
       .addComponent(hint("Живой вывод команд Claude показывается всегда. Этот флаг разрешает СТОРОННИМ агентам (Gemini CLI и др.) исполнять команды через " +
         "стандартные методы ACP <code>terminal/…</code> — с клампом таймаута, обрезкой вывода и подтверждением разрушительных команд."))
+      .addComponent(section("Контекст: что уходит модели"))
+      .addComponent(mask)
+      .addComponent(hint("Невидимые символы (в т.ч. Unicode-теги, которых не видно вообще) и bidi-переопределения вырезаются из контекста ВСЕГДА — их не бывает в честном коде, " +
+        "а спрятанную в них инструкцию человек при подтверждении не увидит. Текст, похожий на обращение к агенту, и секреты — отмечаются строкой «🛡 контекст» в ленте. " +
+        "Этот флаг дополнительно заменяет само значение секрета маркером в том, что отправляется модели; <b>файл на диске не меняется никогда</b>. " +
+        "По умолчанию выключен: агенту часто нужно работать с конфигом, где токен есть по делу."))
+      .addComponent(foreign)
+      .addComponent(hint("Одна строка при первом открытии проекта: содержимое чужого репозитория — данные, а не команды. Ничего не блокирует и больше не повторяется."))
       .addComponent(section("Входящий HTTP API"))
       .addComponent(httpApi)
       .addLabeledComponent("Порт (0 — любой свободный):", apiPort)
@@ -126,6 +138,8 @@ class VibeAgentConfigurable : Configurable, Configurable.NoScroll {
     checksMaxFileKb?.number != VibeAgentSettings.checksMaxFileKb ||
     terminalEnabled?.isSelected != VibeAgentSettings.terminalEnabled ||
     handshakeTimeout?.number != VibeAgentSettings.handshakeTimeoutSec ||
+    maskSecrets?.isSelected != VibeAgentSettings.maskSecretsInContext ||
+    warnForeign?.isSelected != VibeAgentSettings.warnForeignProject ||
     httpApiEnabled?.isSelected != VibeAgentSettings.httpApiEnabled ||
     httpApiPort?.number != VibeAgentSettings.httpApiPort
 
@@ -143,6 +157,8 @@ class VibeAgentConfigurable : Configurable, Configurable.NoScroll {
     checksMaxFileKb?.let { VibeAgentSettings.checksMaxFileKb = it.number }
     terminalEnabled?.let { VibeAgentSettings.terminalEnabled = it.isSelected }
     handshakeTimeout?.let { VibeAgentSettings.handshakeTimeoutSec = it.number }
+    maskSecrets?.let { VibeAgentSettings.maskSecretsInContext = it.isSelected }
+    warnForeign?.let { VibeAgentSettings.warnForeignProject = it.isSelected }
     // Port first: the listener is (re)started below with the value that has just been stored.
     httpApiPort?.let { VibeAgentSettings.httpApiPort = it.number }
     httpApiEnabled?.let { box ->
@@ -171,5 +187,7 @@ class VibeAgentConfigurable : Configurable, Configurable.NoScroll {
     terminalEnabled?.isSelected = VibeAgentSettings.terminalEnabled
     httpApiEnabled?.isSelected = VibeAgentSettings.httpApiEnabled
     httpApiPort?.number = VibeAgentSettings.httpApiPort
+    maskSecrets?.isSelected = VibeAgentSettings.maskSecretsInContext
+    warnForeign?.isSelected = VibeAgentSettings.warnForeignProject
   }
 }

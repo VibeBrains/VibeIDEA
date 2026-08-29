@@ -146,7 +146,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
   @Volatile private var staticModelIds: Map<String, Set<String>> = emptyMap()
   private val llmClient = LlmClient()
   private val llmCancel = java.util.concurrent.atomic.AtomicBoolean(false)
-  private val fileOps = IdeFileOps(project)
+  private val fileOps = IdeFileOps(project) { path, findings -> reportContextFindings(path, findings) }
   @Volatile private var client: AcpClient? = null
   @Volatile private var clientConfig: AgentServerConfig? = null
   /** Guards check-then-act on [client]: ensureClient (pooled), onProcessExit (exit thread), dispose (EDT). */
@@ -257,6 +257,10 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
         providers = applyCatalogCache(loadedProviders, catalogCache)
         systemLine("Vibe Agent готов. Агенты: ${loadedAgents.joinToString { it.name }}; провайдеры: ${loadedProviders.joinToString { it.name }.ifEmpty { "нет" }}.")
         guardFindings.forEach { f -> systemLine("[guard:${f.severity}] ${f.message}") }
+        // A repository seen for the first time gets one line about what its files can and cannot do.
+        if (com.vibe.agent.security.ForeignProjectNotice.noticeOnce(project.basePath)) {
+          systemLine("🛡 " + com.vibe.agent.security.ForeignProjectNotice.TEXT)
+        }
         if (hooksDisabled) systemLine("[хуки] в проекте есть .vibe/hooks.json, но хуки выключены — включить: Settings → Tools → VibeIDEA → Агент")
         rebuildTargets()
         fetchProviderModels()
@@ -457,6 +461,26 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
 
   // --- turns ---
 
+  // --- context guard ---
+
+  /**
+   * One line per file, and only for what a person can act on. The guard runs on every file that
+   * enters the model's context — the noisy version of this would print on every read.
+   */
+  private fun reportContextFindings(path: String, findings: List<com.vibe.agent.security.ContextSanitizer.Finding>) {
+    if (findings.isEmpty()) return
+    val name = path.substringAfterLast('/')
+    val parts = findings.map { finding ->
+      when (finding.kind) {
+        com.vibe.agent.security.ContextSanitizer.Kind.INVISIBLE -> "вырезано невидимых символов: ${finding.count}"
+        com.vibe.agent.security.ContextSanitizer.Kind.BIDI -> "вырезано bidi-переопределений: ${finding.count}"
+        com.vibe.agent.security.ContextSanitizer.Kind.INSTRUCTION -> "внутри есть текст, похожий на инструкцию агенту — прочтите файл глазами"
+        com.vibe.agent.security.ContextSanitizer.Kind.SECRET -> "похоже на секрет (${finding.detail})"
+      }
+    }
+    systemLine("🛡 контекст $name: " + parts.joinToString("; "))
+  }
+
   // --- external tasks (incoming HTTP API) ---
 
   /** Latches for callers that asked to wait for the end of a turn they started over HTTP. */
@@ -559,7 +583,9 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
           systemLine("[контекст] не удалось разрешить ссылки: ${bad.joinToString(", ")} — проверьте путь или имя символа")
         }
         val refs = (message.context + resolution?.refs.orEmpty()).distinctBy { it.key }
-        val loaded = ReadAction.nonBlocking(Callable { ContextSerializer.load(project, refs) }).expireWith(this).executeSynchronously()
+        val loaded = ReadAction.nonBlocking(Callable { ContextSerializer.load(project, refs, VibeAgentSettings.maskSecretsInContext) })
+          .expireWith(this).executeSynchronously()
+        loaded.forEach { reportContextFindings(it.relPath, it.findings) }
         if (refs.isNotEmpty()) systemLine("[контекст] приложено: ${refs.joinToString { it.label }}")
         // The wire text (with inlined context) becomes known only now — fill it into the stored record.
         if (t is ChatTarget.Model) {

@@ -23,7 +23,11 @@ import java.nio.file.Path
  * writes go through WriteCommandAction when the file is open, plain NIO + async
  * VFS refresh otherwise — external writes must never leave VFS stale (VibeIDE lesson).
  */
-internal class IdeFileOps(private val project: Project) {
+internal class IdeFileOps(
+  private val project: Project,
+  /** Reports what the context guard found in a file the agent read; the panel turns it into a line. */
+  private val onFinding: (String, List<com.vibe.agent.security.ContextSanitizer.Finding>) -> Unit = { _, _ -> },
+) {
 
   fun readTextFile(params: JsonObject): JsonElement {
     val path = params.getValue("path").jsonPrimitive.content
@@ -44,7 +48,11 @@ internal class IdeFileOps(private val project: Project) {
       if (limit != null) lines = lines.take(limit)
       content = lines.joinToString("\n")
     }
-    return buildJsonObject { put("content", content) }
+    // The agent is about to read someone else's file: hidden characters never reach it, and what
+    // the guard found is reported to the user through [onFinding] (the panel prints one line).
+    val clean = com.vibe.agent.security.ContextSanitizer.sanitize(content, maskSecrets = false)
+    if (clean.findings.isNotEmpty()) onFinding(path, clean.findings)
+    return buildJsonObject { put("content", clean.text) }
   }
 
   fun writeTextFile(params: JsonObject): JsonElement {

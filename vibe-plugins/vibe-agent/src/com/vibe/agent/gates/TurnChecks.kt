@@ -17,18 +17,8 @@ object TurnChecks {
   /** Scan limits mirror VibeIDE so a huge turn cannot stall the gate. */
   const val MAX_FILES_SCANNED = 40
 
-  /** Secret shapes that must never be committed. Anchored, conservative — false positives cost trust. */
-  private val SECRET_PATTERNS = listOf(
-    "приватный ключ" to Regex("-----BEGIN [A-Z ]*PRIVATE KEY-----"),
-    "AWS access key" to Regex("\\bAKIA[0-9A-Z]{16}\\b"),
-    "ключ Anthropic" to Regex("\\bsk-ant-[A-Za-z0-9_-]{20,}"),
-    // Covers legacy sk-, and modern sk-proj-/sk-svcacct-/sk-admin- (hyphens in the body); no trailing \b (can't follow '-').
-    "ключ OpenAI" to Regex("\\bsk-[A-Za-z0-9_-]{20,}"),
-    // ghp_/gho_/ghu_/ghs_/ghr_ personal, OAuth, user, server and refresh tokens.
-    "GitHub token" to Regex("\\bgh[pousr]_[A-Za-z0-9]{36,}\\b"),
-    "Slack token" to Regex("\\bxox[baprs]-[A-Za-z0-9-]{10,}"),
-    "Google API key" to Regex("\\bAIza[0-9A-Za-z_-]{35}\\b"),
-  )
+  /** Secret shapes live in [com.vibe.agent.security.SecretPatterns] — the same list guards the
+   *  inbound direction (what we send to a model), and two copies would drift apart. */
 
   /** Path fragments never safe to write from an agent turn. */
   private val PROTECTED_FRAGMENTS = listOf("/.git/", "/.ssh/", "/id_rsa", "/id_ed25519")
@@ -42,11 +32,8 @@ object TurnChecks {
   fun scanSecretLeak(files: List<Pair<String, String>>, maxFiles: Int = MAX_FILES_SCANNED): List<TurnFinding> {
     val findings = ArrayList<TurnFinding>()
     for ((path, content) in files.take(maxFiles)) {
-      for ((label, re) in SECRET_PATTERNS) {
-        if (re.containsMatchIn(content)) {
-          findings.add(TurnFinding(TurnCheckId.NO_SECRET_LEAK, path, label))
-          break // one finding per file is enough to bounce
-        }
+      com.vibe.agent.security.SecretPatterns.firstMatch(content)?.let { pattern ->
+        findings.add(TurnFinding(TurnCheckId.NO_SECRET_LEAK, path, pattern.label))
       }
     }
     return findings

@@ -52,6 +52,12 @@ object VibeAgentSettings {
   const val DEFAULT_TERMINAL_ENABLED = true
   /** Fallback output cap when an agent's terminal/create omits outputByteLimit (never unbounded). */
   const val DEFAULT_TERMINAL_OUTPUT_BYTE_LIMIT = 1_048_576L
+  // --- context guard (what goes INTO the model) ---
+  /** Masking is off by default: the agent often needs to work with a config that has a token in it. */
+  const val DEFAULT_MASK_SECRETS_IN_CONTEXT = false
+  /** Warn once per project that was never opened here before — a foreign repo can address the agent. */
+  const val DEFAULT_WARN_FOREIGN_PROJECT = true
+
   // --- incoming HTTP API (VibeIDE contract: loopback only, off by default) ---
   const val DEFAULT_HTTP_API_ENABLED = false
   /** 0 = any free port; the chosen one is reported in the settings page and the panel log. */
@@ -79,6 +85,9 @@ object VibeAgentSettings {
   private const val KEY_CHECKS_MAX_FILE_KB = "vibe.agent.turnChecks.maxFileKb"
   private const val KEY_TERMINAL_ENABLED = "vibe.agent.terminal.enabled"
   private const val KEY_HANDSHAKE_TIMEOUT_SEC = "vibe.agent.handshakeTimeoutSec"
+  private const val KEY_MASK_SECRETS = "vibe.agent.context.maskSecrets"
+  private const val KEY_WARN_FOREIGN = "vibe.agent.context.warnForeignProject"
+  private const val KEY_KNOWN_PROJECTS = "vibe.agent.context.knownProjects"
   private const val KEY_HTTP_API_ENABLED = "vibe.agent.httpApi.enabled"
   private const val KEY_HTTP_API_PORT = "vibe.agent.httpApi.port"
 
@@ -147,4 +156,20 @@ object VibeAgentSettings {
   var httpApiPort: Int
     get() = props.getInt(KEY_HTTP_API_PORT, DEFAULT_HTTP_API_PORT).coerceIn(MIN_HTTP_API_PORT, MAX_HTTP_API_PORT)
     set(value) = props.setValue(KEY_HTTP_API_PORT, value.coerceIn(MIN_HTTP_API_PORT, MAX_HTTP_API_PORT), DEFAULT_HTTP_API_PORT)
+
+  var maskSecretsInContext: Boolean
+    get() = props.getBoolean(KEY_MASK_SECRETS, DEFAULT_MASK_SECRETS_IN_CONTEXT)
+    set(value) = props.setValue(KEY_MASK_SECRETS, value, DEFAULT_MASK_SECRETS_IN_CONTEXT)
+
+  var warnForeignProject: Boolean
+    get() = props.getBoolean(KEY_WARN_FOREIGN, DEFAULT_WARN_FOREIGN_PROJECT)
+    set(value) = props.setValue(KEY_WARN_FOREIGN, value, DEFAULT_WARN_FOREIGN_PROJECT)
+
+  /**
+   * Projects the user has already worked in. Not a security boundary — a memory: the warning about
+   * a repository seen for the first time must appear once, not on every launch.
+   */
+  var knownProjects: Set<String>
+    get() = props.getValue(KEY_KNOWN_PROJECTS).orEmpty().split('\n').filter { it.isNotBlank() }.toSet()
+    set(value) = props.setValue(KEY_KNOWN_PROJECTS, value.joinToString("\n"))
 }
