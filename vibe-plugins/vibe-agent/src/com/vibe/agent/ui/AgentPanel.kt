@@ -146,6 +146,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
   @Volatile private var staticModelIds: Map<String, Set<String>> = emptyMap()
   private val llmClient = LlmClient()
   private val llmCancel = java.util.concurrent.atomic.AtomicBoolean(false)
+  private val runs = com.vibe.agent.runs.VibeAgentRunService.getInstance(project)
   private val fileOps = IdeFileOps(project) { path, findings -> reportContextFindings(path, findings) }
   @Volatile private var client: AcpClient? = null
   @Volatile private var clientConfig: AgentServerConfig? = null
@@ -520,6 +521,9 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
   /** Latches for callers that asked to wait for the end of a turn they started over HTTP. */
   private val externalWaiters = java.util.concurrent.ConcurrentHashMap<String, java.util.concurrent.CountDownLatch>()
 
+  /** Thread id → ledger run id, so the end of a turn can close the record that started it. */
+  private val externalRuns = java.util.concurrent.ConcurrentHashMap<String, String>()
+
   override val projectName: String get() = project.name
 
   override fun ownsSession(sessionId: String): Boolean =
@@ -554,11 +558,19 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
       }
     }
     val threadId = started.get(SUBMIT_TIMEOUT_SEC, java.util.concurrent.TimeUnit.SECONDS)
+    val runId = runs.started(
+      com.vibe.agent.runs.AgentRunLedger.Source.HTTP_API,
+      goal = task,
+      target = target?.id,
+    )
+    // null when the ledger is off — then there is simply nothing to close later.
+    runId?.let { externalRuns[threadId] = it }
     if (!wait) return threadId
     val latch = externalWaiters[threadId] ?: return threadId
     val timeout = VibeAgentSettings.DEFAULT_HTTP_API_WAIT_TIMEOUT_SEC.toLong()
     if (!latch.await(timeout, java.util.concurrent.TimeUnit.SECONDS)) {
       externalWaiters.remove(threadId)
+      runs.finished(externalRuns.remove(threadId), com.vibe.agent.runs.AgentRunLedger.Status.FAILED, "не завершился за $timeout с")
       throw IllegalStateException("ход не завершился за $timeout с")
     }
     return threadId
@@ -654,6 +666,9 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
       history.endTurn(it)
       // A caller blocked on `wait: true` must be released on ANY ending — done, cancelled, failed.
       externalWaiters.remove(it)?.countDown()
+      externalRuns.remove(it)?.let { runId ->
+        runs.finished(runId, com.vibe.agent.runs.AgentRunLedger.Status.COMPLETED, "ход завершён")
+      }
     }
     status.set(if (breakers.isBlocking()) VibeAgentStatusService.State.BLOCKED else VibeAgentStatusService.State.IDLE)
     if (disposed) return
@@ -1249,6 +1264,14 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
       val artifacts = LinkedHashSet<String>()
       var lastSummary: String? = null
       var failed = false
+      // Unattended work goes into the ledger: a pipeline runs for minutes with nobody watching,
+      // and if the window dies mid-way the only trace left is this record.
+      val runId = runs.started(
+        com.vibe.agent.runs.AgentRunLedger.Source.PIPELINE,
+        goal = "Пайплайн «${pipeline.name}»",
+        target = "acp/${agent.name}",
+        maxSteps = pipeline.steps.size,
+      )
       try {
         pipeline.steps.forEachIndexed { i, step ->
           val header = "— Шаг ${i + 1}/${pipeline.steps.size} [${step.role}]"
@@ -1282,6 +1305,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
             val summaryText = stepBuffer?.toString().orEmpty()
             lastSummary = summaryText.takeLast(2000).ifBlank { "(шаг не оставил текста)" }
             artifacts.addAll(changedPaths)
+            runs.progress(runId, steps = i + 1, changedFiles = artifacts.size)
             systemLine("$header завершён; изменённых файлов: ${changedPaths.size}")
           }
           catch (e: Exception) {
@@ -1293,6 +1317,11 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
           }
         }
         systemLine("═══ Пайплайн «${pipeline.name}» ${if (failed) "остановлен с провалом" else "завершён"} ═══")
+        runs.finished(
+          runId,
+          if (failed) com.vibe.agent.runs.AgentRunLedger.Status.FAILED else com.vibe.agent.runs.AgentRunLedger.Status.COMPLETED,
+          if (failed) "шаг провалился — пайплайн остановлен" else "пройден целиком: ${pipeline.steps.size} шагов",
+        )
       }
       finally {
         finishTurn()

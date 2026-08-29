@@ -52,6 +52,15 @@ object VibeAgentSettings {
   const val DEFAULT_TERMINAL_ENABLED = true
   /** Fallback output cap when an agent's terminal/create omits outputByteLimit (never unbounded). */
   const val DEFAULT_TERMINAL_OUTPUT_BYTE_LIMIT = 1_048_576L
+  // --- run ledger (.vibe/agent-runs.jsonl) ---
+  const val DEFAULT_RUN_LEDGER_ENABLED = true
+  const val DEFAULT_RUN_LEDGER_MAX_RECORDS = 500
+  const val MIN_RUN_LEDGER_MAX_RECORDS = 50
+  const val MAX_RUN_LEDGER_MAX_RECORDS = 10_000
+  const val DEFAULT_RUN_LEDGER_RETENTION_DAYS = 30
+  const val MIN_RUN_LEDGER_RETENTION_DAYS = 1
+  const val MAX_RUN_LEDGER_RETENTION_DAYS = 365
+
   // --- context guard (what goes INTO the model) ---
   /** Masking is off by default: the agent often needs to work with a config that has a token in it. */
   const val DEFAULT_MASK_SECRETS_IN_CONTEXT = false
@@ -85,6 +94,9 @@ object VibeAgentSettings {
   private const val KEY_CHECKS_MAX_FILE_KB = "vibe.agent.turnChecks.maxFileKb"
   private const val KEY_TERMINAL_ENABLED = "vibe.agent.terminal.enabled"
   private const val KEY_HANDSHAKE_TIMEOUT_SEC = "vibe.agent.handshakeTimeoutSec"
+  private const val KEY_RUN_LEDGER_ENABLED = "vibe.agent.runs.enabled"
+  private const val KEY_RUN_LEDGER_MAX = "vibe.agent.runs.maxRecords"
+  private const val KEY_RUN_LEDGER_DAYS = "vibe.agent.runs.retentionDays"
   private const val KEY_MASK_SECRETS = "vibe.agent.context.maskSecrets"
   private const val KEY_WARN_FOREIGN = "vibe.agent.context.warnForeignProject"
   private const val KEY_KNOWN_PROJECTS = "vibe.agent.context.knownProjects"
@@ -172,4 +184,18 @@ object VibeAgentSettings {
   var knownProjects: Set<String>
     get() = props.getValue(KEY_KNOWN_PROJECTS).orEmpty().split('\n').filter { it.isNotBlank() }.toSet()
     set(value) = props.setValue(KEY_KNOWN_PROJECTS, value.joinToString("\n"))
+
+  var runLedgerEnabled: Boolean
+    get() = props.getBoolean(KEY_RUN_LEDGER_ENABLED, DEFAULT_RUN_LEDGER_ENABLED)
+    set(value) = props.setValue(KEY_RUN_LEDGER_ENABLED, value, DEFAULT_RUN_LEDGER_ENABLED)
+
+  var runLedgerMaxRecords: Int
+    get() = props.getInt(KEY_RUN_LEDGER_MAX, DEFAULT_RUN_LEDGER_MAX_RECORDS)
+      .coerceIn(MIN_RUN_LEDGER_MAX_RECORDS, MAX_RUN_LEDGER_MAX_RECORDS)
+    set(value) = props.setValue(KEY_RUN_LEDGER_MAX, value.coerceIn(MIN_RUN_LEDGER_MAX_RECORDS, MAX_RUN_LEDGER_MAX_RECORDS), DEFAULT_RUN_LEDGER_MAX_RECORDS)
+
+  var runLedgerRetentionDays: Int
+    get() = props.getInt(KEY_RUN_LEDGER_DAYS, DEFAULT_RUN_LEDGER_RETENTION_DAYS)
+      .coerceIn(MIN_RUN_LEDGER_RETENTION_DAYS, MAX_RUN_LEDGER_RETENTION_DAYS)
+    set(value) = props.setValue(KEY_RUN_LEDGER_DAYS, value.coerceIn(MIN_RUN_LEDGER_RETENTION_DAYS, MAX_RUN_LEDGER_RETENTION_DAYS), DEFAULT_RUN_LEDGER_RETENTION_DAYS)
 }
