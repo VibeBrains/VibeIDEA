@@ -33,7 +33,10 @@ fi
 offenders=""
 while IFS= read -r file; do
   [[ "$file" == *"/ui/VibeScroll.kt" ]] && continue
-  grep -qE '(^|[^.[:alnum:]])(JBScrollPane|JScrollPane)\(' "$file" || continue
+  # Квалифицированный вызов (javax.swing.JScrollPane(...)) обязан ловиться так же, как короткий:
+  # запрет на точку перед именем закрывал ровно тот способ обойти гейт, который пишется, когда
+  # импорт не хочется добавлять. Отсекаем только идентификатор вплотную (setJScrollPane).
+  grep -qE '(^|[^A-Za-z0-9_])((javax\.swing\.|com\.intellij\.ui\.components\.)?(JBScrollPane|JScrollPane))\(' "$file" || continue
   grep -qE 'VibeScroll\.(pane|thin)|JBThinOverlappingScrollBar' "$file" && continue
   offenders+="  $file"$'\n'
 done < <(find "$root/vibe-plugins" -name '*.kt' -not -path '*/testSrc/*')
