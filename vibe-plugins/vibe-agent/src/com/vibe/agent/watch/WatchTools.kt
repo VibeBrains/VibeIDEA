@@ -40,11 +40,11 @@ object WatchTools {
       if (ffmpeg == null) add("ffmpeg")
     }
     if (missing.isNotEmpty()) {
-      return Result.failure(IllegalStateException(
-        "не найдено: ${missing.joinToString(", ")}. Установите: brew install ${missing.joinToString(" ")} " +
-        "(на Linux — пакетный менеджер дистрибутива). Бинари не бандлятся: это GPL-сборки, " +
-        "которые пришлось бы подписывать и обновлять вместе с IDE."
-      ))
+      return Result.failure(IllegalStateException(com.vibe.agent.i18n.VibeI18n.t(
+        "watch.toolsMissing",
+        "tools" to missing.joinToString(", "),
+        "install" to missing.joinToString(" "),
+      )))
     }
     return Result.success(Tools(ytDlp!!, ffmpeg!!, ffprobe ?: ffmpeg))
   }

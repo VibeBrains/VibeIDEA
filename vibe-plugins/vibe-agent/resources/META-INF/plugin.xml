@@ -28,6 +28,7 @@
          зависеть от плагина, поэтому мостом служит Registry, а ключ объявляем здесь. -->
     <registryKey key="vibe.scrollbar.thickness" defaultValue="4" restartRequired="false"
                  description="Толщина скроллбаров VibeIDEA в пикселях (0 — штатные скроллы платформы)"/>
+    <postStartupActivity implementation="com.vibe.agent.i18n.VibeLangSeeder"/>
     <postStartupActivity implementation="com.vibe.agent.history.VibeHistoryWarmUp"/>
     <postStartupActivity implementation="com.vibe.agent.settings.VibePromoDefaults"/>
     <postStartupActivity implementation="com.vibe.agent.defaults.VibeDefaultsSeeder"/>

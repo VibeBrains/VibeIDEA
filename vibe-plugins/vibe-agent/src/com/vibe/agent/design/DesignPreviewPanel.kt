@@ -17,6 +17,7 @@ import com.intellij.ui.jcef.JBCefBrowser
 import com.intellij.ui.jcef.JBCefJSQuery
 import com.intellij.util.ui.JBFont
 import com.intellij.util.ui.JBUI
+import com.vibe.agent.i18n.VibeI18n.t
 import com.vibe.agent.ui.VibeScroll
 import java.awt.BorderLayout
 import java.awt.Component
@@ -39,7 +40,7 @@ import javax.swing.SwingUtilities
  */
 class DesignPreviewPanel(private val project: Project) : JPanel(BorderLayout()), Disposable {
   private val urlField = JBTextField("http://localhost:3000").apply { columns = 30 }
-  private val status = JBLabel("Откройте страницу и нажмите «Замерить»").apply { foreground = JBColor.GRAY }
+  private val status = JBLabel(t("design.status.idle")).apply { foreground = JBColor.GRAY }
   private val results = JPanel().apply { layout = BoxLayout(this, BoxLayout.Y_AXIS); isOpaque = false }
   private val browser: JBCefBrowser? = if (JBCefApp.isSupported()) JBCefBrowser() else null
 
@@ -57,11 +58,11 @@ class DesignPreviewPanel(private val project: Project) : JPanel(BorderLayout()),
     border = JBUI.Borders.empty(6)
     val toolbar = JPanel(FlowLayout(FlowLayout.LEFT, 6, 0)).apply {
       isOpaque = false
-      add(JBLabel("Адрес:"))
+      add(JBLabel(t("design.label.address")))
       add(urlField)
-      add(ActionLink("Открыть") { open() })
-      add(ActionLink("Замерить") { measure() })
-      add(ActionLink("⚑ разметка") { toggleOverlay() })
+      add(ActionLink(t("design.action.open")) { open() })
+      add(ActionLink(t("design.action.measure")) { measure() })
+      add(ActionLink(t("design.action.overlay")) { toggleOverlay() })
     }
     val header = JPanel().apply {
       layout = BoxLayout(this, BoxLayout.Y_AXIS)
@@ -88,7 +89,7 @@ class DesignPreviewPanel(private val project: Project) : JPanel(BorderLayout()),
       center.add(browser.component, BorderLayout.CENTER)
     }
     else {
-      center.add(JBLabel("<html>Встроенный браузер (JCEF) недоступен в этой сборке — замерить страницу нечем.</html>")
+      center.add(JBLabel("<html>" + t("design.jcefMissing") + "</html>")
                    .apply { foreground = JBColor.GRAY }, BorderLayout.CENTER)
     }
     center.add(VibeScroll.pane(results).apply { preferredSize = Dimension(360, 0) }, BorderLayout.EAST)
@@ -98,7 +99,7 @@ class DesignPreviewPanel(private val project: Project) : JPanel(BorderLayout()),
   private fun open() {
     val browser = browser ?: return
     val url = urlField.text.trim().ifEmpty { return }
-    status.text = "Открываю $url…"
+    status.text = t("design.status.opening", "url" to url)
     browser.loadURL(url)
   }
 
@@ -108,14 +109,14 @@ class DesignPreviewPanel(private val project: Project) : JPanel(BorderLayout()),
    */
   private fun measure() {
     val browser = browser ?: return
-    status.text = "Замер (десктоп)…"
+    status.text = t("design.status.measuringDesktop")
     collect(browser, Viewport.DESKTOP) { desktop ->
       val originalWidth = browser.component.width
       SwingUtilities.invokeLater {
         browser.component.preferredSize = Dimension(MOBILE_WIDTH_PX, browser.component.height)
         browser.component.size = Dimension(MOBILE_WIDTH_PX, browser.component.height)
         browser.component.revalidate()
-        status.text = "Замер (телефон, ${MOBILE_WIDTH_PX}px)…"
+        status.text = t("design.status.measuringMobile", "width" to MOBILE_WIDTH_PX)
       }
       // Give the page a moment to re-layout at the new width before reading it back.
       ApplicationManager.getApplication().executeOnPooledThread {
@@ -134,7 +135,7 @@ class DesignPreviewPanel(private val project: Project) : JPanel(BorderLayout()),
 
   private fun collect(browser: JBCefBrowser, viewport: Viewport, onReady: (DocumentSnapshot?) -> Unit) {
     val script = COLLECTOR ?: run {
-      SwingUtilities.invokeLater { status.text = "Сборщик снимка не найден в ресурсах плагина" }
+      SwingUtilities.invokeLater { status.text = t("design.status.collectorMissing") }
       return
     }
     DesignBridge.evaluate(browser, script) { text ->
@@ -144,7 +145,7 @@ class DesignPreviewPanel(private val project: Project) : JPanel(BorderLayout()),
 
   private fun report(snapshots: List<DocumentSnapshot>) {
     if (snapshots.isEmpty()) {
-      SwingUtilities.invokeLater { status.text = "Страница не ответила: замер не состоялся" }
+      SwingUtilities.invokeLater { status.text = t("design.status.noAnswer") }
       return
     }
     // Accepted drifts come from the project's own design context — the same file the agent reads.
@@ -155,7 +156,7 @@ class DesignPreviewPanel(private val project: Project) : JPanel(BorderLayout()),
     SwingUtilities.invokeLater {
       status.text = DesignReview.summary(findings)
       results.removeAll()
-      if (findings.isEmpty()) results.add(hint("Находок нет."))
+      if (findings.isEmpty()) results.add(hint(t("design.noFindings")))
       else findings.forEach { results.add(row(it)) }
       results.revalidate(); results.repaint()
       lastFindings = findings
@@ -200,7 +201,7 @@ class DesignPreviewPanel(private val project: Project) : JPanel(BorderLayout()),
   private fun toggleOverlay() {
     overlayVisible = !overlayVisible
     if (overlayVisible) drawOverlay() else clearOverlay()
-    status.text = if (overlayVisible) "Разметка находок включена" else "Разметка находок убрана"
+    status.text = if (overlayVisible) t("design.status.overlayOn") else t("design.status.overlayOff")
   }
 
   private fun drawOverlay() {
@@ -232,7 +233,7 @@ class DesignPreviewPanel(private val project: Project) : JPanel(BorderLayout()),
     val finding = lastFindings.firstOrNull { it.rule == rule && (selector == null || it.selector == selector) } ?: return
     val delivered = com.vibe.agent.http.VibeAgentGateway.getInstance().putIntoComposer(DesignOverlay.asChatNote(finding))
     SwingUtilities.invokeLater {
-      status.text = if (delivered) "Находка «" + rule + "» отправлена в композер" else "Панель VibeAgent не открыта — некуда отправить"
+      status.text = if (delivered) t("design.status.picked", "rule" to rule) else t("design.status.noPanel")
     }
   }
 
@@ -250,9 +251,9 @@ class DesignPreviewPanel(private val project: Project) : JPanel(BorderLayout()),
     alignmentX = Component.LEFT_ALIGNMENT
     border = JBUI.Borders.empty(4, 2)
     val prefix = when {
-      finding.acceptedReason != null -> "принято"
-      finding.ruleClass == RuleClass.FLOOR -> "пол"
-      else -> "стиль"
+      finding.acceptedReason != null -> t("design.class.accepted")
+      finding.ruleClass == RuleClass.FLOOR -> t("design.class.floor")
+      else -> t("design.class.style")
     }
     add(JBLabel("[$prefix] ${finding.message}").apply {
       alignmentX = Component.LEFT_ALIGNMENT
@@ -263,7 +264,7 @@ class DesignPreviewPanel(private val project: Project) : JPanel(BorderLayout()),
     // an opinion, one that carries its number can be checked.
     add(hint("${finding.selector} · ${finding.evidence}" +
              (finding.acceptedReason?.let { " · причина: $it" } ?: "") +
-             " · " + if (finding.viewport == Viewport.MOBILE) "телефон" else "десктоп"))
+             " · " + if (finding.viewport == Viewport.MOBILE) t("design.viewport.mobile") else t("design.viewport.desktop")))
     add(hint(finding.why))
   }
 

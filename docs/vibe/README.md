@@ -8,6 +8,7 @@
 - [roadmap.md](roadmap.md) — план по фазам; единственный источник правды «что сделано».
 - [functional.md](functional.md) — версионно-независимый каталог возможностей продукта.
 - [decisions.md](decisions.md) — журнал решений (включая ночные).
+- [manuals/langFileSpec.md](manuals/langFileSpec.md) — спека языкового файла `~/.vibe/lang/<код>.json`: формат, подстановки, поведение при запуске (самодостаточная, для LLM).
 - [manuals/codeGraphSpec.md](manuals/codeGraphSpec.md) — спека графа проекта `.vibe/codeGraph.json`: узлы, связи с происхождением, инкрементальность, примеры jq (для агентов и парсеров).
 - [manuals/agentRunsSpec.md](manuals/agentRunsSpec.md) — спека журнала прогонов `.vibe/agent-runs.jsonl`: формат, правило сиротства, усечение (для парсеров/дашбордов).
 - [manuals/skillsSpec.md](manuals/skillsSpec.md) — спека Agent Skills `.vibe/skills/<id>/SKILL.md`: формат, шесть ключей шапки, валидатор, пример (самодостаточная, для LLM).

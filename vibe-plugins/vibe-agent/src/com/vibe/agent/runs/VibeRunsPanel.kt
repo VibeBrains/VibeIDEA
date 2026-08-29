@@ -13,6 +13,7 @@ import com.intellij.ui.components.JBLabel
 import com.intellij.ui.content.ContentFactory
 import com.intellij.util.ui.JBFont
 import com.intellij.util.ui.JBUI
+import com.vibe.agent.i18n.VibeI18n.t
 import com.vibe.agent.ui.VibeScroll
 import java.awt.BorderLayout
 import java.awt.Component
@@ -45,11 +46,11 @@ class VibeRunsPanel(private val project: Project) : JPanel(BorderLayout()), Disp
     border = JBUI.Borders.empty(8)
     val filters = JPanel(FlowLayout(FlowLayout.LEFT, 8, 0)).apply {
       isOpaque = false
-      add(link("Все") { filter = Filter.ALL; render() })
-      add(link("Работают") { filter = Filter.RUNNING; render() })
-      add(link("Завершены") { filter = Filter.FINISHED; render() })
-      add(link("Требуют внимания") { filter = Filter.ATTENTION; render() })
-      add(link("Обновить") { reload() })
+      add(link(t("runs.filter.all")) { filter = Filter.ALL; render() })
+      add(link(t("runs.filter.running")) { filter = Filter.RUNNING; render() })
+      add(link(t("runs.filter.finished")) { filter = Filter.FINISHED; render() })
+      add(link(t("runs.filter.attention")) { filter = Filter.ATTENTION; render() })
+      add(link(t("runs.action.refresh")) { reload() })
     }
     search.textEditor.document.addDocumentListener(object : javax.swing.event.DocumentListener {
       override fun insertUpdate(e: javax.swing.event.DocumentEvent) = render()
@@ -83,8 +84,11 @@ class VibeRunsPanel(private val project: Project) : JPanel(BorderLayout()), Disp
   private fun render() {
     val summary = AgentRunLedger.summarize(loaded)
     // Zeros are printed on purpose: «брошенных 0» is an answer, silence is not.
-    summaryLabel.text = "<html>Прогонов: ${loaded.size} · работают ${summary.running} · завершены ${summary.completed}" +
-                        " · <b>требуют внимания ${summary.attention}</b> (брошенных ${summary.orphaned}, с ошибкой ${summary.failed})</html>"
+    summaryLabel.text = "<html>" + t(
+      "runs.summary",
+      "total" to loaded.size, "running" to summary.running, "completed" to summary.completed,
+      "attention" to summary.attention, "orphaned" to summary.orphaned, "failed" to summary.failed,
+    ) + "</html>"
     val visible = AgentRunLedger.search(loaded, search.text).filter { run ->
       when (filter) {
         Filter.ALL -> true
@@ -96,16 +100,15 @@ class VibeRunsPanel(private val project: Project) : JPanel(BorderLayout()), Disp
     list.removeAll()
     if (visible.isEmpty()) list.add(hint(emptyText()))
     else visible.sortedByDescending { it.startedAtMs }.forEach { list.add(row(it)) }
-    list.add(hint("В журнал попадают только прогоны без наблюдения — задачи HTTP API и пайплайны; " +
-                  "обычная переписка живёт в истории чатов. Пишутся только метаданные: ни промптов, ни ответов модели."))
+    list.add(hint(t("runs.note")))
     list.revalidate(); list.repaint()
   }
 
   private fun emptyText(): String = when (filter) {
-    Filter.ATTENTION -> "Прогонов, требующих внимания, нет."
-    Filter.RUNNING -> "Сейчас ничего не выполняется."
-    Filter.FINISHED -> "Завершённых прогонов пока нет."
-    Filter.ALL -> "Журнал пуст: ни одной задачи HTTP API и ни одного пайплайна ещё не запускалось."
+    Filter.ATTENTION -> t("runs.empty.attention")
+    Filter.RUNNING -> t("runs.empty.running")
+    Filter.FINISHED -> t("runs.empty.finished")
+    Filter.ALL -> t("runs.empty.all")
   }
 
   private fun hint(text: String) = JBLabel("<html>$text</html>").apply {
@@ -117,20 +120,20 @@ class VibeRunsPanel(private val project: Project) : JPanel(BorderLayout()), Disp
 
   private fun row(run: AgentRunLedger.Run): JComponent {
     val status = when (run.status) {
-      AgentRunLedger.Status.RUNNING -> "выполняется"
-      AgentRunLedger.Status.COMPLETED -> "завершён"
-      AgentRunLedger.Status.FAILED -> "ошибка"
-      AgentRunLedger.Status.CANCELLED -> "отменён"
-      AgentRunLedger.Status.ORPHANED -> "брошен"
+      AgentRunLedger.Status.RUNNING -> t("runs.status.running")
+      AgentRunLedger.Status.COMPLETED -> t("runs.status.completed")
+      AgentRunLedger.Status.FAILED -> t("runs.status.failed")
+      AgentRunLedger.Status.CANCELLED -> t("runs.status.cancelled")
+      AgentRunLedger.Status.ORPHANED -> t("runs.status.orphaned")
     }
-    val source = if (run.source == AgentRunLedger.Source.HTTP_API) "HTTP API" else "пайплайн"
+    val source = if (run.source == AgentRunLedger.Source.HTTP_API) t("runs.source.http") else t("runs.source.pipeline")
     val steps = run.maxSteps?.let { "${run.steps}/$it" } ?: run.steps.toString()
     val when_ = TIME.format(Date(run.startedAtMs))
     val details = buildString {
       append(source).append(" · ").append(status)
       run.outcome?.let { append(" — ").append(it) }
-      append(" · шагов ").append(steps)
-      if (run.changedFiles > 0) append(" · файлов ").append(run.changedFiles)
+      append(" · ").append(t("runs.detail.steps", "steps" to steps))
+      if (run.changedFiles > 0) append(" · ").append(t("runs.detail.files", "files" to run.changedFiles))
       run.target?.let { append(" · ").append(it) }
       append(" · ").append(when_)
     }
@@ -139,7 +142,7 @@ class VibeRunsPanel(private val project: Project) : JPanel(BorderLayout()), Disp
       isOpaque = false
       alignmentX = Component.LEFT_ALIGNMENT
       border = JBUI.Borders.empty(4, 2)
-      add(JBLabel(run.goal.ifBlank { "(без цели)" }).apply {
+      add(JBLabel(run.goal.ifBlank { t("runs.noGoal") }).apply {
         alignmentX = Component.LEFT_ALIGNMENT
         foreground = if (run.needsAttention) JBColor.namedColor("Vibe.Runs.attention", JBColor.RED) else foreground
       })

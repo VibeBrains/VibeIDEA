@@ -477,7 +477,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
   private fun handleWatchCommand(message: ComposedMessage): Boolean {
     val command = com.vibe.agent.watch.WatchInput.parse(message.text) ?: return false
     val tools = com.vibe.agent.watch.WatchTools.resolve().getOrElse { error ->
-      systemLine("[watch] ${error.message}")
+      systemLine("[watch] " + (error.message ?: ""))
       return true
     }
     val target = target
@@ -485,7 +485,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     // Vision gate BEFORE the pipeline: downloading a lecture to then say "смените модель" wastes
     // minutes. Audio needs no vision model, so it is not gated.
     if (hint != com.vibe.agent.watch.WatchInput.Kind.AUDIO && !targetAcceptsImages(target)) {
-      systemLine("[watch] выбранная цель не принимает изображения — переключитесь на vision-модель или агента с поддержкой картинок")
+      systemLine("[watch] " + com.vibe.agent.i18n.VibeI18n.t("watch.noVisionTarget"))
       return true
     }
 
@@ -501,11 +501,11 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
           isCancelled = { cancelled.get() || disposed },
         )
         val result = pipeline.run(command.source).getOrElse { error ->
-          systemLine("[watch] не получилось: ${error.message}")
+          systemLine("[watch] " + com.vibe.agent.i18n.VibeI18n.t("watch.failed", "reason" to error.message))
           return@executeOnPooledThread
         }
         if (cancelled.get() || disposed) {
-          systemLine("[watch] отменено")
+          systemLine("[watch] " + com.vibe.agent.i18n.VibeI18n.t("watch.cancelled"))
           return@executeOnPooledThread
         }
         result.warning?.let { systemLine("[watch] $it") }
@@ -517,7 +517,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
         // The second vision check: a video renamed to .mp3 slips past the early gate, and finding
         // out at send time would be a hard error instead of a sentence.
         if (images.isNotEmpty() && !targetAcceptsImages(this.target)) {
-          systemLine("[watch] цель не принимает изображения — отправляю только транскрипт")
+          systemLine("[watch] " + com.vibe.agent.i18n.VibeI18n.t("watch.textOnly"))
         }
         val prompt = com.vibe.agent.watch.WatchPrompt.build(result, command.question)
         val send = ComposedMessage(prompt, emptyList(), if (targetAcceptsImages(this.target)) images else emptyList())
