@@ -23,6 +23,32 @@ object CodeGraphBuilder {
   private const val MAX_FILES = 5000
   private const val MAX_FILE_SIZE = 1_000_000L
 
+  /** Content files of the project with their fingerprints — the input of an incremental export. */
+  fun scan(project: Project): Map<String, CodeGraphStore.Fingerprint> {
+    val base = project.basePath ?: return emptyMap()
+    val result = LinkedHashMap<String, CodeGraphStore.Fingerprint>()
+    ProjectRootManager.getInstance(project).fileIndex.iterateContent { vf ->
+      if (!vf.isDirectory && vf.length in 1..MAX_FILE_SIZE && result.size < MAX_FILES) {
+        result[rel(base, vf)] = CodeGraphStore.Fingerprint(vf.length, vf.timeStamp)
+      }
+      result.size < MAX_FILES
+    }
+    return result
+  }
+
+  /** Parses only the given paths — the rest is carried over from the previous export. */
+  fun buildSome(project: Project, paths: Collection<String>): List<GraphNode> {
+    if (paths.isEmpty()) return emptyList()
+    val base = project.basePath ?: return emptyList()
+    val wanted = paths.toHashSet()
+    val files = ArrayList<VirtualFile>()
+    ProjectRootManager.getInstance(project).fileIndex.iterateContent { vf ->
+      if (!vf.isDirectory && rel(base, vf) in wanted) files.add(vf)
+      true
+    }
+    return parse(project, base, files)
+  }
+
   fun build(project: Project): List<GraphNode> {
     val base = project.basePath ?: return emptyList()
     val files = ArrayList<VirtualFile>()
@@ -30,6 +56,10 @@ object CodeGraphBuilder {
       if (!vf.isDirectory && vf.length in 1..MAX_FILE_SIZE && files.size < MAX_FILES) files.add(vf)
       files.size < MAX_FILES
     }
+    return parse(project, base, files)
+  }
+
+  private fun parse(project: Project, base: String, files: List<VirtualFile>): List<GraphNode> {
     val psiManager = PsiManager.getInstance(project)
     val todoHelper = PsiTodoSearchHelper.getInstance(project)
     return files.mapNotNull { vf ->

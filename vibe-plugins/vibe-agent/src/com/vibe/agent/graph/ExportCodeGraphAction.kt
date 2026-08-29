@@ -8,10 +8,6 @@ import com.intellij.openapi.actionSystem.AnActionEvent
 import com.intellij.openapi.progress.ProgressIndicator
 import com.intellij.openapi.progress.Task
 import com.intellij.openapi.progress.ProgressManager
-import kotlinx.serialization.json.JsonArray
-import kotlinx.serialization.json.JsonPrimitive
-import kotlinx.serialization.json.buildJsonObject
-import kotlinx.serialization.json.put
 import java.nio.file.Files
 import java.nio.file.Path
 
@@ -24,25 +20,30 @@ class ExportCodeGraphAction : AnAction("Vibe: экспорт графа прое
     val project = e.project ?: return
     ProgressManager.getInstance().run(object : Task.Backgroundable(project, "Vibe: граф проекта", true) {
       override fun run(indicator: ProgressIndicator) {
-        val nodes = CodeGraphBuilder.build(project)
-        val json = buildJsonObject {
-          put("version", 1)
-          put("generatedBy", "VibeIDEA code_graph (первый срез: файлы, top-level символы, импорты UAST, TODO)")
-          put("nodes", JsonArray(nodes.map { n ->
-            buildJsonObject {
-              put("path", n.path)
-              if (n.symbols.isNotEmpty()) put("symbols", JsonArray(n.symbols.map { JsonPrimitive(it) }))
-              if (n.imports.isNotEmpty()) put("imports", JsonArray(n.imports.map { JsonPrimitive(it) }))
-              if (n.todos.isNotEmpty()) put("todos", JsonArray(n.todos.map { JsonPrimitive(it) }))
-            }
-          }))
-        }
         val base = project.basePath ?: return
         val out = Path.of(base, ".vibe", "codeGraph.json")
+
+        // Incremental by design: a repository that changed by three files must not cost a full
+        // parse of five thousand. Fingerprints (size + mtime) decide what to re-read.
+        val current = CodeGraphBuilder.scan(project)
+        val previous = runCatching { if (Files.exists(out)) CodeGraphStore.decode(Files.readString(out)) else emptyList() }
+          .getOrDefault(emptyList())
+        val (reused, stale) = CodeGraphStore.plan(current, previous)
+        indicator.text = if (previous.isEmpty()) "Разбор ${stale.size} файлов" else "Изменилось файлов: ${stale.size} из ${current.size}"
+
+        val parsed = CodeGraphBuilder.buildSome(project, stale)
+        val nodes = (reused + parsed).sortedBy { it.path }
+        val stored = nodes.mapNotNull { node -> current[node.path]?.let { CodeGraphStore.StoredNode(node, it) } }
+        val graph = CodeGraphIndex.build(nodes)
+
         Files.createDirectories(out.parent)
-        Files.writeString(out, json.toString())
+        Files.writeString(out, CodeGraphStore.encode(stored, graph))
+        val facts = graph.edges.count { it.provenance == CodeGraphIndex.Provenance.FACT }
         NotificationGroupManager.getInstance().getNotificationGroup("Vibe Agent")
-          .createNotification("Граф проекта выгружен: .vibe/codeGraph.json (${nodes.size} файлов)", NotificationType.INFORMATION)
+          .createNotification(
+            "Граф проекта выгружен: .vibe/codeGraph.json — файлов ${nodes.size} (заново разобрано ${parsed.size}), " +
+            "связей ${graph.edges.size} (фактов $facts, догадок ${graph.edges.size - facts})",
+            NotificationType.INFORMATION)
           .notify(project)
       }
     })
