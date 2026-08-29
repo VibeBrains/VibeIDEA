@@ -42,6 +42,7 @@ import com.vibe.agent.history.StoredImage
 import com.vibe.agent.history.ThreadState
 import com.vibe.agent.history.VibeChatHistory
 import com.vibe.agent.pipelines.PipelinesFile
+import com.vibe.agent.providers.CatalogReport
 import com.vibe.agent.providers.ChatMessage
 import com.vibe.agent.providers.ImagePart
 import com.vibe.agent.providers.LlmClient
@@ -352,9 +353,16 @@ class AgentPanel(private val project: Project) : JPanel(BorderLayout()), AcpClie
 
   // --- targets ---
 
+  /**
+   * Providers that resolved to no API key at all (and are not local). Their models are dropped from
+   * «Модель ▾»: an entry that fails on the first request is worse than an absent one; the summary
+   * line says where to add the key. Filled by the catalog round, so it is empty on the first paint.
+   */
+  @Volatile private var keylessProviders: Set<String> = emptySet()
+
   private fun buildTargets(): List<ChatTarget> = buildList {
     agents.forEach { add(ChatTarget.Agent(it)) }
-    providers.forEach { p ->
+    providers.filter { it.id !in keylessProviders }.forEach { p ->
       // Curated list: a catalog-only model is hidden until enabled on the «Модели» page,
       // a hand-declared one is visible by default (VibeIDE §7); explicit toggles win.
       p.models.filter { m ->
@@ -1215,9 +1223,20 @@ class AgentPanel(private val project: Project) : JPanel(BorderLayout()), AcpClie
     ApplicationManager.getApplication().executeOnPooledThread {
       val llm = LlmClient.forCatalog()
       val fresh = java.util.Collections.synchronizedMap(LinkedHashMap<String, ModelCatalogCache.Entry>())
+      val updated = java.util.Collections.synchronizedList(ArrayList<String>())
+      val keyless = java.util.Collections.synchronizedList(ArrayList<String>())
+      val rejected = java.util.Collections.synchronizedList(ArrayList<String>())
+      val localDown = java.util.Collections.synchronizedList(ArrayList<String>())
+      val failed = java.util.Collections.synchronizedList(ArrayList<Pair<String, String>>())
       val pending = snapshot.mapNotNull { p ->
         if (p.modelsFetch?.enabled == false) return@mapNotNull null // absent = fetch on (default)
         val resolved = ProvidersService.resolve(p, project.basePath) { } ?: return@mapNotNull null
+        // No key and not a local endpoint: asking would earn a predictable 401. Не спрашиваем и
+        // не называем это ошибкой провайдера — у человека просто не введён ключ.
+        if (resolved.apiKey == null && !resolved.isLocal) {
+          keyless += p.id
+          return@mapNotNull null
+        }
         ApplicationManager.getApplication().executeOnPooledThread {
           try {
             val ids = llm.listModels(resolved, p.modelsFetch?.url)
@@ -1226,22 +1245,36 @@ class AgentPanel(private val project: Project) : JPanel(BorderLayout()), AcpClie
               modelIds = ids,
               fetchedAtMs = System.currentTimeMillis(),
             )
+            updated += p.id
             SwingUtilities.invokeLater { if (!disposed) addCatalogModels(p.id, ids) }
           }
           catch (e: Exception) {
-            systemLine("[providers] '${p.id}': каталог моделей не получен (${e.message}) — работаю по кэшу/static")
+            val reason = CatalogReport.reason(e)
+            when {
+              CatalogReport.isRejectedKey(reason) -> rejected += p.id
+              resolved.isLocal -> localDown += p.id
+              else -> failed += (p.id to reason)
+            }
           }
         }
       }
       pending.forEach { runCatching { it.get() } }
       ModelCatalogCache.put(fresh)
-      if (fresh.isEmpty()) return@executeOnPooledThread
+      val report = CatalogReport(
+        updated = updated.toList(), keyless = keyless.toList(), rejected = rejected.toList(),
+        localDown = localDown.toList(), failed = failed.toList(),
+      )
+      val keylessChanged = keylessProviders != keyless.toSet()
+      keylessProviders = keyless.toSet()
       SwingUtilities.invokeLater {
         if (disposed) return@invokeLater
-        systemLine("[providers] каталоги моделей подтянуты")
+        // Provider without a key has nothing to offer the picker — drop its models from it.
+        // Rebuild on ANY change of the set: a key added in Settings must bring the models back.
+        if (keylessChanged) rebuildTargets()
+        report.summary().takeIf { it.isNotEmpty() }?.let { systemLine(it) }
         // Catalog models are hidden by default (curated picker) — say where to turn them on.
         val dormant = providers.filter { p ->
-          p.models.isNotEmpty() && p.models.none { m ->
+          p.id !in keylessProviders && p.models.isNotEmpty() && p.models.none { m ->
             val custom = staticModelIds[p.id]?.contains(m.id) == true
             m.active && !ModelVisibility.isHidden(p.id, m.id, defaultHidden = !custom)
           }
