@@ -1,6 +1,7 @@
 // Copyright 2026 VibeBrains. Use of this source code is governed by the Apache 2.0 license.
 package com.vibe.agent.settings
 
+import com.vibe.agent.i18n.VibeI18n.t
 import com.intellij.openapi.options.Configurable
 import com.intellij.openapi.ui.ComboBox
 import com.intellij.ui.JBIntSpinner
@@ -46,11 +47,11 @@ class VibeAgentConfigurable : Configurable, Configurable.NoScroll {
   private var httpApiEnabled: JBCheckBox? = null
   private var httpApiPort: JBIntSpinner? = null
 
-  override fun getDisplayName(): String = "Агент"
+  override fun getDisplayName(): String = t("settings.agent.title")
 
   override fun createComponent(): JComponent {
-    val hooks = JBCheckBox("Включить хуки проекта (.vibe/hooks.json)", VibeAgentSettings.hooksEnabled).also { hooksEnabled = it }
-    val audit = JBCheckBox("Вести журнал аудита (.vibe/audit.jsonl)", VibeAgentSettings.auditEnabled).also { auditEnabled = it }
+    val hooks = JBCheckBox(t("settings.agent.hooks"), VibeAgentSettings.hooksEnabled).also { hooksEnabled = it }
+    val audit = JBCheckBox(t("settings.agent.audit"), VibeAgentSettings.auditEnabled).also { auditEnabled = it }
     val rotation = JBIntSpinner(VibeAgentSettings.auditRotationMb, VibeAgentSettings.MIN_AUDIT_ROTATION_MB, VibeAgentSettings.MAX_AUDIT_ROTATION_MB).also { auditRotation = it }
     val vMode = ComboBox(VibeAgentSettings.VERIFY_MODES.toTypedArray()).apply { item = VibeAgentSettings.verifyMode }.also { verifyMode = it }
     val vCommand = JBTextField(VibeAgentSettings.verifyCommand, 28).also { verifyCommand = it }
@@ -60,96 +61,79 @@ class VibeAgentConfigurable : Configurable, Configurable.NoScroll {
     val cAttempts = JBIntSpinner(VibeAgentSettings.checksMaxAttempts, VibeAgentSettings.MIN_CHECKS_MAX_ATTEMPTS, VibeAgentSettings.MAX_CHECKS_MAX_ATTEMPTS).also { checksMaxAttempts = it }
     val cMaxFiles = JBIntSpinner(VibeAgentSettings.checksMaxFiles, VibeAgentSettings.MIN_CHECKS_MAX_FILES, VibeAgentSettings.MAX_CHECKS_MAX_FILES).also { checksMaxFiles = it }
     val cMaxFileKb = JBIntSpinner(VibeAgentSettings.checksMaxFileKb, VibeAgentSettings.MIN_CHECKS_MAX_FILE_KB, VibeAgentSettings.MAX_CHECKS_MAX_FILE_KB).also { checksMaxFileKb = it }
-    val terminal = JBCheckBox("Разрешать агентам исполнять терминал (ACP terminal/…)", VibeAgentSettings.terminalEnabled).also { terminalEnabled = it }
+    val terminal = JBCheckBox(t("settings.agent.terminal"), VibeAgentSettings.terminalEnabled).also { terminalEnabled = it }
     val design = com.intellij.openapi.ui.ComboBox(VibeAgentSettings.DESIGN_MODES.toTypedArray())
       .also { it.item = VibeAgentSettings.designMode; designMode = it }
     val designTries = JBIntSpinner(VibeAgentSettings.designMaxAttempts, VibeAgentSettings.MIN_DESIGN_MAX_ATTEMPTS, VibeAgentSettings.MAX_DESIGN_MAX_ATTEMPTS)
       .also { designAttempts = it }
-    val fim = JBCheckBox("Автодополнение FIM", VibeAgentSettings.fimEnabled).also { fimEnabled = it }
+    val fim = JBCheckBox(t("settings.agent.fim"), VibeAgentSettings.fimEnabled).also { fimEnabled = it }
     val fimDelay = JBIntSpinner(VibeAgentSettings.fimDebounceMs, VibeAgentSettings.MIN_FIM_DEBOUNCE_MS, VibeAgentSettings.MAX_FIM_DEBOUNCE_MS)
       .also { fimDebounce = it }
     val fimCacheSize = JBIntSpinner(VibeAgentSettings.fimCacheSize, VibeAgentSettings.MIN_FIM_CACHE_SIZE, VibeAgentSettings.MAX_FIM_CACHE_SIZE)
       .also { fimCache = it }
-    val ledger = JBCheckBox("Журнал прогонов (.vibe/agent-runs.jsonl)", VibeAgentSettings.runLedgerEnabled).also { runLedger = it }
+    val ledger = JBCheckBox(t("settings.agent.runLedger"), VibeAgentSettings.runLedgerEnabled).also { runLedger = it }
     val ledgerMax = JBIntSpinner(VibeAgentSettings.runLedgerMaxRecords, VibeAgentSettings.MIN_RUN_LEDGER_MAX_RECORDS, VibeAgentSettings.MAX_RUN_LEDGER_MAX_RECORDS)
       .also { runLedgerMax = it }
     val ledgerDays = JBIntSpinner(VibeAgentSettings.runLedgerRetentionDays, VibeAgentSettings.MIN_RUN_LEDGER_RETENTION_DAYS, VibeAgentSettings.MAX_RUN_LEDGER_RETENTION_DAYS)
       .also { runLedgerDays = it }
-    val mask = JBCheckBox("Маскировать секреты в отправляемом контексте", VibeAgentSettings.maskSecretsInContext).also { maskSecrets = it }
-    val foreign = JBCheckBox("Предупреждать о незнакомом репозитории", VibeAgentSettings.warnForeignProject).also { warnForeign = it }
-    val httpApi = JBCheckBox("Входящий HTTP API (только 127.0.0.1)", VibeAgentSettings.httpApiEnabled).also { httpApiEnabled = it }
+    val mask = JBCheckBox(t("settings.agent.maskSecrets"), VibeAgentSettings.maskSecretsInContext).also { maskSecrets = it }
+    val foreign = JBCheckBox(t("settings.agent.warnForeign"), VibeAgentSettings.warnForeignProject).also { warnForeign = it }
+    val httpApi = JBCheckBox(t("settings.agent.httpApi"), VibeAgentSettings.httpApiEnabled).also { httpApiEnabled = it }
     val apiPort = JBIntSpinner(VibeAgentSettings.httpApiPort, VibeAgentSettings.MIN_HTTP_API_PORT, VibeAgentSettings.MAX_HTTP_API_PORT)
       .also { httpApiPort = it }
     val handshake = JBIntSpinner(VibeAgentSettings.handshakeTimeoutSec, VibeAgentSettings.MIN_HANDSHAKE_TIMEOUT_SEC, VibeAgentSettings.MAX_HANDSHAKE_TIMEOUT_SEC).also { handshakeTimeout = it }
 
     return FormBuilder.createFormBuilder()
-      .addComponent(section("Хуки проекта"))
+      .addComponent(section(t("settings.agent.section.hooks")))
       .addComponent(hooks)
-      .addComponent(hint("Команды из <code>.vibe/hooks.json</code> вокруг вызовов инструментов агента. Выполняются только в доверенной папке (Workspace Trust). " +
-        "Выключено по умолчанию: клонированный чужой репозиторий не должен выполнять свой код. Формат — docs/vibe/manuals/hooksSpec.md."))
-      .addComponent(section("Аудит"))
+      .addComponent(hint(t("settings.agent.hint.hooks")))
+      .addComponent(section(t("settings.agent.section.audit")))
       .addComponent(audit)
-      .addComponent(hint("Журнал действий агента в <code>.vibe/audit.jsonl</code> (промпты, ответы, вызовы инструментов, разрешения, записи, хуки, гейты). " +
-        "Аргументы, тела команд и содержимое файлов не пишутся никогда — только имя инструмента и целевой путь. Формат — docs/vibe/manuals/auditSpec.md."))
-      .addLabeledComponent("Ротация журнала, МБ:", rotation)
+      .addComponent(hint(t("settings.agent.hint.audit")))
+      .addLabeledComponent(t("settings.agent.auditRotation"), rotation)
       .addComponent(section("VERIFY-GATE"))
-      .addLabeledComponent("Режим:", vMode)
-      .addComponent(hint("Проверка сборки/тестов при завершении хода, менявшего файлы. <b>off</b> — выкл; <b>warn</b> — красный результат не блокирует; " +
-        "<b>enforce</b> — «не готово, пока не зелено»: агент возвращается на доработку до предела попыток."))
-      .addLabeledComponent("Команда проверки:", vCommand)
-      .addComponent(hint("Например <code>./bazel.cmd test //…</code> или <code>npm run verify</code>. Пусто — гейт бездействует."))
-      .addLabeledComponent("Попыток возврата (enforce):", vAttempts)
-      .addLabeledComponent("Таймаут проверки, сек:", vTimeout)
-      .addComponent(section("Проверки хода"))
-      .addLabeledComponent("Режим:", cMode)
-      .addComponent(hint("Детерминированные проверки изменённых за ход файлов: утечка секрета и запись в защищённый путь. " +
-        "<b>off</b> / <b>notify</b> (сообщить) / <b>enforce</b> (вернуть агента). LLM-судья не используется."))
-      .addLabeledComponent("Попыток возврата (enforce):", cAttempts)
-      .addLabeledComponent("Макс. файлов на скан:", cMaxFiles)
-      .addLabeledComponent("Макс. размер файла, КБ:", cMaxFileKb)
-      .addComponent(hint("Больше файлов/крупнее лимита — не сканируются; о пропуске сообщается в ленте чата."))
-      .addComponent(section("Терминал агента"))
+      .addLabeledComponent(t("settings.agent.mode"), vMode)
+      .addComponent(hint(t("settings.agent.hint.verifyModes")))
+      .addLabeledComponent(t("settings.agent.verifyCommand"), vCommand)
+      .addComponent(hint(t("settings.agent.hint.verifyCommandHint")))
+      .addLabeledComponent(t("settings.agent.bounceAttempts"), vAttempts)
+      .addLabeledComponent(t("settings.agent.verifyTimeout"), vTimeout)
+      .addComponent(section(t("settings.agent.section.checks")))
+      .addLabeledComponent(t("settings.agent.mode"), cMode)
+      .addComponent(hint(t("settings.agent.hint.checksModes")))
+      .addLabeledComponent(t("settings.agent.bounceAttempts"), cAttempts)
+      .addLabeledComponent(t("settings.agent.maxFiles"), cMaxFiles)
+      .addLabeledComponent(t("settings.agent.maxFileKb"), cMaxFileKb)
+      .addComponent(hint(t("settings.agent.hint.checksLimitsHint")))
+      .addComponent(section(t("settings.agent.section.terminal")))
       .addComponent(terminal)
-      .addComponent(hint("Живой вывод команд Claude показывается всегда. Этот флаг разрешает СТОРОННИМ агентам (Gemini CLI и др.) исполнять команды через " +
-        "стандартные методы ACP <code>terminal/…</code> — с клампом таймаута, обрезкой вывода и подтверждением разрушительных команд."))
-      .addComponent(section("Дизайн-гейт"))
-      .addLabeledComponent("Режим:", design)
-      .addLabeledComponent("Попыток исправления:", designTries)
-      .addComponent(hint("После хода, менявшего файлы интерфейса (<code>.tsx</code>, <code>.css</code>, <code>.svg</code>… — тесты не считаются), страница замеряется в тулвиндоу «Дизайн». " +
-        "<b>notify</b> — сводка в ленте, ход завершается в любом случае. <b>enforceFloor</b> — агент возвращается к работе, пока остаются нарушения ПОЛА КАЧЕСТВА (контраст, зоны нажатия, обрезание): " +
-        "вкусовые находки не блокируют никогда, иначе мнение стало бы блокировкой и дало бы циклы по стилю. Если панель «Дизайн» закрыта, гейт скажет об этом словами, а не промолчит."))
-      .addComponent(section("Автодополнение (FIM)"))
+      .addComponent(hint(t("settings.agent.hint.terminalHint")))
+      .addComponent(section(t("settings.agent.section.design")))
+      .addLabeledComponent(t("settings.agent.mode"), design)
+      .addLabeledComponent(t("settings.agent.designAttempts"), designTries)
+      .addComponent(hint(t("settings.agent.hint.designHint")))
+      .addComponent(section(t("settings.agent.section.fim")))
       .addComponent(fim)
-      .addLabeledComponent("Задержка перед запросом, мс:", fimDelay)
-      .addLabeledComponent("Размер кэша подсказок:", fimCacheSize)
-      .addComponent(hint("Работает на моделях с <code>fim: true</code> в каталоге провайдеров (протокол openai). Контекст — 25 строк вокруг курсора, для локальной модели 12: " +
-        "у неё каждый токен стоит времени. В части мест запрос не отправляется вовсе (курсор в начале строки, где справа чужой код) — такая подсказка всё равно была бы мусором. " +
-        "Ответ чистится от пояснений и комментариев на чужом языке; счётчики и задержка p50/p95 — действие «VibeIDEA: метрики автодополнения»."))
-      .addComponent(section("Диспетчерская"))
+      .addLabeledComponent(t("settings.agent.fimDebounce"), fimDelay)
+      .addLabeledComponent(t("settings.agent.fimCache"), fimCacheSize)
+      .addComponent(hint(t("settings.agent.hint.fimHint")))
+      .addComponent(section(t("settings.agent.section.runs")))
       .addComponent(ledger)
-      .addLabeledComponent("Хранить записей:", ledgerMax)
-      .addLabeledComponent("Срок хранения, дней:", ledgerDays)
-      .addComponent(hint("Панель «Диспетчерская» показывает прогоны, за которыми никто не смотрел: задачи входящего HTTP API и пайплайны. " +
-        "Обычная переписка сюда не пишется — у неё есть история чатов. В журнал идут ТОЛЬКО метаданные: цель, статус, шаги, число изменённых файлов, времена; " +
-        "ни промптов, ни ответов модели, ни аргументов инструментов. Незавершённый прогон не удаляется ни по сроку, ни по лимиту — иначе пропал бы след того, что могло остаться работать."))
-      .addComponent(section("Контекст: что уходит модели"))
+      .addLabeledComponent(t("settings.agent.runsMax"), ledgerMax)
+      .addLabeledComponent(t("settings.agent.runsDays"), ledgerDays)
+      .addComponent(hint(t("settings.agent.hint.runsHint")))
+      .addComponent(section(t("settings.agent.section.context")))
       .addComponent(mask)
-      .addComponent(hint("Невидимые символы (в т.ч. Unicode-теги, которых не видно вообще) и bidi-переопределения вырезаются из контекста ВСЕГДА — их не бывает в честном коде, " +
-        "а спрятанную в них инструкцию человек при подтверждении не увидит. Текст, похожий на обращение к агенту, и секреты — отмечаются строкой «🛡 контекст» в ленте. " +
-        "Этот флаг дополнительно заменяет само значение секрета маркером в том, что отправляется модели; <b>файл на диске не меняется никогда</b>. " +
-        "По умолчанию выключен: агенту часто нужно работать с конфигом, где токен есть по делу."))
+      .addComponent(hint(t("settings.agent.hint.contextHint")))
       .addComponent(foreign)
-      .addComponent(hint("Одна строка при первом открытии проекта: содержимое чужого репозитория — данные, а не команды. Ничего не блокирует и больше не повторяется."))
-      .addComponent(section("Входящий HTTP API"))
+      .addComponent(hint(t("settings.agent.hint.foreignHint")))
+      .addComponent(section(t("settings.agent.section.httpApi")))
       .addComponent(httpApi)
-      .addLabeledComponent("Порт (0 — любой свободный):", apiPort)
-      .addComponent(hint("Позволяет запускать агента из CI, бота или крона: <code>POST /run</code> с задачей, <code>GET /health</code> для проверки. " +
-        "Слушается ТОЛЬКО петлевой адрес — настройки «слушать снаружи» нет и не будет. Каждый запрос требует токен " +
-        "(<code>Authorization: Bearer …</code>), токен живёт в хранилище ОС и показывается действием «VibeIDEA: показать токен HTTP API». " +
-        "Задачу выполняет агент в открытом окне; изменения применяются сразу, без перезапуска IDE. Спека — docs/vibe/manuals/httpApiSpec.md."))
-      .addComponent(section("Соединение"))
-      .addLabeledComponent("Таймаут рукопожатия агента, сек:", handshake)
-      .addComponent(hint("Сколько ждать ответа агента на initialize/session/new. Холодный запуск через npx может быть медленным."))
+      .addLabeledComponent(t("settings.agent.httpPort"), apiPort)
+      .addComponent(hint(t("settings.agent.hint.httpApiHint")))
+      .addComponent(section(t("settings.agent.section.connection")))
+      .addLabeledComponent(t("settings.agent.handshake"), handshake)
+      .addComponent(hint(t("settings.agent.hint.handshakeHint")))
       .addComponentFillVertically(JPanel(), 0)
       .panel.apply { border = JBUI.Borders.empty(8) }
       // NoScroll only removes the platform's wrapper — the scrolling itself is ours, or the page
