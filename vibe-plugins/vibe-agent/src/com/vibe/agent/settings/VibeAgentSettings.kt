@@ -52,6 +52,16 @@ object VibeAgentSettings {
   const val DEFAULT_TERMINAL_ENABLED = true
   /** Fallback output cap when an agent's terminal/create omits outputByteLimit (never unbounded). */
   const val DEFAULT_TERMINAL_OUTPUT_BYTE_LIMIT = 1_048_576L
+  // --- /watch (video and audio review) ---
+  const val DEFAULT_WATCH_SCENE_THRESHOLD = 0.3
+  const val DEFAULT_WATCH_MAX_FRAMES = 12
+  const val MIN_WATCH_MAX_FRAMES = 2
+  const val MAX_WATCH_MAX_FRAMES = 40
+  const val DEFAULT_WATCH_FRAME_HEIGHT = 720
+  const val MIN_WATCH_FRAME_HEIGHT = 240
+  const val MAX_WATCH_FRAME_HEIGHT = 1080
+  const val DEFAULT_WATCH_SUBTITLE_LANGUAGES = "ru,en"
+
   // --- design gate ---
   const val DESIGN_OFF = "off"
   const val DESIGN_NOTIFY = "notify"
@@ -115,6 +125,10 @@ object VibeAgentSettings {
   private const val KEY_CHECKS_MAX_FILE_KB = "vibe.agent.turnChecks.maxFileKb"
   private const val KEY_TERMINAL_ENABLED = "vibe.agent.terminal.enabled"
   private const val KEY_HANDSHAKE_TIMEOUT_SEC = "vibe.agent.handshakeTimeoutSec"
+  private const val KEY_WATCH_SCENE_THRESHOLD = "vibe.agent.watch.sceneThreshold"
+  private const val KEY_WATCH_MAX_FRAMES = "vibe.agent.watch.maxFrames"
+  private const val KEY_WATCH_FRAME_HEIGHT = "vibe.agent.watch.frameHeight"
+  private const val KEY_WATCH_SUB_LANGS = "vibe.agent.watch.subtitleLanguages"
   private const val KEY_DESIGN_MODE = "vibe.agent.design.mode"
   private const val KEY_DESIGN_MAX_ATTEMPTS = "vibe.agent.design.maxAttempts"
   private const val KEY_FIM_ENABLED = "vibe.agent.fim.enabled"
@@ -244,4 +258,20 @@ object VibeAgentSettings {
   var designMaxAttempts: Int
     get() = props.getInt(KEY_DESIGN_MAX_ATTEMPTS, DEFAULT_DESIGN_MAX_ATTEMPTS).coerceIn(MIN_DESIGN_MAX_ATTEMPTS, MAX_DESIGN_MAX_ATTEMPTS)
     set(value) = props.setValue(KEY_DESIGN_MAX_ATTEMPTS, value.coerceIn(MIN_DESIGN_MAX_ATTEMPTS, MAX_DESIGN_MAX_ATTEMPTS), DEFAULT_DESIGN_MAX_ATTEMPTS)
+
+  var watchSceneThreshold: Double
+    get() = props.getValue(KEY_WATCH_SCENE_THRESHOLD)?.toDoubleOrNull()?.coerceIn(0.05, 0.9) ?: DEFAULT_WATCH_SCENE_THRESHOLD
+    set(value) = props.setValue(KEY_WATCH_SCENE_THRESHOLD, value.coerceIn(0.05, 0.9).toString())
+
+  var watchMaxFrames: Int
+    get() = props.getInt(KEY_WATCH_MAX_FRAMES, DEFAULT_WATCH_MAX_FRAMES).coerceIn(MIN_WATCH_MAX_FRAMES, MAX_WATCH_MAX_FRAMES)
+    set(value) = props.setValue(KEY_WATCH_MAX_FRAMES, value.coerceIn(MIN_WATCH_MAX_FRAMES, MAX_WATCH_MAX_FRAMES), DEFAULT_WATCH_MAX_FRAMES)
+
+  var watchFrameHeight: Int
+    get() = props.getInt(KEY_WATCH_FRAME_HEIGHT, DEFAULT_WATCH_FRAME_HEIGHT).coerceIn(MIN_WATCH_FRAME_HEIGHT, MAX_WATCH_FRAME_HEIGHT)
+    set(value) = props.setValue(KEY_WATCH_FRAME_HEIGHT, value.coerceIn(MIN_WATCH_FRAME_HEIGHT, MAX_WATCH_FRAME_HEIGHT), DEFAULT_WATCH_FRAME_HEIGHT)
+
+  var watchSubtitleLanguages: String
+    get() = props.getValue(KEY_WATCH_SUB_LANGS, DEFAULT_WATCH_SUBTITLE_LANGUAGES)
+    set(value) = props.setValue(KEY_WATCH_SUB_LANGS, value.trim().ifEmpty { DEFAULT_WATCH_SUBTITLE_LANGUAGES }, DEFAULT_WATCH_SUBTITLE_LANGUAGES)
 }

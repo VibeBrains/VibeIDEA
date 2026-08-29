@@ -199,7 +199,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
   private val recordRows = ArrayList<JComponent>()
 
   private val composer = ComposerPanel(project, this, object : ComposerPanel.Listener {
-    override fun onSend(message: ComposedMessage): Boolean = startTurn(message)
+    override fun onSend(message: ComposedMessage): Boolean = if (handleWatchCommand(message)) true else startTurn(message)
     override fun onStop() = cancelTurn()
     override fun onNotice(text: String) = systemLine("[композер] $text")
   })
@@ -464,6 +464,80 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
 
   // --- turns ---
 
+
+  // --- /watch ---
+
+  /**
+   * Intercepts `/watch <ссылка|путь> [вопрос]` BEFORE the message reaches a model.
+   *
+   * Returns true when the command was taken over. The pipeline runs in the background with a
+   * progress line and a working Стоп: downloading a lecture takes minutes, and a cancel that only
+   * lands at the end is not a cancel.
+   */
+  private fun handleWatchCommand(message: ComposedMessage): Boolean {
+    val command = com.vibe.agent.watch.WatchInput.parse(message.text) ?: return false
+    val tools = com.vibe.agent.watch.WatchTools.resolve().getOrElse { error ->
+      systemLine("[watch] ${error.message}")
+      return true
+    }
+    val target = target
+    val hint = com.vibe.agent.watch.WatchInput.classify(command.source)
+    // Vision gate BEFORE the pipeline: downloading a lecture to then say "смените модель" wastes
+    // minutes. Audio needs no vision model, so it is not gated.
+    if (hint != com.vibe.agent.watch.WatchInput.Kind.AUDIO && !targetAcceptsImages(target)) {
+      systemLine("[watch] выбранная цель не принимает изображения — переключитесь на vision-модель или агента с поддержкой картинок")
+      return true
+    }
+
+    systemLine("[watch] ${command.source}")
+    val cancelled = java.util.concurrent.atomic.AtomicBoolean(false)
+    watchCancel = cancelled
+    ApplicationManager.getApplication().executeOnPooledThread {
+      val workDir = com.vibe.agent.watch.WatchPipeline.workDir()
+      try {
+        val pipeline = com.vibe.agent.watch.WatchPipeline(
+          tools, workDir,
+          onProgress = { stage -> systemLine("[watch] $stage") },
+          isCancelled = { cancelled.get() || disposed },
+        )
+        val result = pipeline.run(command.source).getOrElse { error ->
+          systemLine("[watch] не получилось: ${error.message}")
+          return@executeOnPooledThread
+        }
+        if (cancelled.get() || disposed) {
+          systemLine("[watch] отменено")
+          return@executeOnPooledThread
+        }
+        result.warning?.let { systemLine("[watch] $it") }
+        val images = result.frames.mapNotNull { path ->
+          runCatching {
+            ImageAttachment(path.fileName.toString(), "image/jpeg", java.nio.file.Files.readAllBytes(path))
+          }.getOrNull()
+        }
+        // The second vision check: a video renamed to .mp3 slips past the early gate, and finding
+        // out at send time would be a hard error instead of a sentence.
+        if (images.isNotEmpty() && !targetAcceptsImages(this.target)) {
+          systemLine("[watch] цель не принимает изображения — отправляю только транскрипт")
+        }
+        val prompt = com.vibe.agent.watch.WatchPrompt.build(result, command.question)
+        val send = ComposedMessage(prompt, emptyList(), if (targetAcceptsImages(this.target)) images else emptyList())
+        SwingUtilities.invokeLater { if (!disposed) startTurn(send) }
+      }
+      finally {
+        watchCancel = null
+        // Frames live only long enough to be read into the message.
+        runCatching { workDir.toFile().deleteRecursively() }
+      }
+    }
+    return true
+  }
+
+  private fun targetAcceptsImages(t: ChatTarget?): Boolean = when (t) {
+    is ChatTarget.Model -> t.model.vision != false
+    is ChatTarget.Agent -> client?.capabilities?.image != false
+    null -> false
+  }
+
   // --- skills ---
 
   /**
@@ -522,6 +596,9 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
 
   /** Latches for callers that asked to wait for the end of a turn they started over HTTP. */
   private val externalWaiters = java.util.concurrent.ConcurrentHashMap<String, java.util.concurrent.CountDownLatch>()
+
+  /** Set while a /watch pipeline is running, so Стоп can interrupt a minutes-long download. */
+  @Volatile private var watchCancel: java.util.concurrent.atomic.AtomicBoolean? = null
 
   /** Thread id → ledger run id, so the end of a turn can close the record that started it. */
   private val externalRuns = java.util.concurrent.ConcurrentHashMap<String, String>()
@@ -709,6 +786,9 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
   private fun cancelTurn() {
     llmCancel.set(true)
     llmClient.cancel()
+    // A /watch download runs before any turn exists — Стоп must reach it too, or a minutes-long
+    // download would keep going after the user gave up on it.
+    watchCancel?.set(true)
     val c = client
     systemLine("[стоп] прерываю ход…")
     if (c == null) return
