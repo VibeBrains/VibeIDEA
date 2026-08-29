@@ -19,9 +19,9 @@
 - [x] `VibeIdeaProperties : IdeaCommunityProperties` — ✅ (2026-08-23) `build/src/org/jetbrains/intellij/build/VibeIdeaProperties.kt`: prefix `VibeIdea`, selector `VibeIdea2026.3`, mac `com.vibe.vibeidea`/`VibeIDEA.app`, вырезаны `intellij.mcpserver.plugin` и `intellij.featuresTrainer`. Корневой дескриптор `META-INF/VibeIdeaPlugin.xml` — зеркало IdeaPlugin.xml.
 - [x] Свой installers-таргет — ✅ (2026-08-23) `build/src/VibeIdeaInstallersBuildTarget.kt` + `//build:vibeidea_installers` + обёртка `vibeidea-installers.cmd`. Гейт фазы: `out/vibeidea/artifacts/vibeIdea-263.SNAPSHOT-aarch64.dmg` (778M, hdiutil VALID, product-info: name=VibeIDEA, code=VI, `VibeIDEA.app`).
 - [~] Ревизия `bundledPluginModules` — ✅ mcpserver/featuresTrainer вырезаны (2026-08-23). Осталось: судьба Android-плагина в нашем дистрибутиве; полная ревизия списка.
-- [ ] Grep-гейт брендинга: user-visible «IntelliJ IDEA»/«JetBrains» в наших ресурсах после каждого синка.
+- [x] **Grep-гейт брендинга** — ✅ (2026-08-29) `vibe-plugins/tools/checkVibeBranding.sh`: ищет «IntelliJ IDEA»/«JetBrains» ТОЛЬКО в наших каталогах (`vibe-plugins/`, `vibeidea-customization/`; апстрим и submodule сидов не трогает — там чужой брендинг законен). Исключения — в `brandingAllowlist.txt` С ПРИЧИНОЙ, по строке на случай; гейт падает и на упоминании вне списка, и на записи, которая больше ничего не находит (устаревшее исключение — такой же долг). Пять законных упоминаний объяснены: описание чужого баннера в каталоге строк (ru/en), путь `~/.jetbrains/acp.json` (общий реестр агентов — свой путь потерял бы совместимость), комментарий про то, что именно мы гасим, и происхождение LSP4IJ. Обе стороны гейта проверены на настоящем нарушении.
 
-- [ ] Свой `.icns` для macOS (сейчас в `.app` наследуется иконка IC — знак JetBrains; до публикации обязательно заменить).
+- [x] Свой `.icns` для macOS — ✅ (2026-08-27, вместе с лого) `vibeidea-customization/resources/mac/vibeidea.icns`, прописан `icnsPath`/`icnsPathForEAP` в `VibeIdeaProperties`; проверено в собранном dmg — иконка в бандле и Dock наша. (Пункт оставался открытым по недосмотру: работа была сделана в задаче про лого.)
 
 ## Фаза 2 — Языки PhpStorm-класса (TS + PHP)
 
