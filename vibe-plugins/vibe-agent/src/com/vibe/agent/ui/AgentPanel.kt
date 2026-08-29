@@ -45,6 +45,7 @@ import com.vibe.agent.pipelines.PipelinesFile
 import com.vibe.agent.providers.ChatMessage
 import com.vibe.agent.providers.ImagePart
 import com.vibe.agent.providers.LlmClient
+import com.vibe.agent.providers.ModelCatalogCache
 import com.vibe.agent.providers.ModelEntry
 import com.vibe.agent.providers.ProviderEntry
 import com.vibe.agent.providers.ProviderGuard
@@ -242,14 +243,17 @@ class AgentPanel(private val project: Project) : JPanel(BorderLayout()), AcpClie
     ApplicationManager.getApplication().executeOnPooledThread {
       val loadedAgents = AcpConfig.load { systemLine("[конфиг] $it") }
       val loadedProviders = ProvidersService.load(project.basePath) { systemLine("[providers] $it") }
+      val catalogCache = ModelCatalogCache.load()
       // .vibe seeding lives in VibeDefaultsSeeder (project open), not here.
       val hooksDisabled = hooks.hasHooksButDisabled()
       val guardFindings = ProviderGuard.scan(loadedProviders)
       SwingUtilities.invokeLater {
         if (disposed) return@invokeLater
         agents = loadedAgents
-        providers = loadedProviders
+        // staticModelIds is snapshotted BEFORE the cache is merged in: cached models are catalog
+        // models, and passing them off as hand-declared would leak them into the curated picker.
         staticModelIds = loadedProviders.associate { p -> p.id to p.models.map { it.id }.toSet() }
+        providers = applyCatalogCache(loadedProviders, catalogCache)
         systemLine("Vibe Agent готов. Агенты: ${loadedAgents.joinToString { it.name }}; провайдеры: ${loadedProviders.joinToString { it.name }.ifEmpty { "нет" }}.")
         guardFindings.forEach { f -> systemLine("[guard:${f.severity}] ${f.message}") }
         if (hooksDisabled) systemLine("[хуки] в проекте есть .vibe/hooks.json, но хуки выключены — включить: Settings → Tools → VibeIDEA → Агент")
@@ -270,11 +274,12 @@ class AgentPanel(private val project: Project) : JPanel(BorderLayout()), AcpClie
   private fun reloadProviderRegistry() {
     ApplicationManager.getApplication().executeOnPooledThread {
       val loadedProviders = ProvidersService.load(project.basePath) { systemLine("[providers] $it") }
+      val catalogCache = ModelCatalogCache.load()
       val guardFindings = ProviderGuard.scan(loadedProviders)
       SwingUtilities.invokeLater {
         if (disposed) return@invokeLater
-        providers = loadedProviders
         staticModelIds = loadedProviders.associate { p -> p.id to p.models.map { it.id }.toSet() }
+        providers = applyCatalogCache(loadedProviders, catalogCache)
         systemLine("[providers] конфигурация изменилась — перечитываю провайдеров и каталоги моделей")
         guardFindings.forEach { f -> systemLine("[guard:${f.severity}] ${f.message}") }
         rebuildTargets()
@@ -1166,38 +1171,83 @@ class AgentPanel(private val project: Project) : JPanel(BorderLayout()), AcpClie
 
   // --- models.fetch ---
 
+  /** EDT: folds ONE provider's fresh catalog into the registry (unknown ids only) and refreshes the picker. */
+  private fun addCatalogModels(providerId: String, ids: List<String>) {
+    val current = providers.firstOrNull { it.id == providerId } ?: return
+    val known = current.models.map { it.id }.toSet()
+    val extra = ids.filter { it !in known }.map { ModelEntry(id = it) }
+    if (extra.isEmpty()) return
+    providers = providers.map { if (it.id == providerId) it.copy(models = it.models + extra) else it }
+    rebuildTargets()
+  }
+
+  /** Serves the last known catalogs so the picker is complete on the first frame; the network refreshes it. */
+  private fun applyCatalogCache(
+    loaded: List<ProviderEntry>,
+    cache: Map<String, ModelCatalogCache.Entry>,
+  ): List<ProviderEntry> {
+    val merged = ModelCatalogCache.merge(loaded, cache)
+    val used = loaded.filter { p -> cache[p.id]?.fingerprint == ModelCatalogCache.fingerprint(p) }
+    if (used.isNotEmpty()) {
+      val now = System.currentTimeMillis()
+      val freshest = used.mapNotNull { cache[it.id]?.fetchedAtMs }.maxOrNull() ?: now
+      systemLine("[providers] каталоги моделей из кэша (${used.size} ${providersWord(used.size)}, " +
+                 "${ModelCatalogCache.ageText(freshest, now)}) — обновляю в фоне")
+    }
+    return merged
+  }
+
+  private fun providersWord(n: Int): String = when {
+    n % 10 == 1 && n % 100 != 11 -> "провайдер"
+    n % 10 in 2..4 && n % 100 !in 12..14 -> "провайдера"
+    else -> "провайдеров"
+  }
+
+  /**
+   * Asks every provider for its catalog CONCURRENTLY — a sequential walk paid the connect
+   * timeout of each dead provider in turn (tens of seconds before the picker filled up).
+   * Every answer is published on its own, so the list grows as replies arrive; only
+   * successful answers reach the cache, so a 401 never erases yesterday's catalog.
+   */
   private fun fetchProviderModels() {
+    val snapshot = providers
+    if (snapshot.isEmpty()) return
     ApplicationManager.getApplication().executeOnPooledThread {
-      var changed = false
-      val updated = providers.map { p ->
-        if (p.modelsFetch?.enabled == false) return@map p // absent = fetch on (default)
-        val resolved = ProvidersService.resolve(p, project.basePath) { } ?: return@map p
-        try {
-          val ids = llmClient.listModels(resolved, p.modelsFetch?.url)
-          val known = p.models.map { it.id }.toSet()
-          val extra = ids.filter { it !in known }.map { ModelEntry(id = it) }
-          if (extra.isNotEmpty()) { changed = true; p.copy(models = p.models + extra) } else p
-        }
-        catch (e: Exception) {
-          systemLine("[providers] '${p.id}': каталог моделей не получен (${e.message}) — работаю по static")
-          p
+      val llm = LlmClient.forCatalog()
+      val fresh = java.util.Collections.synchronizedMap(LinkedHashMap<String, ModelCatalogCache.Entry>())
+      val pending = snapshot.mapNotNull { p ->
+        if (p.modelsFetch?.enabled == false) return@mapNotNull null // absent = fetch on (default)
+        val resolved = ProvidersService.resolve(p, project.basePath) { } ?: return@mapNotNull null
+        ApplicationManager.getApplication().executeOnPooledThread {
+          try {
+            val ids = llm.listModels(resolved, p.modelsFetch?.url)
+            fresh[p.id] = ModelCatalogCache.Entry(
+              fingerprint = ModelCatalogCache.fingerprint(p),
+              modelIds = ids,
+              fetchedAtMs = System.currentTimeMillis(),
+            )
+            SwingUtilities.invokeLater { if (!disposed) addCatalogModels(p.id, ids) }
+          }
+          catch (e: Exception) {
+            systemLine("[providers] '${p.id}': каталог моделей не получен (${e.message}) — работаю по кэшу/static")
+          }
         }
       }
-      if (changed) {
-        SwingUtilities.invokeLater {
-          providers = updated
-          rebuildTargets()
-          systemLine("[providers] каталоги моделей подтянуты")
-          // Catalog models are hidden by default (curated picker) — say where to turn them on.
-          val dormant = updated.filter { p ->
-            p.models.isNotEmpty() && p.models.none { m ->
-              val custom = staticModelIds[p.id]?.contains(m.id) == true
-              m.active && !ModelVisibility.isHidden(p.id, m.id, defaultHidden = !custom)
-            }
+      pending.forEach { runCatching { it.get() } }
+      ModelCatalogCache.put(fresh)
+      if (fresh.isEmpty()) return@executeOnPooledThread
+      SwingUtilities.invokeLater {
+        if (disposed) return@invokeLater
+        systemLine("[providers] каталоги моделей подтянуты")
+        // Catalog models are hidden by default (curated picker) — say where to turn them on.
+        val dormant = providers.filter { p ->
+          p.models.isNotEmpty() && p.models.none { m ->
+            val custom = staticModelIds[p.id]?.contains(m.id) == true
+            m.active && !ModelVisibility.isHidden(p.id, m.id, defaultHidden = !custom)
           }
-          if (dormant.isNotEmpty()) {
-            systemLine("[providers] ${dormant.joinToString { it.name }}: модели каталога скрыты по умолчанию — включите нужные: Settings → Tools → VibeIDEA → Модели")
-          }
+        }
+        if (dormant.isNotEmpty()) {
+          systemLine("[providers] ${dormant.joinToString { it.name }}: модели каталога скрыты по умолчанию — включите нужные: Settings → Tools → VibeIDEA → Модели")
         }
       }
     }

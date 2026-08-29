@@ -12,6 +12,7 @@ import com.intellij.ui.components.JBCheckBox
 import com.intellij.ui.components.JBLabel
 import com.intellij.util.ui.JBUI
 import com.vibe.agent.providers.LlmClient
+import com.vibe.agent.providers.ModelCatalogCache
 import com.vibe.agent.providers.ProviderEntry
 import com.vibe.agent.providers.ProvidersChangeListener
 import com.vibe.agent.providers.ProvidersService
@@ -226,35 +227,76 @@ class VibeModelsConfigurable(private val project: Project) : Configurable, Confi
     fetchCatalogs(listOf(provider), rows.associate { (it.providerId to it.modelId) to it.box.isSelected })
   }
 
-  /** Pull provider model catalogs off the EDT so fetched models can be hidden here, not only static ones. */
+  /**
+   * Pull provider model catalogs off the EDT so fetched models can be hidden here, not only static
+   * ones. The cached catalog is shown FIRST (the page must not be empty while the network works),
+   * and providers are polled CONCURRENTLY — a sequential walk paid every dead provider's timeout.
+   */
   private fun fetchCatalogs(providers: List<ProviderEntry>, pending: Map<Pair<String, String>, Boolean>) {
     if (providers.isEmpty()) return
     // Поколение считаем на группу, а не глобально: «обновить» одного провайдера не должно
     // обесценивать живой запрос соседнего.
     val seq = providers.associate { p -> p.id to (groups[p.id]?.let { ++it.fetchSeq } ?: 0) }
     ApplicationManager.getApplication().executeOnPooledThread {
-      val llm = LlmClient()
+      val cache = ModelCatalogCache.load()
+      val now = System.currentTimeMillis()
       for (p in providers) {
+        val entry = cache[p.id] ?: continue
+        if (entry.fingerprint != ModelCatalogCache.fingerprint(p)) continue
         val mySeq = seq[p.id] ?: 0
-        if (p.modelsFetch?.enabled == false) { setStatus(p.id, mySeq, "модели заданы в файле (fetch: false)"); continue }
+        showCatalog(p.id, mySeq, entry.modelIds, pending)
+        setStatus(p.id, mySeq, "каталог из кэша (${ModelCatalogCache.ageText(entry.fetchedAtMs, now)}) — обновляю…")
+      }
+      val llm = LlmClient.forCatalog()
+      val fresh = java.util.Collections.synchronizedMap(LinkedHashMap<String, ModelCatalogCache.Entry>())
+      val tasks = providers.mapNotNull { p ->
+        val mySeq = seq[p.id] ?: 0
+        if (p.modelsFetch?.enabled == false) { setStatus(p.id, mySeq, "модели заданы в файле (fetch: false)"); return@mapNotNull null }
         val resolved = ProvidersService.resolve(p, project.basePath) { }
         if (resolved == null || (resolved.apiKey == null && !resolved.isLocal)) {
-          setStatus(p.id, mySeq, "нет ключа — каталог моделей недоступен (Провайдеры → ключ)"); continue
+          setStatus(p.id, mySeq, "нет ключа — каталог моделей недоступен (Провайдеры → ключ)")
+          return@mapNotNull null
         }
-        val ids = try { llm.listModels(resolved, p.modelsFetch?.url) }
-        catch (e: Exception) { setStatus(p.id, mySeq, "каталог не получен: ${e.message?.take(80)}"); continue }
-        SwingUtilities.invokeLater {
-          val group = groups[p.id] ?: return@invokeLater
-          if (group.fetchSeq != mySeq) return@invokeLater // ответ устарел: страницу успели перестроить
-          val known = rows.filter { it.providerId == p.id }.map { it.modelId }.toSet()
-          val added = ids.filter { it !in known }
-          for (id in added) addRow(group, id, id, defaultHidden = true, pending = pending)
-          setStatus(p.id, mySeq, if (ids.isEmpty()) "каталог пуст — модели только из файла"
-                                 else "каталог отдал ${ids.size} ${modelsWord(ids.size)}" +
-                                      (if (added.isEmpty()) " · новых нет" else " · добавлено ${added.size}"))
-          update()
+        ApplicationManager.getApplication().executeOnPooledThread {
+          val ids = try { llm.listModels(resolved, p.modelsFetch?.url) }
+          catch (e: Exception) {
+            setStatus(p.id, mySeq, "каталог не получен: ${e.message?.take(80)}")
+            return@executeOnPooledThread
+          }
+          // Только успешный ответ пишется в кэш — 401 не должен стирать вчерашний каталог.
+          fresh[p.id] = ModelCatalogCache.Entry(ModelCatalogCache.fingerprint(p), ids, System.currentTimeMillis())
+          showCatalog(p.id, mySeq, ids, pending) { added ->
+            if (ids.isEmpty()) "каталог пуст — модели только из файла"
+            else "каталог отдал ${ids.size} ${modelsWord(ids.size)}" +
+                 (if (added == 0) " · новых нет" else " · добавлено $added")
+          }
         }
       }
+      tasks.forEach { runCatching { it.get() } }
+      ModelCatalogCache.put(fresh)
+    }
+  }
+
+  /**
+   * Adds catalog rows unknown to the group and reports the result through [statusOf].
+   * invokeLater, never invokeAndWait: the page lives in a modal dialog, and a pooled thread
+   * blocking on the EDT there is a deadlock waiting to happen.
+   */
+  private fun showCatalog(
+    providerId: String,
+    seq: Int,
+    ids: List<String>,
+    pending: Map<Pair<String, String>, Boolean>,
+    statusOf: ((added: Int) -> String)? = null,
+  ) {
+    SwingUtilities.invokeLater {
+      val group = groups[providerId] ?: return@invokeLater
+      if (group.fetchSeq != seq) return@invokeLater // ответ устарел: страницу успели перестроить
+      val known = rows.filter { it.providerId == providerId }.map { it.modelId }.toSet()
+      var added = 0
+      for (id in ids.filter { it !in known }) { addRow(group, id, id, defaultHidden = true, pending = pending); added++ }
+      statusOf?.let { group.statusHint.apply { text = it(added); isVisible = true } }
+      update()
     }
   }
 

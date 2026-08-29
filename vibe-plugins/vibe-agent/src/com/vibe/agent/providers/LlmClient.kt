@@ -134,7 +134,7 @@ class LlmClient(private val http: HttpClient = HttpClient.newBuilder().connectTi
         URLEncoder.encode(it.key, StandardCharsets.UTF_8) + "=" + URLEncoder.encode(it.value, StandardCharsets.UTF_8)
       }
     }
-    val builder = HttpRequest.newBuilder(URI.create(url)).timeout(Duration.ofSeconds(30)).GET()
+    val builder = HttpRequest.newBuilder(URI.create(url)).timeout(Duration.ofMillis(CATALOG_TIMEOUT_MS)).GET()
     entry.headers.forEach { (k, v) -> builder.header(k, v) }
     // Anthropic rejects any request without the version header, /v1/models included.
     if (provider.protocol == "anthropic") builder.header("anthropic-version", "2023-06-01")
@@ -315,10 +315,20 @@ class LlmClient(private val http: HttpClient = HttpClient.newBuilder().connectTi
     }
   }
 
-  private companion object {
+  internal companion object {
+    /**
+     * Client for catalog polling only: the chat client waits 20 s for a connection (a chat is
+     * worth waiting for), while a catalog refresh runs behind a served cache and must not.
+     */
+    fun forCatalog(): LlmClient =
+      LlmClient(HttpClient.newBuilder().connectTimeout(Duration.ofMillis(CATALOG_TIMEOUT_MS)).build())
+
     const val STOPPED_BY_USER = "остановлено пользователем"
     /** Default per-request timeout when a provider does not set `timeoutMs` (10 min). */
     const val DEFAULT_REQUEST_TIMEOUT_MS = 600_000L
+    /** Model catalog timeout: short on purpose — a cached catalog is served meanwhile, so a
+     *  silent endpoint must not hold the refresh for half a minute. */
+    const val CATALOG_TIMEOUT_MS = 10_000L
     /** FIM completion budget, VibeIDE parity: local models are latency-bound, cloud can afford more. */
     const val FIM_MAX_TOKENS_LOCAL = 96
     const val FIM_MAX_TOKENS_CLOUD = 300
