@@ -1,6 +1,7 @@
 // Copyright 2026 VibeBrains. Use of this source code is governed by the Apache 2.0 license.
 package com.vibe.agent.settings
 
+import com.vibe.agent.i18n.VibeI18n.t
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.options.Configurable
 import com.intellij.openapi.project.Project
@@ -40,31 +41,31 @@ class VibeProvidersConfigurable(private val project: Project) : Configurable, Co
   private val cards = ArrayList<Card>()
   private val llm = LlmClient()
 
-  override fun getDisplayName(): String = "Провайдеры"
+  override fun getDisplayName(): String = t("settings.providers.title")
 
   override fun createComponent(): JComponent {
     val list = JPanel().apply { layout = BoxLayout(this, BoxLayout.Y_AXIS) }
     val providers = ProvidersService.load(project.basePath) { }
     if (providers.isEmpty()) {
-      list.add(JBLabel("<html>Активных провайдеров нет. Включите нужные в <code>.vibe/providers/*.jsonc</code> (<code>active: true</code>)<br>или создайте <code>providers.json</code>. Спека — docs/vibe/manuals/providersSpec.md.</html>"))
+      list.add(JBLabel("<html>" + t("settings.providers.empty") + "</html>"))
     }
     for (p in providers) {
       val field = JBPasswordField()
       // PasswordSafe и .env — это IO (@RequiresBackgroundThread): читаем в фоне, карточка
       // рождается с заглушкой и дозаполняется. На EDT чтение подвешивало открытие страницы
       // (Keychain на macOS умеет спросить пароль) — на 16 провайдерах это заметно.
-      val status = JBLabel("читаю состояние ключа…").apply {
+      val status = JBLabel(t("settings.providers.keyReading")).apply {
         font = com.intellij.util.ui.JBFont.label().deriveFont(11f)
         foreground = com.intellij.ui.JBColor.GRAY
         minimumSize = Dimension(0, 0)
       }
-      val test = JButton("Проверить и сохранить").apply {
-        toolTipText = "Запросить каталог моделей введённым ключом и, если провайдер его принял, сохранить в хранилище ОС"
+      val test = JButton(t("settings.providers.checkAndSave")).apply {
+        toolTipText = t("settings.providers.checkTooltip")
       }
       val originLabel = when (p.origin) {
-        ProviderOrigin.PROJECT -> "проектная запись (&lt;проект&gt;/.vibe)"
-        ProviderOrigin.OVERRIDDEN -> "глобальная запись (~/.vibe) + проектное переопределение"
-        else -> "глобальная запись (~/.vibe)"
+        ProviderOrigin.PROJECT -> t("settings.providers.originProject")
+        ProviderOrigin.OVERRIDDEN -> t("settings.providers.originOverridden")
+        else -> t("settings.providers.originGlobal")
       }
       val hint = JBLabel("<html>Провайдер: $originLabel (id: <code>${p.id}</code>${p.apiKeyEnv?.let { " · env: <code>$it</code>" } ?: ""}). Введите ключ здесь — он уйдёт в защищённое хранилище ОС, — или задайте его в .vibe/.env.</html>").apply {
         font = com.intellij.util.ui.JBFont.label().deriveFont(11f)
@@ -118,10 +119,10 @@ class VibeProvidersConfigurable(private val project: Project) : Configurable, Co
     val dotenv = envName != null && ApiKeyResolver.dotEnv(project.basePath)[envName] != null
     val osEnv = envName != null && System.getenv(envName) != null
     return when {
-      stored -> "Ключ сохранён · источник: защищённое хранилище ОС"
-      dotenv -> "Ключ найден · источник: .vibe/.env"
-      osEnv -> "Ключ найден · источник: переменная окружения $envName"
-      else -> "Ключа нет · чат с этим провайдером не заработает (кроме localhost)"
+      stored -> t("settings.providers.keyStored")
+      dotenv -> t("settings.providers.keyFromEnvFile")
+      osEnv -> t("settings.providers.keyFromEnv", "name" to envName)
+      else -> t("settings.providers.keyMissing")
     }
   }
 
@@ -135,7 +136,7 @@ class VibeProvidersConfigurable(private val project: Project) : Configurable, Co
   private fun verify(card: Card, status: JBLabel) {
     val p = card.provider
     val typed = String(card.field.password).takeIf { it.isNotEmpty() && it != STORED_PLACEHOLDER }
-    status.text = "Проверяю…"
+    status.text = t("settings.providers.checking")
     ApplicationManager.getApplication().executeOnPooledThread {
       val resolved = ProvidersService.resolve(p, project.basePath) { }?.let {
         if (typed != null) it.copy(apiKey = typed) else it
@@ -145,20 +146,20 @@ class VibeProvidersConfigurable(private val project: Project) : Configurable, Co
       val keyUsed = resolved != null && resolved.apiKey != null && p.auth.type != "none"
       var ok = false
       val text = when {
-        resolved == null -> "Провайдер без baseURL — проверять нечего"
+        resolved == null -> t("settings.providers.noBaseUrl")
         resolved.apiKey == null && !resolved.isLocal -> sourceLine(p)
         else -> try {
           val n = llm.listModels(resolved, p.modelsFetch?.url).size
           ok = true
           when {
-            n > 0 && keyUsed -> "Ключ действителен · каталог отдал $n моделей"
-            n > 0 -> "Каталог отдал $n моделей · ключ этому endpoint не нужен"
-            keyUsed -> "Endpoint ответил, каталог пуст — ключ принят (модели только из файла)"
-            else -> "Endpoint ответил, но каталог пуст — ключ не проверяется (static-список)"
+            n > 0 && keyUsed -> t("settings.providers.keyValid", "count" to n)
+            n > 0 -> t("settings.providers.keyNotNeeded", "count" to n)
+            keyUsed -> t("settings.providers.emptyCatalogAccepted")
+            else -> t("settings.providers.emptyCatalogUnchecked")
           }
         }
         catch (e: Exception) {
-          "Проверка не прошла: ${e.message?.take(120)}"
+          t("settings.providers.checkFailed", "reason" to e.message?.take(120))
         }
       }
       SwingUtilities.invokeLater {
@@ -178,7 +179,7 @@ class VibeProvidersConfigurable(private val project: Project) : Configurable, Co
             if (String(twin.field.password).isEmpty() || twin === card) twin.field.text = STORED_PLACEHOLDER
             twin.status.text = sourceLine(twin.provider)
           }
-          status.text = "$text · ключ сохранён"
+          status.text = t("settings.providers.keySaved", "status" to text)
           project.messageBus.syncPublisher(ProvidersChangeListener.TOPIC).providersChanged()
         }
       }

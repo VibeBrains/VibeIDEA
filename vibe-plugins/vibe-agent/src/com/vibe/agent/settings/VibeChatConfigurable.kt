@@ -1,6 +1,7 @@
 // Copyright 2026 VibeBrains. Use of this source code is governed by the Apache 2.0 license.
 package com.vibe.agent.settings
 
+import com.vibe.agent.i18n.VibeI18n.t
 import com.intellij.openapi.options.Configurable
 import com.intellij.ui.JBIntSpinner
 import com.intellij.ui.components.JBLabel
@@ -16,7 +17,10 @@ class VibeChatConfigurable : Configurable {
   private var tabsSpinner: JBIntSpinner? = null
   private var messagesSpinner: JBIntSpinner? = null
 
-  override fun getDisplayName(): String = "Чат"
+  override fun getDisplayName(): String = t("settings.chat.title")
+
+  /** Grey hint under a control — one place, so wording and colour cannot drift between pages. */
+  private fun hint(text: String) = JBLabel("<html>$text</html>").apply { foreground = com.intellij.ui.JBColor.GRAY }
 
   override fun createComponent(): JComponent {
     val field = JBTextField(VibeChatSettings.continueText, 24)
@@ -26,19 +30,12 @@ class VibeChatConfigurable : Configurable {
     val messages = JBIntSpinner(VibeChatSettings.maxMessagesPerThread, VibeChatSettings.MIN_MESSAGES_PER_THREAD, VibeChatSettings.MAX_MESSAGES_PER_THREAD)
     messagesSpinner = messages
     return FormBuilder.createFormBuilder()
-      .addLabeledComponent("Текст кнопки ▷ «быстрое продолжение»:", field)
-      .addComponent(JBLabel("<html>Кнопка ▷ справа от поля ввода отправляет этот текст как ваше сообщение — подпинывает агента, " +
-        "когда он остановился. Пусто — вернётся «${VibeChatSettings.DEFAULT_CONTINUE_TEXT}».</html>").apply {
-        foreground = com.intellij.ui.JBColor.GRAY
-      })
-      .addLabeledComponent("Открытых вкладок чата (макс.):", tabs)
-      .addComponent(JBLabel("<html>Сверх лимита тихо закрывается самая старая неактивная вкладка — тред остаётся в истории.</html>").apply {
-        foreground = com.intellij.ui.JBColor.GRAY
-      })
-      .addLabeledComponent("Сообщений в треде (макс.):", messages)
-      .addComponent(JBLabel("<html>При переполнении старые сообщения обрезаются с маркером в начале треда.</html>").apply {
-        foreground = com.intellij.ui.JBColor.GRAY
-      })
+      .addLabeledComponent(t("settings.chat.continueText"), field)
+      .addComponent(hint(t("settings.chat.continueHint", "default" to VibeChatSettings.DEFAULT_CONTINUE_TEXT)))
+      .addLabeledComponent(t("settings.chat.maxTabs"), tabs)
+      .addComponent(hint(t("settings.chat.maxTabsHint")))
+      .addLabeledComponent(t("settings.chat.maxMessages"), messages)
+      .addComponent(hint(t("settings.chat.maxMessagesHint")))
       .addComponentFillVertically(JPanel(), 0)
       .panel.apply { border = JBUI.Borders.empty(8) }
   }

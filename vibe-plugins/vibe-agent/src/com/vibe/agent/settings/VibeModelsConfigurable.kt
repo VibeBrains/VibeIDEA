@@ -1,6 +1,7 @@
 // Copyright 2026 VibeBrains. Use of this source code is governed by the Apache 2.0 license.
 package com.vibe.agent.settings
 
+import com.vibe.agent.i18n.VibeI18n.t
 import com.intellij.openapi.Disposable
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.options.Configurable
@@ -58,20 +59,20 @@ class VibeModelsConfigurable(private val project: Project) : Configurable, Confi
   private val rows = ArrayList<Row>()
   private val groups = LinkedHashMap<String, Group>()
   private val search = SearchTextField()
-  private val activesOnly = JBCheckBox("активные", true).apply {
-    toolTipText = "Показывать в списке только модели, включённые переключателем (видимые в списках выбора модели)."
+  private val activesOnly = JBCheckBox(t("settings.models.activesOnly"), true).apply {
+    toolTipText = t("settings.models.activesOnlyTooltip")
   }
   private var listPanel: JPanel? = null
   private var uiDisposable: Disposable? = null
   /** Держится на время нашей же публикации топика: Apply не должен перезапускать эту страницу. */
   private var selfPublishing = false
 
-  override fun getDisplayName(): String = "Модели"
+  override fun getDisplayName(): String = t("settings.models.title")
 
   override fun createComponent(): JComponent {
     val list = JPanel().apply { layout = BoxLayout(this, BoxLayout.Y_AXIS) }
     listPanel = list
-    search.textEditor.emptyText.text = "Поиск: имя, id, провайдер, vision/fim/кастом…"
+    search.textEditor.emptyText.text = t("settings.models.search")
     search.addDocumentListener(object : javax.swing.event.DocumentListener {
       override fun insertUpdate(e: javax.swing.event.DocumentEvent) = update()
       override fun removeUpdate(e: javax.swing.event.DocumentEvent) = update()
@@ -79,8 +80,8 @@ class VibeModelsConfigurable(private val project: Project) : Configurable, Confi
     })
     activesOnly.addActionListener { update() }
 
-    val refreshAll = ActionLink("Обновить каталоги") { rebuild(refreshCatalogs = true) }
-      .apply { toolTipText = "Перечитать реестр провайдеров и запросить у них списки моделей заново" }
+    val refreshAll = ActionLink(t("settings.models.refreshAll")) { rebuild(refreshCatalogs = true) }
+      .apply { toolTipText = t("settings.models.refreshAllTooltip") }
 
     // A key applied on the Провайдеры page publishes this topic — rebuild instead of showing
     // yesterday's empty groups until the next restart.
@@ -119,7 +120,7 @@ class VibeModelsConfigurable(private val project: Project) : Configurable, Confi
 
     val providers = ProvidersService.load(project.basePath) { }
     if (providers.isEmpty()) {
-      list.add(JBLabel("<html>Активных провайдеров нет. Включите нужные в <code>.vibe/providers/*.jsonc</code> (<code>active: true</code>)<br>или создайте <code>providers.json</code>. Спека — docs/vibe/manuals/providersSpec.md.</html>"))
+      list.add(JBLabel("<html>" + t("settings.providers.empty") + "</html>"))
     }
     for (p in providers) {
       val body = JPanel().apply {
@@ -131,9 +132,9 @@ class VibeModelsConfigurable(private val project: Project) : Configurable, Confi
         cursor = Cursor.getPredefinedCursor(Cursor.HAND_CURSOR)
         border = JBUI.Borders.empty(6, 2, 2, 2)
       }
-      val refreshOne = ActionLink("обновить") { refreshCatalog(p.id) }
+      val refreshOne = ActionLink(t("settings.models.refreshOne")) { refreshCatalog(p.id) }
         .apply {
-          toolTipText = "Запросить список моделей у «${p.name}» заново"
+          toolTipText = t("settings.models.refreshOneTooltip", "provider" to p.name)
           border = JBUI.Borders.empty(6, 8, 2, 2)
         }
       val container = JPanel(BorderLayout()).apply {
@@ -143,7 +144,7 @@ class VibeModelsConfigurable(private val project: Project) : Configurable, Confi
         }, BorderLayout.NORTH)
         add(body, BorderLayout.CENTER)
       }
-      val filteredOutHint = JBLabel("все модели скрыты — выключите тумблер «активные», чтобы включить модели из каталога").apply {
+      val filteredOutHint = JBLabel(t("settings.models.allHidden")).apply {
         foreground = com.intellij.ui.JBColor.GRAY
         isVisible = false
       }
@@ -189,9 +190,9 @@ class VibeModelsConfigurable(private val project: Project) : Configurable, Confi
     val selected = pending[group.providerId to modelId]
                    ?: !ModelVisibility.isHidden(group.providerId, modelId, defaultHidden)
     val box = JBCheckBox(label, selected)
-    box.toolTipText = if (box.isSelected) "Показать в списке" else "Скрыт из списка"
+    box.toolTipText = if (box.isSelected) t("settings.models.show") else t("settings.models.hidden")
     box.addActionListener {
-      box.toolTipText = if (box.isSelected) "Показать в списке" else "Скрыт из списка"
+      box.toolTipText = if (box.isSelected) t("settings.models.show") else t("settings.models.hidden")
       if (activesOnly.isSelected) update()
     }
     rows.add(Row(group.providerId, modelId, "${group.name} ${group.providerId} $label", defaultHidden, box))
@@ -209,7 +210,7 @@ class VibeModelsConfigurable(private val project: Project) : Configurable, Confi
       for (r in groupRows) r.box.isVisible = r in found
       val chevron = if (searching || group.expanded) "▾" else "▸"
       group.header.text = "$chevron  ${group.name}  ${ModelRows.counter(found.size, afterActives.size, searching)}"
-      group.header.toolTipText = "${groupRows.size} всего"
+      group.header.toolTipText = t("settings.models.totalCount", "count" to groupRows.size)
       // While searching: only groups with matches are visible and they are force-expanded;
       // otherwise the manual collapsed/expanded state rules (collapsed by default).
       group.container.isVisible = !searching || found.isNotEmpty()
@@ -223,7 +224,7 @@ class VibeModelsConfigurable(private val project: Project) : Configurable, Confi
   private fun refreshCatalog(providerId: String) {
     val provider = ProvidersService.load(project.basePath) { }.firstOrNull { it.id == providerId } ?: return
     val group = groups[providerId]
-    group?.statusHint?.apply { text = "запрашиваю каталог моделей…"; isVisible = true }
+    group?.statusHint?.apply { text = t("settings.models.asking"); isVisible = true }
     fetchCatalogs(listOf(provider), rows.associate { (it.providerId to it.modelId) to it.box.isSelected })
   }
 
@@ -245,30 +246,30 @@ class VibeModelsConfigurable(private val project: Project) : Configurable, Confi
         if (entry.fingerprint != ModelCatalogCache.fingerprint(p)) continue
         val mySeq = seq[p.id] ?: 0
         showCatalog(p.id, mySeq, entry.modelIds, pending)
-        setStatus(p.id, mySeq, "каталог из кэша (${ModelCatalogCache.ageText(entry.fetchedAtMs, now)}) — обновляю…")
+        setStatus(p.id, mySeq, t("settings.models.fromCache", "age" to ModelCatalogCache.ageText(entry.fetchedAtMs, now)))
       }
       val llm = LlmClient.forCatalog()
       val fresh = java.util.Collections.synchronizedMap(LinkedHashMap<String, ModelCatalogCache.Entry>())
       val tasks = providers.mapNotNull { p ->
         val mySeq = seq[p.id] ?: 0
-        if (p.modelsFetch?.enabled == false) { setStatus(p.id, mySeq, "модели заданы в файле (fetch: false)"); return@mapNotNull null }
+        if (p.modelsFetch?.enabled == false) { setStatus(p.id, mySeq, t("settings.models.fetchDisabled")); return@mapNotNull null }
         val resolved = ProvidersService.resolve(p, project.basePath) { }
         if (resolved == null || (resolved.apiKey == null && !resolved.isLocal)) {
-          setStatus(p.id, mySeq, "нет ключа — каталог моделей недоступен (Провайдеры → ключ)")
+          setStatus(p.id, mySeq, t("settings.models.noKey"))
           return@mapNotNull null
         }
         ApplicationManager.getApplication().executeOnPooledThread {
           val ids = try { llm.listModels(resolved, p.modelsFetch?.url) }
           catch (e: Exception) {
-            setStatus(p.id, mySeq, "каталог не получен: ${e.message?.take(80)}")
+            setStatus(p.id, mySeq, t("settings.models.fetchFailed", "reason" to e.message?.take(80)))
             return@executeOnPooledThread
           }
           // Только успешный ответ пишется в кэш — 401 не должен стирать вчерашний каталог.
           fresh[p.id] = ModelCatalogCache.Entry(ModelCatalogCache.fingerprint(p), ids, System.currentTimeMillis())
           showCatalog(p.id, mySeq, ids, pending) { added ->
-            if (ids.isEmpty()) "каталог пуст — модели только из файла"
-            else "каталог отдал ${ids.size} ${modelsWord(ids.size)}" +
-                 (if (added == 0) " · новых нет" else " · добавлено $added")
+            if (ids.isEmpty()) t("settings.models.catalogEmpty")
+            else t("settings.models.catalogReturned", "count" to ids.size, "word" to modelsWord(ids.size)) +
+                 (if (added == 0) t("settings.models.noNew") else t("settings.models.added", "count" to added))
           }
         }
       }
@@ -310,9 +311,9 @@ class VibeModelsConfigurable(private val project: Project) : Configurable, Confi
   }
 
   private fun modelsWord(n: Int): String = when {
-    n % 10 == 1 && n % 100 != 11 -> "модель"
-    n % 10 in 2..4 && n % 100 !in 12..14 -> "модели"
-    else -> "моделей"
+    n % 10 == 1 && n % 100 != 11 -> t("settings.models.word.one")
+    n % 10 in 2..4 && n % 100 !in 12..14 -> t("settings.models.word.few")
+    else -> t("settings.models.word.many")
   }
 
   override fun isModified(): Boolean = rows.any { ModelVisibility.isHidden(it.providerId, it.modelId, it.defaultHidden) == it.box.isSelected }

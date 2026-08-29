@@ -1,6 +1,7 @@
 // Copyright 2026 VibeBrains. Use of this source code is governed by the Apache 2.0 license.
 package com.vibe.agent.history
 
+import com.vibe.agent.i18n.VibeI18n.t
 import com.intellij.openapi.actionSystem.ActionUpdateThread
 import com.intellij.openapi.actionSystem.AnActionEvent
 import com.intellij.openapi.fileChooser.FileChooserFactory
@@ -27,9 +28,11 @@ private const val TOOL_WINDOW_ID = "VibeAgent"
 private const val EXPORT_FILE_PREFIX = "vibeidea-history"
 private const val EXT_MARKDOWN = "md"
 private const val EXT_JSON = "json"
-private const val EXPORT_TITLE = "Экспорт истории"
-private const val CLEAR_TITLE = "Удаление истории"
-private const val CLAIM_TITLE = "Привязка истории"
+// Not `const`: a title comes from the catalogue, and the catalogue is chosen at runtime — a
+// compile-time constant would freeze the language of these dialogs to whatever was bundled.
+private val EXPORT_TITLE get() = t("history.export.title")
+private val CLEAR_TITLE get() = t("history.delete.title")
+private val CLAIM_TITLE get() = t("history.claim.title")
 
 /** Threads strictly belonging to this project (untagged excluded), non-empty only. */
 private fun projectThreads(project: Project): List<ChatThread> {
@@ -67,12 +70,12 @@ class VibeExportProjectHistoryAction : DumbAwareAction() {
     val project = e.project ?: return
     val threads = projectThreads(project)
     if (threads.isEmpty()) {
-      Messages.showInfoMessage(project, "У текущего проекта нет истории чатов для экспорта.", EXPORT_TITLE)
+      Messages.showInfoMessage(project, t("history.export.nothing"), EXPORT_TITLE)
       return
     }
     val choice = Messages.showDialog(
       project,
-      "Формат экспорта истории (${threads.size} тредов)",
+      t("history.export.format", "count" to threads.size),
       EXPORT_TITLE,
       arrayOf(OPTION_MARKDOWN, OPTION_JSON, OPTION_CANCEL),
       FORMAT_MARKDOWN,
@@ -84,7 +87,7 @@ class VibeExportProjectHistoryAction : DumbAwareAction() {
       else -> return
     }
     val defaultName = "$EXPORT_FILE_PREFIX-${slugOf(project.name)}-${LocalDate.now()}.$extension"
-    val descriptor = FileSaverDescriptor("Сохранить историю проекта", "")
+    val descriptor = FileSaverDescriptor(t("history.export.save"), "")
     val target = FileChooserFactory.getInstance().createSaveFileDialog(descriptor, project).save(defaultName) ?: return
     val content = if (choice == FORMAT_MARKDOWN) toMarkdown(threads) else toJsonDump(threads)
     val path = target.file.toPath()
@@ -92,10 +95,10 @@ class VibeExportProjectHistoryAction : DumbAwareAction() {
       Files.writeString(path, content)
     }
     catch (ex: IOException) {
-      Messages.showErrorDialog(project, "Не удалось записать файл: ${ex.message}", EXPORT_TITLE)
+      Messages.showErrorDialog(project, t("history.export.writeFailed", "reason" to ex.message), EXPORT_TITLE)
       return
     }
-    Messages.showInfoMessage(project, "История экспортирована: ${threads.size} тредов → $path", EXPORT_TITLE)
+    Messages.showInfoMessage(project, t("history.export.done", "count" to threads.size, "path" to path), EXPORT_TITLE)
   }
 
   private fun slugOf(name: String): String = name.lowercase().map { if (it.isLetterOrDigit()) it else '-' }.joinToString("")
@@ -107,8 +110,8 @@ class VibeExportProjectHistoryAction : DumbAwareAction() {
       append('_').append(meta).append("_\n\n")
       for (message in thread.messages) {
         when (message.role) {
-          Role.USER -> append("**Вы:** ").append(message.text)
-          Role.ASSISTANT -> append("**Агент:** ").append(message.text)
+          Role.USER -> append(t("history.role.user")).append(message.text)
+          Role.ASSISTANT -> append(t("history.role.agent")).append(message.text)
           Role.OTHER -> append('_').append(message.text).append('_')
         }
         append("\n\n")
@@ -124,9 +127,10 @@ class VibeExportProjectHistoryAction : DumbAwareAction() {
   }
 
   private companion object {
-    const val OPTION_MARKDOWN = "Markdown (.md) — читаемая стенограмма"
-    const val OPTION_JSON = "JSON (.json) — полные данные тредов"
-    const val OPTION_CANCEL = "Отмена"
+    // Not `const`: these are catalogue strings, and the catalogue is chosen at runtime.
+    val OPTION_MARKDOWN get() = t("history.export.markdown")
+    val OPTION_JSON get() = t("history.export.json")
+    val OPTION_CANCEL get() = t("common.cancel")
     const val FORMAT_MARKDOWN = 0
     const val FORMAT_JSON = 1
     val PRETTY_JSON = Json { prettyPrint = true }
@@ -145,23 +149,21 @@ class VibeClearProjectHistoryAction : DumbAwareAction() {
     val project = e.project ?: return
     val threads = projectThreads(project)
     if (threads.isEmpty()) {
-      Messages.showInfoMessage(project, "У текущего проекта нет истории чатов.", CLEAR_TITLE)
+      Messages.showInfoMessage(project, t("history.delete.nothing"), CLEAR_TITLE)
       return
     }
     val answer = Messages.showYesNoDialog(
       project,
-      "Удалить всю историю чатов текущего проекта (${threads.size} тредов)?\n\n" +
-        "Затрагиваются только треды, принадлежащие этому проекту. История без проекта и других проектов не трогается. " +
-        "Действие необратимо — рекомендуется сначала экспортировать.",
+      t("history.delete.confirm", "count" to threads.size),
       CLEAR_TITLE,
-      "Удалить",
-      "Отмена",
+      t("common.delete"),
+      t("common.cancel"),
       Messages.getWarningIcon(),
     )
     if (answer != Messages.YES) return
     val history = VibeChatHistory.getInstance()
     threads.forEach { history.delete(it.id) }
-    Messages.showInfoMessage(project, "Удалено тредов текущего проекта: ${threads.size}.", CLEAR_TITLE)
+    Messages.showInfoMessage(project, t("history.delete.done", "count" to threads.size), CLEAR_TITLE)
   }
 }
 
@@ -178,8 +180,8 @@ class VibeClaimUntaggedHistoryAction : DumbAwareAction() {
     val basePath = project.basePath ?: return
     val claimed = VibeChatHistory.getInstance().claimUntagged(basePath, project.name)
     val message =
-      if (claimed > 0) "Привязано к текущему проекту: $claimed чатов без проекта."
-      else "Нет чатов без проекта — привязывать нечего."
+      if (claimed > 0) t("history.claim.done", "count" to claimed)
+      else t("history.claim.nothing")
     Messages.showInfoMessage(project, message, CLAIM_TITLE)
   }
 }
