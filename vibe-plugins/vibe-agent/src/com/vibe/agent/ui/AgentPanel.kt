@@ -1598,6 +1598,28 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     border = JBUI.Borders.empty()
   }
 
+  /**
+   * Prose as Markdown when it looks like Markdown, plain text otherwise.
+   *
+   * Falling back to plain text matters: the HTML view re-wraps and re-lays out on every change, so
+   * a streaming answer would flicker if everything went through it.
+   */
+  private fun proseComponent(text: String): JComponent {
+    val html = MarkdownInline.toHtml(text) ?: return proseArea().also { it.text = text }
+    return javax.swing.JEditorPane("text/html", "<html><body style='font-family:sans-serif'>$html</body></html>").apply {
+      isEditable = false
+      isOpaque = false
+      border = JBUI.Borders.empty()
+      font = com.intellij.util.ui.JBFont.label().deriveFont(13f)
+      // A link in a model's answer opens in the browser, not inside the IDE's HTML view.
+      addHyperlinkListener { event ->
+        if (event.eventType == javax.swing.event.HyperlinkEvent.EventType.ACTIVATED) {
+          event.url?.let { com.intellij.ide.BrowserUtil.browse(it) }
+        }
+      }
+    }
+  }
+
   private fun metaLabel(text: String, right: Boolean): JLabel = JLabel(text).apply {
     font = com.intellij.util.ui.JBFont.label().deriveFont(Font.PLAIN, 11f)
     foreground = META_FG
@@ -1631,7 +1653,9 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
       if (!MessageSegments.hasCode(content)) return
       val stack = JPanel().apply { layout = BoxLayout(this, BoxLayout.Y_AXIS); isOpaque = false; alignmentX = Component.LEFT_ALIGNMENT }
       for (seg in MessageSegments.parse(content)) when (seg) {
-        is MessageSegment.Prose -> stack.add(proseArea().also { it.text = seg.text; it.alignmentX = Component.LEFT_ALIGNMENT })
+        // Markdown, when the model wrote any: an unrendered list of steps reads as one paragraph,
+        // and that is exactly where a person skips a step.
+        is MessageSegment.Prose -> stack.add(proseComponent(seg.text).also { it.alignmentX = Component.LEFT_ALIGNMENT })
         is MessageSegment.Code -> stack.add(CodeBlockPanel(project, seg.lang, seg.code))
       }
       (text.parent as? java.awt.Container)?.let { c ->
