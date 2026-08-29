@@ -13,6 +13,8 @@
   <extensions defaultExtensionNs="com.intellij">
     <toolWindow id="Дизайн" anchor="right" secondary="true" factoryClass="com.vibe.agent.design.DesignToolWindowFactory"
                 icon="/icons/vibeAgent.svg" doNotActivateOnStart="true"/>
+    <toolWindow id="Аудит" anchor="bottom" secondary="true" factoryClass="com.vibe.agent.audit.VibeAuditToolWindowFactory"
+                icon="/icons/vibeAgent.svg" doNotActivateOnStart="true"/>
     <toolWindow id="Диспетчерская" anchor="bottom" secondary="true" factoryClass="com.vibe.agent.runs.VibeRunsToolWindowFactory"
                 icon="/icons/vibeAgent.svg" doNotActivateOnStart="true"/>
     <toolWindow id="VibeAgent" anchor="right" factoryClass="com.vibe.agent.ui.VibeAgentToolWindowFactory" icon="/icons/vibeAgent.svg"/>

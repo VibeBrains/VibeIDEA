@@ -1,6 +1,8 @@
 // Copyright 2026 VibeBrains. Use of this source code is governed by the Apache 2.0 license.
 package com.vibe.agent.ui
 
+import com.vibe.agent.i18n.VibeI18n.t
+import com.vibe.agent.settings.VibeChatSettings
 import com.intellij.openapi.editor.ex.EditorEx
 import com.intellij.openapi.fileTypes.FileTypeManager
 import com.intellij.openapi.fileTypes.UnknownFileType
@@ -25,8 +27,15 @@ import javax.swing.JTextArea
 class CodeBlockPanel(project: Project?, lang: String?, rawCode: String) : JPanel(BorderLayout()) {
   // Cap a runaway block: a highlighting editor over megabytes of code would freeze the feed.
   private val code = if (rawCode.length > MAX_CODE_CHARS)
-    rawCode.take(MAX_CODE_CHARS) + "\n… (обрезано, ${rawCode.length - MAX_CODE_CHARS} символов)" else rawCode
+    rawCode.take(MAX_CODE_CHARS) + "\n" + t("code.truncated", "count" to (rawCode.length - MAX_CODE_CHARS)) else rawCode
   private val tooBigForHighlight = code.length > MAX_HIGHLIGHT_CHARS
+
+  private val totalLines = code.count { it == '\n' } + 1
+  private val foldAt = VibeChatSettings.codeFoldLines
+  private val foldable = foldAt > 0 && totalLines > foldAt
+  private var expanded = !foldable
+  private lateinit var body: JPanel
+  private val toggle = ChatTheme.actionLabel("") { toggleFold() }
 
   init {
     isOpaque = false
@@ -36,11 +45,39 @@ class CodeBlockPanel(project: Project?, lang: String?, rawCode: String) : JPanel
     val header = JPanel(BorderLayout()).apply {
       background = HEADER_BG
       isOpaque = true
-      add(label(lang?.lowercase() ?: "код"), BorderLayout.WEST)
-      add(ChatTheme.copyLabel("Скопировать код") { code }, BorderLayout.EAST)
+      add(label(lang?.lowercase() ?: t("code.lang.unknown")), BorderLayout.WEST)
+      // Copy always yields the WHOLE block: a folded listing that copies only what is on screen
+      // loses code silently, and silent loss is the one failure nobody notices in time.
+      add(JPanel(java.awt.FlowLayout(java.awt.FlowLayout.RIGHT, 8, 0)).apply {
+        isOpaque = false
+        if (foldable) add(toggle)
+        add(ChatTheme.copyLabel(t("code.copy")) { code })
+      }, BorderLayout.EAST)
     }
     add(header, BorderLayout.NORTH)
-    add(highlighted(project, lang, code) ?: plain(code), BorderLayout.CENTER)
+    body = JPanel(BorderLayout()).apply { isOpaque = false }
+    add(body, BorderLayout.CENTER)
+    renderBody(project, lang)
+  }
+
+  /**
+   * A long listing in the feed pushes the agent's answer off the screen, and the answer is what the
+   * person is waiting for. Folded, the block still shows its beginning — a listing collapsed to a
+   * single line says nothing about what is inside.
+   */
+  private fun toggleFold() {
+    expanded = !expanded
+    renderBody(currentProject, currentLang)
+    revalidate(); repaint()
+  }
+
+  private fun renderBody(project: Project?, lang: String?) {
+    currentProject = project
+    currentLang = lang
+    val shown = if (expanded) code else code.lineSequence().take(foldAt).joinToString("\n")
+    toggle.text = if (expanded) t("code.collapse") else t("code.expand", "count" to (totalLines - foldAt))
+    body.removeAll()
+    body.add(highlighted(project, lang, shown) ?: plain(shown), BorderLayout.CENTER)
   }
 
   private fun label(text: String) = JLabel(text).apply {
@@ -99,6 +136,9 @@ class CodeBlockPanel(project: Project?, lang: String?, rawCode: String) : JPanel
       viewport.isOpaque = false
     }
   }
+
+  private var currentProject: Project? = null
+  private var currentLang: String? = null
 
   companion object {
     /** Hard cap on rendered code; beyond this the block is truncated with a notice. */

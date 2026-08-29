@@ -90,4 +90,14 @@ object VibeChatSettings {
   var soundCustomPath: String
     get() = props.getValue(KEY_SOUND_PATH, "")
     set(value) = props.setValue(KEY_SOUND_PATH, value.trim(), "")
+
+  // --- code block folding ---
+  /** Lines beyond which a listing is folded; 0 disables folding entirely. */
+  const val DEFAULT_CODE_FOLD_LINES = 24
+  const val MAX_CODE_FOLD_LINES = 400
+  private const val KEY_CODE_FOLD_LINES = "vibe.chat.codeFoldLines"
+
+  var codeFoldLines: Int
+    get() = props.getInt(KEY_CODE_FOLD_LINES, DEFAULT_CODE_FOLD_LINES).coerceIn(0, MAX_CODE_FOLD_LINES)
+    set(value) = props.setValue(KEY_CODE_FOLD_LINES, value.coerceIn(0, MAX_CODE_FOLD_LINES), DEFAULT_CODE_FOLD_LINES)
 }

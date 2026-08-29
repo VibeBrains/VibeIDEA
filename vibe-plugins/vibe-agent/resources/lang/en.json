@@ -252,5 +252,20 @@
   "settings.sound.preview": "Play it",
   "settings.sound.hint": "The built-in chime is synthesised on the spot: no assets, no dependencies, and it sounds the same on every platform. A custom file is validated by <b>trying to open it</b> rather than by its extension — what the JDK can play depends on the machine. By default the sound stays silent while the window is focused: it is meant for someone who looked away, and beeping at a person watching the screen ends with the sound being turned off for good. Events in a row (pipeline steps) are merged by a 1.5-second window.",
   "settings.sound.cannotPlay": "This file cannot be played: {reason}",
-  "settings.sound.previewFailed": "Could not play: {reason}"
+  "settings.sound.previewFailed": "Could not play: {reason}",
+  "code.expand": "expand ({count} more lines)",
+  "code.collapse": "collapse",
+  "code.copy": "Copy the code",
+  "code.lang.unknown": "code",
+  "code.truncated": "… (truncated, {count} characters)",
+  "settings.chat.codeFold": "Fold code blocks longer than, lines (0 — never fold):",
+  "settings.chat.codeFoldHint": "A long listing in the feed pushes the agent's answer off the screen. A folded block shows its beginning and the number of hidden lines; “Copy the code” always copies the WHOLE block, not the visible part.",
+  "code.copyShort": "copy",
+  "audit.follow": "follow",
+  "audit.onlyFailures": "failures only",
+  "audit.clearView": "clear the view",
+  "audit.disabled": "Audit is off: Settings → Tools → VibeIDEA → Agent → “Keep an audit log”. The panel will show records as soon as they appear.",
+  "audit.empty": "No records yet.",
+  "audit.rotated": "— the log rotated or was cleared, reading from the start —",
+  "audit.note": "The panel reads on from where it stopped instead of re-reading the whole file: with rotation at 10 MB that is the difference between instant and seconds per tick. The last {max} lines are shown."
 }

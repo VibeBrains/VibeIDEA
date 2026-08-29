@@ -23,6 +23,7 @@ class VibeChatConfigurable : Configurable {
   private var soundMuteFocused: com.intellij.ui.components.JBCheckBox? = null
   private var soundVolume: JBIntSpinner? = null
   private var soundPath: JBTextField? = null
+  private var codeFold: JBIntSpinner? = null
 
   override fun getDisplayName(): String = t("settings.chat.title")
 
@@ -43,6 +44,8 @@ class VibeChatConfigurable : Configurable {
       .addComponent(hint(t("settings.chat.maxTabsHint")))
       .addLabeledComponent(t("settings.chat.maxMessages"), messages)
       .addComponent(hint(t("settings.chat.maxMessagesHint")))
+      .addLabeledComponent(t("settings.chat.codeFold"), JBIntSpinner(VibeChatSettings.codeFoldLines, 0, VibeChatSettings.MAX_CODE_FOLD_LINES).also { codeFold = it })
+      .addComponent(hint(t("settings.chat.codeFoldHint")))
       .addComponent(com.intellij.ui.components.JBCheckBox(t("settings.sound.enabled"), VibeChatSettings.soundEnabled).also { soundEnabled = it })
       .addComponent(com.intellij.ui.components.JBCheckBox(t("settings.sound.onFinished"), VibeChatSettings.soundOnTurnFinished).also { soundFinished = it })
       .addComponent(com.intellij.ui.components.JBCheckBox(t("settings.sound.onStopped"), VibeChatSettings.soundOnTurnStopped).also { soundStopped = it })
@@ -78,6 +81,7 @@ class VibeChatConfigurable : Configurable {
   }
 
   override fun isModified(): Boolean =
+    codeFold?.number != VibeChatSettings.codeFoldLines ||
     soundEnabled?.isSelected != VibeChatSettings.soundEnabled ||
     soundFinished?.isSelected != VibeChatSettings.soundOnTurnFinished ||
     soundStopped?.isSelected != VibeChatSettings.soundOnTurnStopped ||
@@ -90,6 +94,7 @@ class VibeChatConfigurable : Configurable {
     (messagesSpinner?.number ?: VibeChatSettings.maxMessagesPerThread) != VibeChatSettings.maxMessagesPerThread
 
   override fun apply() {
+    codeFold?.let { VibeChatSettings.codeFoldLines = it.number }
     soundEnabled?.let { VibeChatSettings.soundEnabled = it.isSelected }
     soundFinished?.let { VibeChatSettings.soundOnTurnFinished = it.isSelected }
     soundStopped?.let { VibeChatSettings.soundOnTurnStopped = it.isSelected }
@@ -104,6 +109,7 @@ class VibeChatConfigurable : Configurable {
   }
 
   override fun reset() {
+    codeFold?.number = VibeChatSettings.codeFoldLines
     soundEnabled?.isSelected = VibeChatSettings.soundEnabled
     soundFinished?.isSelected = VibeChatSettings.soundOnTurnFinished
     soundStopped?.isSelected = VibeChatSettings.soundOnTurnStopped
