@@ -74,12 +74,30 @@ for path in sorted(glob.glob(os.path.join(lang_dir, '*.json'))):
 sys.exit(0 if ok else 1)
 PY
 
-# --- 4: храповик по русским литералам ---
-count=$(find vibe-plugins -name '*.kt' -path '*/src/*' -exec grep -o '"[^"]*[А-Яа-яЁё][^"]*"' {} + | wc -l | tr -d ' ')
-limit=$(cat "$RATCHET_FILE" 2>/dev/null || echo "$count")
+# --- 4: храповик по ИНТЕРФЕЙСНЫМ русским литералам ---
+#
+# Считаются только строки, которые человек может увидеть. Файлы, где русский текст — это ДАННЫЕ
+# (регэкспы детекторов, преамбулы ролей в промпте), перечислены в i18nExclusions.txt с причиной:
+# переводить их не только не нужно, но и вредно — детектор ищет русские слова в чужой странице.
+EXCLUSIONS=vibe-plugins/tools/i18nExclusions.txt
+excluded_paths=$(grep -v '^#' "$EXCLUSIONS" 2>/dev/null | grep -v '^$' | cut -d'|' -f1 || true)
+count=$(find vibe-plugins -name '*.kt' -path '*/src/*' | { while read -r f; do
+    skip=0
+    for ex in $excluded_paths; do [ "$f" = "$ex" ] && skip=1 && break; done
+    [ "$skip" -eq 0 ] && printf '%s\n' "$f"
+  done; } | xargs grep -o '"[^"]*[А-Яа-яЁё][^"]*"' 2>/dev/null | wc -l | tr -d ' ')
+# Планка обязана существовать. Раньше её отсутствие подставляло текущее число — и храповик
+# молча пропускал любой рост, то есть был гейтом-пустышкой. Гейт, который нельзя провалить,
+# не защищает ничего.
+if [ ! -f "$RATCHET_FILE" ]; then
+  say "✖ нет файла планки $RATCHET_FILE — создайте его с текущим числом: echo $count > $RATCHET_FILE"
+  exit 1
+fi
+limit=$(cat "$RATCHET_FILE")
 if [ "$count" -gt "$limit" ]; then
   say "✖ русских литералов в коде: $count, разрешено не больше $limit."
   say "  Новая строка интерфейса должна идти через каталог: t(\"ключ\") + запись в $BASE."
+  say "  Строка НЕ для человека (регэксп детектора, преамбула промпта) — файл в $EXCLUSIONS с причиной."
   say "  Если строка НЕ интерфейсная (лог, исключение для разработчика) — так и есть, но храповик"
   say "  считает по коду целиком: перенесите столько же строк из очереди, чтобы счётчик не рос."
   fail=1
