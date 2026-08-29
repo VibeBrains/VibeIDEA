@@ -52,6 +52,15 @@ object VibeAgentSettings {
   const val DEFAULT_TERMINAL_ENABLED = true
   /** Fallback output cap when an agent's terminal/create omits outputByteLimit (never unbounded). */
   const val DEFAULT_TERMINAL_OUTPUT_BYTE_LIMIT = 1_048_576L
+  // --- FIM autocomplete ---
+  const val DEFAULT_FIM_ENABLED = true
+  const val DEFAULT_FIM_DEBOUNCE_MS = 250
+  const val MIN_FIM_DEBOUNCE_MS = 50
+  const val MAX_FIM_DEBOUNCE_MS = 2000
+  const val DEFAULT_FIM_CACHE_SIZE = 200
+  const val MIN_FIM_CACHE_SIZE = 0
+  const val MAX_FIM_CACHE_SIZE = 5000
+
   // --- run ledger (.vibe/agent-runs.jsonl) ---
   const val DEFAULT_RUN_LEDGER_ENABLED = true
   const val DEFAULT_RUN_LEDGER_MAX_RECORDS = 500
@@ -94,6 +103,9 @@ object VibeAgentSettings {
   private const val KEY_CHECKS_MAX_FILE_KB = "vibe.agent.turnChecks.maxFileKb"
   private const val KEY_TERMINAL_ENABLED = "vibe.agent.terminal.enabled"
   private const val KEY_HANDSHAKE_TIMEOUT_SEC = "vibe.agent.handshakeTimeoutSec"
+  private const val KEY_FIM_ENABLED = "vibe.agent.fim.enabled"
+  private const val KEY_FIM_DEBOUNCE_MS = "vibe.agent.fim.debounceMs"
+  private const val KEY_FIM_CACHE_SIZE = "vibe.agent.fim.cacheSize"
   private const val KEY_RUN_LEDGER_ENABLED = "vibe.agent.runs.enabled"
   private const val KEY_RUN_LEDGER_MAX = "vibe.agent.runs.maxRecords"
   private const val KEY_RUN_LEDGER_DAYS = "vibe.agent.runs.retentionDays"
@@ -198,4 +210,16 @@ object VibeAgentSettings {
     get() = props.getInt(KEY_RUN_LEDGER_DAYS, DEFAULT_RUN_LEDGER_RETENTION_DAYS)
       .coerceIn(MIN_RUN_LEDGER_RETENTION_DAYS, MAX_RUN_LEDGER_RETENTION_DAYS)
     set(value) = props.setValue(KEY_RUN_LEDGER_DAYS, value.coerceIn(MIN_RUN_LEDGER_RETENTION_DAYS, MAX_RUN_LEDGER_RETENTION_DAYS), DEFAULT_RUN_LEDGER_RETENTION_DAYS)
+
+  var fimEnabled: Boolean
+    get() = props.getBoolean(KEY_FIM_ENABLED, DEFAULT_FIM_ENABLED)
+    set(value) = props.setValue(KEY_FIM_ENABLED, value, DEFAULT_FIM_ENABLED)
+
+  var fimDebounceMs: Int
+    get() = props.getInt(KEY_FIM_DEBOUNCE_MS, DEFAULT_FIM_DEBOUNCE_MS).coerceIn(MIN_FIM_DEBOUNCE_MS, MAX_FIM_DEBOUNCE_MS)
+    set(value) = props.setValue(KEY_FIM_DEBOUNCE_MS, value.coerceIn(MIN_FIM_DEBOUNCE_MS, MAX_FIM_DEBOUNCE_MS), DEFAULT_FIM_DEBOUNCE_MS)
+
+  var fimCacheSize: Int
+    get() = props.getInt(KEY_FIM_CACHE_SIZE, DEFAULT_FIM_CACHE_SIZE).coerceIn(MIN_FIM_CACHE_SIZE, MAX_FIM_CACHE_SIZE)
+    set(value) = props.setValue(KEY_FIM_CACHE_SIZE, value.coerceIn(MIN_FIM_CACHE_SIZE, MAX_FIM_CACHE_SIZE), DEFAULT_FIM_CACHE_SIZE)
 }

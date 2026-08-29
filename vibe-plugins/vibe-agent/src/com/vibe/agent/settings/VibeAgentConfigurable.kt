@@ -33,6 +33,9 @@ class VibeAgentConfigurable : Configurable, Configurable.NoScroll {
   private var checksMaxFileKb: JBIntSpinner? = null
   private var terminalEnabled: JBCheckBox? = null
   private var handshakeTimeout: JBIntSpinner? = null
+  private var fimEnabled: JBCheckBox? = null
+  private var fimDebounce: JBIntSpinner? = null
+  private var fimCache: JBIntSpinner? = null
   private var runLedger: JBCheckBox? = null
   private var runLedgerMax: JBIntSpinner? = null
   private var runLedgerDays: JBIntSpinner? = null
@@ -56,6 +59,11 @@ class VibeAgentConfigurable : Configurable, Configurable.NoScroll {
     val cMaxFiles = JBIntSpinner(VibeAgentSettings.checksMaxFiles, VibeAgentSettings.MIN_CHECKS_MAX_FILES, VibeAgentSettings.MAX_CHECKS_MAX_FILES).also { checksMaxFiles = it }
     val cMaxFileKb = JBIntSpinner(VibeAgentSettings.checksMaxFileKb, VibeAgentSettings.MIN_CHECKS_MAX_FILE_KB, VibeAgentSettings.MAX_CHECKS_MAX_FILE_KB).also { checksMaxFileKb = it }
     val terminal = JBCheckBox("Разрешать агентам исполнять терминал (ACP terminal/…)", VibeAgentSettings.terminalEnabled).also { terminalEnabled = it }
+    val fim = JBCheckBox("Автодополнение FIM", VibeAgentSettings.fimEnabled).also { fimEnabled = it }
+    val fimDelay = JBIntSpinner(VibeAgentSettings.fimDebounceMs, VibeAgentSettings.MIN_FIM_DEBOUNCE_MS, VibeAgentSettings.MAX_FIM_DEBOUNCE_MS)
+      .also { fimDebounce = it }
+    val fimCacheSize = JBIntSpinner(VibeAgentSettings.fimCacheSize, VibeAgentSettings.MIN_FIM_CACHE_SIZE, VibeAgentSettings.MAX_FIM_CACHE_SIZE)
+      .also { fimCache = it }
     val ledger = JBCheckBox("Журнал прогонов (.vibe/agent-runs.jsonl)", VibeAgentSettings.runLedgerEnabled).also { runLedger = it }
     val ledgerMax = JBIntSpinner(VibeAgentSettings.runLedgerMaxRecords, VibeAgentSettings.MIN_RUN_LEDGER_MAX_RECORDS, VibeAgentSettings.MAX_RUN_LEDGER_MAX_RECORDS)
       .also { runLedgerMax = it }
@@ -98,6 +106,13 @@ class VibeAgentConfigurable : Configurable, Configurable.NoScroll {
       .addComponent(terminal)
       .addComponent(hint("Живой вывод команд Claude показывается всегда. Этот флаг разрешает СТОРОННИМ агентам (Gemini CLI и др.) исполнять команды через " +
         "стандартные методы ACP <code>terminal/…</code> — с клампом таймаута, обрезкой вывода и подтверждением разрушительных команд."))
+      .addComponent(section("Автодополнение (FIM)"))
+      .addComponent(fim)
+      .addLabeledComponent("Задержка перед запросом, мс:", fimDelay)
+      .addLabeledComponent("Размер кэша подсказок:", fimCacheSize)
+      .addComponent(hint("Работает на моделях с <code>fim: true</code> в каталоге провайдеров (протокол openai). Контекст — 25 строк вокруг курсора, для локальной модели 12: " +
+        "у неё каждый токен стоит времени. В части мест запрос не отправляется вовсе (курсор в начале строки, где справа чужой код) — такая подсказка всё равно была бы мусором. " +
+        "Ответ чистится от пояснений и комментариев на чужом языке; счётчики и задержка p50/p95 — действие «VibeIDEA: метрики автодополнения»."))
       .addComponent(section("Диспетчерская"))
       .addComponent(ledger)
       .addLabeledComponent("Хранить записей:", ledgerMax)
@@ -153,6 +168,9 @@ class VibeAgentConfigurable : Configurable, Configurable.NoScroll {
     checksMaxFileKb?.number != VibeAgentSettings.checksMaxFileKb ||
     terminalEnabled?.isSelected != VibeAgentSettings.terminalEnabled ||
     handshakeTimeout?.number != VibeAgentSettings.handshakeTimeoutSec ||
+    fimEnabled?.isSelected != VibeAgentSettings.fimEnabled ||
+    fimDebounce?.number != VibeAgentSettings.fimDebounceMs ||
+    fimCache?.number != VibeAgentSettings.fimCacheSize ||
     runLedger?.isSelected != VibeAgentSettings.runLedgerEnabled ||
     runLedgerMax?.number != VibeAgentSettings.runLedgerMaxRecords ||
     runLedgerDays?.number != VibeAgentSettings.runLedgerRetentionDays ||
@@ -175,6 +193,9 @@ class VibeAgentConfigurable : Configurable, Configurable.NoScroll {
     checksMaxFileKb?.let { VibeAgentSettings.checksMaxFileKb = it.number }
     terminalEnabled?.let { VibeAgentSettings.terminalEnabled = it.isSelected }
     handshakeTimeout?.let { VibeAgentSettings.handshakeTimeoutSec = it.number }
+    fimEnabled?.let { VibeAgentSettings.fimEnabled = it.isSelected }
+    fimDebounce?.let { VibeAgentSettings.fimDebounceMs = it.number }
+    fimCache?.let { VibeAgentSettings.fimCacheSize = it.number }
     runLedger?.let { VibeAgentSettings.runLedgerEnabled = it.isSelected }
     runLedgerMax?.let { VibeAgentSettings.runLedgerMaxRecords = it.number }
     runLedgerDays?.let { VibeAgentSettings.runLedgerRetentionDays = it.number }
@@ -208,6 +229,9 @@ class VibeAgentConfigurable : Configurable, Configurable.NoScroll {
     terminalEnabled?.isSelected = VibeAgentSettings.terminalEnabled
     httpApiEnabled?.isSelected = VibeAgentSettings.httpApiEnabled
     httpApiPort?.number = VibeAgentSettings.httpApiPort
+    fimEnabled?.isSelected = VibeAgentSettings.fimEnabled
+    fimDebounce?.number = VibeAgentSettings.fimDebounceMs
+    fimCache?.number = VibeAgentSettings.fimCacheSize
     runLedger?.isSelected = VibeAgentSettings.runLedgerEnabled
     runLedgerMax?.number = VibeAgentSettings.runLedgerMaxRecords
     runLedgerDays?.number = VibeAgentSettings.runLedgerRetentionDays
