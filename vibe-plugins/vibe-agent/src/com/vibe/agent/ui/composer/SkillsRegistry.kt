@@ -14,17 +14,20 @@ object SkillsRegistry {
   const val SKILL_FILE = "SKILL.md"
   const val DESCRIPTION_LIMIT = 120
 
-  class Skill(val id: String, val description: String)
+  class Skill(val id: String, val description: String, val broken: Boolean = false)
 
-  fun list(projectBase: String?): List<Skill> {
-    val root = File(projectBase ?: return emptyList(), SKILLS_DIR)
-    val dirs = root.listFiles { f: File -> f.isDirectory } ?: return emptyList()
-    return dirs.mapNotNull { dir ->
-      val file = File(dir, SKILL_FILE)
-      if (!file.isFile) return@mapNotNull null
-      val description = runCatching { parseDescription(file.readText()) }.getOrDefault("")
-      Skill(dir.name, description)
-    }.sortedBy { it.id }
+  /**
+   * The list behind `/skill:`. A package with errors stays VISIBLE and says so: hiding it would
+   * turn a typo in the frontmatter into a skill that vanished for no stated reason.
+   */
+  fun list(projectBase: String?): List<Skill> = com.vibe.agent.skills.SkillsStore.list(projectBase).map { entry ->
+    val description = entry.pkg.description
+      ?: entry.pkg.body.lineSequence().firstOrNull { it.isNotBlank() && !it.trimStart().startsWith("#") }.orEmpty()
+    Skill(
+      id = entry.pkg.id,
+      description = if (entry.isBroken) "⚠ навык сломан — «VibeIDEA: проверить скиллы проекта»" else clean(description),
+      broken = entry.isBroken,
+    )
   }
 
   /** Pure and testable: frontmatter `description:` wins, else the first plain text line. */

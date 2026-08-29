@@ -57,10 +57,26 @@ object ContextSerializer {
     Loaded(ref, path, uri, clean?.text ?: raw, clean?.findings.orEmpty())
   }
 
-  fun acpBlocks(text: String, loaded: List<Loaded>, images: List<ImageAttachment>, capabilities: AgentCapabilities?): List<ContentBlock> = buildList {
+  /** A skill resolved for this message: its id and the body of SKILL.md (already sanitised). */
+  class LoadedSkill(val id: String, val body: String)
+
+  fun acpBlocks(
+    text: String,
+    loaded: List<Loaded>,
+    images: List<ImageAttachment>,
+    capabilities: AgentCapabilities?,
+    skills: List<LoadedSkill> = emptyList(),
+  ): List<ContentBlock> = buildList {
     // Anthropic-backed agents reject empty text blocks: text goes only when there is some.
     if (text.isNotBlank()) add(ContentBlock.Text(text))
     val embed = capabilities?.embeddedContext == true
+    // A skill is a recipe for the model, not a file of the project: it goes as a resource with its
+    // own uri, and as plain text to agents that do not accept embedded context — otherwise the
+    // agent would receive «/skill:grill» and nothing else, which is what used to happen.
+    for (skill in skills) {
+      if (embed) add(ContentBlock.Resource("skill://${skill.id}", skill.body, "text/markdown"))
+      else add(ContentBlock.Text(com.vibe.agent.skills.SkillExpansion.wrap(skill.id, skill.body)))
+    }
     for (item in loaded) {
       val body = item.text
       if (embed && body != null && item.ref !is ContextRef.Folder) add(ContentBlock.Resource(item.uri, body, mimeOf(item.ref.file)))
@@ -71,10 +87,12 @@ object ContextSerializer {
     if (isEmpty()) add(ContentBlock.Text(ATTACHMENTS_ONLY_TEXT))
   }
 
-  fun llmText(text: String, loaded: List<Loaded>): String {
-    if (loaded.isEmpty()) return text
+  fun llmText(text: String, loaded: List<Loaded>, skills: List<LoadedSkill> = emptyList()): String {
+    if (loaded.isEmpty() && skills.isEmpty()) return text
     return buildString {
       append(text)
+      for (skill in skills) append("\n\n").append(com.vibe.agent.skills.SkillExpansion.wrap(skill.id, skill.body))
+      if (loaded.isEmpty()) return@buildString
       // Say it in words: the model is about to read someone else's file, and files can talk.
       append("\n\n").append(com.vibe.agent.security.ContextSanitizer.DATA_NOT_INSTRUCTIONS)
       for (item in loaded) {

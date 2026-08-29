@@ -36,6 +36,8 @@
       <add-to-group group-id="ToolsMenu" anchor="last"/>
     </action>
     <group id="VibeIdea.History" text="VibeIDEA" popup="false">
+      <action id="Vibe.ValidateSkills" class="com.vibe.agent.skills.VibeValidateSkillsAction"
+              text="Проверить скиллы проекта" description="Валидация .vibe/skills/&lt;id&gt;/SKILL.md по контракту Agent Skills"/>
       <action id="Vibe.ShowApiToken" class="com.vibe.agent.http.VibeShowApiTokenAction"
               text="Показать токен HTTP API" description="Адрес и токен входящего HTTP API (только внутри IDE)"/>
       <action id="Vibe.RegenerateApiToken" class="com.vibe.agent.http.VibeRegenerateApiTokenAction"

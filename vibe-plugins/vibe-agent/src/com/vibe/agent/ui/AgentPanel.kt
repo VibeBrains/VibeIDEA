@@ -461,6 +461,40 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
 
   // --- turns ---
 
+  // --- skills ---
+
+  /**
+   * Turns `/skill:<id>` mentions into the actual recipe.
+   *
+   * Before this the token was only text: the model received the literal «/skill:grill» and never a
+   * line of the skill, so a seeded skill looked like it worked and quietly did nothing. A missing
+   * or broken package is said out loud for the same reason — a slightly worse answer is the one
+   * failure nobody ever investigates.
+   */
+  private fun resolveSkills(text: String): List<ContextSerializer.LoadedSkill> {
+    val ids = com.vibe.agent.skills.SkillExpansion.mentioned(text)
+    if (ids.isEmpty()) return emptyList()
+    val resolved = ArrayList<ContextSerializer.LoadedSkill>()
+    for (id in ids) {
+      val entry = com.vibe.agent.skills.SkillsStore.find(project.basePath, id)
+      if (entry == null) {
+        systemLine("[скиллы] «$id» не найден: ожидается ${com.vibe.agent.skills.SkillPackage.SKILLS_DIR}/$id/${com.vibe.agent.skills.SkillPackage.SKILL_FILE}")
+        continue
+      }
+      if (entry.isBroken) {
+        val errors = entry.findings.filter { it.level == com.vibe.agent.skills.SkillValidator.Level.ERROR }
+        systemLine("[скиллы] «$id» не отправлен: " + errors.joinToString("; ") { it.message })
+        continue
+      }
+      // A skill is text from disk like any other — same guard as project files.
+      val clean = com.vibe.agent.security.ContextSanitizer.sanitize(entry.pkg.body)
+      if (clean.findings.isNotEmpty()) reportContextFindings("$id/${com.vibe.agent.skills.SkillPackage.SKILL_FILE}", clean.findings)
+      resolved.add(ContextSerializer.LoadedSkill(id, clean.text))
+    }
+    if (resolved.isNotEmpty()) systemLine("[скиллы] применены: " + resolved.joinToString { it.id })
+    return resolved
+  }
+
   // --- context guard ---
 
   /**
@@ -586,10 +620,11 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
         val loaded = ReadAction.nonBlocking(Callable { ContextSerializer.load(project, refs, VibeAgentSettings.maskSecretsInContext) })
           .expireWith(this).executeSynchronously()
         loaded.forEach { reportContextFindings(it.relPath, it.findings) }
+        val skills = resolveSkills(message.text)
         if (refs.isNotEmpty()) systemLine("[контекст] приложено: ${refs.joinToString { it.label }}")
         // The wire text (with inlined context) becomes known only now — fill it into the stored record.
         if (t is ChatTarget.Model) {
-          history.setLastUserWireText(threadId, ContextSerializer.llmText(message.text, loaded).takeIf { it != displayText })
+          history.setLastUserWireText(threadId, ContextSerializer.llmText(message.text, loaded, skills).takeIf { it != displayText })
         }
         if (llmCancel.get() || disposed) {
           systemLine("[стоп] ход отменён до отправки")
@@ -598,7 +633,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
         }
         when (t) {
           is ChatTarget.Model -> sendToLlm(t, startedAt)
-          is ChatTarget.Agent -> sendToAcp(t, message.text, loaded, message.images, startedAt)
+          is ChatTarget.Agent -> sendToAcp(t, message.text, loaded, message.images, startedAt, skills)
         }
       }
       catch (e: Exception) {
@@ -665,7 +700,11 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     }
   }
 
-  private fun sendToAcp(t: ChatTarget.Agent, text: String, loaded: List<ContextSerializer.Loaded>, images: List<ImageAttachment>, startedAt: Long) {
+  private fun sendToAcp(
+    t: ChatTarget.Agent, text: String, loaded: List<ContextSerializer.Loaded>,
+    images: List<ImageAttachment>, startedAt: Long,
+    skills: List<ContextSerializer.LoadedSkill> = emptyList(),
+  ) {
     checkpoints?.create("сообщение: ${text.take(CHECKPOINT_LABEL_LEN)}")?.let {
       checkpointLine(it)
       audit?.append(AuditEvent(System.currentTimeMillis(), AuditEvent.Action.CHECKPOINT, ok = true,
@@ -687,7 +726,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
       composer.setImagesAllowed(c.capabilities?.image != false, NO_IMAGE_AGENT)
     }
     if (images.isNotEmpty() && c.capabilities?.image != true) systemLine("[агент] не принимает изображения — отправлено без вложений")
-    val blocks = ContextSerializer.acpBlocks(fullPrompt, loaded, images, c.capabilities)
+    val blocks = ContextSerializer.acpBlocks(fullPrompt, loaded, images, c.capabilities, skills)
     promptAcpTurn(c, blocks, t, startedAt, verifyAttempt = 0, checkAttempt = 0)
   }
 
