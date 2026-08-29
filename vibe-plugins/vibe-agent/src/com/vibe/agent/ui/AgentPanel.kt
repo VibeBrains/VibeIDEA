@@ -117,7 +117,7 @@ import javax.swing.Timer
  * popup, right rail) reopen old ones. The feed is re-rendered from the transcript on
  * every switch; a running turn stays bound to the thread it started in.
  */
-class AgentPanel(private val project: Project) : JPanel(BorderLayout()), AcpClient.Handler, Disposable {
+class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGateway.Target, JPanel(BorderLayout()), AcpClient.Handler, Disposable {
   private val messages = JPanel().apply {
     layout = BoxLayout(this, BoxLayout.Y_AXIS)
     border = JBUI.Borders.empty(6)
@@ -269,6 +269,8 @@ class AgentPanel(private val project: Project) : JPanel(BorderLayout()), AcpClie
     project.messageBus.connect(this).subscribe(ProvidersChangeListener.TOPIC, ProvidersChangeListener {
       reloadProviderRegistry()
     })
+    // The HTTP API runs tasks in a real window — tell the gateway this one is available.
+    com.vibe.agent.http.VibeAgentGateway.getInstance().register(this)
   }
 
   /** Re-read the provider registry and re-pull model catalogs (e.g. after a key was applied in Settings). */
@@ -294,6 +296,9 @@ class AgentPanel(private val project: Project) : JPanel(BorderLayout()), AcpClie
 
   override fun dispose() {
     disposed = true
+    com.vibe.agent.http.VibeAgentGateway.getInstance().unregister(this)
+    externalWaiters.values.forEach { it.countDown() }
+    externalWaiters.clear()
     turnThreadId?.let { history.endTurn(it) }
     llmCancel.set(true)
     llmClient.cancel()
@@ -452,6 +457,55 @@ class AgentPanel(private val project: Project) : JPanel(BorderLayout()), AcpClie
 
   // --- turns ---
 
+  // --- external tasks (incoming HTTP API) ---
+
+  /** Latches for callers that asked to wait for the end of a turn they started over HTTP. */
+  private val externalWaiters = java.util.concurrent.ConcurrentHashMap<String, java.util.concurrent.CountDownLatch>()
+
+  override val projectName: String get() = project.name
+
+  override fun ownsSession(sessionId: String): Boolean =
+    history.get(sessionId)?.let { history.matchesWorkspace(it, project.basePath) } == true
+
+  /**
+   * Runs a task that came from outside the IDE (HTTP API). The turn goes through the very same
+   * path as a typed message — queue, breakers, hooks, gates — because an automated caller must not
+   * get a weaker set of safeguards than a person sitting at the keyboard.
+   *
+   * An unknown [sessionId] is NOT an error: a new thread is started and its id returned. The
+   * session may simply have been deleted by the user, and refusing would leave a pipeline with no
+   * way forward (VibeIDE contract).
+   */
+  override fun runExternalTask(task: String, sessionId: String?, wait: Boolean): String {
+    check(!ApplicationManager.getApplication().isDispatchThread) { "runExternalTask блокирует — не с EDT" }
+    val started = java.util.concurrent.CompletableFuture<String>()
+    SwingUtilities.invokeLater {
+      if (disposed) {
+        started.completeExceptionally(IllegalStateException("панель закрыта"))
+        return@invokeLater
+      }
+      val threadId = sessionId?.takeIf { history.get(it) != null }
+                     ?: history.create(project.basePath, project.name).id
+      activateThread(threadId)
+      val latch = java.util.concurrent.CountDownLatch(1)
+      externalWaiters[threadId] = latch
+      if (startTurn(ComposedMessage(text = task), threadId)) started.complete(threadId)
+      else {
+        externalWaiters.remove(threadId)
+        started.completeExceptionally(IllegalStateException("ход не запущен — некому отправлять (нет агента или провайдера)"))
+      }
+    }
+    val threadId = started.get(SUBMIT_TIMEOUT_SEC, java.util.concurrent.TimeUnit.SECONDS)
+    if (!wait) return threadId
+    val latch = externalWaiters[threadId] ?: return threadId
+    val timeout = VibeAgentSettings.DEFAULT_HTTP_API_WAIT_TIMEOUT_SEC.toLong()
+    if (!latch.await(timeout, java.util.concurrent.TimeUnit.SECONDS)) {
+      externalWaiters.remove(threadId)
+      throw IllegalStateException("ход не завершился за $timeout с")
+    }
+    return threadId
+  }
+
   /** Validates, shows the user bubble and starts the turn; false keeps the draft in the composer. */
   private fun startTurn(message: ComposedMessage, threadId: String = currentThreadId): Boolean {
     if (disposed) return false
@@ -535,7 +589,11 @@ class AgentPanel(private val project: Project) : JPanel(BorderLayout()), AcpClie
     if (!turnInFlight.compareAndSet(true, false)) return
     val endedThreadId = turnThreadId
     turnThreadId = null
-    endedThreadId?.let { history.endTurn(it) }
+    endedThreadId?.let {
+      history.endTurn(it)
+      // A caller blocked on `wait: true` must be released on ANY ending — done, cancelled, failed.
+      externalWaiters.remove(it)?.countDown()
+    }
     status.set(if (breakers.isBlocking()) VibeAgentStatusService.State.BLOCKED else VibeAgentStatusService.State.IDLE)
     if (disposed) return
     notifyTurnEndIfAway()
@@ -1837,6 +1895,8 @@ class AgentPanel(private val project: Project) : JPanel(BorderLayout()), AcpClie
   }
 
   private companion object {
+    /** How long an external caller waits just for the turn to START (EDT hop + validation). */
+    const val SUBMIT_TIMEOUT_SEC = 30L
     const val NO_IMAGE_AGENT = "Агент не принимает изображения (promptCapabilities.image)"
     const val STOP_CANCELLED = "cancelled"
     const val KEY_OPEN_TABS = "vibe.chat.openTabs"

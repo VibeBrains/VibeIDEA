@@ -8,6 +8,7 @@
 - [roadmap.md](roadmap.md) — план по фазам; единственный источник правды «что сделано».
 - [functional.md](functional.md) — версионно-независимый каталог возможностей продукта.
 - [decisions.md](decisions.md) — журнал решений (включая ночные).
+- [manuals/httpApiSpec.md](manuals/httpApiSpec.md) — спека входящего HTTP API (loopback + Bearer): как дёрнуть агента из CI/бота/крона (самодостаточная, для LLM).
 - [manuals/acpSmoke.md](manuals/acpSmoke.md) — ручной чек-лист живого прогона ACP (12 шагов): то, что подделкой агента не проверить.
 - [manuals/languageServers.md](manuals/languageServers.md) — как поставить vtsls/Phpactor для TS/PHP.
 - [manuals/acpAgentsSpec.md](manuals/acpAgentsSpec.md) — спека реестра ACP-агентов `~/.jetbrains/acp.json` (самодостаточная, для LLM).

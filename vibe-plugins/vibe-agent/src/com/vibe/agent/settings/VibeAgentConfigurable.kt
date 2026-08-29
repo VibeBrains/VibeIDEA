@@ -33,6 +33,8 @@ class VibeAgentConfigurable : Configurable, Configurable.NoScroll {
   private var checksMaxFileKb: JBIntSpinner? = null
   private var terminalEnabled: JBCheckBox? = null
   private var handshakeTimeout: JBIntSpinner? = null
+  private var httpApiEnabled: JBCheckBox? = null
+  private var httpApiPort: JBIntSpinner? = null
 
   override fun getDisplayName(): String = "Агент"
 
@@ -49,6 +51,9 @@ class VibeAgentConfigurable : Configurable, Configurable.NoScroll {
     val cMaxFiles = JBIntSpinner(VibeAgentSettings.checksMaxFiles, VibeAgentSettings.MIN_CHECKS_MAX_FILES, VibeAgentSettings.MAX_CHECKS_MAX_FILES).also { checksMaxFiles = it }
     val cMaxFileKb = JBIntSpinner(VibeAgentSettings.checksMaxFileKb, VibeAgentSettings.MIN_CHECKS_MAX_FILE_KB, VibeAgentSettings.MAX_CHECKS_MAX_FILE_KB).also { checksMaxFileKb = it }
     val terminal = JBCheckBox("Разрешать агентам исполнять терминал (ACP terminal/…)", VibeAgentSettings.terminalEnabled).also { terminalEnabled = it }
+    val httpApi = JBCheckBox("Входящий HTTP API (только 127.0.0.1)", VibeAgentSettings.httpApiEnabled).also { httpApiEnabled = it }
+    val apiPort = JBIntSpinner(VibeAgentSettings.httpApiPort, VibeAgentSettings.MIN_HTTP_API_PORT, VibeAgentSettings.MAX_HTTP_API_PORT)
+      .also { httpApiPort = it }
     val handshake = JBIntSpinner(VibeAgentSettings.handshakeTimeoutSec, VibeAgentSettings.MIN_HANDSHAKE_TIMEOUT_SEC, VibeAgentSettings.MAX_HANDSHAKE_TIMEOUT_SEC).also { handshakeTimeout = it }
 
     return FormBuilder.createFormBuilder()
@@ -81,6 +86,13 @@ class VibeAgentConfigurable : Configurable, Configurable.NoScroll {
       .addComponent(terminal)
       .addComponent(hint("Живой вывод команд Claude показывается всегда. Этот флаг разрешает СТОРОННИМ агентам (Gemini CLI и др.) исполнять команды через " +
         "стандартные методы ACP <code>terminal/…</code> — с клампом таймаута, обрезкой вывода и подтверждением разрушительных команд."))
+      .addComponent(section("Входящий HTTP API"))
+      .addComponent(httpApi)
+      .addLabeledComponent("Порт (0 — любой свободный):", apiPort)
+      .addComponent(hint("Позволяет запускать агента из CI, бота или крона: <code>POST /run</code> с задачей, <code>GET /health</code> для проверки. " +
+        "Слушается ТОЛЬКО петлевой адрес — настройки «слушать снаружи» нет и не будет. Каждый запрос требует токен " +
+        "(<code>Authorization: Bearer …</code>), токен живёт в хранилище ОС и показывается действием «VibeIDEA: показать токен HTTP API». " +
+        "Задачу выполняет агент в открытом окне; изменения применяются сразу, без перезапуска IDE. Спека — docs/vibe/manuals/httpApiSpec.md."))
       .addComponent(section("Соединение"))
       .addLabeledComponent("Таймаут рукопожатия агента, сек:", handshake)
       .addComponent(hint("Сколько ждать ответа агента на initialize/session/new. Холодный запуск через npx может быть медленным."))
@@ -113,7 +125,9 @@ class VibeAgentConfigurable : Configurable, Configurable.NoScroll {
     checksMaxFiles?.number != VibeAgentSettings.checksMaxFiles ||
     checksMaxFileKb?.number != VibeAgentSettings.checksMaxFileKb ||
     terminalEnabled?.isSelected != VibeAgentSettings.terminalEnabled ||
-    handshakeTimeout?.number != VibeAgentSettings.handshakeTimeoutSec
+    handshakeTimeout?.number != VibeAgentSettings.handshakeTimeoutSec ||
+    httpApiEnabled?.isSelected != VibeAgentSettings.httpApiEnabled ||
+    httpApiPort?.number != VibeAgentSettings.httpApiPort
 
   override fun apply() {
     hooksEnabled?.let { VibeAgentSettings.hooksEnabled = it.isSelected }
@@ -129,6 +143,16 @@ class VibeAgentConfigurable : Configurable, Configurable.NoScroll {
     checksMaxFileKb?.let { VibeAgentSettings.checksMaxFileKb = it.number }
     terminalEnabled?.let { VibeAgentSettings.terminalEnabled = it.isSelected }
     handshakeTimeout?.let { VibeAgentSettings.handshakeTimeoutSec = it.number }
+    // Port first: the listener is (re)started below with the value that has just been stored.
+    httpApiPort?.let { VibeAgentSettings.httpApiPort = it.number }
+    httpApiEnabled?.let { box ->
+      val portChanged = VibeAgentSettings.httpApiEnabled == box.isSelected && box.isSelected
+      VibeAgentSettings.httpApiEnabled = box.isSelected
+      val service = com.vibe.agent.http.VibeHttpApiService.getInstance()
+      // A port change means rebinding — stop, then start on the new one.
+      if (portChanged && service.isRunning) { VibeAgentSettings.httpApiEnabled = false; service.sync(); VibeAgentSettings.httpApiEnabled = true }
+      service.sync()
+    }
   }
 
   override fun reset() {
@@ -145,5 +169,7 @@ class VibeAgentConfigurable : Configurable, Configurable.NoScroll {
     checksMaxFileKb?.number = VibeAgentSettings.checksMaxFileKb
     handshakeTimeout?.number = VibeAgentSettings.handshakeTimeoutSec
     terminalEnabled?.isSelected = VibeAgentSettings.terminalEnabled
+    httpApiEnabled?.isSelected = VibeAgentSettings.httpApiEnabled
+    httpApiPort?.number = VibeAgentSettings.httpApiPort
   }
 }

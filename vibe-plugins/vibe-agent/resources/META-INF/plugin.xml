@@ -28,6 +28,7 @@
     <postStartupActivity implementation="com.vibe.agent.settings.VibePromoDefaults"/>
     <postStartupActivity implementation="com.vibe.agent.defaults.VibeDefaultsSeeder"/>
     <postStartupActivity implementation="com.vibe.agent.providers.VibeProvidersWatcherStarter"/>
+    <postStartupActivity implementation="com.vibe.agent.http.VibeHttpApiStarter"/>
     <statusBarWidgetFactory id="VibeAgentStatus" implementation="com.vibe.agent.ui.VibeAgentStatusWidgetFactory" order="last"/>
   </extensions>
   <actions>
@@ -35,6 +36,10 @@
       <add-to-group group-id="ToolsMenu" anchor="last"/>
     </action>
     <group id="VibeIdea.History" text="VibeIDEA" popup="false">
+      <action id="Vibe.ShowApiToken" class="com.vibe.agent.http.VibeShowApiTokenAction"
+              text="Показать токен HTTP API" description="Адрес и токен входящего HTTP API (только внутри IDE)"/>
+      <action id="Vibe.RegenerateApiToken" class="com.vibe.agent.http.VibeRegenerateApiTokenAction"
+              text="Перевыпустить токен HTTP API" description="Старый токен перестаёт работать немедленно"/>
       <action id="Vibe.ShowChatHistory" class="com.vibe.agent.history.VibeShowChatHistoryAction"
               text="История чата" description="Открыть выпадающий список прошлых чатов"/>
       <action id="Vibe.ExportProjectHistory" class="com.vibe.agent.history.VibeExportProjectHistoryAction"

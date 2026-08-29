@@ -52,6 +52,15 @@ object VibeAgentSettings {
   const val DEFAULT_TERMINAL_ENABLED = true
   /** Fallback output cap when an agent's terminal/create omits outputByteLimit (never unbounded). */
   const val DEFAULT_TERMINAL_OUTPUT_BYTE_LIMIT = 1_048_576L
+  // --- incoming HTTP API (VibeIDE contract: loopback only, off by default) ---
+  const val DEFAULT_HTTP_API_ENABLED = false
+  /** 0 = any free port; the chosen one is reported in the settings page and the panel log. */
+  const val DEFAULT_HTTP_API_PORT = 0
+  const val MIN_HTTP_API_PORT = 0
+  const val MAX_HTTP_API_PORT = 65535
+  /** A run started over HTTP cannot wait forever: the caller gets a failure with a reason instead. */
+  const val DEFAULT_HTTP_API_WAIT_TIMEOUT_SEC = 600
+
   // --- ACP handshake (a cold npx-launched agent can be slow to answer initialize) ---
   const val DEFAULT_HANDSHAKE_TIMEOUT_SEC = 60
   const val MIN_HANDSHAKE_TIMEOUT_SEC = 10
@@ -70,6 +79,8 @@ object VibeAgentSettings {
   private const val KEY_CHECKS_MAX_FILE_KB = "vibe.agent.turnChecks.maxFileKb"
   private const val KEY_TERMINAL_ENABLED = "vibe.agent.terminal.enabled"
   private const val KEY_HANDSHAKE_TIMEOUT_SEC = "vibe.agent.handshakeTimeoutSec"
+  private const val KEY_HTTP_API_ENABLED = "vibe.agent.httpApi.enabled"
+  private const val KEY_HTTP_API_PORT = "vibe.agent.httpApi.port"
 
   private val props get() = PropertiesComponent.getInstance()
 
@@ -128,4 +139,12 @@ object VibeAgentSettings {
   var handshakeTimeoutSec: Int
     get() = props.getInt(KEY_HANDSHAKE_TIMEOUT_SEC, DEFAULT_HANDSHAKE_TIMEOUT_SEC).coerceIn(MIN_HANDSHAKE_TIMEOUT_SEC, MAX_HANDSHAKE_TIMEOUT_SEC)
     set(value) = props.setValue(KEY_HANDSHAKE_TIMEOUT_SEC, value.coerceIn(MIN_HANDSHAKE_TIMEOUT_SEC, MAX_HANDSHAKE_TIMEOUT_SEC), DEFAULT_HANDSHAKE_TIMEOUT_SEC)
+
+  var httpApiEnabled: Boolean
+    get() = props.getBoolean(KEY_HTTP_API_ENABLED, DEFAULT_HTTP_API_ENABLED)
+    set(value) = props.setValue(KEY_HTTP_API_ENABLED, value, DEFAULT_HTTP_API_ENABLED)
+
+  var httpApiPort: Int
+    get() = props.getInt(KEY_HTTP_API_PORT, DEFAULT_HTTP_API_PORT).coerceIn(MIN_HTTP_API_PORT, MAX_HTTP_API_PORT)
+    set(value) = props.setValue(KEY_HTTP_API_PORT, value.coerceIn(MIN_HTTP_API_PORT, MAX_HTTP_API_PORT), DEFAULT_HTTP_API_PORT)
 }
