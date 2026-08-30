@@ -7,6 +7,7 @@
 - [idea.md](idea.md) — концепт: что строим и почему так.
 - [roadmap.md](roadmap.md) — план по фазам; единственный источник правды «что сделано».
 - [functional.md](functional.md) — версионно-независимый каталог возможностей продукта.
+- [parityVibeIde.md](parityVibeIde.md) — сверка с VibeIDE: что уже умеем, чего не хватает и что переносить не нужно.
 - [decisions.md](decisions.md) — журнал решений (включая ночные).
 - [manuals/langFileSpec.md](manuals/langFileSpec.md) — спека языкового файла `~/.vibe/lang/<код>.json`: формат, подстановки, поведение при запуске (самодостаточная, для LLM).
 - [manuals/codeGraphSpec.md](manuals/codeGraphSpec.md) — спека графа проекта `.vibe/codeGraph.json`: узлы, связи с происхождением, инкрементальность, примеры jq (для агентов и парсеров).
