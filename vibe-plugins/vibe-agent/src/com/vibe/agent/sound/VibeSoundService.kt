@@ -1,6 +1,8 @@
 // Copyright 2026 VibeBrains. Use of this source code is governed by the Apache 2.0 license.
 package com.vibe.agent.sound
 
+import com.vibe.agent.i18n.VibeI18n.t
+
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.components.Service
 import com.intellij.openapi.components.service
@@ -25,7 +27,7 @@ import kotlin.math.sin
  *
  * A custom file is validated by TRYING TO OPEN IT, not by its extension: what the JDK can play
  * depends on the machine, and a file that a person picked and that then silently does nothing is
- * worse than an honest "этот формат здесь не читается".
+ * worse than an honest "this format cannot be read here".
  */
 @Service(Service.Level.APP)
 class VibeSoundService {
@@ -54,12 +56,12 @@ class VibeSoundService {
     val custom = VibeChatSettings.soundCustomPath.trim()
     if (custom.isNotEmpty()) {
       val played = runCatching { playFile(File(custom)) }.getOrElse { error ->
-        log.warn("не удалось проиграть свой звук ($custom): ${error.message}")
+        log.warn("custom sound failed to play ($custom): ${error.message}")
         false
       }
       if (played) return
     }
-    runCatching { playChime() }.onFailure { log.warn("звук не воспроизведён: ${it.message}") }
+    runCatching { playChime() }.onFailure { log.warn("sound was not played: ${it.message}") }
   }
 
   private fun playFile(file: File): Boolean {
@@ -127,8 +129,8 @@ class VibeSoundService {
     /** Can the JDK on THIS machine play the file? Asked by opening it, not by looking at the name. */
     fun canPlay(path: String): Result<Unit> = runCatching {
       val file = File(path.trim())
-      require(file.isFile) { "файл не найден" }
-      require(file.length() <= MAX_FILE_BYTES) { "файл больше 5 МБ" }
+      require(file.isFile) { t("sound.error.noFile") }
+      require(file.length() <= MAX_FILE_BYTES) { t("sound.error.tooBig", "limit" to (MAX_FILE_BYTES / (1024 * 1024))) }
       AudioSystem.getAudioInputStream(file).close()
     }
 

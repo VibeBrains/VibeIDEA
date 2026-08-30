@@ -1,6 +1,8 @@
 // Copyright 2026 VibeBrains. Use of this source code is governed by the Apache 2.0 license.
 package com.vibe.agent.acp
 
+import com.vibe.agent.i18n.VibeI18n.t
+
 import com.intellij.diff.DiffContentFactory
 import com.intellij.diff.DiffManager
 import com.intellij.diff.requests.SimpleDiffRequest
@@ -22,9 +24,9 @@ object WritePreview {
     ApplicationManager.getApplication().invokeAndWait {
       val dialog = object : DialogWrapper(project, true) {
         init {
-          title = "Vibe Agent: запись в $path"
-          setOKButtonText("Применить")
-          setCancelButtonText("Отклонить")
+          title = t("write.dialog.title", "path" to path)
+          setOKButtonText(t("write.apply"))
+          setCancelButtonText(t("write.reject"))
           init()
         }
 
@@ -34,8 +36,8 @@ object WritePreview {
             path,
             factory.create(project, oldText),
             factory.create(project, newText),
-            "Было",
-            "Станет",
+            t("write.before"),
+            t("write.after"),
           )
           val panel = DiffManager.getInstance().createRequestPanel(project, disposable, null)
           panel.setRequest(request)

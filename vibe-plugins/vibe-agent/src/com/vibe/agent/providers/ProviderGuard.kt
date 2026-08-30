@@ -1,6 +1,8 @@
 // Copyright 2026 VibeBrains. Use of this source code is governed by the Apache 2.0 license.
 package com.vibe.agent.providers
 
+import com.vibe.agent.i18n.VibeI18n.t
+
 import java.net.URI
 
 data class GuardFinding(val providerId: String, val ruleId: String, val severity: String, val message: String)
@@ -24,17 +26,17 @@ object ProviderGuard {
       val host = uri?.host ?: ""
       val local = host == "localhost" || host == "127.0.0.1" || host == "::1"
       if (uri?.scheme == "http" && !local) {
-        findings.add(GuardFinding(p.id, "provider-endpoint-non-https", "critical", "провайдер '${p.id}': не-HTTPS endpoint $url"))
+        findings.add(GuardFinding(p.id, "provider-endpoint-non-https", "critical", t("guard.notHttps", "id" to p.id, "url" to url)))
       }
       if (!local && RAW_IP.matches(host)) {
-        findings.add(GuardFinding(p.id, "provider-endpoint-raw-ip", "high", "провайдер '${p.id}': сырой IP в endpoint $url"))
+        findings.add(GuardFinding(p.id, "provider-endpoint-raw-ip", "high", t("guard.rawIp", "id" to p.id, "url" to url)))
       }
       if (!uri?.userInfo.isNullOrBlank()) {
-        findings.add(GuardFinding(p.id, "provider-hardcoded-secret", "critical", "провайдер '${p.id}': креды в URL (user:pass@)"))
+        findings.add(GuardFinding(p.id, "provider-hardcoded-secret", "critical", t("guard.credsInUrl", "id" to p.id)))
       }
       (p.headers.values + p.query.values).forEach { v ->
         if (SECRET_SHAPED.containsMatchIn(v)) {
-          findings.add(GuardFinding(p.id, "provider-hardcoded-secret", "critical", "провайдер '${p.id}': секрет-подобный литерал в headers/query — ключи только через apiKeyRef/apiKeyEnv"))
+          findings.add(GuardFinding(p.id, "provider-hardcoded-secret", "critical", t("guard.secretLiteral", "id" to p.id)))
         }
       }
     }

@@ -1,6 +1,8 @@
 // Copyright 2026 VibeBrains. Use of this source code is governed by the Apache 2.0 license.
 package com.vibe.agent.acp
 
+import com.vibe.agent.i18n.VibeI18n.t
+
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
@@ -235,7 +237,7 @@ class AcpClient(
     }
     catch (e: java.io.IOException) {
       // A dead pipe must not surface as an IDE error from whichever thread wrote last.
-      handler.onProtocolLog("[acp] запись агенту не удалась: ${e.message}")
+      handler.onProtocolLog(t("acp.log.writeFailed", "reason" to e.message))
       failPending("agent pipe closed: ${e.message}")
     }
   }
@@ -248,7 +250,7 @@ class AcpClient(
         // ACP connection). Parse and route with safe casts; any per-frame error is logged and skipped.
         try {
           val msg = (json.parseToJsonElement(line) as? JsonObject) ?: run {
-            handler.onProtocolLog("[protocol] не-JSON объект: ${line.take(200)}")
+            handler.onProtocolLog(t("acp.log.notJson", "line" to line.take(200)))
             return@forEachLine
           }
           val id = (msg["id"] as? JsonPrimitive)?.longOrNull
@@ -257,7 +259,7 @@ class AcpClient(
           when {
             method != null && id != null -> respond(id, method, params ?: JsonObject(emptyMap()))
             method != null -> if (method == "session/update") { if (params != null) onSessionUpdateNotification(params) }
-                              else handler.onProtocolLog("[protocol] уведомление $method")
+                              else handler.onProtocolLog(t("acp.log.notification", "method" to method))
             id != null -> {
               val future = pending.remove(id) ?: return@forEachLine
               val error = msg["error"]
@@ -267,12 +269,12 @@ class AcpClient(
           }
         }
         catch (e: Exception) {
-          handler.onProtocolLog("[protocol] кадр пропущен: ${e.message}")
+          handler.onProtocolLog(t("acp.log.frameSkipped", "reason" to e.message))
         }
       }
     }
     catch (e: Exception) {
-      handler.onProtocolLog("[protocol] reader завершён: ${e.message}")
+      handler.onProtocolLog(t("acp.log.readerStopped", "reason" to e.message))
     }
   }
 

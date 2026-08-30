@@ -1,6 +1,8 @@
 // Copyright 2026 VibeBrains. Use of this source code is governed by the Apache 2.0 license.
 package com.vibe.agent.security
 
+import com.vibe.agent.i18n.VibeI18n.t
+
 /**
  * Shapes of credentials, in one place for both directions:
  * outbound (`TurnChecks.scanSecretLeak` — what the agent WROTE) and inbound
@@ -12,12 +14,12 @@ package com.vibe.agent.security
 object SecretPatterns {
   data class Pattern(val label: String, val regex: Regex)
 
-  val ALL: List<Pattern> = listOf(
-    Pattern("приватный ключ", Regex("-----BEGIN [A-Z ]*PRIVATE KEY-----")),
+  val ALL: List<Pattern> get() = listOf(
+    Pattern(t("secret.label.privateKey"), Regex("-----BEGIN [A-Z ]*PRIVATE KEY-----")),
     Pattern("AWS access key", Regex("\\bAKIA[0-9A-Z]{16}\\b")),
-    Pattern("ключ Anthropic", Regex("\\bsk-ant-[A-Za-z0-9_-]{20,}")),
+    Pattern(t("secret.label.anthropic"), Regex("\\bsk-ant-[A-Za-z0-9_-]{20,}")),
     // Covers legacy sk-, and modern sk-proj-/sk-svcacct-/sk-admin- (hyphens in the body); no trailing \b (can't follow '-').
-    Pattern("ключ OpenAI", Regex("\\bsk-[A-Za-z0-9_-]{20,}")),
+    Pattern(t("secret.label.openai"), Regex("\\bsk-[A-Za-z0-9_-]{20,}")),
     // ghp_/gho_/ghu_/ghs_/ghr_ personal, OAuth, user, server and refresh tokens.
     Pattern("GitHub token", Regex("\\bgh[pousr]_[A-Za-z0-9]{36,}\\b")),
     Pattern("Slack token", Regex("\\bxox[baprs]-[A-Za-z0-9-]{10,}")),
@@ -37,5 +39,5 @@ object SecretPatterns {
     return result
   }
 
-  const val MASK = "скрыто VibeIDEA"
+  val MASK: String get() = t("secret.mask")
 }

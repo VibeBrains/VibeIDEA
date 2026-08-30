@@ -1,6 +1,8 @@
 // Copyright 2026 VibeBrains. Use of this source code is governed by the Apache 2.0 license.
 package com.vibe.agent.design
 
+import com.vibe.agent.i18n.VibeI18n.t
+
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
@@ -32,13 +34,13 @@ object DesignOverlay {
 
   /** The message a picked finding turns into when it lands in the chat composer. */
   fun asChatNote(finding: Finding): String = buildString {
-    append("Дизайн-находка «").append(finding.rule).append("»: ").append(finding.message).append(".\n")
-    append("Где: ").append(finding.selector).append("\n")
-    append("Измерено: ").append(finding.evidence).append("\n")
-    append("Почему это важно: ").append(finding.why)
+    appendLine(t("design.note.head", "rule" to finding.rule, "message" to finding.message))
+    appendLine(t("design.note.where", "selector" to finding.selector))
+    appendLine(t("design.note.measured", "evidence" to finding.evidence))
+    append(t("design.note.why", "why" to finding.why))
     if (finding.ruleClass == RuleClass.STYLE) {
       // Said out loud so the agent does not "fix" what the project may have chosen on purpose.
-      append("\nЭто вкусовая находка, а не дефект: если так задумано, впишите правило с причиной в .vibe/design/design.md.")
+      append("\n" + t("design.note.styleOnly"))
     }
   }
 }

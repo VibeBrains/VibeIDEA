@@ -1,6 +1,8 @@
 // Copyright 2026 VibeBrains. Use of this source code is governed by the Apache 2.0 license.
 package com.vibe.agent.ui.history
 
+import com.vibe.agent.i18n.VibeI18n.t
+
 import com.intellij.icons.AllIcons
 import com.intellij.ide.util.PropertiesComponent
 import com.intellij.openapi.Disposable
@@ -44,7 +46,7 @@ object HistoryPopup {
       override fun onAfterOpen() { popup?.cancel() }
     })
     val search = JBTextField().apply {
-      emptyText.text = "Фильтр…"
+      emptyText.text = t("history.filter")
       document.addDocumentListener(object : DocumentAdapter() {
         override fun textChanged(e: DocumentEvent) = list.setSearchQuery(text)
       })
@@ -88,7 +90,7 @@ class HistoryRail(
 ) : JPanel(BorderLayout(0, JBUI.scale(GAP))) {
   private val list = ThreadListPanel(project, ThreadListPanel.Mode.RAIL, parentDisposable, callbacks)
   private val search = JBTextField().apply {
-    emptyText.text = "Поиск"
+    emptyText.text = t("history.search")
     document.addDocumentListener(object : DocumentAdapter() {
       override fun textChanged(e: DocumentEvent) = list.setSearchQuery(text)
     })
@@ -109,7 +111,7 @@ class HistoryRail(
         foreground = TITLE_FG
       }, BorderLayout.WEST)
       add(JLabel(AllIcons.Actions.Close).apply {
-        toolTipText = "Свернуть историю (оставить только чат)"
+        toolTipText = t("tabs.collapseHistory")
         cursor = Cursor.getPredefinedCursor(Cursor.HAND_CURSOR)
         addMouseListener(object : MouseAdapter() {
           override fun mouseClicked(e: MouseEvent) { onCollapse() }
@@ -140,7 +142,7 @@ class HistoryRail(
     const val WIDTH = 280
     private const val PAD = 8
     private const val GAP = 6
-    private const val TITLE = "ИСТОРИЯ"
+    private val TITLE: String get() = t("history.title")
     private const val TITLE_FONT_SIZE = 10f
     private const val KEY_COLLAPSED = "vibe.history.railCollapsed"
 

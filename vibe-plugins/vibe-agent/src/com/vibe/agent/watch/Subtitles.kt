@@ -1,11 +1,13 @@
 // Copyright 2026 VibeBrains. Use of this source code is governed by the Apache 2.0 license.
 package com.vibe.agent.watch
 
+import com.vibe.agent.i18n.VibeI18n.t
+
 /**
  * SRT into a transcript the model can quote by time.
  *
- * Timestamps are kept on purpose: an answer that says "на 4:12 показывают график" can be checked,
- * one that says "в середине ролика" cannot. Cues are merged into paragraphs because subtitle files
+ * Timestamps are kept on purpose: an answer that says "at 4:12 a chart is shown" can be checked,
+ * one that says "somewhere in the middle" cannot. Cues are merged into paragraphs because subtitle files
  * break lines by screen width, not by sense, and a model reading 900 two-word lines spends its
  * context on formatting.
  */
@@ -62,7 +64,7 @@ object Subtitles {
     }
     flushParagraph()
     val result = out.toString().trimEnd()
-    return if (result.length <= maxChars) result else result.take(maxChars) + "\n…(транскрипт обрезан)"
+    return if (result.length <= maxChars) result else result.take(maxChars) + "\n" + t("watch.transcript.clipped")
   }
 
   fun stamp(seconds: Double): String {

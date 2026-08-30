@@ -1,6 +1,8 @@
 // Copyright 2026 VibeBrains. Use of this source code is governed by the Apache 2.0 license.
 package com.vibe.agent.ui.composer
 
+import com.vibe.agent.i18n.VibeI18n.t
+
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.vfs.LocalFileSystem
 import com.intellij.openapi.vfs.VfsUtilCore
@@ -31,7 +33,7 @@ object ContextSerializer {
   )
 
   /** Shown in the bubble and sent as the only text block when the message carries attachments alone. */
-  const val ATTACHMENTS_ONLY_TEXT = "(только вложения)"
+  val ATTACHMENTS_ONLY_TEXT: String get() = t("context.attachmentsOnly")
 
   /**
    * Reads contents; call on a background thread inside a read action.
@@ -97,7 +99,7 @@ object ContextSerializer {
       append("\n\n").append(com.vibe.agent.security.ContextSanitizer.DATA_NOT_INSTRUCTIONS)
       for (item in loaded) {
         append("\n\n<context ref=\"").append(item.relPath).append("\">\n")
-        append(item.text ?: "(содержимое не встроено: слишком большой или бинарный файл — ${item.relPath})")
+        append(item.text ?: t("context.notInlined", "path" to item.relPath))
         append("\n</context>")
       }
     }
@@ -117,7 +119,7 @@ object ContextSerializer {
     val children = dir.children.orEmpty().sortedWith(compareByDescending<VirtualFile> { it.isDirectory }.thenBy { it.name })
     val lines = children.take(MAX_FOLDER_ENTRIES).map { if (it.isDirectory) "${it.name}/" else it.name }
     val more = children.size - lines.size
-    return lines.joinToString("\n") + if (more > 0) "\n… ещё $more" else ""
+    return lines.joinToString("\n") + if (more > 0) "\n" + t("context.more", "count" to more) else ""
   }
 
   /** Only text we know is text gets a MIME hint; binaries and folders send none (the field is optional). */

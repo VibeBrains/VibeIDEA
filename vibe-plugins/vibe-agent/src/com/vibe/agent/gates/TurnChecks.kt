@@ -1,6 +1,8 @@
 // Copyright 2026 VibeBrains. Use of this source code is governed by the Apache 2.0 license.
 package com.vibe.agent.gates
 
+import com.vibe.agent.i18n.VibeI18n.t
+
 /**
  * Deterministic turn checks over the files a turn changed, VibeIDE contract
  * (trimmed to the two the ACP client can actually enforce): `no-secret-leak` and
@@ -48,7 +50,7 @@ object TurnChecks {
       val hit = PROTECTED_FRAGMENTS.any { normalized.contains(it) } ||
         PROTECTED_SUFFIXES.any { normalized.endsWith(it) } ||
         PROTECTED_NAMES.any { name == it }
-      if (hit) findings.add(TurnFinding(TurnCheckId.NO_PROTECTED_PATH, path, "защищённый путь"))
+      if (hit) findings.add(TurnFinding(TurnCheckId.NO_PROTECTED_PATH, path, t("gates.protectedPath")))
     }
     return findings
   }
@@ -67,7 +69,7 @@ object TurnChecks {
   }
 
   fun renderCorrective(findings: List<TurnFinding>, attempt: Int, maxAttempts: Int): String =
-    "⛔ ПРОВЕРКИ ХОДА нашли проблемы (попытка $attempt из $maxAttempts):\n" +
+    "⛔ " + t("gates.turnChecks.header", "attempt" to attempt, "max" to maxAttempts) + "\n" +
       findings.joinToString("\n") { "• ${it.detail}: ${it.path}" } +
-      "\nИсправь это и продолжай — не завершай ход, пока не станет чисто."
+      "\n" + t("gates.turnChecks.footer")
 }
