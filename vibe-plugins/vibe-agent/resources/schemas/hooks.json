@@ -1,0 +1,47 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Хуки проекта VibeIDEA (.vibe/hooks.json)",
+  "type": "object",
+  "required": [
+    "hooks"
+  ],
+  "properties": {
+    "hooks": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "event",
+          "command"
+        ],
+        "properties": {
+          "event": {
+            "type": "string",
+            "enum": [
+              "preToolUse",
+              "postToolUse",
+              "turnEnd"
+            ]
+          },
+          "command": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "tools": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Только для preToolUse/postToolUse: у turnEnd поле игнорируется."
+          },
+          "timeoutMs": {
+            "type": "integer",
+            "minimum": 1
+          }
+        }
+      }
+    }
+  }
+}

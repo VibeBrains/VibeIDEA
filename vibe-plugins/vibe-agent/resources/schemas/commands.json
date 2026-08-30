@@ -1,0 +1,55 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Команды проекта VibeIDEA (.vibe/commands.json)",
+  "type": [
+    "object",
+    "array"
+  ],
+  "properties": {
+    "commands": {
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/command"
+      }
+    }
+  },
+  "items": {
+    "$ref": "#/definitions/command"
+  },
+  "definitions": {
+    "command": {
+      "type": "object",
+      "required": [
+        "id",
+        "command"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Уникальный внутри файла; по нему запоминается разрешение на запуск."
+        },
+        "command": {
+          "type": "string",
+          "description": "Ровно одна команда. Метасимволы оболочки (; & | ` $) и невидимые символы отклоняются целиком."
+        },
+        "title": {
+          "type": "string",
+          "description": "Подпись в списке; без неё показывается id."
+        },
+        "order": {
+          "type": "integer",
+          "description": "Позиция в списке; при равенстве — порядок в файле."
+        },
+        "pinned": {
+          "type": "boolean",
+          "description": "Часто нужная команда."
+        },
+        "color": {
+          "type": "string",
+          "description": "Имя цвета для UI; незнакомое игнорируется."
+        }
+      }
+    }
+  }
+}

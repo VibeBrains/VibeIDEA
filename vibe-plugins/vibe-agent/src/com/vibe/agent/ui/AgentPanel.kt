@@ -261,6 +261,8 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
       handleLearnCommand(message) -> true
       handleDeployCommand(message) -> true
       handleBackgroundCommand(message) -> true
+      handleUndoCommand(message) -> true
+      handleBlameCommand(message) -> true
       sessionCeilingReached(message.text) -> false
       handleWatchCommand(message) -> true
       else -> startTurn(message)
@@ -683,6 +685,62 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     override val empty: String get() = t("trace.empty")
     override val ms: String get() = t("trace.ms")
     override val failureMark: String get() = "✖"
+  }
+
+  /**
+   * `/undo` — put the working folder back to the state before the agent's last turn.
+   *
+   * The checkpoint line in the feed already does this, but only if one can find the right one by
+   * eye, and after a long conversation that is scrolling. The common case — «отмени, что он сейчас
+   * наделал» — deserves a command, and it must name WHAT it is about to undo: an undo that acts
+   * silently is one people are afraid to use, which makes it useless.
+   */
+  private fun handleUndoCommand(message: ComposedMessage): Boolean {
+    if (message.text.trim() != UNDO_COMMAND) return false
+    userBubble(message.text.trim())
+    val service = checkpoints ?: run { systemLine(t("undo.unavailable")); return true }
+    val latest = service.list().firstOrNull() ?: run { systemLine(t("undo.none")); return true }
+    val confirmed = Messages.showYesNoDialog(
+      project,
+      t("undo.confirm", "hash" to latest.hash.take(8), "label" to latest.label, "time" to timeOfMillis(latest.atMillis)),
+      t("undo.title"), t("undo.yes"), t("common.cancel"), Messages.getWarningIcon(),
+    )
+    if (confirmed != Messages.YES) return true
+    if (service.restore(latest)) systemLine(t("undo.done", "hash" to latest.hash.take(8)))
+    else systemLine(t("undo.failed"))
+    return true
+  }
+
+  /**
+   * `/blame <файл>` — why the code is the way it is.
+   *
+   * A model reading a file sees WHAT is written and guesses at why; the commits that touched it say
+   * it outright — «это откатили в прошлый раз», «так сделано ради обхода бага». That is the context
+   * whose absence produces confident rewrites of decisions somebody already made deliberately.
+   */
+  private fun handleBlameCommand(message: ComposedMessage): Boolean {
+    val text = message.text.trim()
+    if (!text.startsWith("$BLAME_COMMAND ")) return false
+    val path = text.removePrefix(BLAME_COMMAND).trim()
+    if (path.isEmpty()) return false
+    userBubble(text)
+    ApplicationManager.getApplication().executeOnPooledThread {
+      com.vibe.agent.git.GitStateService.getInstance(project).history(path, BLAME_COMMITS)
+        .onFailure { systemLine(t("blame.failed", "path" to path, "reason" to it.message)) }
+        .onSuccess { commits ->
+          if (commits.isEmpty()) {
+            systemLine(t("blame.none", "path" to path))
+            return@onSuccess
+          }
+          systemLine(t("blame.found", "count" to commits.size, "path" to path))
+          val block = commits.joinToString("\n") { "  " + it.hash + " " + it.subject }
+          SwingUtilities.invokeLater {
+            startTurn(ComposedMessage(text = t("blame.question", "path" to path) + "\n\n" +
+                                        "<context ref=\"git-log:" + path + "\">\n" + block + "\n</context>"))
+          }
+        }
+    }
+    return true
   }
 
   /**
@@ -2109,6 +2167,11 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
 
   private fun nowIso(): String = Instant.now().toString()
 
+  /** Same clock format as the feed, from epoch millis — checkpoints carry those, not an ISO text. */
+  private fun timeOfMillis(millis: Long): String =
+    java.time.Instant.ofEpochMilli(millis).atZone(ZoneId.systemDefault()).toLocalTime()
+      .format(DateTimeFormatter.ofPattern("HH:mm"))
+
   private fun timeOf(atIso: String): String = try {
     Instant.parse(atIso).atZone(ZoneId.systemDefault()).toLocalTime().format(DateTimeFormatter.ofPattern("HH:mm"))
   } catch (ignored: Exception) { "" }
@@ -3270,6 +3333,11 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     const val LEARN_COMMAND = "/learn"
     const val DEPLOY_COMMAND = "/deploy"
     const val BG_COMMAND = "/bg"
+    const val UNDO_COMMAND = "/undo"
+    const val BLAME_COMMAND = "/blame"
+
+    /** Enough history to see a decision and its reversal; more is archaeology. */
+    const val BLAME_COMMITS = 10
 
     /** Enough to see what failed; the rest is in the terminal for whoever wants it. */
     const val BG_TAIL_LINES = 40

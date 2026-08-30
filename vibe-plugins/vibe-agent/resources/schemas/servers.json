@@ -1,0 +1,77 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Стек серверов VibeIDEA (.vibe/servers.json)",
+  "type": "object",
+  "required": [
+    "servers"
+  ],
+  "properties": {
+    "servers": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "id",
+          "command"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "command": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "service",
+              "task"
+            ],
+            "description": "service живёт долго; task выполняется один раз и завершается."
+          },
+          "dir": {
+            "type": "string"
+          },
+          "port": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 65535
+          },
+          "readyCheck": {
+            "type": "string",
+            "enum": [
+              "port",
+              "http",
+              "log",
+              "exit",
+              "spawn"
+            ]
+          },
+          "readyTimeoutMs": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "dependsOn": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "skipIf": {
+            "type": "string",
+            "description": "Команда-проба: код 0 — шаг уже сделан."
+          },
+          "stopCommand": {
+            "type": "string"
+          },
+          "pathPrepend": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    }
+  }
+}

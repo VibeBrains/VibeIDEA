@@ -1,0 +1,71 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Пайплайны VibeIDEA (.vibe/pipelines.json)",
+  "type": "object",
+  "required": [
+    "pipelines"
+  ],
+  "properties": {
+    "pipelines": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "id",
+          "steps"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "steps": {
+            "type": "array",
+            "maxItems": 20,
+            "items": {
+              "type": "object",
+              "required": [
+                "role",
+                "task"
+              ],
+              "properties": {
+                "role": {
+                  "type": "string",
+                  "description": "Роль шага. Судящие роли (code-reviewer, security, qa, explore, planner) не пишут файлы.",
+                  "enum": [
+                    "explore",
+                    "implement-step",
+                    "recover-or-skip",
+                    "orchestrator",
+                    "planner",
+                    "designer",
+                    "frontend-dev",
+                    "backend-dev",
+                    "code-reviewer",
+                    "qa",
+                    "security"
+                  ]
+                },
+                "task": {
+                  "type": "string"
+                },
+                "acceptance": {
+                  "type": "string",
+                  "description": "Критерий готовности шага."
+                },
+                "continueOnFailure": {
+                  "type": "boolean"
+                },
+                "ignorePreviousArtifacts": {
+                  "type": "boolean"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

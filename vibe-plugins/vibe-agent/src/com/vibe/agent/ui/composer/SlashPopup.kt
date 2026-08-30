@@ -280,6 +280,8 @@ class SlashPopup(
       Row("/simplify", "/simplify", t("slash.command.simplify")),
       Row("/measure ", "/measure", t("slash.command.measure")),
       Row("/bg ", "/bg", t("slash.command.bg")),
+      Row("/undo", "/undo", t("slash.command.undo")),
+      Row("/blame ", "/blame", t("slash.command.blame")),
       Row("/learn ", "/learn", t("slash.command.learn")),
       Row("/deploy", "/deploy", t("slash.command.deploy")),
       Row("/index", "/index", t("slash.command.index")),

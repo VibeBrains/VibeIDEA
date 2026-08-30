@@ -1,0 +1,10 @@
+<idea-plugin>
+  <!--
+    Схемы наших конфигов живут в отдельном опциональном файле: точка расширения принадлежит
+    JSON-плагину платформы, и без него плагин обязан грузиться как раньше — конфиг-файл просто
+    не подключится.
+  -->
+  <extensions defaultExtensionNs="JavaScript.JsonSchema">
+    <ProviderFactory implementation="com.vibe.agent.schemas.VibeSchemaProviderFactory"/>
+  </extensions>
+</idea-plugin>

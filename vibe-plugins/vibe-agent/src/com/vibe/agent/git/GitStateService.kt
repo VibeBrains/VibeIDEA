@@ -36,6 +36,19 @@ class GitStateService(private val project: Project) {
     run(dir, listOf("git", "diff", "HEAD"))
   }
 
+  /**
+   * Commits that touched one file, newest first.
+   *
+   * `--follow` on purpose: a file that was renamed keeps its history, and losing it at the rename
+   * is exactly how «этот код появился ниоткуда» happens.
+   */
+  fun history(path: String, limit: Int): Result<List<RepoState.Commit>> = runCatching {
+    val base = project.basePath ?: error(t("git.noProject"))
+    val dir = File(base)
+    check(File(dir, ".git").exists()) { NOT_A_REPO }
+    RepoState.parseLog(run(dir, listOf("git", "log", "--follow", "--oneline", "-n", limit.toString(), "--", path)))
+  }
+
   private fun run(dir: File, command: List<String>): String {
     val process = ProcessBuilder(command).directory(dir).redirectErrorStream(false).start()
     val out = ProcessSupport.drain(process.inputStream, "vibe-git-out")

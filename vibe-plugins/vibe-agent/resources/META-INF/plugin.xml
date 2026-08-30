@@ -10,6 +10,8 @@
     Compatible with the ~/.jetbrains/acp.json agent registry format.
   ]]></description>
   <depends>com.intellij.modules.platform</depends>
+  <!-- Схемы .vibe/*.json: автодополнение и проверка в редакторе вместо разбора по логам. -->
+  <depends optional="true" config-file="vibe-json-schemas.xml">com.intellij.modules.json</depends>
   <extensions defaultExtensionNs="com.intellij">
     <toolWindow id="Дизайн" anchor="right" secondary="true" factoryClass="com.vibe.agent.design.DesignToolWindowFactory"
                 icon="/icons/vibeAgent.svg" doNotActivateOnStart="true"/>
@@ -69,6 +71,8 @@
               text="Токен Telegram-бота" description="Мост в Telegram: свой бот, токен в защищённом хранилище"/>
       <action id="Vibe.UiKitMap" class="com.vibe.agent.design.VibeUiKitMapAction"
               text="Снять карту построенного" description="Токены, классы и компоненты проекта в .vibe/design/uiKit.md"/>
+      <action id="Vibe.Doctor" class="com.vibe.agent.doctor.VibeDoctorAction"
+              text="Диагностика" description="Один отчёт: сборка, провайдеры, конфиги, режимы, индексы"/>
       <action id="Vibe.DesignDoctor" class="com.vibe.agent.design.VibeDesignDoctorAction"
               text="Проверка дизайн-контура" description="Есть ли контекст, достижима ли страница, сколько правил, нет ли опечаток в отклонениях"/>
       <action id="Vibe.Specs" class="com.vibe.agent.specs.VibeSpecsAction"
