@@ -48,11 +48,17 @@ class DesignPreviewPanel(private val project: Project) : JPanel(BorderLayout()),
   private var lastFindings: List<Finding> = emptyList()
   private var overlayVisible = true
 
+  /** Reload on save: the loop «правка → alt-tab → F5» is the one people give up on. */
+  private var liveReload: com.intellij.ui.components.JBCheckBox? = null
+
   /**
    * The click channel of the overlay. Created ONCE and kept: a per-draw query would leak a handler
    * on every measurement, and the page would end up calling a function that no longer exists.
    */
   private val pickQuery: JBCefJSQuery? = browser?.let { JBCefJSQuery.create(it as com.intellij.ui.jcef.JBCefBrowserBase) }
+
+  /** Separate channel for page errors: mixing them into the pick channel would confuse both. */
+  private val errorQuery: JBCefJSQuery? = browser?.let { JBCefJSQuery.create(it as com.intellij.ui.jcef.JBCefBrowserBase) }
 
   init {
     border = JBUI.Borders.empty(6)
@@ -61,8 +67,17 @@ class DesignPreviewPanel(private val project: Project) : JPanel(BorderLayout()),
       add(JBLabel(t("design.label.address")))
       add(urlField)
       add(ActionLink(t("design.action.open")) { open() })
+      add(ActionLink(t("design.action.reload")) { browser?.cefBrowser?.reload() })
       add(ActionLink(t("design.action.measure")) { measure() })
       add(ActionLink(t("design.action.overlay")) { toggleOverlay() })
+      // Screen sizes as links rather than a dropdown: the three that matter are one click each,
+      // and a dropdown would hide them behind a menu nobody opens twice.
+      add(ActionLink(t("design.action.phone")) { setViewportWidth(PHONE_WIDTH) })
+      add(ActionLink(t("design.action.tablet")) { setViewportWidth(TABLET_WIDTH) })
+      add(ActionLink(t("design.action.desktop")) { setViewportWidth(0) })
+      add(ActionLink(t("design.action.onPhone")) { showLanAddress() })
+      add(ActionLink(t("design.action.errors")) { sendPageErrors() })
+      add(com.intellij.ui.components.JBCheckBox(t("design.action.liveReload")).also { liveReload = it })
     }
     val header = JPanel().apply {
       layout = BoxLayout(this, BoxLayout.Y_AXIS)
@@ -76,6 +91,32 @@ class DesignPreviewPanel(private val project: Project) : JPanel(BorderLayout()),
       Disposer.register(this, query)
       query.addHandler { payload -> onFindingPicked(payload); null }
     }
+
+    errorQuery?.let { query ->
+      Disposer.register(this, query)
+      query.addHandler { payload ->
+        val text = payload.trim()
+        if (text.isEmpty()) status.text = t("design.status.noErrors")
+        else {
+          com.vibe.agent.http.VibeAgentGateway.getInstance()
+            .putIntoComposer(t("design.errors.prefix") + "\n" + text.take(ERRORS_LIMIT))
+          status.text = t("design.status.errorsSent")
+        }
+        null
+      }
+    }
+
+    // Live reload: a file saved in the project reloads the page, so the loop «правка → alt-tab → F5»
+    // — the one people give up on after a dozen repetitions — disappears.
+    project.messageBus.connect(this).subscribe(
+      com.intellij.openapi.fileEditor.FileDocumentManagerListener.TOPIC,
+      object : com.intellij.openapi.fileEditor.FileDocumentManagerListener {
+        override fun beforeDocumentSaving(document: com.intellij.openapi.editor.Document) {
+          if (liveReload?.isSelected != true) return
+          SwingUtilities.invokeLater { browser?.cefBrowser?.reload() }
+        }
+      },
+    )
 
     // The turn gate measures through this panel: it owns the browser, and a second one would
     // measure a different page.
@@ -101,6 +142,54 @@ class DesignPreviewPanel(private val project: Project) : JPanel(BorderLayout()),
     val url = urlField.text.trim().ifEmpty { return }
     status.text = t("design.status.opening", "url" to url)
     browser.loadURL(url)
+    // Installed on every open: the collector must exist BEFORE the page throws, otherwise the first
+    // error — usually the interesting one — is the one nobody sees.
+    browser.cefBrowser.executeJavaScript(ERROR_COLLECTOR, url, 0)
+  }
+
+  /**
+   * Emulates a narrower screen by narrowing the COMPONENT rather than by faking a viewport in JS:
+   * media queries then fire for real, which is the entire point of looking at a phone width.
+   */
+  private fun setViewportWidth(width: Int) {
+    val component = browser?.component ?: return
+    component.preferredSize = if (width <= 0) null else Dimension(width, component.height)
+    component.maximumSize = component.preferredSize
+    revalidate()
+    repaint()
+    status.text = if (width <= 0) t("design.status.desktop") else t("design.status.width", "width" to width)
+  }
+
+  /** The address of this preview as seen from a phone on the same network. */
+  private fun showLanAddress() {
+    val url = urlField.text.trim().ifEmpty { return }
+    val lan = com.vibe.agent.preview.LanAddress.rewrite(url, com.vibe.agent.preview.LanAddress.localAddresses())
+    if (lan == null) {
+      status.text = t("design.status.noLan")
+      return
+    }
+    com.intellij.openapi.ide.CopyPasteManager.getInstance()
+      .setContents(java.awt.datatransfer.StringSelection(lan))
+    status.text = t("design.status.lanCopied", "url" to lan)
+  }
+
+  /**
+   * Console errors and failed requests, sent to the chat as text.
+   *
+   * A screenshot of a broken page says «сломалось»; the console says WHAT. Collected in the page
+   * itself because that is where the errors are — the IDE cannot see them from outside.
+   */
+  private fun sendPageErrors() {
+    val browser = browser ?: return
+    val query = errorQuery ?: return
+    val js = """
+      (function() {
+        var errors = window.__vibeErrors || [];
+        var text = errors.length === 0 ? '' : errors.join('\n');
+        ${query.inject("text")}
+      })();
+    """.trimIndent()
+    browser.cefBrowser.executeJavaScript(js, browser.cefBrowser.url, 0)
   }
 
   /**
@@ -271,6 +360,24 @@ class DesignPreviewPanel(private val project: Project) : JPanel(BorderLayout()),
   override fun dispose() {}
 
   private companion object {
+    const val PHONE_WIDTH = 390
+    const val TABLET_WIDTH = 820
+    const val ERRORS_LIMIT = 4000
+
+    /** Kept tiny on purpose: it runs in someone else's page and must not fight with it. */
+    val ERROR_COLLECTOR = """
+      (function() {
+        if (window.__vibeErrorsInstalled) return;
+        window.__vibeErrorsInstalled = true;
+        window.__vibeErrors = [];
+        var push = function(text) { if (window.__vibeErrors.length < 200) window.__vibeErrors.push(text); };
+        window.addEventListener('error', function(e) { push('error: ' + (e.message || '') + ' @ ' + (e.filename || '') + ':' + (e.lineno || 0)); });
+        window.addEventListener('unhandledrejection', function(e) { push('unhandled: ' + (e.reason && e.reason.message ? e.reason.message : e.reason)); });
+        var console_error = console.error;
+        console.error = function() { push('console: ' + Array.prototype.join.call(arguments, ' ')); console_error.apply(console, arguments); };
+      })();
+    """.trimIndent()
+
     /** VibeIDE parity: the width at which mobile layouts actually break. */
     const val MOBILE_WIDTH_PX = 390
 

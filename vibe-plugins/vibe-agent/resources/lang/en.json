@@ -944,5 +944,19 @@
   "slash.command.find": "Search by meaning: where we do the same thing in other words",
   "slash.command.index": "Build the semantic search index",
   "settings.agent.embedding": "Embedding model (semantic search)",
-  "settings.agent.hint.embedding": "Format provider/model, e.g. openai/text-embedding-3-small or a local Ollama model. Empty turns semantic search off. The index is built with /index and stored in the IDE system path rather than the repository: vectors are regenerable, large and personal to whoever paid for them. Rebuilds are incremental — by file size and modification time — because re-embedding a repository for every question costs real money."
+  "settings.agent.hint.embedding": "Format provider/model, e.g. openai/text-embedding-3-small or a local Ollama model. Empty turns semantic search off. The index is built with /index and stored in the IDE system path rather than the repository: vectors are regenerable, large and personal to whoever paid for them. Rebuilds are incremental — by file size and modification time — because re-embedding a repository for every question costs real money.",
+  "design.action.reload": "reload",
+  "design.action.phone": "phone",
+  "design.action.tablet": "tablet",
+  "design.action.desktop": "desktop",
+  "design.action.onPhone": "address for a phone",
+  "design.action.errors": "errors to the chat",
+  "design.action.liveReload": "reload on save",
+  "design.status.desktop": "width follows the panel",
+  "design.status.width": "preview width: {width} px — media queries fire for real",
+  "design.status.noLan": "no LAN address found: there is no suitable interface (loopback, docker and VPN do not count — a phone cannot reach them)",
+  "design.status.lanCopied": "the address for a phone was copied: {url}",
+  "design.status.noErrors": "the page has no errors",
+  "design.status.errorsSent": "the page errors were put into the chat input",
+  "design.errors.prefix": "Errors on the preview page (console and unhandled rejections):"
 }
