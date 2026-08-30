@@ -44,11 +44,34 @@ object DesignRuleCatalog {
   const val ORPHAN_WORD = "orphan-word"
   const val MARKETING_PROMISE = "marketing-promise"
 
+  // Findability: the only category invisible both on a screenshot and in a preview — a page can be
+  // perfect to look at and impossible to find.
+  const val TITLE_MISSING = "title-missing"
+  const val TITLE_TOO_SHORT = "title-too-short"
+  const val TITLE_TOO_LONG = "title-too-long"
+  const val H1_MISSING = "h1-missing"
+  const val H1_MULTIPLE = "h1-multiple"
+  const val DESCRIPTION_MISSING = "description-missing"
+  const val DESCRIPTION_TOO_SHORT = "description-too-short"
+  const val DESCRIPTION_TOO_LONG = "description-too-long"
+  const val LANG_MISSING = "lang-missing"
+  const val VIEWPORT_MISSING = "viewport-missing"
+  const val VIEWPORT_BLOCKS_ZOOM = "viewport-blocks-zoom"
+  const val CANONICAL_MISSING = "canonical-missing"
+  const val CANONICAL_RELATIVE = "canonical-relative"
+  const val ROBOTS_NOINDEX = "robots-noindex"
+  const val CHARSET_NOT_UTF8 = "charset-not-utf8"
+  const val FAVICON_MISSING = "favicon-missing"
+  const val OG_TITLE_MISSING = "og-title-missing"
+
   private val FLOOR = setOf(
     CONTRAST_TEXT, TEXT_TOO_SMALL, TAP_TARGET_TOO_SMALL, CONTENT_CLIPPED, ELEMENT_OCCLUDED,
     PAGE_WIDER_THAN_VIEWPORT, BROKEN_IMAGE, FOCUS_RING_REMOVED, DISABLED_LOOKS_ENABLED,
     ICON_BUTTON_WITHOUT_NAME, PLACEHOLDER_AS_LABEL, IMAGE_WITHOUT_ALT, ERROR_NOT_LINKED_TO_FIELD,
     REQUIRED_ONLY_VISUAL, HEADING_LEVEL_SKIPPED,
+    // Floor, not taste: a page without a title, without a language or with zoom blocked is broken
+    // for a person, not merely unfashionable.
+    TITLE_MISSING, H1_MISSING, LANG_MISSING, VIEWPORT_MISSING, VIEWPORT_BLOCKS_ZOOM, CANONICAL_RELATIVE,
   )
 
   fun classOf(ruleId: String): RuleClass = if (ruleId in FLOOR) RuleClass.FLOOR else RuleClass.STYLE
@@ -64,5 +87,9 @@ object DesignRuleCatalog {
     NO_HOVER_RESPONSE, GRADIENT_TEXT, GLOW_INSTEAD_OF_SHADOW, GLASSMORPHISM, PURPLE_PALETTE,
     EYEBROW_CHIP, CLONED_CARDS, RADIUS_SCALE_DRIFT, EXTREME_RADIUS, ANIMATED_LAYOUT_PROPERTY,
     OVERSHOOT_ANIMATION, HANGING_PREPOSITION, ORPHAN_WORD, MARKETING_PROMISE,
+    TITLE_MISSING, TITLE_TOO_SHORT, TITLE_TOO_LONG, H1_MISSING, H1_MULTIPLE,
+    DESCRIPTION_MISSING, DESCRIPTION_TOO_SHORT, DESCRIPTION_TOO_LONG, LANG_MISSING,
+    VIEWPORT_MISSING, VIEWPORT_BLOCKS_ZOOM, CANONICAL_MISSING, CANONICAL_RELATIVE,
+    ROBOTS_NOINDEX, CHARSET_NOT_UTF8, FAVICON_MISSING, OG_TITLE_MISSING,
   )
 }

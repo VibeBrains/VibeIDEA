@@ -29,7 +29,10 @@ object DesignReview {
 
   fun run(doc: DocumentSnapshot, accepted: List<Accepted> = emptyList()): Report {
     val byRule = accepted.associate { it.rule to it.reason }
-    val raw = DesignFloorRules.all(doc) + DesignMarkupRules.all(doc) + DesignStyleRules.all(doc)
+    val raw = DesignFloorRules.all(doc) + DesignMarkupRules.all(doc) + DesignStyleRules.all(doc) +
+      // Findability runs once per page rather than per element, so it lands here rather than in a
+      // per-element pass: a title is not a property of a div.
+      DesignFindabilityRules.all(doc)
     val findings = raw.map { finding ->
       // The class always comes from the catalogue, never from the rule that produced the finding.
       val stamped = finding.copy(ruleClass = DesignRuleCatalog.classOf(finding.rule))

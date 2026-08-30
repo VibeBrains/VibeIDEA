@@ -264,12 +264,36 @@
     return { tag: h.tagName.toLowerCase(), text: (h.textContent || '').trim().slice(0, 120), fontSizePx: parseFloat(getComputedStyle(h).fontSize) || 0 };
   });
 
+  // Findability is read from the LIVE page rather than from the source: what shipped is what a
+  // crawler sees, and a meta tag added by a framework at runtime counts exactly as much as one
+  // written by hand.
+  function metaContent(selector, attribute) {
+    var node = document.querySelector(selector);
+    if (!node) return '';
+    var value = attribute ? node.getAttribute(attribute) : node.getAttribute('content');
+    return value ? value.trim() : '';
+  }
+
+  var meta = {
+    title: (document.title || '').trim(),
+    description: metaContent('meta[name="description"]'),
+    lang: (document.documentElement.getAttribute('lang') || '').trim(),
+    viewportContent: metaContent('meta[name="viewport"]'),
+    canonical: metaContent('link[rel="canonical"]', 'href'),
+    h1Count: document.querySelectorAll('h1').length,
+    robots: metaContent('meta[name="robots"]'),
+    ogTitle: metaContent('meta[property="og:title"]'),
+    faviconHref: metaContent('link[rel~="icon"]', 'href'),
+    charset: (document.characterSet || '').trim()
+  };
+
   return JSON.stringify({
     url: location.href,
     viewportWidthPx: window.innerWidth,
     viewportHeightPx: window.innerHeight,
     documentScrollWidthPx: document.documentElement.scrollWidth,
     elements: elements,
-    headings: headings
+    headings: headings,
+    meta: meta
   });
 })();

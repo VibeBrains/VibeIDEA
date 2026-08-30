@@ -132,6 +132,28 @@ data class DocumentSnapshot(
   val documentScrollWidthPx: Double = 0.0,
   val elements: List<ElementSnapshot> = emptyList(),
   val headings: List<HeadingSnapshot> = emptyList(),
+  /**
+   * What the page says about itself, or null when the collector did not report it.
+   *
+   * NULL matters: «не собирали» and «пусто» are different statements, and a findability rule that
+   * fires on a snapshot which never carried metadata accuses a page of missing a title it was never
+   * asked about — the same discipline every other rule here follows.
+   */
+  val meta: PageMeta? = null,
+)
+
+/** Head metadata, as read from the page rather than from the source: what shipped is what counts. */
+data class PageMeta(
+  val title: String = "",
+  val description: String = "",
+  val lang: String = "",
+  val viewportContent: String = "",
+  val canonical: String = "",
+  val h1Count: Int = 0,
+  val robots: String = "",
+  val ogTitle: String = "",
+  val faviconHref: String = "",
+  val charset: String = "",
 )
 
 /**

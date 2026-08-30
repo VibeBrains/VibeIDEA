@@ -42,6 +42,24 @@ object DesignSnapshotCodec {
       documentScrollWidthPx = root.num("documentScrollWidthPx"),
       elements = elements,
       headings = headings,
+      meta = meta(root["meta"] as? JsonObject),
+    )
+  }
+
+  /** No meta block means the collector did not look; null says that, empty strings would not. */
+  private fun meta(obj: JsonObject?): PageMeta? {
+    if (obj == null) return null
+    return PageMeta(
+      title = obj.str("title").orEmpty(),
+      description = obj.str("description").orEmpty(),
+      lang = obj.str("lang").orEmpty(),
+      viewportContent = obj.str("viewportContent").orEmpty(),
+      canonical = obj.str("canonical").orEmpty(),
+      h1Count = obj.num("h1Count").toInt(),
+      robots = obj.str("robots").orEmpty(),
+      ogTitle = obj.str("ogTitle").orEmpty(),
+      faviconHref = obj.str("faviconHref").orEmpty(),
+      charset = obj.str("charset").orEmpty(),
     )
   }
 
