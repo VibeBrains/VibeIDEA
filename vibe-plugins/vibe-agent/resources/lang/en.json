@@ -850,5 +850,18 @@
   "filter.removed": "🧹 noise lines removed from the output: {count} (progress bars, separators, repeats)",
   "slash.command.trace": "What the turn did step by step: tools, durations, repeats",
   "settings.agent.contextFilter": "Tool output filtering",
-  "settings.agent.hint.contextFilter": "auto — collapse repeats and drop noise (progress bars, separators); raw — leave it alone; aggregate — keep only the shape (which line occurred how many times); off — same as raw. Noise is not merely large: it teaches the model that repetition is the point of the output, and it pushes the real error out of the window."
+  "settings.agent.hint.contextFilter": "auto — collapse repeats and drop noise (progress bars, separators); raw — leave it alone; aggregate — keep only the shape (which line occurred how many times); off — same as raw. Noise is not merely large: it teaches the model that repetition is the point of the output, and it pushes the real error out of the window.",
+  "commands.action": "VibeIDEA: project commands",
+  "commands.title": "Project commands",
+  "commands.none": "The project has no {path} — commands are described there and travel with the repository.",
+  "commands.problems": "Some entries were rejected: {problems}. Commands with shell metacharacters or invisible characters are refused outright rather than escaped: such a line is either an attack or a mistake.",
+  "commands.approve": "Run the project command «{title}»?\n\n{command}\n\nThe approval is remembered for THIS text: any edit to the command will ask again.",
+  "commands.approve.yes": "Run",
+  "commands.started": "The «{title}» command was started — its output is in the agent terminal.",
+  "commands.missingSecrets": "Secrets not found: {names}. Values come from .vibe/.env or the environment and are never written into the commands file.",
+  "configGuard.found": "🔒 project config check: {count} — {details}",
+  "configGuard.rule.plaintextSecret": "a plaintext secret ({detail}) in {file} — the file will travel to the repository with the key",
+  "configGuard.rule.insecureEndpoint": "an unencrypted endpoint {detail} in {file}",
+  "configGuard.rule.credentialsInUrl": "credentials inside a URL ({detail}) in {file}",
+  "configGuard.rule.rawIpEndpoint": "a raw IP endpoint {detail} in {file}"
 }
