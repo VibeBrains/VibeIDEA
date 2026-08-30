@@ -254,6 +254,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
       handleCouncilCommand(message) -> true
       handleHandoffCommand(message) -> true
       handleTraceCommand(message) -> true
+      handleHelpCommand(message) -> true
       sessionCeilingReached(message.text) -> false
       handleWatchCommand(message) -> true
       else -> startTurn(message)
@@ -676,6 +677,43 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     override val empty: String get() = t("trace.empty")
     override val ms: String get() = t("trace.ms")
     override val failureMark: String get() = "✖"
+  }
+
+  /**
+   * `/help <вопрос>` — the product's own documentation, attached to the turn.
+   *
+   * Asked «как здесь устроен дизайн-гейт», a model without this answers from its memory of some
+   * other product, confidently. The docs ship inside the build, so the agent reads the real text of
+   * the version it is running in — and reads the FILES, not a summary: the bundle is small enough
+   * to name precisely and too large to inline.
+   */
+  private fun handleHelpCommand(message: ComposedMessage): Boolean {
+    val text = message.text.trim()
+    if (text != HELP_COMMAND && !text.startsWith("$HELP_COMMAND ")) return false
+    val question = text.removePrefix(HELP_COMMAND).trim()
+    if (question.isEmpty()) {
+      userBubble(text)
+      SwingUtilities.invokeLater {
+        val console = TerminalConsole(t("help.title"))
+        console.append(com.vibe.agent.help.HelpBundle.list().joinToString("\n") { "- ${it.title}" })
+        messages.add(console)
+        revalidateScroll()
+      }
+      return true
+    }
+    val docs = com.vibe.agent.help.HelpBundle.find(question)
+    if (docs.isEmpty()) {
+      systemLine(t("help.nothing"))
+      return true
+    }
+    val bodies = docs.mapNotNull { doc ->
+      com.vibe.agent.help.HelpBundle.read(doc.resource)?.let { doc to it }
+    }
+    systemLine(t("help.using", "docs" to docs.joinToString { it.title }))
+    val block = bodies.joinToString("\n\n") { (doc, body) ->
+      "<context ref=\"help:${doc.resource}\">\n${body.take(HELP_DOC_CHARS)}\n</context>"
+    }
+    return startTurn(ComposedMessage(text = question + "\n\n" + t("help.header") + "\n" + block))
   }
 
   /**
@@ -2849,6 +2887,10 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     const val COUNCIL_COMMAND = "/council"
     const val HANDOFF_COMMAND = "/handoff"
     const val TRACE_COMMAND = "/trace"
+    const val HELP_COMMAND = "/help"
+
+    /** One manual is pages long; two of them plus the question still fit a modest window. */
+    const val HELP_DOC_CHARS = 20_000
     const val COUNCIL_TIMEOUT_MS = 180_000L
     const val GIT_REPORT_LIMIT = 25
     const val PIN_ON = "📌"

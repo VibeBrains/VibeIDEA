@@ -34,6 +34,7 @@
     <postStartupActivity implementation="com.vibe.agent.history.VibeHistoryWarmUp"/>
     <postStartupActivity implementation="com.vibe.agent.guard.ConfigGuardStartup"/>
     <postStartupActivity implementation="com.vibe.agent.providers.LocalProbeStartup"/>
+    <postStartupActivity implementation="com.vibe.agent.digest.DailyDigestStartup"/>
     <postStartupActivity implementation="com.vibe.agent.settings.VibePromoDefaults"/>
     <postStartupActivity implementation="com.vibe.agent.defaults.VibeDefaultsSeeder"/>
     <postStartupActivity implementation="com.vibe.agent.providers.VibeProvidersWatcherStarter"/>
@@ -56,6 +57,8 @@
               text="Найти локальные модели" description="Проба привычных портов Ollama, LM Studio, llama.cpp, Jan"/>
       <action id="Vibe.ProjectCommands" class="com.vibe.agent.commands.VibeProjectCommandsAction"
               text="Команды проекта" description="Команды из .vibe/commands.json: список, разрешение и запуск"/>
+      <action id="Vibe.DailyDigest" class="com.vibe.agent.digest.DailyDigestAction"
+              text="Сводка за сутки" description="Что агенты сделали за последние сутки"/>
       <action id="Vibe.SpendReport" class="com.vibe.agent.budget.VibeSpendReportAction"
               text="Расход по ролям" description="Куда ушли токены за сутки и за неделю"/>
       <action id="Vibe.ClearSpend" class="com.vibe.agent.budget.VibeClearSpendAction"

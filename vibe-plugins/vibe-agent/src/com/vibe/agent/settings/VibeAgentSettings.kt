@@ -133,6 +133,7 @@ object VibeAgentSettings {
   private const val KEY_COUNCIL = "vibe.agent.councilAdvisers"
   private const val KEY_CONTEXT_FILTER = "vibe.agent.contextFilterMode"
   private const val KEY_LLM_PROXY = "vibe.agent.llmProxyUrl"
+  private const val KEY_DIGEST_TIME = "vibe.agent.digestTime"
   private const val KEY_FAILOVER = "vibe.agent.failoverChain"
 
   /** Off by default: a ceiling nobody set must not become a wall in the middle of real work. */
@@ -287,6 +288,11 @@ object VibeAgentSettings {
   /** `провайдер/модель` через запятую; пусто — совет выключен и честно об этом говорит. */
   /** auto | raw | aggregate | off — как чистится вывод инструментов до попадания в контекст. */
   /** Прокси только для запросов к моделям; пусто — прямое соединение. */
+  /** `ЧЧ:ММ` по местному времени; пусто — сводка выключена. */
+  var digestTime: String
+    get() = props.getValue(KEY_DIGEST_TIME, "")
+    set(value) = props.setValue(KEY_DIGEST_TIME, value.trim(), "")
+
   var llmProxyUrl: String
     get() = props.getValue(KEY_LLM_PROXY, "")
     set(value) = props.setValue(KEY_LLM_PROXY, value.trim(), "")
