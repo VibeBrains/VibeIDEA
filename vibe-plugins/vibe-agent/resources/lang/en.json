@@ -817,5 +817,20 @@
   "council.synthesis": "Below are independent answers from several models to one question. Reconcile them: where they agree (that is the ground), where they differ (that is the open question), and what should be checked by fact. Do not pick an answer for the elegance of its wording.",
   "settings.agent.council": "Advisers (model council)",
   "settings.agent.hint.council": "Format: provider/model separated by commas, e.g. zai/glm-4.6, minimax/abab6. DIFFERENT models are required: the same one asked twice agrees with itself, and the second answer looks like confirmation without being one. Invoked with /council <question>: advisers answer in parallel, blind to each other, and a turn then reconciles them. Empty turns the council off.",
-  "slash.command.council": "One question to several different models, then a reconciliation of their opinions"
+  "slash.command.council": "One question to several different models, then a reconciliation of their opinions",
+  "eyes.header": "this can only be checked by eye — open it and look:",
+  "eyes.more": "and {count} more files",
+  "eyes.state.empty": "the empty state (nothing found, empty list)",
+  "eyes.state.error": "the error state (what is visible when the request failed)",
+  "eyes.state.narrow": "a narrow screen (phone, split window)",
+  "handoff.title": "Handing over the work",
+  "handoff.goal": "The task",
+  "handoff.done": "Done",
+  "handoff.remaining": "Remaining",
+  "handoff.traps": "What was already tried and why it failed",
+  "handoff.files": "Files touched",
+  "handoff.verify": "How to verify",
+  "handoff.empty": "— (not filled in)",
+  "handoff.gaps": "⚠️ the handoff is missing: {sections}. A half-empty form looks like a handoff while handing nothing over — add it in the chat so the next one does not re-derive it.",
+  "slash.command.handoff": "Hand over unfinished work as a form: goal, what is left, traps, how to verify"
 }

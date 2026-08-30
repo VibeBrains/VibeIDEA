@@ -273,6 +273,7 @@ class SlashPopup(
       Row("/commit ", "/commit", t("slash.command.commit")),
       Row("/git ", "/git", t("slash.command.git")),
       Row("/council ", "/council", t("slash.command.council")),
+      Row("/handoff ", "/handoff", t("slash.command.handoff")),
       Row("/output ", "/output", t("slash.command.output")),
       Row(null, "/skill:", t("slash.command.skill"), toSkills = true),
     )

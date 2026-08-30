@@ -241,6 +241,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
       handleOutputCommand(message) -> true
       handleGitCommand(message) -> true
       handleCouncilCommand(message) -> true
+      handleHandoffCommand(message) -> true
       sessionCeilingReached(message.text) -> false
       handleWatchCommand(message) -> true
       else -> startTurn(message)
@@ -522,6 +523,71 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
    * progress line and a working Стоп: downloading a lecture takes minutes, and a cancel that only
    * lands at the end is not a cancel.
    */
+  /**
+   * «Сделал» is a promise, not a fact, when the change is something one can SEE.
+   *
+   * A model cannot look at the screen: it can be certain the button is centred and be wrong, and
+   * the cost is paid by whoever opens the app expecting finished work. So a turn that touched
+   * something visible ends with a short list of what to open — and with the three states a model
+   * never renders in its head: empty, error, narrow screen.
+   */
+  private fun announceEyesChecklist() {
+    val visible = com.vibe.agent.handoff.EyesChecklist.visibleFiles(changedPaths.toList())
+    if (visible.isEmpty()) return
+    val text = com.vibe.agent.handoff.EyesChecklist.render(
+      visible,
+      listOf(t("eyes.state.empty"), t("eyes.state.error"), t("eyes.state.narrow")),
+      t("eyes.header"),
+      { count -> t("eyes.more", "count" to count) },
+    )
+    if (text.isNotEmpty()) systemLine("👀 " + text)
+  }
+
+  /**
+   * `/handoff` — the work handed over by form rather than «на словах».
+   *
+   * What is expensive to lose is not the code that was written — that is in the diff — but what was
+   * LEARNED: which approach was already tried and why it failed. That is the section a chat never
+   * has, so the form asks for it explicitly and names the sections left empty.
+   */
+  private fun handleHandoffCommand(message: ComposedMessage): Boolean {
+    val text = message.text.trim()
+    if (text != HANDOFF_COMMAND && !text.startsWith("$HANDOFF_COMMAND ")) return false
+    val note = text.removePrefix(HANDOFF_COMMAND).trim()
+    val threadId = currentThreadId
+    val plan = threadId?.let { com.vibe.agent.plans.PlanStore.getInstance(project).load(it) }
+    val handoff = com.vibe.agent.handoff.HandoffForm.Handoff(
+      goal = note.ifEmpty { history.get(threadId ?: "")?.title.orEmpty() },
+      done = plan?.steps?.filter { it.status == com.vibe.agent.plans.AgentPlan.Status.COMPLETED }?.map { it.content }.orEmpty(),
+      remaining = plan?.steps?.filter { it.status != com.vibe.agent.plans.AgentPlan.Status.COMPLETED }?.map { it.content }.orEmpty(),
+      touchedFiles = changedPaths.toList().sorted(),
+      howToVerify = VibeAgentSettings.verifyCommand.takeIf { it.isNotBlank() },
+    )
+    val rendered = com.vibe.agent.handoff.HandoffForm.render(handoff, handoffLabels())
+    val gaps = com.vibe.agent.handoff.HandoffForm.gaps(handoff)
+    userBubble(text)
+    SwingUtilities.invokeLater {
+      val console = TerminalConsole(t("handoff.title"))
+      console.append(rendered)
+      messages.add(console)
+      revalidateScroll()
+    }
+    if (gaps.isNotEmpty()) systemLine(t("handoff.gaps", "sections" to gaps.joinToString(", ") { gapLabel(it) }))
+    return true
+  }
+
+  private fun gapLabel(gap: String): String = when (gap) {
+    com.vibe.agent.handoff.HandoffForm.GOAL -> t("handoff.goal")
+    com.vibe.agent.handoff.HandoffForm.REMAINING -> t("handoff.remaining")
+    else -> t("handoff.verify")
+  }
+
+  private fun handoffLabels() = com.vibe.agent.handoff.HandoffForm.Labels(
+    title = t("handoff.title"), goal = t("handoff.goal"), done = t("handoff.done"),
+    remaining = t("handoff.remaining"), traps = t("handoff.traps"), files = t("handoff.files"),
+    verify = t("handoff.verify"), empty = t("handoff.empty"),
+  )
+
   /**
    * `/council <вопрос>` — one question to several DIFFERENT models, each blind to the others.
    *
@@ -990,6 +1056,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     }
     status.set(if (breakers.isBlocking()) VibeAgentStatusService.State.BLOCKED else VibeAgentStatusService.State.IDLE)
     if (disposed) return
+    announceEyesChecklist()
     notifyTurnEndIfAway()
     // The sound is for someone who looked away; the policy inside decides whether to play at all.
     com.vibe.agent.sound.VibeSoundService.getInstance()
@@ -2667,6 +2734,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     const val OUTPUT_COMMAND = "/output"
     const val GIT_COMMAND = "/git"
     const val COUNCIL_COMMAND = "/council"
+    const val HANDOFF_COMMAND = "/handoff"
     const val COUNCIL_TIMEOUT_MS = 180_000L
     const val GIT_REPORT_LIMIT = 25
     const val PIN_ON = "📌"
