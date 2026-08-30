@@ -33,20 +33,27 @@ class VibeSpendService {
   private val store = SpendLedger.Store()
 
   @Volatile private var loaded = false
-  @Volatile private var dirtySinceMs = 0L
+  @Volatile private var dirty = false
+  @Volatile private var lastSavedMs = 0L
 
   @Synchronized
   fun record(role: String?, target: String, tokens: Long, costAmount: Double?, costCurrency: String?) {
     if (tokens <= 0 && costAmount == null) return
     ensureLoaded()
     store.add(SpendLedger.Entry(System.currentTimeMillis(), role, target, tokens, costAmount, costCurrency))
-    dirtySinceMs = System.currentTimeMillis()
-    save()
+    dirty = true
+    // Debounced on purpose: an update arrives with every streamed chunk, and rewriting the whole
+    // file each time would turn a convenience into a stream of disk writes. The file is a report,
+    // not a journal — losing the last few seconds of it costs nothing.
+    val now = System.currentTimeMillis()
+    if (now - lastSavedMs >= SAVE_INTERVAL_MS) save()
   }
 
+  /** Reading is also the moment to flush: a report must not show less than what happened. */
   @Synchronized
   fun entries(windowMs: Long = SpendLedger.DAY_MS): List<SpendLedger.Entry> {
     ensureLoaded()
+    if (dirty) save()
     return SpendLedger.within(store.snapshot(), System.currentTimeMillis(), windowMs)
   }
 
@@ -82,6 +89,8 @@ class VibeSpendService {
   }
 
   private fun save() {
+    dirty = false
+    lastSavedMs = System.currentTimeMillis()
     runCatching {
       val path = file()
       Files.createDirectories(path.parent)
@@ -107,6 +116,9 @@ class VibeSpendService {
 
   companion object {
     private const val VERSION = 1
+
+    /** Often enough that a crash loses seconds, rare enough that streaming does not hit the disk. */
+    private const val SAVE_INTERVAL_MS = 15_000L
 
     fun getInstance(): VibeSpendService = com.intellij.openapi.application.ApplicationManager.getApplication().service()
   }

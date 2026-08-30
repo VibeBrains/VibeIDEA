@@ -28,7 +28,14 @@ import javax.swing.Timer
 class DailyDigestStartup : ProjectActivity {
   override suspend fun execute(project: Project) {
     if (DailyDigest.minutesOfDay(VibeAgentSettings.digestTime) == null) return
-    Timer(CHECK_INTERVAL_MS) { maybeSend(project) }.apply { isRepeats = true; start() }
+    val timer = Timer(CHECK_INTERVAL_MS) { maybeSend(project) }.apply { isRepeats = true; start() }
+    // Tied to the project: a timer that outlives the window it was started for keeps a closed
+    // project alive and wakes up every ten minutes forever — the leak nobody notices because it
+    // costs almost nothing each time.
+    com.intellij.openapi.util.Disposer.register(
+      com.vibe.agent.digest.DigestTimers.getInstance(project),
+      com.intellij.openapi.Disposable { timer.stop() },
+    )
     maybeSend(project)
   }
 
@@ -55,6 +62,16 @@ class DailyDigestStartup : ProjectActivity {
 }
 
 /** The same digest on demand — the answer to «что тут было, пока меня не было». */
+/** Lifetime holder: a project-level service is disposed with the project, and the timer with it. */
+@com.intellij.openapi.components.Service(com.intellij.openapi.components.Service.Level.PROJECT)
+class DigestTimers : com.intellij.openapi.Disposable {
+  override fun dispose() {}
+
+  companion object {
+    fun getInstance(project: Project): DigestTimers = project.getService(DigestTimers::class.java)
+  }
+}
+
 class DailyDigestAction : AnAction({ t("digest.action") }) {
   override fun actionPerformed(e: AnActionEvent) {
     val project = e.project ?: return

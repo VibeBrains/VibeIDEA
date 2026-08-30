@@ -1,8 +1,6 @@
 // Copyright 2026 VibeBrains. Use of this source code is governed by the Apache 2.0 license.
 package com.vibe.agent.help
 
-import com.vibe.agent.i18n.VibeI18n.t
-
 /**
  * The product's own documentation, shipped inside the build.
  *
@@ -11,28 +9,38 @@ import com.vibe.agent.i18n.VibeI18n.t
  * docs are ours and small, they travel with the plugin: the agent reads the real text of the real
  * version it is running in.
  *
- * Names are matched, contents are read on demand — the same discipline as the librarian: a manual is
- * pages long, and inlining three of them costs more than the question did.
+ * The index is a FILE generated next to the copies rather than a list in this class. The list was
+ * the first version, and it drifted within a week: two manuals were added to the repository and
+ * nobody remembered the array here, so `/help` simply could not find them — a failure that looks
+ * like «в справке про это ничего нет».
+ *
+ * Titles come from each document's own first heading for the same reason: a title kept anywhere
+ * else is a second place to forget.
  */
 object HelpBundle {
   const val ROOT = "/help"
+  const val INDEX = "$ROOT/index.txt"
 
-  /** One bundled document: the resource path and the human description used for matching. */
+  /** One bundled document: the resource path and the title read from its first heading. */
   data class Doc(val resource: String, val title: String)
 
-  fun list(): List<Doc> = INDEX
+  private val HEADING = Regex("(?m)^#\\s+(.+)$")
+
+  private val docs: List<Doc> by lazy { load() }
+
+  fun list(): List<Doc> = docs
 
   fun read(resource: String): String? =
     HelpBundle::class.java.getResourceAsStream(resource)?.bufferedReader()?.readText()
 
   /**
-   * Documents whose description matches the question. Deliberately crude: the bundle is under two
+   * Documents whose title or path matches the question. Deliberately crude: the bundle is under two
    * dozen files with descriptive names, and a real index would be maintenance for no gain.
    */
   fun find(question: String, limit: Int = MAX_HITS): List<Doc> {
     val words = question.lowercase().split(Regex("[^\\p{L}\\p{N}]+")).filter { it.length >= MIN_WORD }
     if (words.isEmpty()) return emptyList()
-    return INDEX.map { doc ->
+    return docs.map { doc ->
       val haystack = (doc.title + " " + doc.resource).lowercase()
       doc to words.count { haystack.contains(it) }
     }.filter { it.second > 0 }
@@ -41,32 +49,21 @@ object HelpBundle {
       .map { it.first }
   }
 
+  /** Title of a document, or its file name when it has no heading — never an empty label. */
+  fun titleOf(text: String?, resource: String): String =
+    text?.let { HEADING.find(it)?.groupValues?.get(1)?.trim() }?.takeIf { it.isNotEmpty() }
+      ?: resource.substringAfterLast('/')
+
+  private fun load(): List<Doc> {
+    val index = read(INDEX) ?: return emptyList()
+    return index.lines().mapNotNull { line ->
+      val relative = line.trim()
+      if (relative.isEmpty()) return@mapNotNull null
+      val resource = "$ROOT/$relative"
+      Doc(resource, titleOf(read(resource), resource))
+    }
+  }
+
   const val MAX_HITS = 3
   private const val MIN_WORD = 4
-
-  /**
-   * The index is written out rather than discovered at run time: listing resources inside a jar is
-   * unreliable across launchers, and a bundle that silently lists nothing would be indistinguishable
-   * from one that was never copied. HelpBundleTest keeps this list and the files in step.
-   */
-  private val INDEX: List<Doc> get() = listOf(
-    Doc("$ROOT/functional.md", t("help.doc.functional")),
-    Doc("$ROOT/agentsGuide.md", t("help.doc.agentsGuide")),
-    Doc("$ROOT/manuals/acpAgentsSpec.md", t("help.doc.acpAgentsSpec")),
-    Doc("$ROOT/manuals/acpSmoke.md", t("help.doc.acpSmoke")),
-    Doc("$ROOT/manuals/agentRunsSpec.md", t("help.doc.agentRunsSpec")),
-    Doc("$ROOT/manuals/auditSpec.md", t("help.doc.auditSpec")),
-    Doc("$ROOT/manuals/codeGraphSpec.md", t("help.doc.codeGraphSpec")),
-    Doc("$ROOT/manuals/commandsSpec.md", t("help.doc.commandsSpec")),
-    Doc("$ROOT/manuals/designSpec.md", t("help.doc.designSpec")),
-    Doc("$ROOT/manuals/hooksSpec.md", t("help.doc.hooksSpec")),
-    Doc("$ROOT/manuals/httpApiSpec.md", t("help.doc.httpApiSpec")),
-    Doc("$ROOT/manuals/langFileSpec.md", t("help.doc.langFileSpec")),
-    Doc("$ROOT/manuals/languageServers.md", t("help.doc.languageServers")),
-    Doc("$ROOT/manuals/pipelinesSpec.md", t("help.doc.pipelinesSpec")),
-    Doc("$ROOT/manuals/projectContextSpec.md", t("help.doc.projectContextSpec")),
-    Doc("$ROOT/manuals/providersSpec.md", t("help.doc.providersSpec")),
-    Doc("$ROOT/manuals/serversSpec.md", t("help.doc.serversSpec")),
-    Doc("$ROOT/manuals/skillsSpec.md", t("help.doc.skillsSpec")),
-  )
 }

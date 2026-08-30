@@ -17,5 +17,10 @@ cp "$SRC_DOCS/functional.md" "$DEST/functional.md"
 cp "$SRC_DOCS/agentsGuide.md" "$DEST/agentsGuide.md"
 cp "$SRC_DOCS/manuals/"*.md "$DEST/manuals/"
 
-count=$(find "$DEST" -name '*.md' | wc -l | tr -d ' ')
+# Индекс — файлом, а не списком в коде: список в коде уже разошёлся с папкой (16 против 18),
+# и заметить это можно было только по тому, что агент не находит два мануала.
+INDEX="$DEST/index.txt"
+( cd "$DEST" && find . -name '*.md' | sed 's|^\./||' | sort ) > "$INDEX"
+
+count=$(grep -c . "$INDEX")
 printf 'Справка в сборке: %s файлов в %s\n' "$count" "$DEST"

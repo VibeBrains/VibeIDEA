@@ -8,11 +8,20 @@ import kotlin.test.assertTrue
 
 class HelpBundleTest {
   @Test
-  fun `every indexed document is actually in the build`() {
-    // Это и есть гейт синхронизации: доки копируются скриптом, и разошедшаяся копия обязана падать
-    // здесь, а не обнаруживаться пользователем, у которого агент ссылается на несуществующий файл.
+  fun `every document named by the index is actually in the build`() {
+    // Гейт синхронизации: доки копируются скриптом, и разошедшаяся копия обязана падать здесь,
+    // а не обнаруживаться пользователем, у которого агент ссылается на несуществующий файл.
     val missing = HelpBundle.list().filter { HelpBundle.read(it.resource) == null }
     assertTrue(missing.isEmpty(), "нет в ресурсах: " + missing.joinToString { it.resource })
+  }
+
+  @Test
+  fun `the index is not empty and covers the manuals`() {
+    // Список в коде уже расходился с папкой: два мануала добавили, а массив забыли, и «/help»
+    // просто не находил их. Теперь индекс — файл, и вот эта проверка ловит его отсутствие.
+    val docs = HelpBundle.list()
+    assertTrue(docs.size >= 18, "документов в справке: " + docs.size)
+    assertTrue(docs.count { it.resource.contains("/manuals/") } >= 16)
   }
 
   @Test
@@ -23,9 +32,17 @@ class HelpBundleTest {
   }
 
   @Test
+  fun `a title comes from the document, and a file without a heading still has a name`() {
+    assertEquals("Заголовок", HelpBundle.titleOf("# Заголовок\n\nтекст", "/help/a.md"))
+    assertEquals("a.md", HelpBundle.titleOf("без заголовка", "/help/a.md"))
+    assertEquals("a.md", HelpBundle.titleOf(null, "/help/a.md"))
+  }
+
+  @Test
   fun `a question finds the manual written about it`() {
-    assertEquals("/help/manuals/hooksSpec.md", HelpBundle.find("как работают хуки проекта").first().resource)
-    assertEquals("/help/manuals/commandsSpec.md", HelpBundle.find("команды проекта и секреты").first().resource)
+    assertEquals("/help/manuals/hooksSpec.md", HelpBundle.find("hooks: хуки проекта").first().resource)
+    assertTrue(HelpBundle.find("telegram бот").any { it.resource.contains("telegram") },
+               "мануал, добавленный после первой версии индекса, обязан находиться")
   }
 
   @Test
@@ -41,12 +58,5 @@ class HelpBundleTest {
   @Test
   fun `at most a few documents are named`() {
     assertTrue(HelpBundle.find("проекта агент файл спека формат").size <= HelpBundle.MAX_HITS)
-  }
-
-  @Test
-  fun `every manual of the repository is indexed`() {
-    // Забытая в индексе спека — это документ, которого для агента не существует.
-    val indexed = HelpBundle.list().count { it.resource.contains("/manuals/") }
-    assertTrue(indexed >= 16, "спек в индексе: $indexed")
   }
 }

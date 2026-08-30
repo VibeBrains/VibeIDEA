@@ -893,8 +893,21 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     return true
   }
 
-  /** Baseline of the current optimisation; cleared with a new baseline, not by time. */
+  /** Baseline of the current optimisation; belongs to the chat it was measured in. */
   @Volatile private var metricBaseline: Double? = null
+
+  /**
+   * Everything counted per chat rather than per panel.
+   *
+   * Called when the visible chat changes: these numbers describe ONE conversation, and carrying
+   * them over produces a fresh chat that is already «дорогой» and already warned about.
+   */
+  private fun resetChatCounters() {
+    sessionTokens.set(0)
+    announcedContextLevels.clear()
+    metricBaseline = null
+    lastAccountedUsed.set(0)
+  }
 
   private fun runShell(command: String): String {
     val process = ProcessBuilder(com.vibe.agent.util.ProcessSupport.shellCommand(command))
@@ -2145,6 +2158,10 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     updateTabsStrip()
     saveTabs()
     rail?.currentThreadId = id
+    // Per-CHAT state must not travel between chats: a new conversation inheriting the previous
+    // one's token count would hit the session ceiling on its first message, and the «окно почти
+    // полное» line would already be said and therefore never repeated.
+    resetChatCounters()
     announceUnfinishedPlan(id)
     composer.focusInput()
   }
@@ -2965,8 +2982,11 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     // role burned it, and only the second is something one can act on.
     val amount = (u["cost"] as? JsonObject)?.get("amount")?.jsonPrimitive?.contentOrNull?.toDoubleOrNull()
     val currency = (u["cost"] as? JsonObject)?.get("currency")?.jsonPrimitive?.contentOrNull
+    // ACP reports the window total, and a new turn starts it lower again: without the floor the
+    // difference goes negative and the day's spend silently shrinks.
+    val delta = (used - lastAccountedUsed.getAndSet(used)).coerceAtLeast(0)
     com.vibe.agent.budget.VibeSpendService.getInstance()
-      .record(currentRole, targetLabel(), used - lastAccountedUsed.getAndSet(used), amount, currency)
+      .record(currentRole, targetLabel(), delta, amount, currency)
   }
 
   /** ACP reports the window total, not a delta: the difference is what this turn actually added. */

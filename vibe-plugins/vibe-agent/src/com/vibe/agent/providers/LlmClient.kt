@@ -58,9 +58,19 @@ internal object LlmMessages {
   }
 
   /** anthropic: "content" is a string, or [{type:image,source:{base64}}…,{type:text}]. */
-  fun anthropic(m: ChatMessage): JsonObject = buildJsonObject {
+  /**
+   * [cacheable] marks the end of the stable prefix: everything up to and including this message is
+   * the same on the next turn, so the provider may bill it as a cache hit. Marked on the message
+   * rather than on the whole request because that is where the boundary actually is.
+   */
+  fun anthropic(m: ChatMessage, cacheable: Boolean = false): JsonObject = buildJsonObject {
     put("role", m.role)
-    if (m.images.isEmpty()) put("content", m.text)
+    if (m.images.isEmpty() && !cacheable) put("content", m.text)
+    else if (m.images.isEmpty()) put("content", JsonArray(listOf(buildJsonObject {
+      put("type", "text")
+      put("text", m.text)
+      put("cache_control", buildJsonObject { put("type", "ephemeral") })
+    })))
     else put("content", JsonArray(buildList {
       m.images.forEach { img ->
         add(buildJsonObject {
@@ -72,7 +82,11 @@ internal object LlmMessages {
           })
         })
       }
-      if (m.text.isNotBlank()) add(buildJsonObject { put("type", "text"); put("text", m.text) })
+      if (m.text.isNotBlank()) add(buildJsonObject {
+        put("type", "text")
+        put("text", m.text)
+        if (cacheable) put("cache_control", buildJsonObject { put("type", "ephemeral") })
+      })
     }))
   }
 
@@ -299,7 +313,13 @@ class LlmClient(private val http: HttpClient = defaultClient(Duration.ofSeconds(
         }
         else put("system", system)
       }
-      put("messages", JsonArray(messages.filter { it.role != "system" }.map(LlmMessages::anthropic)))
+      // The stable prefix of the conversation is billed once instead of on every turn; the
+      // boundary never includes the last message, which is precisely what changed.
+      val wire = messages.filter { it.role != "system" }
+      val boundary = PromptCache.cacheBoundary(wire)
+      put("messages", JsonArray(wire.mapIndexed { index, message ->
+        LlmMessages.anthropic(message, cacheable = index == boundary)
+      }))
     }.let { withReasoning(it, "anthropic", model) }, model.extraBody)
     val request = requestBuilder(provider, "messages")
       .header("anthropic-version", "2023-06-01")
