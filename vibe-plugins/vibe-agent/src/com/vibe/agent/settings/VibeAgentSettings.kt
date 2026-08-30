@@ -136,6 +136,7 @@ object VibeAgentSettings {
   private const val KEY_DIGEST_TIME = "vibe.agent.digestTime"
   private const val KEY_DOCS_FOLDER = "vibe.agent.docsFolder"
   private const val KEY_EMBEDDING_MODEL = "vibe.agent.embeddingModel"
+  private const val KEY_MINIMALISM = "vibe.agent.minimalismMode"
   private const val KEY_FAILOVER = "vibe.agent.failoverChain"
 
   /** Off by default: a ceiling nobody set must not become a wall in the middle of real work. */
@@ -293,6 +294,11 @@ object VibeAgentSettings {
   /** `ЧЧ:ММ` по местному времени; пусто — сводка выключена. */
   /** Папка документации проекта для панели «Документы». */
   /** `провайдер/модель` для эмбеддингов; пусто — поиск по смыслу выключен. */
+  /** off | light | full | ultra — сколько кода агенту позволено добавить ради результата. */
+  var minimalismMode: String
+    get() = props.getValue(KEY_MINIMALISM, "off")
+    set(value) = props.setValue(KEY_MINIMALISM, value.trim().lowercase(), "off")
+
   var embeddingModel: String
     get() = props.getValue(KEY_EMBEDDING_MODEL, "")
     set(value) = props.setValue(KEY_EMBEDDING_MODEL, value.trim(), "")

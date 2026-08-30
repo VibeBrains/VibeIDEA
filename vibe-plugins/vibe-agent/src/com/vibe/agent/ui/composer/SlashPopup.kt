@@ -277,6 +277,7 @@ class SlashPopup(
       Row("/trace", "/trace", t("slash.command.trace")),
       Row("/help ", "/help", t("slash.command.help")),
       Row("/find ", "/find", t("slash.command.find")),
+      Row("/simplify", "/simplify", t("slash.command.simplify")),
       Row("/index", "/index", t("slash.command.index")),
       Row("/output ", "/output", t("slash.command.output")),
       Row(null, "/skill:", t("slash.command.skill"), toSkills = true),

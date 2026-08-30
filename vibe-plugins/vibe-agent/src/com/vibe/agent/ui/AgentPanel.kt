@@ -256,6 +256,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
       handleTraceCommand(message) -> true
       handleHelpCommand(message) -> true
       handleFindCommand(message) -> true
+      handleSimplifyCommand(message) -> true
       sessionCeilingReached(message.text) -> false
       handleWatchCommand(message) -> true
       else -> startTurn(message)
@@ -678,6 +679,58 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     override val empty: String get() = t("trace.empty")
     override val ms: String get() = t("trace.ms")
     override val failureMark: String get() = "✖"
+  }
+
+  /**
+   * `/simplify` — the current diff read back as a DELETE LIST.
+   *
+   * Review asks «правильно ли это». This asks the question nobody asks — «что отсюда можно убрать,
+   * ничего не потеряв» — because the code was just written and every line of it felt necessary an
+   * hour ago. The answer must be actionable, so it comes back as file, line, what, why; prose is
+   * reported as unparsed rather than shown as an essay.
+   */
+  private fun handleSimplifyCommand(message: ComposedMessage): Boolean {
+    if (message.text.trim() != SIMPLIFY_COMMAND) return false
+    userBubble(message.text.trim())
+    ApplicationManager.getApplication().executeOnPooledThread {
+      val diff = com.vibe.agent.git.GitStateService.getInstance(project).diff()
+        .getOrElse { systemLine(t("simplify.noDiff")); return@executeOnPooledThread }
+      if (diff.isBlank()) {
+        systemLine(t("simplify.empty"))
+        return@executeOnPooledThread
+      }
+      val target = target as? ChatTarget.Model ?: run {
+        systemLine(t("simplify.needsModel"))
+        return@executeOnPooledThread
+      }
+      val resolved = ProvidersService.resolve(target.provider, project.basePath) { } ?: return@executeOnPooledThread
+      val prompt = com.vibe.agent.minimalism.SimplifyPrompt.build(diff, t("simplify.instruction"), t("simplify.ladder"))
+      val answer = StringBuilder()
+      runCatching {
+        llmClient.chat(resolved, target.model, listOf(com.vibe.agent.providers.ChatMessage("user", prompt))) { delta ->
+          answer.append(delta)
+        }
+      }.onFailure {
+        systemLine(t("simplify.failed", "reason" to it.message))
+        return@executeOnPooledThread
+      }
+      val (items, unparsed) = com.vibe.agent.minimalism.SimplifyPrompt.parseAnswer(answer.toString())
+      if (items.isEmpty()) {
+        systemLine(t("simplify.nothing"))
+        if (unparsed.isNotEmpty()) systemLine(t("simplify.unparsed", "count" to unparsed.size))
+        return@executeOnPooledThread
+      }
+      SwingUtilities.invokeLater {
+        val console = TerminalConsole(t("simplify.title", "count" to items.size))
+        console.append(items.joinToString("\n") { item ->
+          item.file + (item.line?.let { ":" + it } ?: "") + " — " + item.what + (if (item.why.isBlank()) "" else " — " + item.why)
+        })
+        if (unparsed.isNotEmpty()) console.append("\n\n" + t("simplify.unparsed", "count" to unparsed.size))
+        messages.add(console)
+        revalidateScroll()
+      }
+    }
+    return true
   }
 
   /**
@@ -1428,6 +1481,19 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
    * entries are named. Paths, not contents: a note is a page long, and the agent reads what it
    * decides it needs — which is how a person uses an index too.
    */
+  /**
+   * The minimalism ladder, when the project asked for it: left alone a model writes a wrapper
+   * around one call, a flag nobody sets and a comment restating the line below — each defensible
+   * alone, and together the reason agent-written code becomes unreadable faster than hand-written.
+   */
+  private fun prependMinimalism(prompt: String): String {
+    val mode = com.vibe.agent.minimalism.MinimalismPolicy.modeOf(VibeAgentSettings.minimalismMode)
+    if (mode == com.vibe.agent.minimalism.MinimalismPolicy.Mode.OFF) return prompt
+    val rules = com.vibe.agent.minimalism.MinimalismPolicy.Rules(
+      light = t("minimalism.light"), full = t("minimalism.full"), ultra = t("minimalism.ultra"))
+    return com.vibe.agent.minimalism.MinimalismPolicy.preamble(mode, rules) + "\n\n" + prompt
+  }
+
   private fun prependKnowledge(prompt: String, userText: String): String {
     val index = com.vibe.agent.knowledge.KnowledgeIndex.getInstance(project)
     val entries = index.entries()
@@ -1453,7 +1519,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     }
     val design = DesignContextFile.load(project.basePath)
     val designed = if (design != null) DesignContextFile.promptBlock(design) + "\n" + text else text
-    val fullPrompt = prependProjectRules(prependKnowledge(designed, text), text, loaded)
+    val fullPrompt = prependMinimalism(prependProjectRules(prependKnowledge(designed, text), text, loaded))
     val c = ensureClient(t.config)
     // A fresh turn: tool-call ids and the changed-files set are per-turn.
     toolCalls.reset()
@@ -2942,6 +3008,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     const val TRACE_COMMAND = "/trace"
     const val HELP_COMMAND = "/help"
     const val FIND_COMMAND = "/find"
+    const val SIMPLIFY_COMMAND = "/simplify"
     const val INDEX_COMMAND = "/index"
     const val INDEX_PROGRESS_STEP = 25
 

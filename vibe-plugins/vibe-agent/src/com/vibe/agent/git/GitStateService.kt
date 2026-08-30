@@ -28,6 +28,14 @@ class GitStateService(private val project: Project) {
     RepoState.assemble(status, numstat, log)
   }
 
+  /** The working diff against HEAD — what was written and not yet committed. */
+  fun diff(): Result<String> = runCatching {
+    val base = project.basePath ?: error(t("git.noProject"))
+    val dir = File(base)
+    check(File(dir, ".git").exists()) { NOT_A_REPO }
+    run(dir, listOf("git", "diff", "HEAD"))
+  }
+
   private fun run(dir: File, command: List<String>): String {
     val process = ProcessBuilder(command).directory(dir).redirectErrorStream(false).start()
     val out = ProcessSupport.drain(process.inputStream, "vibe-git-out")

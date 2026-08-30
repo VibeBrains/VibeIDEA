@@ -958,5 +958,20 @@
   "design.status.lanCopied": "the address for a phone was copied: {url}",
   "design.status.noErrors": "the page has no errors",
   "design.status.errorsSent": "the page errors were put into the chat input",
-  "design.errors.prefix": "Errors on the preview page (console and unhandled rejections):"
+  "design.errors.prefix": "Errors on the preview page (console and unhandled rejections):",
+  "simplify.title": "delete list: {count}",
+  "simplify.noDiff": "git did not return a diff — there is no repository here, or git is unavailable",
+  "simplify.empty": "the working tree has no changes — there is nothing to simplify",
+  "simplify.needsModel": "the delete list is produced by a direct model rather than an ACP agent: pick a model in the picker",
+  "simplify.failed": "the delete list failed: {reason}",
+  "simplify.nothing": "the model found nothing to remove",
+  "simplify.unparsed": "{count} answer lines were not parsed — they are not in the «file:line — what — why» form",
+  "simplify.instruction": "Below is the diff of freshly written code. Produce a DELETE LIST: what among the additions can be removed or simplified without losing anything. Answer with lines of the form «path:line — what to remove — why». Nothing else around it. If there is nothing to remove, say so in one line.",
+  "simplify.ladder": "The ladder, from obvious to arguable: a comment restating the line below it; a wrapper around a single call; a parameter or flag nobody passes; an abstraction for a second case that does not exist; handling for an error that cannot happen; a test that repeats its neighbour.",
+  "minimalism.light": "Reuse first: before writing anything new, look for what the project already has.",
+  "minimalism.full": "Add no abstraction for a single case, no wrapper around a single call, and no comment that restates the code.",
+  "minimalism.ultra": "Every added line must be necessary for the result. If a line can be removed with nothing breaking, remove it now.",
+  "settings.agent.minimalism": "Agent minimalism",
+  "settings.agent.hint.minimalism": "off — do not interfere; light — «reuse what exists first»; full — plus no abstraction for a single case, no wrapper around a single call, no comment restating code; ultra — plus every line must be necessary. A ladder rather than a switch: a prototype and a payment path want different discipline. What has accumulated can be reviewed with /simplify, which reads the current diff as a delete list.",
+  "slash.command.simplify": "A delete list over the current diff: what can be removed without losing anything"
 }
