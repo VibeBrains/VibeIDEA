@@ -44,7 +44,14 @@ class VibeAgentRunService(private val project: Project) : Disposable {
   // --- writing ---
 
   /** Records the start of an unattended run and returns its id. */
-  fun started(source: AgentRunLedger.Source, goal: String, target: String?, maxSteps: Int? = null): String? {
+  fun started(
+    source: AgentRunLedger.Source,
+    goal: String,
+    target: String?,
+    maxSteps: Int? = null,
+    /** Caller key that makes a repeated start return the same run instead of doubling the work. */
+    idempotencyKey: String? = null,
+  ): String? {
     if (!isEnabled) return null
     val run = AgentRunLedger.Run(
       runId = UUID.randomUUID().toString(),
@@ -56,6 +63,7 @@ class VibeAgentRunService(private val project: Project) : Disposable {
       target = target,
       startedAtMs = System.currentTimeMillis(),
       maxSteps = maxSteps,
+      idempotencyKey = idempotencyKey,
     )
     append(run)
     return run.runId

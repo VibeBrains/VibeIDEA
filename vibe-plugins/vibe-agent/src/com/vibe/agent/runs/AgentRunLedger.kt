@@ -55,6 +55,15 @@ object AgentRunLedger {
     val changedFiles: Int = 0,
     /** In words, not as a code: «исчерпан лимит шагов», not `LIMIT_EXCEEDED`. */
     val outcome: String? = null,
+    /**
+     * Caller-supplied key that makes a repeated start return the SAME run.
+     *
+     * A retry after a network hiccup, a button pressed twice, a webhook delivered twice — each of
+     * them is otherwise a full second run doing the same work in the same files.
+     */
+    val idempotencyKey: String? = null,
+    /** Path prefixes this run claimed, so two runs do not write the same corner at once. */
+    val territory: List<String> = emptyList(),
   ) {
     val isFinished: Boolean get() = status != Status.RUNNING
     val needsAttention: Boolean get() = status == Status.ORPHANED || status == Status.FAILED
@@ -88,6 +97,9 @@ object AgentRunLedger {
     run.maxSteps?.let { put("maxSteps", it) }
     put("changedFiles", run.changedFiles)
     run.outcome?.let { put("outcome", it) }
+    // Written only when set: an empty key in every record would double the size of a file whose
+    // whole point is being readable by a human with `tail`.
+    run.idempotencyKey?.let { put("idempotencyKey", it) }
   }.toString()
 
   /** A broken line is skipped, never fatal: one bad write must not cost the whole history. */
@@ -109,6 +121,7 @@ object AgentRunLedger {
       maxSteps = obj.int("maxSteps"),
       changedFiles = obj.int("changedFiles") ?: 0,
       outcome = obj.str("outcome"),
+      idempotencyKey = obj.str("idempotencyKey"),
     )
   }
 

@@ -30,6 +30,14 @@ class VibeHttpApi(
   interface Runner {
     /** @return the session id to continue with, or throws to report a failed run. */
     fun run(task: String, sessionId: String?, wait: Boolean): String
+
+    /**
+     * The session of a run already going under this key, or null.
+     *
+     * Asked BEFORE starting: a webhook delivered twice would otherwise be two agents doing the same
+     * work in the same files, and the second one wins with half of the first's changes missing.
+     */
+    fun runningWithKey(idempotencyKey: String): String? = null
   }
 
   private var server: HttpServer? = null
@@ -85,6 +93,15 @@ class VibeHttpApi(
           put("error", decision.message)
         })
         is HttpApiPolicy.Decision.Run -> {
+          val existing = decision.idempotencyKey?.let { runner.runningWithKey(it) }
+          if (existing != null) {
+            // Not an error: the caller asked for this work and it is already happening.
+            respond(exchange, 200, buildJsonObject {
+              put("sessionId", existing)
+              put("status", "already-running")
+            })
+            return
+          }
           val session = try {
             runner.run(decision.task, decision.sessionId, decision.wait)
           }

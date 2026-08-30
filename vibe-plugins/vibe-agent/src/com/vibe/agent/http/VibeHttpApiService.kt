@@ -24,6 +24,20 @@ class VibeHttpApiService {
     runner = object : VibeHttpApi.Runner {
       override fun run(task: String, sessionId: String?, wait: Boolean): String =
         VibeAgentGateway.getInstance().run(task, sessionId, wait)
+
+      /**
+       * Looked up across every open project: a webhook does not know which window is open, and a
+       * key that only deduplicated inside one project would let the same delivery start a second
+       * run in another window.
+       */
+      override fun runningWithKey(idempotencyKey: String): String? =
+        com.intellij.openapi.project.ProjectManager.getInstance().openProjects
+          .asSequence()
+          .mapNotNull { project ->
+            val runs = com.vibe.agent.runs.VibeAgentRunService.getInstance(project).runs()
+            com.vibe.agent.runs.TerritoryLock.existingRun(runs, idempotencyKey)?.runId
+          }
+          .firstOrNull()
     },
   )
 

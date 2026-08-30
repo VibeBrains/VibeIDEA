@@ -40,7 +40,16 @@ object HttpApiPolicy {
     data object Health : Decision
 
     /** `POST /run` — hand [task] to the agent; [sessionId] continues an existing conversation. */
-    data class Run(val task: String, val sessionId: String?, val wait: Boolean) : Decision
+    data class Run(
+      val task: String,
+      val sessionId: String?,
+      val wait: Boolean,
+      /**
+       * Optional caller key: the same key while a run is still going returns THAT run instead of
+       * starting a second one. A webhook delivered twice is the ordinary case, not the exotic one.
+       */
+      val idempotencyKey: String? = null,
+    ) : Decision
 
     /** Anything refused: [code] is the HTTP status, [message] goes into the JSON error body. */
     data class Refuse(val code: Int, val message: String) : Decision
@@ -81,7 +90,8 @@ object HttpApiPolicy {
     if (task.isEmpty()) return Decision.Refuse(400, "поле task обязательно и не может быть пустым")
     val sessionId = obj["sessionId"]?.jsonPrimitive?.contentOrNull?.takeIf { it.isNotBlank() }
     val wait = obj["wait"]?.jsonPrimitive?.booleanOrNull ?: false
-    return Decision.Run(task = task, sessionId = sessionId, wait = wait)
+    val idempotencyKey = obj["idempotencyKey"]?.jsonPrimitive?.contentOrNull?.trim()?.takeIf { it.isNotEmpty() }
+    return Decision.Run(task = task, sessionId = sessionId, wait = wait, idempotencyKey = idempotencyKey)
   }
 
   /** `Bearer` is case-insensitive, the token is not; comparison is constant-time. */
