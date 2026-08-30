@@ -25,6 +25,10 @@ object VibeChatSettings {
   private const val KEY_MODEL = "vibe.chat.model"
   private const val KEY_MAX_OPEN_TABS = "vibe.chat.maxOpenTabs"
   private const val KEY_MAX_MESSAGES = "vibe.chat.maxMessagesPerThread"
+  private const val KEY_SESSION_TOKENS = "vibe.chat.sessionTokenLimit"
+
+  /** Off by default: a ceiling nobody asked for turns into a wall in the middle of real work. */
+  const val DEFAULT_SESSION_TOKEN_LIMIT = 0
 
   var continueText: String
     get() = PropertiesComponent.getInstance().getValue(KEY_CONTINUE_TEXT, DEFAULT_CONTINUE_TEXT).ifBlank { DEFAULT_CONTINUE_TEXT }
@@ -34,6 +38,15 @@ object VibeChatSettings {
   var maxOpenTabs: Int
     get() = PropertiesComponent.getInstance().getInt(KEY_MAX_OPEN_TABS, DEFAULT_MAX_OPEN_TABS).coerceIn(MIN_OPEN_TABS, MAX_OPEN_TABS)
     set(value) = PropertiesComponent.getInstance().setValue(KEY_MAX_OPEN_TABS, value.coerceIn(MIN_OPEN_TABS, MAX_OPEN_TABS), DEFAULT_MAX_OPEN_TABS)
+
+  /**
+   * Token ceiling for one chat, counted across the whole conversation; 0 turns it off.
+   *
+   * Separate from the window: the window is a per-request capacity, this is money over time.
+   */
+  var sessionTokenLimit: Long
+    get() = PropertiesComponent.getInstance().getInt(KEY_SESSION_TOKENS, DEFAULT_SESSION_TOKEN_LIMIT).toLong().coerceAtLeast(0)
+    set(value) = PropertiesComponent.getInstance().setValue(KEY_SESSION_TOKENS, value.coerceAtLeast(0).toInt(), DEFAULT_SESSION_TOKEN_LIMIT)
 
   /** Message cap per thread; on overflow the oldest are trimmed with a marker row. */
   var maxMessagesPerThread: Int

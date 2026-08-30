@@ -16,6 +16,7 @@ class VibeChatConfigurable : Configurable {
   private var continueField: JBTextField? = null
   private var tabsSpinner: JBIntSpinner? = null
   private var messagesSpinner: JBIntSpinner? = null
+  private var sessionSpinner: JBIntSpinner? = null
   private var soundEnabled: com.intellij.ui.components.JBCheckBox? = null
   private var soundFinished: com.intellij.ui.components.JBCheckBox? = null
   private var soundStopped: com.intellij.ui.components.JBCheckBox? = null
@@ -37,6 +38,8 @@ class VibeChatConfigurable : Configurable {
     tabsSpinner = tabs
     val messages = JBIntSpinner(VibeChatSettings.maxMessagesPerThread, VibeChatSettings.MIN_MESSAGES_PER_THREAD, VibeChatSettings.MAX_MESSAGES_PER_THREAD)
     messagesSpinner = messages
+    val sessionTokens = JBIntSpinner(VibeChatSettings.sessionTokenLimit.toInt(), 0, MAX_SESSION_TOKENS)
+    sessionSpinner = sessionTokens
     return FormBuilder.createFormBuilder()
       .addLabeledComponent(t("settings.chat.continueText"), field)
       .addComponent(hint(t("settings.chat.continueHint", "default" to VibeChatSettings.DEFAULT_CONTINUE_TEXT)))
@@ -44,6 +47,8 @@ class VibeChatConfigurable : Configurable {
       .addComponent(hint(t("settings.chat.maxTabsHint")))
       .addLabeledComponent(t("settings.chat.maxMessages"), messages)
       .addComponent(hint(t("settings.chat.maxMessagesHint")))
+      .addLabeledComponent(t("settings.chat.sessionTokens"), sessionTokens)
+      .addComponent(hint(t("settings.chat.sessionTokensHint")))
       .addLabeledComponent(t("settings.chat.codeFold"), JBIntSpinner(VibeChatSettings.codeFoldLines, 0, VibeChatSettings.MAX_CODE_FOLD_LINES).also { codeFold = it })
       .addComponent(hint(t("settings.chat.codeFoldHint")))
       .addComponent(com.intellij.ui.components.JBCheckBox(t("settings.sound.enabled"), VibeChatSettings.soundEnabled).also { soundEnabled = it })
@@ -91,7 +96,8 @@ class VibeChatConfigurable : Configurable {
     (soundPath?.text?.trim() ?: VibeChatSettings.soundCustomPath) != VibeChatSettings.soundCustomPath ||
     (continueField?.text?.trim() ?: VibeChatSettings.continueText) != VibeChatSettings.continueText ||
     (tabsSpinner?.number ?: VibeChatSettings.maxOpenTabs) != VibeChatSettings.maxOpenTabs ||
-    (messagesSpinner?.number ?: VibeChatSettings.maxMessagesPerThread) != VibeChatSettings.maxMessagesPerThread
+    (messagesSpinner?.number ?: VibeChatSettings.maxMessagesPerThread) != VibeChatSettings.maxMessagesPerThread ||
+    (sessionSpinner?.number?.toLong() ?: VibeChatSettings.sessionTokenLimit) != VibeChatSettings.sessionTokenLimit
 
   override fun apply() {
     codeFold?.let { VibeChatSettings.codeFoldLines = it.number }
@@ -106,6 +112,7 @@ class VibeChatConfigurable : Configurable {
     continueField?.text = VibeChatSettings.continueText
     tabsSpinner?.let { VibeChatSettings.maxOpenTabs = it.number }
     messagesSpinner?.let { VibeChatSettings.maxMessagesPerThread = it.number }
+    sessionSpinner?.let { VibeChatSettings.sessionTokenLimit = it.number.toLong() }
   }
 
   override fun reset() {
@@ -120,5 +127,11 @@ class VibeChatConfigurable : Configurable {
     continueField?.text = VibeChatSettings.continueText
     tabsSpinner?.number = VibeChatSettings.maxOpenTabs
     messagesSpinner?.number = VibeChatSettings.maxMessagesPerThread
+    sessionSpinner?.number = VibeChatSettings.sessionTokenLimit.toInt()
+  }
+
+  private companion object {
+    /** Two hundred million tokens is far past any real chat — the spinner needs a top, not a policy. */
+    const val MAX_SESSION_TOKENS = 200_000_000
   }
 }

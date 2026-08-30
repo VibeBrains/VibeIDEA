@@ -745,5 +745,14 @@
   "chat.pin.done": "📌 message pinned — trimming the history will not touch it",
   "chat.pin.undone": "the pin is off",
   "chat.branch.tooltip": "Branch the conversation here (a copy up to this message)",
-  "chat.branch.done": "⑂ conversation branched: the original chat is untouched"
+  "chat.branch.done": "⑂ conversation branched: the original chat is untouched",
+  "output.compressed": "… [output compressed: {dropped} lines removed; full text — the /output {handle} command]",
+  "output.compressedNote": "✂️ command output compressed for the model: {dropped} lines removed (full text — /output {handle})",
+  "context.warn": "⚠️ the context window is {percent}% full — the beginning of the conversation will start falling out",
+  "context.block": "⛔ the context window is {percent}% full: the answer is already shaped by what fell out. Branch from the right message or start a new chat",
+  "context.sessionExceeded": "⛔ the per-chat token ceiling is reached: {used} of {limit}. Raise it in the settings or start a new chat",
+  "output.unknownHandle": "no stored output with the «{handle}» handle — handles live for the session and only the last 20 are kept",
+  "output.full": "full output {handle}",
+  "settings.chat.sessionTokens": "Token ceiling per chat",
+  "settings.chat.sessionTokensHint": "0 means no limit. Counted across the whole conversation rather than one request: the model window answers «will it fit», this ceiling answers «how much will it cost». On reaching it the chat says so and suggests starting a new one."
 }

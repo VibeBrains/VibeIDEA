@@ -172,6 +172,15 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
   @Volatile private var stepBuffer: StringBuilder? = null
   @Volatile private var currentAgentMessage: AgentMessage? = null
   private val changedPaths = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
+
+  /** Full texts of outputs that were shrunk for the model — `/output <handle>` prints one back. */
+  private val outputStore = com.vibe.agent.context.OutputCompressor.Store()
+
+  /** Rough running total of this chat's tokens; the session ceiling is checked against it. */
+  private val sessionTokens = java.util.concurrent.atomic.AtomicLong(0)
+
+  /** Thresholds already said out loud for this chat: a warning repeated every frame is noise. */
+  private val announcedContextLevels = java.util.Collections.synchronizedSet(HashSet<String>())
   /** Set when a turn ran an edit/command tool: its writes may be invisible to the client (agent-internal Bash). */
   @Volatile private var turnHadMutatingTool = false
 
@@ -200,7 +209,12 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
   private val recordRows = ArrayList<JComponent>()
 
   private val composer = ComposerPanel(project, this, object : ComposerPanel.Listener {
-    override fun onSend(message: ComposedMessage): Boolean = if (handleWatchCommand(message)) true else startTurn(message)
+    override fun onSend(message: ComposedMessage): Boolean = when {
+      handleOutputCommand(message) -> true
+      sessionCeilingReached(message.text) -> false
+      handleWatchCommand(message) -> true
+      else -> startTurn(message)
+    }
     override fun onStop() = cancelTurn()
     override fun onNotice(text: String) = systemLine(t("chat.composerNotice", "text" to text))
   })
@@ -477,6 +491,48 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
    * progress line and a working Стоп: downloading a lecture takes minutes, and a cancel that only
    * lands at the end is not a cancel.
    */
+  /**
+   * `/output <handle>` — the full text of an output that was shrunk for the model.
+   *
+   * Compression is only honest while the removed part can be got back: without this command the
+   * marker would be an apology, and the next thing anyone would do is turn compression off.
+   */
+  /**
+   * The session ceiling, asked BEFORE the turn: reporting an overspend after the money is gone is
+   * a receipt, not a guard.
+   */
+  private fun sessionCeilingReached(text: String): Boolean {
+    val limit = VibeChatSettings.sessionTokenLimit
+    if (limit <= 0) return false
+    val projected = sessionTokens.get() + com.vibe.agent.context.ContextBudget.estimateTokens(text)
+    val status = com.vibe.agent.context.ContextBudget.check(0, 0, projected, limit)
+    if (status.verdict != com.vibe.agent.context.ContextBudget.Verdict.SESSION_EXCEEDED) {
+      sessionTokens.set(projected)
+      return false
+    }
+    systemLine(t("context.sessionExceeded", "used" to "%,d".format(projected), "limit" to "%,d".format(limit)))
+    return true
+  }
+
+  private fun handleOutputCommand(message: ComposedMessage): Boolean {
+    val text = message.text.trim()
+    if (!text.startsWith(OUTPUT_COMMAND)) return false
+    val handle = text.removePrefix(OUTPUT_COMMAND).trim()
+    val full = outputStore.get(handle)
+    if (full == null) {
+      systemLine(t("output.unknownHandle", "handle" to handle))
+      return true
+    }
+    userBubble(text)
+    SwingUtilities.invokeLater {
+      val console = TerminalConsole(t("output.full", "handle" to handle))
+      console.append(full)
+      messages.add(console)
+      revalidateScroll()
+    }
+    return true
+  }
+
   private fun handleWatchCommand(message: ComposedMessage): Boolean {
     val command = com.vibe.agent.watch.WatchInput.parse(message.text) ?: return false
     val tools = com.vibe.agent.watch.WatchTools.resolve().getOrElse { error ->
@@ -1833,6 +1889,9 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     }
     if (threadId != null && fullText.isNotBlank()) {
       history.append(threadId, ChatMessageRecord(Role.ASSISTANT, fullText, at = nowIso()))
+      // Rough, and pessimistic on purpose: the session ceiling is about money, and a counter that
+      // under-counts is a ceiling that never trips.
+      sessionTokens.addAndGet(com.vibe.agent.context.ContextBudget.estimateTokens(fullText))
     }
     // currentAgentMessage is EDT-owned (appendAgentText also touches it on the EDT); read+clear it there.
     SwingUtilities.invokeLater {
@@ -2011,6 +2070,36 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
         warn = pct >= USAGE_WARN_PCT,
       )
     }
+    noteWindowFill(used, size)
+  }
+
+  /**
+   * Says the window is filling up — once per threshold, not once per frame.
+   *
+   * An overflowing window does not announce itself: it makes the model forget the beginning of the
+   * conversation, and the user concludes the model got worse. Saying it at 75% costs one line;
+   * saying nothing costs the answer.
+   */
+  private fun noteWindowFill(used: Long, size: Long) {
+    val status = com.vibe.agent.context.ContextBudget.check(
+      usedTokens = used, windowSize = size,
+      sessionUsed = sessionTokens.get(), sessionLimit = VibeChatSettings.sessionTokenLimit.takeIf { it > 0 },
+    )
+    if (status.verdict == com.vibe.agent.context.ContextBudget.Verdict.OK) return
+    val level = when (status.verdict) {
+      com.vibe.agent.context.ContextBudget.Verdict.SESSION_EXCEEDED -> "session"
+      com.vibe.agent.context.ContextBudget.Verdict.BLOCK -> "block"
+      else -> "warn"
+    }
+    if (!announcedContextLevels.add(level)) return
+    when (status.verdict) {
+      com.vibe.agent.context.ContextBudget.Verdict.SESSION_EXCEEDED ->
+        systemLine(t("context.sessionExceeded", "used" to "%,d".format(status.sessionUsed),
+                     "limit" to "%,d".format(status.sessionLimit ?: 0)))
+      com.vibe.agent.context.ContextBudget.Verdict.BLOCK ->
+        systemLine(t("context.block", "percent" to status.windowPercent))
+      else -> systemLine(t("context.warn", "percent" to status.windowPercent))
+    }
   }
 
   /** Stream the agent's reasoning into a collapsible block on the turn's thread. */
@@ -2171,8 +2260,17 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
   override fun onTerminalOutput(params: JsonObject): JsonElement {
     val id = params["terminalId"]?.jsonPrimitive?.contentOrNull ?: throw IllegalStateException(t("chat.terminal.noId", "method" to "terminal/output"))
     val snap = terminals.output(id) ?: throw IllegalStateException(t("chat.terminal.unknownId", "id" to id))
+    // Shrunk BEFORE it reaches the model, and never silently: a test run says what matters in its
+    // first and last lines, the middle is scrollback that costs the same tokens as the code the
+    // model still has to read. The full text stays available through /output <handle>.
+    val handle = if (snap.output.lines().size >= com.vibe.agent.context.OutputCompressor.MIN_LINES_TO_COMPRESS)
+      outputStore.put(snap.output) else ""
+    val shrunk = com.vibe.agent.context.OutputCompressor.compress(snap.output, handle, { dropped, h ->
+      t("output.compressed", "dropped" to dropped, "handle" to h)
+    })
+    if (shrunk.compressed) systemLine(t("output.compressedNote", "dropped" to shrunk.droppedLines, "handle" to handle))
     return buildJsonObject {
-      put("output", snap.output)
+      put("output", shrunk.text)
       put("truncated", snap.truncated)
       if (snap.finished) put("exitStatus", buildJsonObject {
         if (snap.exitCode != null) put("exitCode", snap.exitCode) else put("exitCode", JsonNull)
@@ -2220,6 +2318,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
   }
 
   private companion object {
+    const val OUTPUT_COMMAND = "/output"
     const val PIN_ON = "📌"
     const val PIN_OFF = "📍"
     const val BRANCH_ICON = "⑂"
