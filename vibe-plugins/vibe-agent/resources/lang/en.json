@@ -916,5 +916,19 @@
   "docs.mark.unreachable": "unreachable from the entry point",
   "docs.mark.broken": "broken links: {count}",
   "docs.report.unreachable": "Nothing links to these documents — nobody will find them, however good they are:",
-  "docs.report.broken": "Links to nowhere (a renamed file is something no compiler catches):"
+  "docs.report.broken": "Links to nowhere (a renamed file is something no compiler catches):",
+  "inline.action": "VibeIDEA: edit the selection (Ctrl+K)",
+  "inline.title": "Inline edit",
+  "inline.prompt": "What should be done with the selected code? Use a command: /doc, /refactor, /tests, /explain, /fix — or plain words.",
+  "inline.noSelection": "Select some code first: the selection is the question.",
+  "inline.noAnswer": "The model did not answer. Check the provider and the key.",
+  "inline.notCode": "The answer does not look like code, so nothing was replaced — this is what keeps working code from being replaced by an apology. The full answer:",
+  "inline.command": "Inline edit",
+  "inline.instruction.doc": "Add documentation comments to this code, in English. Do not change the logic.",
+  "inline.instruction.refactor": "Refactor this code: names, duplication, early returns. The behaviour must stay the same.",
+  "inline.instruction.tests": "Write tests for this code: the ordinary case, the edges, and whatever a naive implementation gets wrong.",
+  "inline.instruction.explain": "Explain what this code does and where it can break. Briefly and to the point.",
+  "inline.instruction.fix": "Find and fix the defect in this code. If there is none, say so without rewriting anything.",
+  "inline.instruction.free": "Do exactly what is asked below with this code.",
+  "inline.instruction.format": "Return ONLY the replacement code, with no explanation around it. Keep the indentation of the original fragment."
 }

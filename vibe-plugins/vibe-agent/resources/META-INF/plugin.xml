@@ -44,6 +44,11 @@
     <statusBarWidgetFactory id="VibeAgentStatus" implementation="com.vibe.agent.ui.VibeAgentStatusWidgetFactory" order="last"/>
   </extensions>
   <actions>
+    <action id="Vibe.InlineEdit" class="com.vibe.agent.inline.VibeInlineEditAction"
+            text="VibeIDEA: изменить выделенное" description="Правка выделенного кода моделью: /doc, /refactor, /tests, /explain, /fix">
+      <keyboard-shortcut keymap="$default" first-keystroke="control K"/>
+      <add-to-group group-id="EditorPopupMenu" anchor="first"/>
+    </action>
     <action id="com.vibe.agent.exportCodeGraph" class="com.vibe.agent.graph.ExportCodeGraphAction" text="Vibe: экспорт графа проекта">
       <add-to-group group-id="ToolsMenu" anchor="last"/>
     </action>
