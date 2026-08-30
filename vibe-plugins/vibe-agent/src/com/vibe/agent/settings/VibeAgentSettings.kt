@@ -138,6 +138,10 @@ object VibeAgentSettings {
   private const val KEY_EMBEDDING_MODEL = "vibe.agent.embeddingModel"
   private const val KEY_MINIMALISM = "vibe.agent.minimalismMode"
   private const val KEY_METRIC_PATTERN = "vibe.agent.metricPattern"
+  private const val KEY_TELEGRAM_ENABLED = "vibe.agent.telegramEnabled"
+  private const val KEY_TELEGRAM_CHATS = "vibe.agent.telegramChats"
+  private const val KEY_TELEGRAM_PROJECT = "vibe.agent.telegramProject"
+  private const val KEY_TELEGRAM_PROXY = "vibe.agent.telegramProxy"
   private const val KEY_METRIC_DIRECTION = "vibe.agent.metricDirection"
   private const val KEY_FAILOVER = "vibe.agent.failoverChain"
 
@@ -298,6 +302,24 @@ object VibeAgentSettings {
   /** `провайдер/модель` для эмбеддингов; пусто — поиск по смыслу выключен. */
   /** off | light | full | ultra — сколько кода агенту позволено добавить ради результата. */
   /** Регэксп с одной группой — чем измеряется результат в выводе команды. */
+  var telegramEnabled: Boolean
+    get() = props.getBoolean(KEY_TELEGRAM_ENABLED, false)
+    set(value) = props.setValue(KEY_TELEGRAM_ENABLED, value, false)
+
+  /** Chat ids the owner approved on the desktop; an unapproved chat can do nothing. */
+  var telegramChats: String
+    get() = props.getValue(KEY_TELEGRAM_CHATS, "")
+    set(value) = props.setValue(KEY_TELEGRAM_CHATS, value.trim(), "")
+
+  var telegramProject: String
+    get() = props.getValue(KEY_TELEGRAM_PROJECT, "")
+    set(value) = props.setValue(KEY_TELEGRAM_PROJECT, value.trim(), "")
+
+  /** Отдельный прокси: Telegram и провайдеры моделей блокируются в разных местах. */
+  var telegramProxy: String
+    get() = props.getValue(KEY_TELEGRAM_PROXY, "")
+    set(value) = props.setValue(KEY_TELEGRAM_PROXY, value.trim(), "")
+
   var metricPattern: String
     get() = props.getValue(KEY_METRIC_PATTERN, "")
     set(value) = props.setValue(KEY_METRIC_PATTERN, value.trim(), "")

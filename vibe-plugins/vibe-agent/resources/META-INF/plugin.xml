@@ -37,6 +37,7 @@
     <postStartupActivity implementation="com.vibe.agent.guard.ConfigGuardStartup"/>
     <postStartupActivity implementation="com.vibe.agent.providers.LocalProbeStartup"/>
     <postStartupActivity implementation="com.vibe.agent.digest.DailyDigestStartup"/>
+    <postStartupActivity implementation="com.vibe.agent.telegram.TelegramStartup"/>
     <postStartupActivity implementation="com.vibe.agent.settings.VibePromoDefaults"/>
     <postStartupActivity implementation="com.vibe.agent.defaults.VibeDefaultsSeeder"/>
     <postStartupActivity implementation="com.vibe.agent.providers.VibeProvidersWatcherStarter"/>
@@ -64,6 +65,8 @@
               text="Найти локальные модели" description="Проба привычных портов Ollama, LM Studio, llama.cpp, Jan"/>
       <action id="Vibe.ProjectCommands" class="com.vibe.agent.commands.VibeProjectCommandsAction"
               text="Команды проекта" description="Команды из .vibe/commands.json: список, разрешение и запуск"/>
+      <action id="Vibe.TelegramToken" class="com.vibe.agent.telegram.VibeTelegramTokenAction"
+              text="Токен Telegram-бота" description="Мост в Telegram: свой бот, токен в защищённом хранилище"/>
       <action id="Vibe.Specs" class="com.vibe.agent.specs.VibeSpecsAction"
               text="Спеки проекта" description="PRODUCT.md и TECH.md: что должно быть правдой и как это сделано"/>
       <action id="Vibe.DocsReport" class="com.vibe.agent.docs.VibeDocsReportAction"
