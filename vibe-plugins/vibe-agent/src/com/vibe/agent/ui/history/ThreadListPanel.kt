@@ -1,6 +1,7 @@
 // Copyright 2026 VibeBrains. Use of this source code is governed by the Apache 2.0 license.
 package com.vibe.agent.ui.history
 
+import com.vibe.agent.i18n.VibeI18n.t
 import com.intellij.openapi.Disposable
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.util.Disposer
@@ -121,7 +122,7 @@ class ThreadListPanel(
       val outOfScope = listed.filter { !history.matchesWorkspace(it, workspaceId) }
       val extra = TranscriptSearch.search(trimmed, outOfScope).size
       if (extra > 0) {
-        add(linkLine("Найдено ещё $extra в других проектах — показать") { history.showAllProjects = true })
+        add(linkLine(t("history.moreInOther", "count" to extra)) { history.showAllProjects = true })
       }
     }
 
@@ -139,9 +140,9 @@ class ThreadListPanel(
   private fun renderEmptyState(searching: Boolean, trimmedQuery: String) {
     if (mode == Mode.LANDING) return // the landing owner hides the whole block when there is nothing to show
     val text = when {
-      searching && mode == Mode.RAIL -> "Нет совпадений для «$trimmedQuery»"
-      searching -> "Нет совпадений"
-      else -> "История чатов пуста."
+      searching && mode == Mode.RAIL -> t("history.noMatchesFor", "query" to trimmedQuery)
+      searching -> t("history.noMatches")
+      else -> t("history.empty")
     }
     add(mutedLine(text))
   }
@@ -156,7 +157,7 @@ class ThreadListPanel(
     val shown = if (landingExpanded) visible else visible.take(LANDING_LIMIT)
     shown.forEach { add(makeRow(history, it, matches[it.id], today, zone)) }
     if (visible.size > LANDING_LIMIT) {
-      val text = if (landingExpanded) "Свернуть" else "Ещё ${visible.size - LANDING_LIMIT}…"
+      val text = if (landingExpanded) t("history.collapse") else t("history.more", "count" to (visible.size - LANDING_LIMIT))
       add(expanderLine(text) {
         landingExpanded = !landingExpanded
         render()
@@ -201,7 +202,7 @@ class ThreadListPanel(
       title = thread.title,
       quote = quote,
       badgeText = badge,
-      projectBadge = if (foreign) thread.workspaceLabel ?: (if (thread.workspaceId != null) "Другой проект" else "Без проекта") else null,
+      projectBadge = if (foreign) thread.workspaceLabel ?: (if (thread.workspaceId != null) t("history.otherProject") else t("history.noProject")) else null,
       showMoveHere = foreign,
       isCurrent = mode == Mode.RAIL && thread.id == currentThreadId,
       onOpen = {
@@ -223,15 +224,15 @@ class ThreadListPanel(
   private fun buildScopeToggle(history: VibeChatHistory): JComponent {
     val all = history.showAllProjects
     val otherCount = history.otherProjectsCount(project.basePath)
-    val tooltip = "Ещё $otherCount в других проектах — нажмите, чтобы показать"
+    val tooltip = t("history.otherCount", "count" to otherCount)
     return JPanel(FlowLayout(FlowLayout.LEFT, JBUI.scale(SCOPE_SEGMENT_GAP), 0)).apply {
       isOpaque = false
       alignmentX = Component.LEFT_ALIGNMENT
       border = JBUI.Borders.empty(SCOPE_PAD_V, SCOPE_PAD_H)
-      add(ScopeSegment("Этот проект", active = !all, countText = null, tooltip = null) { history.showAllProjects = false })
+      add(ScopeSegment(t("history.scope.this"), active = !all, countText = null, tooltip = null) { history.showAllProjects = false })
       // The invite tooltip only makes sense while the other projects are still hidden.
       add(ScopeSegment(
-        "Все проекты",
+        t("history.scope.all"),
         active = all,
         countText = if (!all) "+$otherCount" else null,
         tooltip = if (!all) tooltip else null,

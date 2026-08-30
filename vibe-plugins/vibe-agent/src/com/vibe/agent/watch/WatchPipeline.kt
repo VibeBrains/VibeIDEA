@@ -1,6 +1,7 @@
 // Copyright 2026 VibeBrains. Use of this source code is governed by the Apache 2.0 license.
 package com.vibe.agent.watch
 
+import com.vibe.agent.i18n.VibeI18n.t
 import com.vibe.agent.settings.VibeAgentSettings
 import java.io.File
 import java.nio.file.Files
@@ -35,35 +36,35 @@ class WatchPipeline(
   fun run(source: String): kotlin.Result<Result> = runCatching {
     val isUrl = WatchInput.isUrl(source)
     val hint = WatchInput.classify(source)
-    onProgress("Проверяю источник…")
+    onProgress(t("watch.stage.probe"))
 
     val title: String
     val audioOnly: Boolean
     if (isUrl) {
       val dump = exec(listOf(tools.ytDlp, "--dump-single-json", "--no-warnings", source), PROBE_TIMEOUT_SEC)
-      check(dump.exitCode == 0) { "yt-dlp не смог прочитать ссылку: ${dump.stderr.trim().takeLast(300)}" }
+      check(dump.exitCode == 0) { t("watch.error.ytDlpRead", "reason" to dump.stderr.trim().takeLast(300)) }
       title = titleOf(dump.stdout) ?: source
       audioOnly = WatchProbe.remoteIsAudioOnly(dump.stdout, hint)
     }
     else {
       val file = File(source)
-      check(file.isFile) { "файл не найден: $source" }
+      check(file.isFile) { t("watch.error.fileMissing", "path" to source) }
       // A non-zero exit with no output file is normal for `ffmpeg -i`: the banner IS the answer.
       val probe = exec(listOf(tools.ffmpeg, "-hide_banner", "-i", file.absolutePath), PROBE_TIMEOUT_SEC)
       title = file.name
       audioOnly = WatchProbe.localIsAudioOnly(probe.stderr)
-        ?: error("ffmpeg не смог прочитать файл: ${probe.stderr.trim().takeLast(300)}")
+        ?: error(t("watch.error.ffmpegRead", "reason" to probe.stderr.trim().takeLast(300)))
     }
 
     if (isCancelled()) error(CANCELLED)
 
-    onProgress("Ищу субтитры…")
+    onProgress(t("watch.stage.subtitles"))
     val transcript = subtitles(source, isUrl)
 
     // Audio with no transcript has nothing to send: no frames, no words. Saying so is the honest
     // end; sending an empty prompt would look like the model ignored the request.
     if (audioOnly && transcript.isBlank()) {
-      error("это аудио без субтитров, а распознавания речи в VibeIDEA пока нет — отправлять модели нечего")
+      error(t("watch.error.audioNoSubs"))
     }
 
     if (audioOnly) {
@@ -71,20 +72,20 @@ class WatchPipeline(
     }
 
     if (isCancelled()) error(CANCELLED)
-    onProgress("Скачиваю видео…")
+    onProgress(t("watch.stage.download"))
     val media = media(source, isUrl)
 
     if (isCancelled()) error(CANCELLED)
-    onProgress("Ищу смены сцен…")
+    onProgress(t("watch.stage.frames"))
     val frames = frames(media)
-    check(frames.isNotEmpty()) { "не удалось извлечь ни одного кадра" }
+    check(frames.isNotEmpty()) { t("watch.error.noFrames") }
 
     Result(
       kind = WatchInput.Kind.VIDEO,
       title = title,
       transcript = transcript,
       frames = frames,
-      warning = if (transcript.isBlank()) "субтитров нет — разбор пойдёт только по кадрам" else null,
+      warning = if (transcript.isBlank()) t("watch.warn.noSubtitles") else null,
     )
   }
 
@@ -119,16 +120,16 @@ class WatchPipeline(
       ),
       DOWNLOAD_TIMEOUT_SEC,
     )
-    check(result.exitCode == 0) { "не удалось скачать видео: ${result.stderr.trim().takeLast(300)}" }
+    check(result.exitCode == 0) { t("watch.error.downloadFailed", "reason" to result.stderr.trim().takeLast(300)) }
     val file = workDir.toFile().listFiles { f: File -> f.name.startsWith("video.") }?.maxByOrNull { it.length() }
-    return file?.toPath() ?: error("файл видео не найден после скачивания")
+    return file?.toPath() ?: error(t("watch.error.mediaMissing"))
   }
 
   private fun frames(media: Path): List<Path> {
     val first = extract(media, VibeAgentSettings.watchSceneThreshold)
     // A static screencast crosses no threshold at all; one retry at a low one, then give up.
     val frames = if (SceneFrames.needsRetry(first.second)) {
-      onProgress("Кадров мало — повторяю с низким порогом…")
+      onProgress(t("watch.stage.retry"))
       clearFrames()
       extract(media, SceneFrames.RETRY_SCENE_THRESHOLD)
     }
@@ -175,7 +176,7 @@ class WatchPipeline(
     val finished = process.waitFor(timeoutSec, TimeUnit.SECONDS)
     if (!finished) {
       process.destroyForcibly()
-      error("инструмент не ответил за $timeoutSec с: ${command.first()}")
+      error(t("watch.error.toolTimeout", "seconds" to timeoutSec, "tool" to command.first()))
     }
     outThread.join(1000); errThread.join(1000)
     return Exec(process.exitValue(), out.toString(), err.toString())

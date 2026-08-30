@@ -1,6 +1,7 @@
 // Copyright 2026 VibeBrains. Use of this source code is governed by the Apache 2.0 license.
 package com.vibe.agent.defaults
 
+import com.vibe.agent.i18n.VibeI18n.t
 import com.intellij.diff.DiffContentFactory
 import com.intellij.diff.DiffManager
 import com.intellij.diff.requests.SimpleDiffRequest
@@ -35,18 +36,18 @@ object SeedConflictNotifier {
     val names = conflicts.joinToString(", ") { it.path }
     val notification = NotificationGroupManager.getInstance().getNotificationGroup(GROUP)
       .createNotification(
-        "Окружение .vibe: релиз обновил ${conflicts.size} ${filesWord(conflicts.size)}",
-        "Ваши копии изменены, поэтому мы их не трогали: $names",
+        t("seed.conflict.title", "count" to conflicts.size, "word" to filesWord(conflicts.size)),
+        t("seed.conflict.body", "files" to names),
         NotificationType.INFORMATION,
       )
 
-    notification.addAction(NotificationAction.createSimple("Сравнить") {
+    notification.addAction(NotificationAction.createSimple(t("seed.conflict.compare")) {
       conflicts.forEach { showDiff(project, vibeDir, it.path) }
     })
 
     val toggleOnly = conflicts.filter { canMergeToggles(vibeDir, it.path) }
     if (toggleOnly.isNotEmpty()) {
-      notification.addAction(NotificationAction.createSimple("Обновить, сохранив мои тумблеры") {
+      notification.addAction(NotificationAction.createSimple(t("seed.conflict.keepToggles")) {
         ApplicationManager.getApplication().executeOnPooledThread {
           val merged = toggleOnly.filter { SeedToggleMerge.apply(vibeDir, it.path) }
           VibeDefaults.markReconciled(projectBase, merged.map { it.path })
@@ -61,7 +62,7 @@ object SeedConflictNotifier {
       })
     }
 
-    notification.addAction(NotificationAction.createSimple("Оставить своё") {
+    notification.addAction(NotificationAction.createSimple(t("seed.conflict.keepMine")) {
       ApplicationManager.getApplication().executeOnPooledThread {
         VibeDefaults.markReconciled(projectBase, conflicts.map { it.path })
       }
@@ -78,11 +79,11 @@ object SeedConflictNotifier {
     DiffManager.getInstance().showDiff(
       project,
       SimpleDiffRequest(
-        "Окружение .vibe — $relative",
+        t("seed.diff.title", "file" to relative),
         factory.create(project, release),
         factory.create(project, local),
-        "Релиз (новая ревизия)",
-        "Ваш файл",
+        t("seed.diff.release"),
+        t("seed.diff.yours"),
       ),
     )
   }
@@ -98,8 +99,8 @@ object SeedConflictNotifier {
   }
 
   private fun filesWord(n: Int): String = when {
-    n % 10 == 1 && n % 100 != 11 -> "файл"
-    n % 10 in 2..4 && n % 100 !in 12..14 -> "файла"
-    else -> "файлов"
+    n % 10 == 1 && n % 100 != 11 -> t("seed.word.file.one")
+    n % 10 in 2..4 && n % 100 !in 12..14 -> t("seed.word.file.few")
+    else -> t("seed.word.file.many")
   }
 }
