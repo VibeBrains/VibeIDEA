@@ -1164,5 +1164,17 @@
   "doctor.line.sessionLimit": "Лимит токенов на чат",
   "doctor.detail.noLimit": "без лимита",
   "doctor.line.rules": "Правила проекта",
-  "doctor.line.knowledge": "База знаний"
+  "doctor.line.knowledge": "База знаний",
+  "slash.command.map": "Карта проекта диаграммой: какие модули от каких зависят",
+  "slash.command.rules": "Какие правила проекта сейчас применяются и почему",
+  "slash.command.watch": "Разобрать видео или аудио по ссылке или файлу",
+  "map.title": "карта проекта",
+  "map.built": "🗺 модулей {modules}, связей {edges}",
+  "map.empty": "связей между модулями не нашлось — граф пуст или проект в одном модуле",
+  "rules.title": "правила проекта: {count}",
+  "rules.none": "правил проекта нет: они живут в {dir} и подмешиваются в ход по alwaysApply, по globs или по имени @правило",
+  "rules.why.always": "всегда",
+  "rules.why.globs": "когда ход трогает {globs}",
+  "rules.why.byName": "только по вызову @{name}",
+  "slash.needsArgument": "{command} без аргумента ничего не делает: {what}"
 }

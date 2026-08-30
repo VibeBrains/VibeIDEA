@@ -249,6 +249,9 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
 
   private val composer = ComposerPanel(project, this, object : ComposerPanel.Listener {
     override fun onSend(message: ComposedMessage): Boolean = when {
+      // A command typed without the argument it cannot work without is answered, not sent to the
+      // model: «/bg» as a question is the shape of a feature that looks broken.
+      reportMissingArgument(message) -> false
       handleOutputCommand(message) -> true
       handleGitCommand(message) -> true
       handleCouncilCommand(message) -> true
@@ -263,6 +266,8 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
       handleBackgroundCommand(message) -> true
       handleUndoCommand(message) -> true
       handleBlameCommand(message) -> true
+      handleMapCommand(message) -> true
+      handleRulesCommand(message) -> true
       sessionCeilingReached(message.text) -> false
       handleWatchCommand(message) -> true
       else -> startTurn(message)
@@ -685,6 +690,78 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     override val empty: String get() = t("trace.empty")
     override val ms: String get() = t("trace.ms")
     override val failureMark: String get() = "✖"
+  }
+
+  /** Says which argument is missing, instead of letting the command become a prompt. */
+  private fun reportMissingArgument(message: ComposedMessage): Boolean {
+    val parsed = com.vibe.agent.ui.ChatCommands.parse(message.text) ?: return false
+    if (!com.vibe.agent.ui.ChatCommands.missesArgument(parsed)) return false
+    systemLine(t("slash.needsArgument", "command" to parsed.spec.name, "what" to parsed.spec.description()))
+    return true
+  }
+
+  /**
+   * `/map` — the shape of the project as a diagram.
+   *
+   * The graph already answers «кто кого импортирует», but a list of edges is read with a finger on
+   * the screen. Grouped by module and drawn as mermaid, the same data answers «как этот проект
+   * устроен» in one glance — and mermaid renders in the IDE, in the repository and in a chat
+   * without a single dependency.
+   */
+  private fun handleMapCommand(message: ComposedMessage): Boolean {
+    if (message.text.trim() != MAP_COMMAND) return false
+    userBubble(message.text.trim())
+    ApplicationManager.getApplication().executeOnPooledThread {
+      val nodes = com.vibe.agent.graph.CodeGraphBuilder.build(project)
+      val graph = com.vibe.agent.graph.CodeGraphIndex.build(nodes)
+      val edges = com.vibe.agent.graph.GraphDiagram.modules(graph.edges.map { it.from to it.to })
+      val diagram = com.vibe.agent.graph.GraphDiagram.mermaid(edges)
+      if (diagram.isEmpty()) {
+        systemLine(t("map.empty"))
+        return@executeOnPooledThread
+      }
+      systemLine(t("map.built", "modules" to edges.flatMap { listOf(it.from, it.to) }.distinct().size,
+                   "edges" to edges.size))
+      SwingUtilities.invokeLater {
+        val console = TerminalConsole(t("map.title"))
+        console.append("```mermaid\n" + diagram + "\n```")
+        messages.add(console)
+        revalidateScroll()
+      }
+    }
+    return true
+  }
+
+  /**
+   * `/rules` — which project rules apply right now, and why each one is here.
+   *
+   * Rules are mixed into every turn silently, and silence is the problem: a rule that stopped
+   * matching its glob and a rule that was never read look exactly the same from the chat. This says
+   * which are always on, which matched the files in play and which were called by name.
+   */
+  private fun handleRulesCommand(message: ComposedMessage): Boolean {
+    if (message.text.trim() != RULES_COMMAND) return false
+    userBubble(message.text.trim())
+    val all = com.vibe.agent.context.ProjectContextService.getInstance(project).rules()
+    if (all.isEmpty()) {
+      systemLine(t("rules.none", "dir" to com.vibe.agent.context.ProjectRules.RULES_DIR))
+      return true
+    }
+    val text = all.joinToString("\n") { rule ->
+      val why = when {
+        rule.alwaysApply -> t("rules.why.always")
+        rule.globs.isNotEmpty() -> t("rules.why.globs", "globs" to rule.globs.joinToString(", "))
+        else -> t("rules.why.byName", "name" to rule.name)
+      }
+      "  " + rule.name + " — " + why + (rule.description?.let { " · " + it } ?: "")
+    }
+    SwingUtilities.invokeLater {
+      val console = TerminalConsole(t("rules.title", "count" to all.size))
+      console.append(text)
+      messages.add(console)
+      revalidateScroll()
+    }
+    return true
   }
 
   /**
@@ -3334,6 +3411,8 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     const val DEPLOY_COMMAND = "/deploy"
     const val BG_COMMAND = "/bg"
     const val UNDO_COMMAND = "/undo"
+    const val MAP_COMMAND = "/map"
+    const val RULES_COMMAND = "/rules"
     const val BLAME_COMMAND = "/blame"
 
     /** Enough history to see a decision and its reversal; more is archaeology. */

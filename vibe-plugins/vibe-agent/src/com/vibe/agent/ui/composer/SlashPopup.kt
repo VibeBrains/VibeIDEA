@@ -269,25 +269,17 @@ class SlashPopup(
     const val HEADER_PAD_V = 6
     const val HEADER_PAD_H = 10
 
-    val COMMANDS: List<Row> get() = listOf(
-      Row("/commit ", "/commit", t("slash.command.commit")),
-      Row("/git ", "/git", t("slash.command.git")),
-      Row("/council ", "/council", t("slash.command.council")),
-      Row("/handoff ", "/handoff", t("slash.command.handoff")),
-      Row("/trace", "/trace", t("slash.command.trace")),
-      Row("/help ", "/help", t("slash.command.help")),
-      Row("/find ", "/find", t("slash.command.find")),
-      Row("/simplify", "/simplify", t("slash.command.simplify")),
-      Row("/measure ", "/measure", t("slash.command.measure")),
-      Row("/bg ", "/bg", t("slash.command.bg")),
-      Row("/undo", "/undo", t("slash.command.undo")),
-      Row("/blame ", "/blame", t("slash.command.blame")),
-      Row("/learn ", "/learn", t("slash.command.learn")),
-      Row("/deploy", "/deploy", t("slash.command.deploy")),
-      Row("/index", "/index", t("slash.command.index")),
-      Row("/output ", "/output", t("slash.command.output")),
-      Row(null, "/skill:", t("slash.command.skill"), toSkills = true),
-    )
+    /**
+     * Built from the single command table rather than listed here.
+     *
+     * The two lists — this one and the panel's dispatch — were kept in step by grepping, and the
+     * failure that produces is specific: a command that works but is invisible, or a menu row that
+     * does nothing. Both read as an unfinished feature.
+     */
+    val COMMANDS: List<Row> get() = com.vibe.agent.ui.ChatCommands.ALL
+      .filterNot { it.name == "/skill:" }
+      .map { spec -> Row(com.vibe.agent.ui.ChatCommands.insertionOf(spec), spec.name, spec.description()) } +
+      Row(null, "/skill:", t("slash.command.skill"), toSkills = true)
   }
 }
 

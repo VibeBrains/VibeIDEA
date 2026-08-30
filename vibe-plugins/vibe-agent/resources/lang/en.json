@@ -1164,5 +1164,17 @@
   "doctor.line.sessionLimit": "Per-chat token ceiling",
   "doctor.detail.noLimit": "no limit",
   "doctor.line.rules": "Project rules",
-  "doctor.line.knowledge": "Knowledge base"
+  "doctor.line.knowledge": "Knowledge base",
+  "slash.command.map": "A diagram of the project: which modules depend on which",
+  "slash.command.rules": "Which project rules apply right now, and why",
+  "slash.command.watch": "Analyse a video or audio file by link or path",
+  "map.title": "project map",
+  "map.built": "🗺 {modules} modules, {edges} dependencies",
+  "map.empty": "no dependencies between modules were found — the graph is empty or the project is one module",
+  "rules.title": "project rules: {count}",
+  "rules.none": "there are no project rules: they live in {dir} and join a turn by alwaysApply, by globs or by @name",
+  "rules.why.always": "always",
+  "rules.why.globs": "when the turn touches {globs}",
+  "rules.why.byName": "only when called as @{name}",
+  "slash.needsArgument": "{command} does nothing without an argument: {what}"
 }
