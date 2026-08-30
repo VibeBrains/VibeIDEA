@@ -726,7 +726,9 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
         if (refs.isNotEmpty()) systemLine(t("chat.contextAttached", "items" to refs.joinToString { it.label }))
         // The wire text (with inlined context) becomes known only now — fill it into the stored record.
         if (t is ChatTarget.Model) {
-          history.setLastUserWireText(threadId, ContextSerializer.llmText(message.text, loaded, skills).takeIf { it != displayText })
+          history.setLastUserWireText(threadId,
+            prependProjectRules(ContextSerializer.llmText(message.text, loaded, skills), message.text, loaded)
+              .takeIf { it != displayText })
         }
         if (llmCancel.get() || disposed) {
           systemLine(t("chat.cancelledBeforeSend"))
@@ -811,6 +813,30 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     }
   }
 
+  /**
+   * Project rules in front of the turn: what the repository itself demands, before what the user
+   * asked for. Rules chosen by [ProjectRules.applicable] — always-on ones, those whose globs match
+   * the files in play, and those called by name — so an unrelated turn does not pay for them.
+   *
+   * Bodies pass the same guard as any other file from disk: a rule file is text someone else wrote,
+   * and «правила проекта» is exactly the label an injection would like to wear.
+   */
+  private fun prependProjectRules(prompt: String, userText: String, loaded: List<ContextSerializer.Loaded>): String {
+    val context = com.vibe.agent.context.ProjectContextService.getInstance(project)
+    val all = context.rules()
+    if (all.isEmpty()) return prompt
+    val touched = loaded.map { it.relPath }
+    val applicable = com.vibe.agent.context.ProjectRules.applicable(all, touched, userText)
+    if (applicable.isEmpty()) return prompt
+    val guarded = applicable.map { rule ->
+      val clean = com.vibe.agent.security.ContextSanitizer.sanitize(rule.body)
+      if (clean.findings.isNotEmpty()) reportContextFindings("${com.vibe.agent.context.ProjectRules.RULES_DIR}/${rule.name}", clean.findings)
+      rule.copy(body = clean.text)
+    }
+    systemLine(t("rules.applied", "names" to guarded.joinToString { it.name }))
+    return com.vibe.agent.context.ProjectRules.promptBlock(guarded, t("rules.header")) + "\n\n" + prompt
+  }
+
   private fun sendToAcp(
     t: ChatTarget.Agent, text: String, loaded: List<ContextSerializer.Loaded>,
     images: List<ImageAttachment>, startedAt: Long,
@@ -822,7 +848,8 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
         meta = mapOf("hash" to it.hash.take(12))))
     }
     val design = DesignContextFile.load(project.basePath)
-    val fullPrompt = if (design != null) DesignContextFile.promptBlock(design) + "\n" + text else text
+    val designed = if (design != null) DesignContextFile.promptBlock(design) + "\n" + text else text
+    val fullPrompt = prependProjectRules(designed, text, loaded)
     val c = ensureClient(t.config)
     // A fresh turn: tool-call ids and the changed-files set are per-turn.
     toolCalls.reset()

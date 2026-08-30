@@ -726,5 +726,18 @@
   "lsp.missing.title": "{server}: the server is not installed",
   "lsp.missing.body": "The file is open, but the «{binary}» binary is missing — hints and go-to-definition will not work. Install it and restart the IDE:\n{command}",
   "lsp.missing.copyCommand": "Copy the command",
-  "lsp.missing.mute": "Do not remind me again"
+  "lsp.missing.mute": "Do not remind me again",
+  "rules.header": "Rules of this project (mandatory; they win over general habits when the two conflict):",
+  "rules.applied": "📐 project rules: {names}",
+  "access.readDenied": "read denied: {path} — the file is in .vibe/ignore or the folder was never granted to the agent",
+  "access.writeDenied": "write denied: {path} — this folder is attached read-only",
+  "reference.add.action": "VibeIDEA: attach a reference folder (read-only)",
+  "reference.add.chooser": "Reference folder for the agent",
+  "reference.manage.action": "VibeIDEA: reference folders",
+  "reference.manage.prompt": "Pick a folder to detach it from the agent:",
+  "reference.title": "Reference folders",
+  "reference.added": "Attached read-only: {path}\n\nThe agent may read it; writes there are always refused.",
+  "reference.already": "This folder is already attached: {path}",
+  "reference.removed": "Detached: {path}",
+  "reference.none": "No reference folders. Attach one with «VibeIDEA: attach a reference folder (read-only)»."
 }

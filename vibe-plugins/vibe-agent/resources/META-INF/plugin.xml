@@ -45,6 +45,11 @@
     <group id="VibeIdea.History" text="VibeIDEA" popup="false">
       <action id="Vibe.FimMetrics" class="com.vibe.agent.fim.VibeFimMetricsAction"
               text="Метрики автодополнения" description="Попадания кэша, отказы, задержка модели p50/p95"/>
+      <action id="Vibe.AddReferenceFolder" class="com.vibe.agent.context.VibeAddReferenceFolderAction"
+              text="Добавить папку-справочник для агента (только чтение)"
+              description="Материалы вне проекта: агент читает, но правит только проект"/>
+      <action id="Vibe.ManageReferenceFolders" class="com.vibe.agent.context.VibeManageReferenceFoldersAction"
+              text="Папки-справочники" description="Показать подключённые папки и отключить лишние"/>
       <action id="Vibe.ValidateSkills" class="com.vibe.agent.skills.VibeValidateSkillsAction"
               text="Проверить скиллы проекта" description="Валидация .vibe/skills/&lt;id&gt;/SKILL.md по контракту Agent Skills"/>
       <action id="Vibe.ShowApiToken" class="com.vibe.agent.http.VibeShowApiTokenAction"

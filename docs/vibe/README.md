@@ -12,6 +12,7 @@
 - [manuals/langFileSpec.md](manuals/langFileSpec.md) — спека языкового файла `~/.vibe/lang/<код>.json`: формат, подстановки, поведение при запуске (самодостаточная, для LLM).
 - [manuals/codeGraphSpec.md](manuals/codeGraphSpec.md) — спека графа проекта `.vibe/codeGraph.json`: узлы, связи с происхождением, инкрементальность, примеры jq (для агентов и парсеров).
 - [manuals/agentRunsSpec.md](manuals/agentRunsSpec.md) — спека журнала прогонов `.vibe/agent-runs.jsonl`: формат, правило сиротства, усечение (для парсеров/дашбордов).
+- [manuals/projectContextSpec.md](manuals/projectContextSpec.md) — что агент обязан читать и чего не должен касаться: `.cursor/rules`, `.vibe/ignore`, папки-справочники, таблица доступа (самодостаточная, для LLM).
 - [manuals/skillsSpec.md](manuals/skillsSpec.md) — спека Agent Skills `.vibe/skills/<id>/SKILL.md`: формат, шесть ключей шапки, валидатор, пример (самодостаточная, для LLM).
 - [manuals/httpApiSpec.md](manuals/httpApiSpec.md) — спека входящего HTTP API (loopback + Bearer): как дёрнуть агента из CI/бота/крона (самодостаточная, для LLM).
 - [manuals/acpSmoke.md](manuals/acpSmoke.md) — ручной чек-лист живого прогона ACP (12 шагов): то, что подделкой агента не проверить.

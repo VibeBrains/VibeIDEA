@@ -29,6 +29,17 @@ class MentionIndex(private val project: Project) {
   data class Item(val ref: ContextRef, val path: String)
 
   private val fileIndex = ProjectFileIndex.getInstance(project)
+
+  /**
+   * `.vibe/ignore` applies to the menu too: offering a file the agent is forbidden to read would
+   * be a trap — the user picks it, and the turn fails on a refusal they did not ask for.
+   */
+  private val ignore = com.vibe.agent.context.ProjectContextService.getInstance(project).ignore()
+
+  private fun isIgnored(file: VirtualFile): Boolean {
+    if (ignore.isEmpty) return false
+    return ignore.isIgnored(projectRelativePath(project, file), file.isDirectory)
+  }
   private val scope = GlobalSearchScope.projectScope(project)
   private val folders: List<VirtualFile> by lazy { enumerateFolders() }
 
@@ -45,7 +56,7 @@ class MentionIndex(private val project: Project) {
     val hardCap = limit * FILES_PER_NAME_FACTOR
     val candidates = ArrayList<VirtualFile>()
     FilenameIndex.processFilesByNames(names, true, scope, null) { file ->
-      if (!file.isDirectory && file.isValid && !fileIndex.isExcluded(file)) candidates.add(file)
+      if (!file.isDirectory && file.isValid && !fileIndex.isExcluded(file) && !isIgnored(file)) candidates.add(file)
       candidates.size < hardCap
     }
     return rank(candidates, matcher, limit).map { Item(ContextRef.File(it), displayPath(it)) }
@@ -77,7 +88,7 @@ class MentionIndex(private val project: Project) {
     EditorHistoryManager.getInstance(project).fileList
       .asReversed()
       .asSequence()
-      .filter { it.isValid && !it.isDirectory && fileIndex.isInProject(it) && !fileIndex.isExcluded(it) }
+      .filter { it.isValid && !it.isDirectory && fileIndex.isInProject(it) && !fileIndex.isExcluded(it) && !isIgnored(it) }
       .take(limit)
       .map { Item(ContextRef.File(it), displayPath(it)) }
       .toList()
@@ -117,7 +128,7 @@ class MentionIndex(private val project: Project) {
   private fun enumerateFolders(): List<VirtualFile> {
     val result = ArrayList<VirtualFile>()
     fileIndex.iterateContent { file ->
-      if (file.isDirectory && !fileIndex.isExcluded(file)) result.add(file)
+      if (file.isDirectory && !fileIndex.isExcluded(file) && !isIgnored(file)) result.add(file)
       true
     }
     return result

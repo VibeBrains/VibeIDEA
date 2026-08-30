@@ -31,8 +31,16 @@ internal class IdeFileOps(
   private val onFinding: (String, List<com.vibe.agent.security.ContextSanitizer.Finding>) -> Unit = { _, _ -> },
 ) {
 
+  private fun roots(): com.vibe.agent.context.AccessPolicy.Roots =
+    com.vibe.agent.context.ProjectContextService.getInstance(project).roots()
+
   fun readTextFile(params: JsonObject): JsonElement {
     val path = params.getValue("path").jsonPrimitive.content
+    // Asked BEFORE the read, not explained after: an ignored bundle or a folder nobody granted
+    // is not "read and then filtered" — the bytes never enter the process.
+    if (!com.vibe.agent.context.AccessPolicy.mayRead(path, roots())) {
+      throw IllegalStateException(t("access.readDenied", "path" to path))
+    }
     val line = params["line"]?.jsonPrimitive?.intOrNull
     val limit = params["limit"]?.jsonPrimitive?.intOrNull
     var text: String? = null
@@ -59,6 +67,10 @@ internal class IdeFileOps(
 
   fun writeTextFile(params: JsonObject): JsonElement {
     val path = Path.of(params.getValue("path").jsonPrimitive.content)
+    // "Read my notes but do not edit them" is a rule only while something enforces it.
+    if (!com.vibe.agent.context.AccessPolicy.mayWrite(path.toString(), roots())) {
+      throw IllegalStateException(t("access.writeDenied", "path" to path))
+    }
     val content = params.getValue("content").jsonPrimitive.contentOrNull ?: ""
     val oldText = readCurrentText(path)
     if (oldText == content) return buildJsonObject { }
