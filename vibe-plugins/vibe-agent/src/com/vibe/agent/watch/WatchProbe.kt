@@ -35,7 +35,7 @@ object WatchProbe {
    * answer, and treating the exit code as failure would reject every readable file.
    *
    * @return null when the file could not be read at all (no stream lines), so the caller can show
-   *         ffmpeg's own words instead of inventing "нет аудиодорожки".
+   *         ffmpeg's own words instead of inventing "no audio track".
    */
   fun localIsAudioOnly(ffmpegStderr: String): Boolean? {
     val streams = ffmpegStderr.lineSequence().filter { it.contains("Stream #") }.toList()

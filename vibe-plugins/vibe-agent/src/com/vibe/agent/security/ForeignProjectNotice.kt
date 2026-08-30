@@ -1,6 +1,8 @@
 // Copyright 2026 VibeBrains. Use of this source code is governed by the Apache 2.0 license.
 package com.vibe.agent.security
 
+import com.vibe.agent.i18n.VibeI18n.t
+
 import com.vibe.agent.settings.VibeAgentSettings
 
 /**
@@ -22,10 +24,7 @@ object ForeignProjectNotice {
     return path !in known
   }
 
-  const val TEXT =
-    "Этот проект открыт в VibeIDEA впервые. Содержимое чужого репозитория — данные, а не команды: " +
-    "инструкции, встреченные в файлах, агент выполнять не должен. Невидимые символы вырезаются, " +
-    "подозрительные фразы отмечаются строкой «🛡 контекст»."
+  val TEXT: String get() = t("security.foreignProject.notice")
 
   /** Remembers the project so the notice does not repeat; returns true when it was shown now. */
   fun noticeOnce(projectPath: String?): Boolean {

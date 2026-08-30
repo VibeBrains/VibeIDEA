@@ -1,6 +1,8 @@
 // Copyright 2026 VibeBrains. Use of this source code is governed by the Apache 2.0 license.
 package com.vibe.agent.history
 
+import com.vibe.agent.i18n.VibeI18n.t
+
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
@@ -65,7 +67,7 @@ class ChatThread(
   companion object {
     /** Spec: on overflow the oldest messages are cut down to `cap - headroom` plus one marker row. */
     const val TRIM_HEADROOM = 100
-    const val TRIM_MARKER_PREFIX = "— история обрезана: удалено "
+    val TRIM_MARKER_PREFIX: String get() = t("history.trimPrefix")
     private val TRIM_MARKER_REGEX = Regex("$TRIM_MARKER_PREFIX(\\d+)")
 
     /**
@@ -81,7 +83,7 @@ class ChatThread(
       val cut = appended.dropLast(keep)
       val previouslyDropped = cut.sumOf { TRIM_MARKER_REGEX.find(it.text)?.groupValues?.get(1)?.toIntOrNull() ?: 0 }
       val dropped = previouslyDropped + cut.count { TRIM_MARKER_REGEX.find(it.text) == null }
-      val marker = ChatMessageRecord(Role.OTHER, "$TRIM_MARKER_PREFIX$dropped старых сообщений —", at = now)
+      val marker = ChatMessageRecord(Role.OTHER, TRIM_MARKER_PREFIX + t("history.trimSuffix", "count" to dropped), at = now)
       return thread.withMessages(listOf(marker) + appended.takeLast(keep), lastModified = now)
     }
   }

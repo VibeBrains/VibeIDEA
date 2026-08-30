@@ -1,6 +1,8 @@
 // Copyright 2026 VibeBrains. Use of this source code is governed by the Apache 2.0 license.
 package com.vibe.agent.ui.composer
 
+import com.vibe.agent.i18n.VibeI18n.t
+
 import com.intellij.icons.AllIcons
 import com.intellij.ui.JBColor
 import com.intellij.util.ui.JBFont
@@ -30,7 +32,7 @@ class Chip(
   onRemove: () -> Unit,
 ) : JPanel(FlowLayout(FlowLayout.LEFT, JBUI.scale(GAP), 0)) {
   private val close = JLabel(AllIcons.Actions.Close).apply {
-    toolTipText = "Убрать"
+    toolTipText = t("chips.remove")
     cursor = Cursor.getPredefinedCursor(Cursor.HAND_CURSOR)
     addMouseListener(object : MouseAdapter() {
       override fun mouseEntered(e: MouseEvent) { setIcon(AllIcons.Actions.CloseHovered) }

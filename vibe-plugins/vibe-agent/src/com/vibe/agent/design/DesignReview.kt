@@ -1,6 +1,8 @@
 // Copyright 2026 VibeBrains. Use of this source code is governed by the Apache 2.0 license.
 package com.vibe.agent.design
 
+import com.vibe.agent.i18n.VibeI18n.t
+
 /**
  * The facade: run every rule over a snapshot, stamp the class from the catalogue, apply the
  * project's accepted drifts.
@@ -62,13 +64,13 @@ object DesignReview {
 
   /** One line for the chat: what was found, in the order a person acts on it. */
   fun summary(findings: List<Finding>): String {
-    if (findings.isEmpty()) return "Дизайн-проверка: находок нет."
+    if (findings.isEmpty()) return t("design.review.clean")
     val floor = findings.count { it.ruleClass == RuleClass.FLOOR && it.acceptedReason == null }
     val style = findings.count { it.ruleClass == RuleClass.STYLE && it.acceptedReason == null }
     val accepted = findings.count { it.acceptedReason != null }
     return buildString {
-      append("Дизайн-проверка: пол качества — $floor, стиль — $style")
-      if (accepted > 0) append(", принято проектом — $accepted")
+      append(t("design.review.summary", "floor" to floor, "style" to style))
+      if (accepted > 0) append(t("design.review.accepted", "count" to accepted))
       append(".")
     }
   }

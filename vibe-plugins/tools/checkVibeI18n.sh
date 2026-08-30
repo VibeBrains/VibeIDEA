@@ -7,7 +7,7 @@
 #   1. ключ, использованный в коде, обязан быть в базовом каталоге;
 #   2. мёртвый ключ (есть в каталоге, нигде не используется) — тоже ошибка: он врёт переводчику;
 #   3. ключ в языковом файле, которого нет в базе — опечатка или устаревший перевод;
-#   4. ХРАПОВИК: число русских литералов в UI-коде не может вырасти против записанного.
+#   4. ХРАПОВИК: число русских литералов в коде не может вырасти против записанного (сейчас 0).
 #
 # Диагностика выведена из-под гейта явно: логи и console-вывод — не интерфейс, их переводить незачем.
 set -euo pipefail
@@ -84,11 +84,37 @@ PY
 # переводить их не только не нужно, но и вредно — детектор ищет русские слова в чужой странице.
 EXCLUSIONS=vibe-plugins/tools/i18nExclusions.txt
 excluded_paths=$(grep -v '^#' "$EXCLUSIONS" 2>/dev/null | grep -v '^$' | cut -d'|' -f1 || true)
-count=$(find vibe-plugins -name '*.kt' -path '*/src/*' | { while read -r f; do
-    skip=0
-    for ex in $excluded_paths; do [ "$f" = "$ex" ] && skip=1 && break; done
-    [ "$skip" -eq 0 ] && printf '%s\n' "$f"
-  done; } | xargs grep -o '"[^"]*[А-Яа-яЁё][^"]*"' 2>/dev/null | wc -l | tr -d ' ')
+# Счёт ведёт python, а не grep: диапазон [А-Яа-яЁё] в POSIX-grep ловит по байтам и считает
+# кириллицей типографские тире, точки-разделители и стрелки. Планка при этом «держалась» на
+# пунктуации, а настоящая непереведённая строка тонула в шуме.
+count=$(python3 - "$EXCLUSIONS" <<'PYCOUNT'
+import io, os, re, sys
+excluded = set()
+for line in io.open(sys.argv[1], encoding='utf-8'):
+    line = line.strip()
+    if line and not line.startswith('#'):
+        excluded.add(line.split('|', 1)[0].strip())
+literal = re.compile(r'"(?:[^"\\]|\\.)*"')
+cyrillic = re.compile(r'[\u0400-\u04FF]')
+total = 0
+for root, _, files in os.walk('vibe-plugins'):
+    if os.sep + 'src' + os.sep not in root + os.sep:
+        continue
+    for name in files:
+        if not name.endswith('.kt'):
+            continue
+        path = os.path.join(root, name)
+        if path in excluded:
+            continue
+        text = io.open(path, encoding='utf-8').read()
+        # Комментарии считать нельзя: они по правилам проекта английские, а редкая кириллица
+        # внутри них — пример или цитата, а не строка интерфейса.
+        text = re.sub(r'//[^\n]*', '', text)
+        text = re.sub(r'/\*.*?\*/', '', text, flags=re.S)
+        total += sum(1 for m in literal.finditer(text) if cyrillic.search(m.group(0)))
+print(total)
+PYCOUNT
+)
 # Планка обязана существовать. Раньше её отсутствие подставляло текущее число — и храповик
 # молча пропускал любой рост, то есть был гейтом-пустышкой. Гейт, который нельзя провалить,
 # не защищает ничего.
@@ -101,8 +127,7 @@ if [ "$count" -gt "$limit" ]; then
   say "✖ русских литералов в коде: $count, разрешено не больше $limit."
   say "  Новая строка интерфейса должна идти через каталог: t(\"ключ\") + запись в $BASE."
   say "  Строка НЕ для человека (регэксп детектора, преамбула промпта) — файл в $EXCLUSIONS с причиной."
-  say "  Если строка НЕ интерфейсная (лог, исключение для разработчика) — так и есть, но храповик"
-  say "  считает по коду целиком: перенесите столько же строк из очереди, чтобы счётчик не рос."
+  say "  Лог IDE и комментарий — не интерфейс, и русскими быть не должны: пишите их по-английски."
   fail=1
 elif [ "$count" -lt "$limit" ]; then
   say "  храповик: литералов $count (было $limit) — опускаю планку"

@@ -39,15 +39,15 @@ class VibeHttpApiService {
         api.start(VibeAgentSettings.httpApiPort)
         // Issue the token on first start so «показать токен» always has something to show.
         ApplicationManager.getApplication().executeOnPooledThread { runCatching { VibeApiToken.getOrCreate() } }
-        log.info("VibeIDEA HTTP API слушает 127.0.0.1:${api.boundPort}")
+        log.info("VibeIDEA HTTP API is listening on 127.0.0.1:${api.boundPort}")
       }
       catch (e: Exception) {
-        log.warn("VibeIDEA HTTP API не запустился: ${e.message}")
+        log.warn("VibeIDEA HTTP API failed to start: ${e.message}")
       }
     }
     else if (!wanted && api.isRunning) {
       api.stop()
-      log.info("VibeIDEA HTTP API остановлен")
+      log.info("VibeIDEA HTTP API stopped")
     }
   }
 

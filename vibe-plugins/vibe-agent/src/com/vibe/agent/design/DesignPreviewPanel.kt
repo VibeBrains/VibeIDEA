@@ -263,7 +263,7 @@ class DesignPreviewPanel(private val project: Project) : JPanel(BorderLayout()),
     // The measured value goes on the row itself: a finding one can only agree or disagree with is
     // an opinion, one that carries its number can be checked.
     add(hint("${finding.selector} · ${finding.evidence}" +
-             (finding.acceptedReason?.let { " · причина: $it" } ?: "") +
+             (finding.acceptedReason?.let { " · " + t("design.reasonPrefix") + ": $it" } ?: "") +
              " · " + if (finding.viewport == Viewport.MOBILE) t("design.viewport.mobile") else t("design.viewport.desktop")))
     add(hint(finding.why))
   }

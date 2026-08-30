@@ -188,7 +188,7 @@ object ProvidersFile {
     return entries.map { e ->
       val base = e.extendsId?.let { byId[it] }
       if (e.extendsId != null && base == null) {
-        onWarning("реестр провайдеров: extends '${e.extendsId}' у '${e.id}' не найден — игнорирую")
+        onWarning(t("providers.warn.extendsMissing", "parent" to e.extendsId, "id" to e.id))
       }
       if (base == null || base === e) e.copy(extendsId = null)
       else overlay(base, e).copy(id = e.id, extendsId = null)

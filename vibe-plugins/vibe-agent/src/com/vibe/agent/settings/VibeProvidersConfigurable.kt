@@ -67,7 +67,8 @@ class VibeProvidersConfigurable(private val project: Project) : Configurable, Co
         ProviderOrigin.OVERRIDDEN -> t("settings.providers.originOverridden")
         else -> t("settings.providers.originGlobal")
       }
-      val hint = JBLabel("<html>Провайдер: $originLabel (id: <code>${p.id}</code>${p.apiKeyEnv?.let { " · env: <code>$it</code>" } ?: ""}). Введите ключ здесь — он уйдёт в защищённое хранилище ОС, — или задайте его в .vibe/.env.</html>").apply {
+      val hint = JBLabel(t("settings.providers.hint", "origin" to originLabel, "id" to p.id,
+                            "env" to (p.apiKeyEnv?.let { " · env: <code>$it</code>" } ?: ""))).apply {
         font = com.intellij.util.ui.JBFont.label().deriveFont(11f)
         foreground = com.intellij.ui.JBColor.GRAY
         // Long html text must wrap to the card width, not dictate it.
@@ -141,8 +142,8 @@ class VibeProvidersConfigurable(private val project: Project) : Configurable, Co
       val resolved = ProvidersService.resolve(p, project.basePath) { }?.let {
         if (typed != null) it.copy(apiKey = typed) else it
       }
-      // Ключ участвует в запросе только когда провайдер вообще авторизуется: у auth "none"
-      // (локальные серверы) каталог ответит и на пустой ключ, и «ключ действителен» было бы ложью.
+      // The key takes part in the request only when the provider authenticates at all: with auth
+      // "none" (local servers) the catalog answers an empty key too, so "the key is valid" would lie.
       val keyUsed = resolved != null && resolved.apiKey != null && p.auth.type != "none"
       var ok = false
       val text = when {

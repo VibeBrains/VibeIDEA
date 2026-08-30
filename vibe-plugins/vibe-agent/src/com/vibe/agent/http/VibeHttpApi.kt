@@ -105,7 +105,7 @@ class VibeHttpApi(
     }
     catch (e: Exception) {
       // Never leak a stack trace to a caller; the IDE log keeps the details.
-      runCatching { respond(exchange, 500, buildJsonObject { put("ok", false); put("error", "внутренняя ошибка") }) }
+      runCatching { respond(exchange, 500, buildJsonObject { put("ok", false); put("error", "internal error") }) }
       throw e
     }
     finally {

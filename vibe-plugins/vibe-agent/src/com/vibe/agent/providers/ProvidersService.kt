@@ -1,6 +1,8 @@
 // Copyright 2026 VibeBrains. Use of this source code is governed by the Apache 2.0 license.
 package com.vibe.agent.providers
 
+import com.vibe.agent.i18n.VibeI18n.t
+
 import java.nio.file.Files
 import java.nio.file.Path
 
@@ -74,7 +76,7 @@ object ProvidersService {
         }.sortedBy { it.fileName.toString() }
       }
     }.getOrElse { e ->
-      onWarning("$dir не прочитан: ${e.message} — каталог провайдеров пропущен")
+      onWarning(t("providers.warn.dirUnreadable", "dir" to dir, "reason" to e.message))
       emptyList()
     }
   }
@@ -85,7 +87,7 @@ object ProvidersService {
       ProvidersFile.parse(Files.readString(path), source = source, onWarning = onWarning)
     }
     catch (e: Exception) {
-      onWarning("$path не разобран: ${e.message} — провайдеры из этого файла пропущены")
+      onWarning(t("providers.warn.fileUnparsed", "path" to path, "reason" to e.message))
       emptyList()
     }
   }
@@ -93,7 +95,7 @@ object ProvidersService {
   fun resolve(entry: ProviderEntry, projectBase: String?, onWarning: (String) -> Unit): ResolvedProvider? {
     val base = entry.baseURL
     if (base.isNullOrBlank()) {
-      onWarning("провайдер '${entry.id}': нет baseURL — пропущен")
+      onWarning(t("providers.warn.noBaseUrl", "id" to entry.id))
       return null
     }
     val protocol = when (entry.protocol) {

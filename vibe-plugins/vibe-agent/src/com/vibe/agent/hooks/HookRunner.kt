@@ -65,7 +65,7 @@ class HookRunner(private val project: Project, private val onWarning: (String) -
       HookOutcome.decideHooks(event, results)
     }
     catch (e: Exception) {
-      onWarning("хуки: сбой механизма (${e.message}) — ход не заблокирован")
+      onWarning(t("hooks.warn.mechanismFailed", "reason" to e.message))
       NOTHING
     }
   }

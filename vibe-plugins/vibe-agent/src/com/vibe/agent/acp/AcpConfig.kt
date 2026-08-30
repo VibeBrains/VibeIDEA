@@ -1,6 +1,8 @@
 // Copyright 2026 VibeBrains. Use of this source code is governed by the Apache 2.0 license.
 package com.vibe.agent.acp
 
+import com.vibe.agent.i18n.VibeI18n.t
+
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
@@ -53,12 +55,12 @@ object AcpConfig {
           ))
         }
         catch (e: Exception) {
-          onWarning("acp.json: запись '$name' пропущена: ${e.message}")
+          onWarning(t("acp.config.entrySkipped", "name" to name, "reason" to e.message))
         }
       }
     }
     catch (e: Exception) {
-      onWarning("acp.json не разобран (${e.message}) — использую агентов по умолчанию")
+      onWarning(t("acp.config.unparsed", "reason" to e.message))
       return DEFAULT_AGENTS
     }
     return result.ifEmpty { DEFAULT_AGENTS }

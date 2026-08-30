@@ -1,6 +1,8 @@
 // Copyright 2026 VibeBrains. Use of this source code is governed by the Apache 2.0 license.
 package com.vibe.agent.ui.composer
 
+import com.vibe.agent.i18n.VibeI18n.t
+
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.application.ModalityState
 import com.intellij.openapi.fileChooser.FileChooser
@@ -27,7 +29,7 @@ object Attachments {
   private val MIME_BY_EXTENSION = mapOf(
     "png" to "image/png", "jpg" to "image/jpeg", "jpeg" to "image/jpeg", "webp" to "image/webp", "gif" to "image/gif",
   )
-  private const val PASTED_NAME = "буфер обмена.png"
+  private val PASTED_NAME: String get() = t("attachments.pastedName")
   private const val PASTED_MIME = "image/png"
   /** The strictest limit among supported vendors (Anthropic: 5 MB per image); larger files are refused at intake. */
   const val MAX_IMAGE_MB = 5L
@@ -48,8 +50,8 @@ object Attachments {
   /** Opens the native chooser (images only, multiple); bytes are read off the EDT, [onPicked] runs on EDT. */
   fun choose(project: Project, parent: Component, onPicked: (List<ImageAttachment>) -> Unit) {
     val descriptor = FileChooserDescriptorFactory.multiFiles()
-      .withTitle("Прикрепить изображение")
-      .withExtensionFilter("Изображения", *IMAGE_EXTENSIONS.toTypedArray())
+      .withTitle(t("attachments.chooserTitle"))
+      .withExtensionFilter(t("attachments.images"), *IMAGE_EXTENSIONS.toTypedArray())
     FileChooser.chooseFiles(descriptor, project, parent, null) { files ->
       loadAsync(files.map { VfsUtilCore.virtualToIoFile(it) }, onPicked)
     }

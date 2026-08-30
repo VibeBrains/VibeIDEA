@@ -1,6 +1,8 @@
 // Copyright 2026 VibeBrains. Use of this source code is governed by the Apache 2.0 license.
 package com.vibe.agent.acp
 
+import com.vibe.agent.i18n.VibeI18n.t
+
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.command.WriteCommandAction
 import com.intellij.openapi.fileEditor.FileDocumentManager
@@ -61,7 +63,7 @@ internal class IdeFileOps(
     val oldText = readCurrentText(path)
     if (oldText == content) return buildJsonObject { }
     if (!WritePreview.confirm(project, path.toString(), oldText, content)) {
-      throw IllegalStateException("пользователь отклонил запись в $path (закрытый диалог = отказ)")
+      throw IllegalStateException(t("write.refused", "path" to path))
     }
     var handledInEditor = false
     ApplicationManager.getApplication().invokeAndWait {

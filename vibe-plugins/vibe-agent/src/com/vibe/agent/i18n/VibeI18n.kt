@@ -55,7 +55,7 @@ object VibeI18n {
     loaded = readLanguages()
     activeCode = resolveActive(stored(), Locale.getDefault().language, loaded.keys)
     active = loaded[activeCode].orEmpty()
-    log.info("VibeIDEA язык интерфейса: $activeCode; доступно: ${(loaded.keys + BASE_LANGUAGE).sorted()}")
+    log.info("VibeIDEA interface language: $activeCode; available: ${(loaded.keys + BASE_LANGUAGE).sorted()}")
   }
 
   /**
@@ -135,7 +135,7 @@ object VibeI18n {
   private fun loadBase(): Map<String, String> {
     val text = VibeI18n::class.java.getResourceAsStream("/lang/base.json")?.bufferedReader()?.readText()
     if (text == null) {
-      log.warn("базовый каталог строк не найден в ресурсах плагина — интерфейс покажет ключи")
+      log.warn("the base string catalogue is missing from the plugin resources — the interface will show keys")
       return emptyMap()
     }
     return parse(text)

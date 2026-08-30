@@ -1,6 +1,8 @@
 // Copyright 2026 VibeBrains. Use of this source code is governed by the Apache 2.0 license.
 package com.vibe.agent.settings
 
+import com.vibe.agent.i18n.VibeI18n.t
+
 import com.vibe.agent.providers.ModelEntry
 
 /**
@@ -12,7 +14,7 @@ object ModelRows {
   /** Declared traits as text badges: «кастом» for hand-declared entries, vision/fim/context where known. */
   fun badges(m: ModelEntry, custom: Boolean): List<String> {
     val out = ArrayList<String>()
-    if (custom) out.add("кастом")
+    if (custom) out.add(t("picker.target.custom"))
     when (m.vision) {
       true -> out.add("vision")
       false -> out.add("text-only")

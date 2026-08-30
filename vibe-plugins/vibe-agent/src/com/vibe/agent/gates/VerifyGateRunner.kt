@@ -1,6 +1,8 @@
 // Copyright 2026 VibeBrains. Use of this source code is governed by the Apache 2.0 license.
 package com.vibe.agent.gates
 
+import com.vibe.agent.i18n.VibeI18n.t
+
 import com.vibe.agent.util.ProcessSupport
 import java.util.concurrent.TimeUnit
 
@@ -44,7 +46,7 @@ class VerifyGateRunner(private val cwd: String?) {
         process.destroyForcibly()
       }
       val output = runCatching { outFuture.get(ProcessSupport.DRAIN_JOIN_TIMEOUT_SEC, TimeUnit.SECONDS) }.getOrDefault("")
-      if (!finished) return VerifyResult(ran = true, passed = false, exitCode = null, outputTail = tail(output) + "\n[таймаут]")
+      if (!finished) return VerifyResult(ran = true, passed = false, exitCode = null, outputTail = tail(output) + "\n[" + t("gates.timeout") + "]")
       val code = process.exitValue()
       VerifyResult(ran = true, passed = code == 0, exitCode = code, outputTail = tail(output))
     }

@@ -186,7 +186,7 @@ class WatchPipeline(
     Regex("\"title\"\\s*:\\s*\"([^\"]{1,200})\"").find(dumpJson)?.groupValues?.get(1)
 
   companion object {
-    const val CANCELLED = "отменено пользователем"
+    val CANCELLED: String get() = t("common.cancelledByUser")
 
     private const val PROBE_TIMEOUT_SEC = 60L
     private const val SUBTITLE_TIMEOUT_SEC = 180L

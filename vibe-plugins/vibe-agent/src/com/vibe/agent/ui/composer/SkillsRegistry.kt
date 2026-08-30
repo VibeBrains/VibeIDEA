@@ -1,6 +1,8 @@
 // Copyright 2026 VibeBrains. Use of this source code is governed by the Apache 2.0 license.
 package com.vibe.agent.ui.composer
 
+import com.vibe.agent.i18n.VibeI18n.t
+
 import java.io.File
 
 /**
@@ -25,7 +27,7 @@ object SkillsRegistry {
       ?: entry.pkg.body.lineSequence().firstOrNull { it.isNotBlank() && !it.trimStart().startsWith("#") }.orEmpty()
     Skill(
       id = entry.pkg.id,
-      description = if (entry.isBroken) "⚠ навык сломан — «VibeIDEA: проверить скиллы проекта»" else clean(description),
+      description = if (entry.isBroken) "⚠ " + t("skills.broken") else clean(description),
       broken = entry.isBroken,
     )
   }

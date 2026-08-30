@@ -629,7 +629,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
    * way forward (VibeIDE contract).
    */
   override fun runExternalTask(task: String, sessionId: String?, wait: Boolean): String {
-    check(!ApplicationManager.getApplication().isDispatchThread) { "runExternalTask блокирует — не с EDT" }
+    check(!ApplicationManager.getApplication().isDispatchThread) { "runExternalTask blocks — must not be called from the EDT" }
     val started = java.util.concurrent.CompletableFuture<String>()
     SwingUtilities.invokeLater {
       if (disposed) {
@@ -1411,11 +1411,11 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
           systemLine("$header ${step.task.take(80)}")
           val prompt = buildString {
             appendLine(PipelinesFile.rolePreamble(step.role))
-            appendLine("Задача: ${step.task}")
-            step.acceptance?.let { appendLine("Критерий готовности: $it") }
+            appendLine(t("pipeline.step.task", "task" to step.task))
+            step.acceptance?.let { appendLine(t("pipeline.step.acceptance", "acceptance" to it)) }
             if (!step.ignorePreviousArtifacts) {
-              if (artifacts.isNotEmpty()) appendLine("Файлы, которых касались предыдущие шаги (прочитай нужные сам): ${artifacts.joinToString()}")
-              lastSummary?.let { appendLine("Резюме предыдущего шага: $it") }
+              if (artifacts.isNotEmpty()) appendLine(t("pipeline.step.artifacts", "files" to artifacts.joinToString()))
+              lastSummary?.let { appendLine(t("pipeline.step.summary", "summary" to it)) }
             }
           }
           try {
@@ -1481,7 +1481,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
       val now = System.currentTimeMillis()
       val freshest = used.mapNotNull { cache[it.id]?.fetchedAtMs }.maxOrNull() ?: now
       systemLine(t("providers.fromCache", "count" to used.size, "word" to providersWord(used.size)) + ", " +
-                 "${ModelCatalogCache.ageText(freshest, now)}) — обновляю в фоне")
+                 ModelCatalogCache.ageText(freshest, now) + ") — " + t("providers.refreshingInBackground"))
     }
     return merged
   }
@@ -1630,7 +1630,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     /** Raw streamed text lives here; on finish it may be re-rendered into prose + code blocks. */
     val text = proseArea()
     private var fullText = ""
-    val meta = metaLabel("Агент · ${now()}", right = false)
+    val meta = metaLabel(t("chat.agentMeta", "time" to now()), right = false)
     private val metaRow = JPanel(BorderLayout()).apply {
       isOpaque = false
       add(meta, BorderLayout.WEST)
@@ -1666,12 +1666,12 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     }
 
     fun finish(seconds: Double, suffix: String?) {
-      meta.text = "Агент · ${now()} · ${"%.1f".format(seconds)} с${suffix?.let { " · $it" } ?: ""}"
+      meta.text = t("chat.agentMetaTimed", "time" to now(), "seconds" to "%.1f".format(seconds)) + (suffix?.let { " · $it" } ?: "")
       renderSegments(text.text)
     }
   }
 
-  /** A quiet "копировать" affordance (shared factory — see ChatTheme). */
+  /** A quiet "copy" affordance (shared factory — see ChatTheme). */
   private fun copyLink(textSupplier: () -> String): JLabel =
     ChatTheme.copyLabel(t("chat.copyMessage"), textSupplier)
 
@@ -1932,7 +1932,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     SwingUtilities.invokeLater {
       composer.setUsage(
         text = "⛁ $pct%",
-        tooltip = "Контекст: %,d / %,d токенов$cost".format(used, size),
+        tooltip = t("chat.contextTooltip", "used" to "%,d".format(used), "size" to "%,d".format(size)) + cost,
         warn = pct >= USAGE_WARN_PCT,
       )
     }

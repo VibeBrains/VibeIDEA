@@ -1,6 +1,8 @@
 // Copyright 2026 VibeBrains. Use of this source code is governed by the Apache 2.0 license.
 package com.vibe.agent.http
 
+import com.vibe.agent.i18n.VibeI18n.t
+
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.components.Service
 import com.intellij.openapi.components.service
@@ -58,7 +60,7 @@ class VibeAgentGateway {
   fun run(task: String, sessionId: String?, wait: Boolean): String {
     val snapshot = targets.toList()
     if (snapshot.isEmpty()) {
-      throw IllegalStateException("панель VibeAgent не открыта ни в одном окне — задачу выполнять негде")
+      throw IllegalStateException(t("gateway.noPanel"))
     }
     val target = sessionId?.let { id -> snapshot.firstOrNull { it.ownsSession(id) } }
                  ?: snapshot.last() // most recently registered/used window

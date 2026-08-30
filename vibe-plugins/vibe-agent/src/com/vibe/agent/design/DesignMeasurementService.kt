@@ -1,6 +1,8 @@
 // Copyright 2026 VibeBrains. Use of this source code is governed by the Apache 2.0 license.
 package com.vibe.agent.design
 
+import com.vibe.agent.i18n.VibeI18n.t
+
 import com.intellij.openapi.components.Service
 import com.intellij.openapi.components.service
 import com.intellij.openapi.project.Project
@@ -27,8 +29,8 @@ class DesignMeasurementService {
 
   /** Findings, or the reason there are none — never silence that reads as "all good". */
   fun measure(timeoutMs: Long): Result {
-    val current = measurer ?: return Result(null, "панель «Дизайн» не открыта — мерить нечем")
-    val findings = current.measure(timeoutMs) ?: return Result(null, "страница не ответила на замер")
+    val current = measurer ?: return Result(null, t("design.measure.noPanel"))
+    val findings = current.measure(timeoutMs) ?: return Result(null, t("design.measure.noAnswer"))
     return Result(findings, null)
   }
 

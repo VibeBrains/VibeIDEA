@@ -1,6 +1,8 @@
 // Copyright 2026 VibeBrains. Use of this source code is governed by the Apache 2.0 license.
 package com.vibe.server
 
+import com.vibe.agent.i18n.VibeI18n.t
+
 import java.io.File
 import java.net.InetSocketAddress
 import java.net.Socket
@@ -36,11 +38,11 @@ class ServerRunner(
     for (wave in waves) {
       val results = wave.map { e -> e to startEntryBlocking(e) }
       if (results.any { !it.second && it.first.kind == "task" }) {
-        onLog("stack", "волна остановлена: task-предусловие провалилось; зависимые не стартуют")
+        onLog("stack", t("servers.wave.taskFailed"))
         break
       }
       if (results.any { !it.second }) {
-        onLog("stack", "в волне есть провалы: их зависимые не стартуют")
+        onLog("stack", t("servers.wave.someFailed"))
         // remaining waves that depend on failed ids will fail their readiness — stop conservatively
         break
       }
@@ -54,16 +56,16 @@ class ServerRunner(
   /** Returns true when the entry is READY (or skipped). Blocking; call from a pooled thread. */
   private fun startEntryBlocking(e: ServerEntry): Boolean {
     if (e.skipIf != null) {
-      onStatus(e.id, ServerStatus.STARTING, "skipIf-проба")
+      onStatus(e.id, ServerStatus.STARTING, t("servers.skipIf.probe"))
       if (runShort(e, e.skipIf) == 0) {
-        onStatus(e.id, ServerStatus.SKIPPED, "skipIf: уже сделано")
+        onStatus(e.id, ServerStatus.SKIPPED, t("servers.skipIf.done"))
         return true
       }
     }
     onStatus(e.id, ServerStatus.STARTING, null)
     val process = try { spawn(e, e.command) }
     catch (ex: Exception) {
-      onStatus(e.id, ServerStatus.FAILED, "запуск: ${ex.message}")
+      onStatus(e.id, ServerStatus.FAILED, t("servers.spawnFailed", "reason" to ex.message))
       return false
     }
     processes[e.id] = process
@@ -83,7 +85,7 @@ class ServerRunner(
       processes.remove(e.id, process)
       if (e.kind == "service") {
         // Own stop sets STOPPED before killing, so an unexpected death is distinguishable.
-        onStatus(e.id, if (code == 0) ServerStatus.STOPPED else ServerStatus.FAILED, "процесс завершился (код $code)")
+        onStatus(e.id, if (code == 0) ServerStatus.STOPPED else ServerStatus.FAILED, t("servers.processExited", "code" to code))
       }
     }, "vibe-server-${e.id}-exit").apply { isDaemon = true }.start()
 
@@ -102,7 +104,7 @@ class ServerRunner(
       onStatus(e.id, if (e.kind == "task") ServerStatus.DONE else ServerStatus.RUNNING, null)
     }
     else {
-      onStatus(e.id, ServerStatus.FAILED, "не готов за ${e.readyTimeoutMs} мс (${e.effectiveReadyCheck})")
+      onStatus(e.id, ServerStatus.FAILED, t("servers.notReady", "timeout" to e.readyTimeoutMs, "check" to e.effectiveReadyCheck))
     }
     return ready
   }

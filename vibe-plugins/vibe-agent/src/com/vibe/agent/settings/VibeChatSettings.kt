@@ -1,6 +1,8 @@
 // Copyright 2026 VibeBrains. Use of this source code is governed by the Apache 2.0 license.
 package com.vibe.agent.settings
 
+import com.vibe.agent.i18n.VibeI18n.t
+
 import com.intellij.ide.util.PropertiesComponent
 import com.intellij.openapi.project.Project
 
@@ -11,7 +13,7 @@ import com.intellij.openapi.project.Project
  * tabs arrive with the chat-history wave; until then one remembered choice per project).
  */
 object VibeChatSettings {
-  const val DEFAULT_CONTINUE_TEXT = "продолжи"
+  val DEFAULT_CONTINUE_TEXT: String get() = t("chat.continueDefault")
   const val DEFAULT_MAX_OPEN_TABS = 5
   const val MIN_OPEN_TABS = 1
   const val MAX_OPEN_TABS = 20

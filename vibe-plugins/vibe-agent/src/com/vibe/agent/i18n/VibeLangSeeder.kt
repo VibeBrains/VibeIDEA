@@ -24,7 +24,7 @@ class VibeLangSeeder : ProjectActivity {
 
   override suspend fun execute(project: Project) {
     ApplicationManager.getApplication().executeOnPooledThread {
-      runCatching { seed() }.onFailure { log.warn("не удалось засеять языковые файлы: ${it.message}") }
+      runCatching { seed() }.onFailure { log.warn("failed to seed the language files: ${it.message}") }
       VibeI18n.reload()
     }
   }
@@ -42,6 +42,6 @@ class VibeLangSeeder : ProjectActivity {
     if (Files.exists(target)) return
     val text = VibeLangSeeder::class.java.getResourceAsStream(resource)?.bufferedReader()?.readText() ?: return
     Files.writeString(target, text)
-    log.info("засеян языковой файл: $target")
+    log.info("seeded language file: $target")
   }
 }

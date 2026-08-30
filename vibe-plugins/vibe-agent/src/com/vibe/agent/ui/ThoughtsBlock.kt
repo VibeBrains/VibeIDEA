@@ -1,6 +1,8 @@
 // Copyright 2026 VibeBrains. Use of this source code is governed by the Apache 2.0 license.
 package com.vibe.agent.ui
 
+import com.vibe.agent.i18n.VibeI18n.t
+
 import com.intellij.ui.JBColor
 import com.intellij.util.ui.JBUI
 import java.awt.BorderLayout
@@ -17,7 +19,7 @@ import javax.swing.JTextArea
  */
 class ThoughtsBlock : JPanel(BorderLayout()) {
   private var collapsed = true
-  private val header = JLabel("▸ 💭 размышления")
+  private val header = JLabel("▸ 💭 " + t("thoughts.title"))
   private val area = JTextArea().apply {
     isEditable = false
     isOpaque = false
@@ -37,12 +39,12 @@ class ThoughtsBlock : JPanel(BorderLayout()) {
     header.foreground = FG
     header.border = JBUI.Borders.empty(3, 6)
     header.cursor = java.awt.Cursor.getPredefinedCursor(java.awt.Cursor.HAND_CURSOR)
-    header.toolTipText = "Показать/скрыть размышления агента"
+    header.toolTipText = t("thoughts.tooltip")
     header.addMouseListener(object : java.awt.event.MouseAdapter() {
       override fun mouseClicked(e: java.awt.event.MouseEvent) {
         collapsed = !collapsed
         area.isVisible = !collapsed
-        header.text = (if (collapsed) "▸" else "▾") + " 💭 размышления"
+        header.text = (if (collapsed) "▸" else "▾") + " 💭 " + t("thoughts.title")
         revalidate(); repaint()
       }
     })

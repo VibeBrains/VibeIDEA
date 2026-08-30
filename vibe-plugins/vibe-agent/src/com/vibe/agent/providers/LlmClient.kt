@@ -1,6 +1,8 @@
 // Copyright 2026 VibeBrains. Use of this source code is governed by the Apache 2.0 license.
 package com.vibe.agent.providers
 
+import com.vibe.agent.i18n.VibeI18n.t
+
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
@@ -323,7 +325,7 @@ class LlmClient(private val http: HttpClient = HttpClient.newBuilder().connectTi
     fun forCatalog(): LlmClient =
       LlmClient(HttpClient.newBuilder().connectTimeout(Duration.ofMillis(CATALOG_TIMEOUT_MS)).build())
 
-    const val STOPPED_BY_USER = "остановлено пользователем"
+    val STOPPED_BY_USER: String get() = t("common.stoppedByUser")
     /** Default per-request timeout when a provider does not set `timeoutMs` (10 min). */
     const val DEFAULT_REQUEST_TIMEOUT_MS = 600_000L
     /** Model catalog timeout: short on purpose — a cached catalog is served meanwhile, so a

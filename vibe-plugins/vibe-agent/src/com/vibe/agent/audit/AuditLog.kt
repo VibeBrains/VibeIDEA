@@ -1,6 +1,8 @@
 // Copyright 2026 VibeBrains. Use of this source code is governed by the Apache 2.0 license.
 package com.vibe.agent.audit
 
+import com.vibe.agent.i18n.VibeI18n.t
+
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.StandardOpenOption
@@ -31,7 +33,7 @@ class AuditLog(
   /** Every file touch (append, read, export, delete) takes this monitor so the log is never torn. */
   private val ioLock = Any()
   @Volatile private var warned = false
-  /** Latched off after a write failure — the warning promises "отключён до перезапуска", so honour it. */
+  /** Latched off after a write failure — the warning promises "off until restart", so honour it. */
   @Volatile private var disabled = false
 
   fun append(event: AuditEvent) {
@@ -88,7 +90,7 @@ class AuditLog(
         disabled = true
         if (!warned) {
           warned = true
-          onWarning("аудит: запись не удалась (${e.message}) — журнал отключён до перезапуска")
+          onWarning(t("audit.writeFailed", "reason" to e.message))
         }
       }
     }

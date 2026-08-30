@@ -1,6 +1,8 @@
 // Copyright 2026 VibeBrains. Use of this source code is governed by the Apache 2.0 license.
 package com.vibe.agent.acp
 
+import com.vibe.agent.i18n.VibeI18n.t
+
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.contentOrNull
@@ -108,7 +110,7 @@ class ToolCallRegistry {
       rawInput?.let { r -> it.rawInput = r }
     } ?: ToolCall(
       id = id,
-      title = title ?: name ?: kind ?: "инструмент",
+      title = title ?: name ?: kind ?: t("tool.fallbackTitle"),
       kind = kind,
       status = status,
       toolName = name,
@@ -125,7 +127,7 @@ class ToolCallRegistry {
     val call = byId.getOrPut(id) {
       ToolCall(
         id = id,
-        title = ToolCall.normalizeTitle(update["title"]?.jsonPrimitive?.contentOrNull) ?: "инструмент",
+        title = ToolCall.normalizeTitle(update["title"]?.jsonPrimitive?.contentOrNull) ?: t("tool.fallbackTitle"),
         kind = ToolCall.normalizeKind(update["kind"]?.jsonPrimitive?.contentOrNull),
         status = ToolCall.STATUS_IN_PROGRESS,
         toolName = update["name"]?.jsonPrimitive?.contentOrNull,
