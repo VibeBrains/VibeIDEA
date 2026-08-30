@@ -36,6 +36,15 @@ class VibeAgentGateway {
      * the decision away and spend a request they did not ask for.
      */
     fun putIntoComposer(text: String) {}
+
+    /**
+     * Puts an image into the composer — a preview screenshot, for instance.
+     *
+     * Separate from the text path because an image is not text with a picture in it: it is attached
+     * as an attachment, counted against the vision capability of the target and dropped for a model
+     * that cannot see.
+     */
+    fun putImageIntoComposer(name: String, mimeType: String, bytes: ByteArray) {}
   }
 
   private val targets = Collections.synchronizedList(ArrayList<Target>())
@@ -73,6 +82,12 @@ class VibeAgentGateway {
   fun putIntoComposer(text: String): Boolean {
     val target = targets.toList().lastOrNull() ?: return false
     target.putIntoComposer(text)
+    return true
+  }
+
+  fun putImageIntoComposer(name: String, mimeType: String, bytes: ByteArray): Boolean {
+    val target = targets.toList().lastOrNull() ?: return false
+    target.putImageIntoComposer(name, mimeType, bytes)
     return true
   }
 

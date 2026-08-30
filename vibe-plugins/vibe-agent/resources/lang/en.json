@@ -1126,5 +1126,15 @@
   "settings.agent.hint.offline": "Nothing leaves the machine: no cloud model requests, no embeddings. Local providers (localhost) keep working. This is not about traffic but about a promise: some projects cannot let file contents leave the machine, and such a promise must be kept by a mechanism rather than by memory — so the check sits at the single door out, not in the interface.",
   "rag.offline": "offline mode is on: embeddings send file content outside, so the index is not built. A local embedding model (ollama/lmstudio) still works.",
   "settings.agent.reasoning": "Reasoning depth",
-  "settings.agent.hint.reasoning": "off / low / medium / high. Every vendor named this differently: Anthropic takes a token budget, OpenAI a word, Gemini its own budget. One slider is honest only if translated into each dialect: reasoning_effort sent to Anthropic does nothing, silently, and the user concludes the setting is decorative. The budget always leaves room for the answer — a budget equal to max_tokens is rejected by the API, and that looks like «the model says nothing»."
+  "settings.agent.hint.reasoning": "off / low / medium / high. Every vendor named this differently: Anthropic takes a token budget, OpenAI a word, Gemini its own budget. One slider is honest only if translated into each dialect: reasoning_effort sent to Anthropic does nothing, silently, and the user concludes the setting is decorative. The budget always leaves room for the answer — a budget equal to max_tokens is rejected by the API, and that looks like «the model says nothing».",
+  "design.action.shot": "screenshot to the chat",
+  "design.shot.name": "preview.png",
+  "design.status.shotSent": "the preview screenshot was attached to the message",
+  "design.status.shotEmpty": "the preview is empty — nothing to capture",
+  "design.status.shotNoPanel": "the chat panel is not open — nowhere to put the screenshot",
+  "bg.started": "▶️ in the background: {command} — the turn does not wait; the ending will be reported",
+  "bg.finished": "✅ the background command finished in {seconds}s: {command}",
+  "bg.failed": "⛔ the background command did not start: {command} — {reason}",
+  "bg.title": "output tail: {command}",
+  "slash.command.bg": "Run a command in the background and get a line when it ends"
 }

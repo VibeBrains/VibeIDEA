@@ -260,6 +260,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
       handleMeasureCommand(message) -> true
       handleLearnCommand(message) -> true
       handleDeployCommand(message) -> true
+      handleBackgroundCommand(message) -> true
       sessionCeilingReached(message.text) -> false
       handleWatchCommand(message) -> true
       else -> startTurn(message)
@@ -682,6 +683,44 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     override val empty: String get() = t("trace.empty")
     override val ms: String get() = t("trace.ms")
     override val failureMark: String get() = "✖"
+  }
+
+  /**
+   * `/bg <команда>` — a long command that reports back when it is done.
+   *
+   * A build, a test suite, a watcher: waiting for them blocks the turn, and starting them and
+   * forgetting means the result is discovered by accident half an hour later. Here the command runs
+   * outside the turn and its ending arrives as a line in the feed — with the tail of the output,
+   * because «упало» without the last twenty lines sends one back to the terminal anyway.
+   */
+  private fun handleBackgroundCommand(message: ComposedMessage): Boolean {
+    val text = message.text.trim()
+    if (!text.startsWith("$BG_COMMAND ")) return false
+    val command = text.removePrefix(BG_COMMAND).trim()
+    if (command.isEmpty()) return false
+    userBubble(text)
+    systemLine(t("bg.started", "command" to command))
+    ApplicationManager.getApplication().executeOnPooledThread {
+      val started = System.currentTimeMillis()
+      val output = runCatching { runShell(command) }.getOrElse { error ->
+        systemLine(t("bg.failed", "command" to command, "reason" to error.message))
+        return@executeOnPooledThread
+      }
+      val seconds = (System.currentTimeMillis() - started) / 1000
+      val filtered = com.vibe.agent.context.ContextFilter.filter(
+        output, com.vibe.agent.context.ContextFilter.modeOf(VibeAgentSettings.contextFilterMode),
+        repeatMark = { count -> t("filter.repeat", "count" to count) },
+      )
+      val tail = filtered.text.lines().takeLast(BG_TAIL_LINES).joinToString("\n")
+      systemLine(t("bg.finished", "command" to command, "seconds" to seconds))
+      SwingUtilities.invokeLater {
+        val console = TerminalConsole(t("bg.title", "command" to command.take(60)))
+        console.append(tail)
+        messages.add(console)
+        revalidateScroll()
+      }
+    }
+    return true
   }
 
   /**
@@ -1322,6 +1361,14 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
   private val externalRuns = java.util.concurrent.ConcurrentHashMap<String, String>()
 
   override val projectName: String get() = project.name
+
+  override fun putImageIntoComposer(name: String, mimeType: String, bytes: ByteArray) {
+    SwingUtilities.invokeLater {
+      if (disposed) return@invokeLater
+      composer.attachImages(listOf(ImageAttachment(name, mimeType, bytes)))
+      com.intellij.openapi.wm.ToolWindowManager.getInstance(project).getToolWindow("VibeAgent")?.activate(null)
+    }
+  }
 
   override fun putIntoComposer(text: String) {
     SwingUtilities.invokeLater {
@@ -3202,6 +3249,10 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     const val MEASURE_COMMAND = "/measure"
     const val LEARN_COMMAND = "/learn"
     const val DEPLOY_COMMAND = "/deploy"
+    const val BG_COMMAND = "/bg"
+
+    /** Enough to see what failed; the rest is in the terminal for whoever wants it. */
+    const val BG_TAIL_LINES = 40
     const val MEASURE_TIMEOUT_SEC = 900L
     const val INDEX_COMMAND = "/index"
     const val INDEX_PROGRESS_STEP = 25

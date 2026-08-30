@@ -77,6 +77,7 @@ class DesignPreviewPanel(private val project: Project) : JPanel(BorderLayout()),
       add(ActionLink(t("design.action.desktop")) { setViewportWidth(0) })
       add(ActionLink(t("design.action.onPhone")) { showLanAddress() })
       add(ActionLink(t("design.action.errors")) { sendPageErrors() })
+      add(ActionLink(t("design.action.shot")) { sendScreenshot() })
       add(com.intellij.ui.components.JBCheckBox(t("design.action.liveReload")).also { liveReload = it })
     }
     val header = JPanel().apply {
@@ -158,6 +159,40 @@ class DesignPreviewPanel(private val project: Project) : JPanel(BorderLayout()),
     revalidate()
     repaint()
     status.text = if (width <= 0) t("design.status.desktop") else t("design.status.width", "width" to width)
+  }
+
+  /**
+   * A picture of the preview, into the chat.
+   *
+   * Describing a layout in words costs more attention than looking at it, and the description is
+   * where the mistakes come from — «кнопка съехала» means nothing without the screen. The image is
+   * attached rather than sent: what to ask about it is the person's decision.
+   */
+  private fun sendScreenshot() {
+    val component = browser?.component ?: return
+    if (component.width <= 0 || component.height <= 0) {
+      status.text = t("design.status.shotEmpty")
+      return
+    }
+    val image = java.awt.image.BufferedImage(component.width, component.height, java.awt.image.BufferedImage.TYPE_INT_RGB)
+    val graphics = image.createGraphics()
+    try {
+      component.paint(graphics)
+    }
+    finally {
+      graphics.dispose()
+    }
+    val bytes = java.io.ByteArrayOutputStream().use { out ->
+      javax.imageio.ImageIO.write(image, "png", out)
+      out.toByteArray()
+    }
+    if (bytes.isEmpty()) {
+      status.text = t("design.status.shotEmpty")
+      return
+    }
+    val delivered = com.vibe.agent.http.VibeAgentGateway.getInstance()
+      .putImageIntoComposer(t("design.shot.name"), "image/png", bytes)
+    status.text = if (delivered) t("design.status.shotSent") else t("design.status.shotNoPanel")
   }
 
   /** The address of this preview as seen from a phone on the same network. */

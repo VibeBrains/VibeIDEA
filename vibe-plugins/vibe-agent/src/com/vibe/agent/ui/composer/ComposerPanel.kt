@@ -397,6 +397,9 @@ class ComposerPanel(
     Attachments.choose(project, this) { picked -> addImages(picked) }
   }
 
+  /** Public door for images that come from elsewhere: a preview screenshot, a drop from a tool. */
+  fun attachImages(picked: List<ImageAttachment>) = addImages(picked)
+
   private fun addImages(picked: List<ImageAttachment>) {
     if (picked.isEmpty()) return
     if (!imagesAllowed) {
