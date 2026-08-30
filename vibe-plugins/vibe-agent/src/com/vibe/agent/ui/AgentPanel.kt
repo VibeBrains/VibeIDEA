@@ -255,6 +255,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
       handleHandoffCommand(message) -> true
       handleTraceCommand(message) -> true
       handleHelpCommand(message) -> true
+      handleFindCommand(message) -> true
       sessionCeilingReached(message.text) -> false
       handleWatchCommand(message) -> true
       else -> startTurn(message)
@@ -677,6 +678,58 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     override val empty: String get() = t("trace.empty")
     override val ms: String get() = t("trace.ms")
     override val failureMark: String get() = "✖"
+  }
+
+  /**
+   * `/find <запрос>` — search by MEANING, and `/index` to build the index.
+   *
+   * Next to grep and the code graph this answers the third question: «где мы делаем то же самое
+   * другими словами». That is the question people have in an unfamiliar project, and it is exactly
+   * the one a text search cannot answer.
+   */
+  private fun handleFindCommand(message: ComposedMessage): Boolean {
+    val text = message.text.trim()
+    val isIndex = text == INDEX_COMMAND
+    if (!isIndex && !text.startsWith("$FIND_COMMAND ")) return false
+    userBubble(text)
+    val rag = com.vibe.agent.rag.RagIndex.getInstance(project)
+    if (isIndex) {
+      systemLine(t("rag.indexing"))
+      ApplicationManager.getApplication().executeOnPooledThread {
+        rag.rebuild { progress -> if (progress.indexed % INDEX_PROGRESS_STEP == 0) systemLine(
+          t("rag.progress", "indexed" to progress.indexed, "total" to progress.total)) }
+          .onSuccess { systemLine(t("rag.indexed", "files" to it.indexed, "skipped" to it.skipped, "chunks" to rag.size())) }
+          .onFailure { systemLine(ragError(it)) }
+      }
+      return true
+    }
+    val query = text.removePrefix(FIND_COMMAND).trim()
+    ApplicationManager.getApplication().executeOnPooledThread {
+      rag.search(query)
+        .onFailure { systemLine(ragError(it)) }
+        .onSuccess { hits ->
+          if (hits.isEmpty()) {
+            systemLine(t("rag.nothing"))
+            return@onSuccess
+          }
+          systemLine(t("rag.found", "count" to hits.size))
+          val block = hits.joinToString("\n\n") { hit ->
+            "<context ref=\"" + hit.chunk.path + ":" + hit.chunk.fromLine + "-" + hit.chunk.toLine + "\">\n" +
+              hit.chunk.text + "\n</context>"
+          }
+          SwingUtilities.invokeLater {
+            startTurn(ComposedMessage(text = query + "\n\n" + t("rag.header") + "\n" + block))
+          }
+        }
+    }
+    return true
+  }
+
+  private fun ragError(error: Throwable): String = when (error.message) {
+    com.vibe.agent.rag.RagIndex.NOT_CONFIGURED -> t("rag.notConfigured")
+    com.vibe.agent.rag.RagIndex.NOT_INDEXED -> t("rag.notIndexed")
+    com.vibe.agent.rag.RagIndex.NO_PROVIDER -> t("rag.noProvider")
+    else -> t("rag.failed", "reason" to error.message)
   }
 
   /**
@@ -2888,6 +2941,9 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     const val HANDOFF_COMMAND = "/handoff"
     const val TRACE_COMMAND = "/trace"
     const val HELP_COMMAND = "/help"
+    const val FIND_COMMAND = "/find"
+    const val INDEX_COMMAND = "/index"
+    const val INDEX_PROGRESS_STEP = 25
 
     /** One manual is pages long; two of them plus the question still fit a modest window. */
     const val HELP_DOC_CHARS = 20_000

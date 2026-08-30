@@ -135,6 +135,7 @@ object VibeAgentSettings {
   private const val KEY_LLM_PROXY = "vibe.agent.llmProxyUrl"
   private const val KEY_DIGEST_TIME = "vibe.agent.digestTime"
   private const val KEY_DOCS_FOLDER = "vibe.agent.docsFolder"
+  private const val KEY_EMBEDDING_MODEL = "vibe.agent.embeddingModel"
   private const val KEY_FAILOVER = "vibe.agent.failoverChain"
 
   /** Off by default: a ceiling nobody set must not become a wall in the middle of real work. */
@@ -291,6 +292,11 @@ object VibeAgentSettings {
   /** Прокси только для запросов к моделям; пусто — прямое соединение. */
   /** `ЧЧ:ММ` по местному времени; пусто — сводка выключена. */
   /** Папка документации проекта для панели «Документы». */
+  /** `провайдер/модель` для эмбеддингов; пусто — поиск по смыслу выключен. */
+  var embeddingModel: String
+    get() = props.getValue(KEY_EMBEDDING_MODEL, "")
+    set(value) = props.setValue(KEY_EMBEDDING_MODEL, value.trim(), "")
+
   var docsFolder: String
     get() = props.getValue(KEY_DOCS_FOLDER, "docs").ifBlank { "docs" }
     set(value) = props.setValue(KEY_DOCS_FOLDER, value.trim(), "docs")
