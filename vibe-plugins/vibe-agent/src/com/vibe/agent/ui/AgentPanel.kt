@@ -258,6 +258,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
       handleFindCommand(message) -> true
       handleSimplifyCommand(message) -> true
       handleMeasureCommand(message) -> true
+      handleLearnCommand(message) -> true
       sessionCeilingReached(message.text) -> false
       handleWatchCommand(message) -> true
       else -> startTurn(message)
@@ -680,6 +681,59 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     override val empty: String get() = t("trace.empty")
     override val ms: String get() = t("trace.ms")
     override val failureMark: String get() = "✖"
+  }
+
+  /**
+   * `/learn <навык>` — a lesson that remembers where the last one stopped.
+   *
+   * An ordinary chat teaches badly for two structural reasons: it starts from zero every time, so
+   * the tenth lesson repeats the first, and it asks nothing first, so it teaches an average person
+   * an average version of the topic — which the internet already does for free. Hence the mission
+   * gate and the stored progress.
+   */
+  private fun handleLearnCommand(message: ComposedMessage): Boolean {
+    val text = message.text.trim()
+    if (!text.startsWith("$LEARN_COMMAND ") && text != LEARN_COMMAND) return false
+    val skill = text.removePrefix(LEARN_COMMAND).trim()
+    val store = com.vibe.agent.learning.LearningStore.getInstance(project)
+    if (skill.isEmpty()) {
+      val known = store.list()
+      systemLine(if (known.isEmpty()) t("learn.usage") else t("learn.known", "skills" to known.joinToString(", ")))
+      return true
+    }
+    userBubble(text)
+    val progress = store.load(skill)
+    val missing = com.vibe.agent.learning.LearningPlan.missingMissionParts(progress.mission)
+    if (missing.isNotEmpty()) {
+      // The gate: no lesson until the three questions are answered. Asked as questions in the chat,
+      // because a form is something people close.
+      systemLine(t("learn.missionGate"))
+      return startTurn(ComposedMessage(text = t("learn.missionPrompt", "skill" to skill,
+                                                "questions" to missing.joinToString("\n") { missionQuestion(it) })))
+    }
+    val resources = store.resources()
+    val prompt = com.vibe.agent.learning.LearningPlan.lessonPrompt(progress, resources, learningLabels())
+    systemLine(t("learn.lesson", "skill" to skill, "lessons" to progress.lessonsDone,
+                 "difficulty" to progress.difficulty.name.lowercase()))
+    return startTurn(ComposedMessage(text = prompt))
+  }
+
+  private fun missionQuestion(part: String): String = when (part) {
+    com.vibe.agent.learning.LearningPlan.WHY -> t("learn.question.why")
+    com.vibe.agent.learning.LearningPlan.ALREADY -> t("learn.question.already")
+    else -> t("learn.question.result")
+  }
+
+  private fun learningLabels() = object : com.vibe.agent.learning.LearningPlan.Labels {
+    override val role: String get() = t("learn.role")
+    override val sources: String get() = t("learn.sources")
+    override val noSources: String get() = t("learn.noSources")
+    override val format: String get() = t("learn.format")
+    override fun skill(skill: String) = t("learn.skill", "skill" to skill)
+    override fun mission(why: String, already: String, result: String) =
+      t("learn.mission", "why" to why, "already" to already, "result" to result)
+    override fun progress(lessons: Int, difficulty: String, lastLesson: String?) =
+      t("learn.progress", "lessons" to lessons, "difficulty" to difficulty, "last" to (lastLesson ?: "—"))
   }
 
   /**
@@ -3074,6 +3128,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     const val FIND_COMMAND = "/find"
     const val SIMPLIFY_COMMAND = "/simplify"
     const val MEASURE_COMMAND = "/measure"
+    const val LEARN_COMMAND = "/learn"
     const val MEASURE_TIMEOUT_SEC = 900L
     const val INDEX_COMMAND = "/index"
     const val INDEX_PROGRESS_STEP = 25

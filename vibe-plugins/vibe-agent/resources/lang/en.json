@@ -1024,5 +1024,21 @@
   "telegram.token.present": "a token is already saved",
   "telegram.token.absent": "no token yet",
   "telegram.token.saved": "The token was saved and the bridge started. Write to the bot — the IDE will ask permission for that chat.",
-  "telegram.token.cleared": "The token was removed and the bridge stopped."
+  "telegram.token.cleared": "The token was removed and the bridge stopped.",
+  "learn.usage": "a skill name is required after /learn, e.g. /learn kotlin. Progress lives in .vibe/learning/, sources in RESOURCES.md.",
+  "learn.known": "already being learned: {skills}. Continue with /learn <skill>.",
+  "learn.missionGate": "🎓 the mission comes first: without it the lesson is an average retelling of the topic — the one the internet already gives away",
+  "learn.missionPrompt": "I want to learn: {skill}. Ask me these questions one at a time and wait for the answers before teaching:\n{questions}",
+  "learn.question.why": "— why this skill is needed right now",
+  "learn.question.already": "— what I can already do in this area",
+  "learn.question.result": "— what the real result looks like",
+  "learn.lesson": "🎓 lesson on «{skill}»: {lessons} done, difficulty {difficulty}",
+  "learn.role": "You are a teacher. Teach from the sources below rather than from memory: if what is needed is not there, say so and ask where to get it — the learner’s gap costs more than a smooth answer.",
+  "learn.sources": "Sources (teach only from these):",
+  "learn.noSources": "The project has no sources: say so plainly and suggest what to add to RESOURCES.md.",
+  "learn.format": "Run one lesson: a short explanation, a worked example from the sources, and 3–5 check questions. At the end, ask how many answers were right — that decides the difficulty of the next lesson.",
+  "learn.skill": "Skill: {skill}",
+  "learn.mission": "The learner’s mission: why now — {why}; what they can already do — {already}; the result they need — {result}",
+  "learn.progress": "Lessons done: {lessons}, difficulty: {difficulty}, previous lesson: {last}",
+  "slash.command.learn": "Learn with progress kept: mission, lessons, difficulty from results"
 }
