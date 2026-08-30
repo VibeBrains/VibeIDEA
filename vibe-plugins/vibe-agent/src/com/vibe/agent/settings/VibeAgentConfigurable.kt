@@ -35,6 +35,12 @@ class VibeAgentConfigurable : Configurable, Configurable.NoScroll {
   private var metricPattern: com.intellij.ui.components.JBTextField? = null
   private var offlineBox: com.intellij.ui.components.JBCheckBox? = null
   private var reasoningLevel: com.intellij.openapi.ui.ComboBox<String>? = null
+  private var docsFolderField: com.intellij.ui.components.JBTextField? = null
+  private var watchLangs: com.intellij.ui.components.JBTextField? = null
+  private var watchFramesSpinner: JBIntSpinner? = null
+  private var watchHeightSpinner: JBIntSpinner? = null
+  private var telegramProxyField: com.intellij.ui.components.JBTextField? = null
+  private var telegramProjectField: com.intellij.ui.components.JBTextField? = null
   private var metricDirection: com.intellij.openapi.ui.ComboBox<String>? = null
   private var failoverField: com.intellij.ui.components.JBTextField? = null
   private var verifyMode: ComboBox<String>? = null
@@ -65,6 +71,14 @@ class VibeAgentConfigurable : Configurable, Configurable.NoScroll {
   override fun createComponent(): JComponent {
     val hooks = JBCheckBox(t("settings.agent.hooks"), VibeAgentSettings.hooksEnabled).also { hooksEnabled = it }
     val audit = JBCheckBox(t("settings.agent.audit"), VibeAgentSettings.auditEnabled).also { auditEnabled = it }
+    // Настройки, до которых раньше нельзя было дотянуться иначе как правкой properties: настройка,
+    // которую нельзя открыть, — это настройка, которой нет.
+    val docsFolder = com.intellij.ui.components.JBTextField(VibeAgentSettings.docsFolder, 16).also { docsFolderField = it }
+    val watchLanguages = com.intellij.ui.components.JBTextField(VibeAgentSettings.watchSubtitleLanguages, 16).also { watchLangs = it }
+    val watchFrames = JBIntSpinner(VibeAgentSettings.watchMaxFrames, VibeAgentSettings.MIN_WATCH_MAX_FRAMES, VibeAgentSettings.MAX_WATCH_MAX_FRAMES).also { watchFramesSpinner = it }
+    val watchHeight = JBIntSpinner(VibeAgentSettings.watchFrameHeight, VibeAgentSettings.MIN_WATCH_FRAME_HEIGHT, VibeAgentSettings.MAX_WATCH_FRAME_HEIGHT).also { watchHeightSpinner = it }
+    val telegramProxy = com.intellij.ui.components.JBTextField(VibeAgentSettings.telegramProxy, 24).also { telegramProxyField = it }
+    val telegramProject = com.intellij.ui.components.JBTextField(VibeAgentSettings.telegramProject, 24).also { telegramProjectField = it }
     val reasoning = com.intellij.openapi.ui.ComboBox(arrayOf("off", "low", "medium", "high")).also {
       it.selectedItem = VibeAgentSettings.reasoningLevel
       reasoningLevel = it
@@ -198,6 +212,15 @@ class VibeAgentConfigurable : Configurable, Configurable.NoScroll {
       .addComponent(section(t("settings.agent.section.connection")))
       .addLabeledComponent(t("settings.agent.handshake"), handshake)
       .addComponent(hint(t("settings.agent.hint.handshakeHint")))
+      .addComponent(section(t("settings.agent.section.more")))
+      .addLabeledComponent(t("settings.agent.docsFolder"), docsFolder)
+      .addLabeledComponent(t("settings.agent.watchLanguages"), watchLanguages)
+      .addLabeledComponent(t("settings.agent.watchFrames"), watchFrames)
+      .addLabeledComponent(t("settings.agent.watchHeight"), watchHeight)
+      .addComponent(hint(t("settings.agent.hint.watch")))
+      .addLabeledComponent(t("settings.agent.telegramProject"), telegramProject)
+      .addLabeledComponent(t("settings.agent.telegramProxy"), telegramProxy)
+      .addComponent(hint(t("settings.agent.hint.telegram")))
       .addComponentFillVertically(JPanel(), 0)
       .panel.apply { border = JBUI.Borders.empty(8) }
       // NoScroll only removes the platform's wrapper — the scrolling itself is ours, or the page
@@ -229,6 +252,12 @@ class VibeAgentConfigurable : Configurable, Configurable.NoScroll {
     (metricPattern?.text?.trim() ?: VibeAgentSettings.metricPattern) != VibeAgentSettings.metricPattern ||
     (offlineBox?.isSelected ?: VibeAgentSettings.offline) != VibeAgentSettings.offline ||
     (reasoningLevel?.selectedItem as? String ?: VibeAgentSettings.reasoningLevel) != VibeAgentSettings.reasoningLevel ||
+    (docsFolderField?.text?.trim() ?: VibeAgentSettings.docsFolder) != VibeAgentSettings.docsFolder ||
+    (watchLangs?.text?.trim() ?: VibeAgentSettings.watchSubtitleLanguages) != VibeAgentSettings.watchSubtitleLanguages ||
+    (watchFramesSpinner?.number ?: VibeAgentSettings.watchMaxFrames) != VibeAgentSettings.watchMaxFrames ||
+    (watchHeightSpinner?.number ?: VibeAgentSettings.watchFrameHeight) != VibeAgentSettings.watchFrameHeight ||
+    (telegramProxyField?.text?.trim() ?: VibeAgentSettings.telegramProxy) != VibeAgentSettings.telegramProxy ||
+    (telegramProjectField?.text?.trim() ?: VibeAgentSettings.telegramProject) != VibeAgentSettings.telegramProject ||
     (metricDirection?.selectedItem as? String ?: VibeAgentSettings.metricDirection) != VibeAgentSettings.metricDirection ||
     (failoverField?.text?.trim() ?: VibeAgentSettings.failoverChain) != VibeAgentSettings.failoverChain ||
     (verifyMode?.item ?: VibeAgentSettings.verifyMode) != VibeAgentSettings.verifyMode ||
@@ -269,6 +298,12 @@ class VibeAgentConfigurable : Configurable, Configurable.NoScroll {
     metricPattern?.let { VibeAgentSettings.metricPattern = it.text }
     offlineBox?.let { VibeAgentSettings.offline = it.isSelected }
     (reasoningLevel?.selectedItem as? String)?.let { VibeAgentSettings.reasoningLevel = it }
+    docsFolderField?.let { VibeAgentSettings.docsFolder = it.text }
+    watchLangs?.let { VibeAgentSettings.watchSubtitleLanguages = it.text }
+    watchFramesSpinner?.let { VibeAgentSettings.watchMaxFrames = it.number }
+    watchHeightSpinner?.let { VibeAgentSettings.watchFrameHeight = it.number }
+    telegramProxyField?.let { VibeAgentSettings.telegramProxy = it.text }
+    telegramProjectField?.let { VibeAgentSettings.telegramProject = it.text }
     (metricDirection?.selectedItem as? String)?.let { VibeAgentSettings.metricDirection = it }
     failoverField?.let { VibeAgentSettings.failoverChain = it.text }
     verifyMode?.let { VibeAgentSettings.verifyMode = it.item }
@@ -318,6 +353,12 @@ class VibeAgentConfigurable : Configurable, Configurable.NoScroll {
     metricPattern?.text = VibeAgentSettings.metricPattern
     offlineBox?.isSelected = VibeAgentSettings.offline
     reasoningLevel?.selectedItem = VibeAgentSettings.reasoningLevel
+    docsFolderField?.text = VibeAgentSettings.docsFolder
+    watchLangs?.text = VibeAgentSettings.watchSubtitleLanguages
+    watchFramesSpinner?.number = VibeAgentSettings.watchMaxFrames
+    watchHeightSpinner?.number = VibeAgentSettings.watchFrameHeight
+    telegramProxyField?.text = VibeAgentSettings.telegramProxy
+    telegramProjectField?.text = VibeAgentSettings.telegramProject
     metricDirection?.selectedItem = VibeAgentSettings.metricDirection
     failoverField?.text = VibeAgentSettings.failoverChain
     verifyMode?.item = VibeAgentSettings.verifyMode

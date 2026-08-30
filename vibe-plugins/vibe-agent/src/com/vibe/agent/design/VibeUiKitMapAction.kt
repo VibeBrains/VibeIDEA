@@ -55,7 +55,7 @@ class VibeUiKitMapAction : AnAction({ t("uikit.action") }) {
 
 
   private fun labels() = object : UiKitMap.Labels {
-    override val title: String get() = t("uikit.doc.title")
+    override val title: String get() = t("uikit.title")
     override val preamble: String get() = t("uikit.doc.preamble")
     override val tokens: String get() = t("uikit.doc.tokens")
     override val classes: String get() = t("uikit.doc.classes")

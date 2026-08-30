@@ -2745,7 +2745,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     /** Raw streamed text lives here; on finish it may be re-rendered into prose + code blocks. */
     val text = proseArea()
     private var fullText = ""
-    val meta = metaLabel(t("chat.agentMeta", "time" to now()), right = false)
+    val meta = metaLabel(t("chat.role.agentAt", "time" to now()), right = false)
     private val metaRow = JPanel(BorderLayout()).apply {
       isOpaque = false
       add(meta, BorderLayout.WEST)

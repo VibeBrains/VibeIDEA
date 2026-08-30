@@ -90,7 +90,7 @@ class VibeInlineEditAction : AnAction({ t("inline.action") }) {
     val before = document.text
     val after = before.substring(0, start) + newCode + before.substring(end)
     if (!com.vibe.agent.acp.WritePreview.confirm(project, path, before, after)) return
-    WriteCommandAction.runWriteCommandAction(project, t("inline.command"), null, Runnable {
+    WriteCommandAction.runWriteCommandAction(project, t("inline.title"), null, Runnable {
       document.replaceString(start, end, newCode)
     })
   }
