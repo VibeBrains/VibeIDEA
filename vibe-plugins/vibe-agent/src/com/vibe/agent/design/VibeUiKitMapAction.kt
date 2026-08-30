@@ -25,7 +25,7 @@ class VibeUiKitMapAction : AnAction({ t("uikit.action") }) {
     val project = e.project ?: return
     val base = project.basePath ?: return
     ApplicationManager.getApplication().executeOnPooledThread {
-      val files = readSources(project, Path.of(base), base)
+      val files = com.vibe.agent.context.ProjectFiles.read(project, SOURCE_EXTENSIONS)
       val map = UiKitMap.scan(files)
       ApplicationManager.getApplication().invokeLater {
         if (map.isEmpty) {
@@ -53,20 +53,6 @@ class VibeUiKitMapAction : AnAction({ t("uikit.action") }) {
     }
   }
 
-  private fun readSources(project: Project, root: Path, base: String): Map<String, String> = runCatching {
-    // The project is passed in rather than remembered in a field: update() is not guaranteed to run
-    // before the action does, and a remembered null would throw exactly when someone is in a hurry.
-    val ignore = com.vibe.agent.context.ProjectContextService.getInstance(project).ignore()
-    Files.walk(root).use { stream ->
-      stream.filter { Files.isRegularFile(it) }.toList()
-    }.mapNotNull { path ->
-      val relative = Path.of(base).relativize(path).toString().replace('\\', '/')
-      val lower = relative.lowercase()
-      val interesting = SOURCE_EXTENSIONS.any { lower.endsWith(it) }
-      if (!interesting || ignore.isIgnored(relative)) null
-      else relative to runCatching { Files.readString(path) }.getOrDefault("")
-    }.toMap()
-  }.getOrDefault(emptyMap())
 
   private fun labels() = object : UiKitMap.Labels {
     override val title: String get() = t("uikit.doc.title")
@@ -80,6 +66,6 @@ class VibeUiKitMapAction : AnAction({ t("uikit.action") }) {
 
   private companion object {
     const val UI_KIT_PATH = ".vibe/design/uiKit.md"
-    val SOURCE_EXTENSIONS = listOf(".css", ".scss", ".less", ".tsx", ".jsx", ".ts", ".js")
+    val SOURCE_EXTENSIONS = setOf("css", "scss", "less", "tsx", "jsx", "ts", "js")
   }
 }

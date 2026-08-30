@@ -1129,5 +1129,6 @@
   "runs.compare.originalFaster": "быстрее был первый прогон",
   "runs.compare.same": "по времени поровну",
   "runs.compare.sameOutcome": "исход тот же",
-  "runs.compare.otherOutcome": "исход другой"
+  "runs.compare.otherOutcome": "исход другой",
+  "docs.refresh": "обновить"
 }

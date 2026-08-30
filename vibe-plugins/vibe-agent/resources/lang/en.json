@@ -1129,5 +1129,6 @@
   "runs.compare.originalFaster": "the first run was faster",
   "runs.compare.same": "the same time",
   "runs.compare.sameOutcome": "same outcome",
-  "runs.compare.otherOutcome": "different outcome"
+  "runs.compare.otherOutcome": "different outcome",
+  "docs.refresh": "refresh"
 }

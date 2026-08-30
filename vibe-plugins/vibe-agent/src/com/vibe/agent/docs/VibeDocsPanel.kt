@@ -39,7 +39,14 @@ class VibeDocsPanel(private val project: Project) : JPanel(BorderLayout()) {
 
   init {
     border = JBUI.Borders.empty(4)
-    add(summary, BorderLayout.NORTH)
+    val header = JPanel(java.awt.BorderLayout()).apply {
+      isOpaque = false
+      add(summary, java.awt.BorderLayout.CENTER)
+      // The panel used to read the tree only when it was opened: after writing a document one had
+      // to close and reopen it to see the link stop being broken.
+      add(com.intellij.ui.components.ActionLink(t("docs.refresh")) { reload() }, java.awt.BorderLayout.EAST)
+    }
+    add(header, BorderLayout.NORTH)
     add(VibeScroll.pane(list), BorderLayout.CENTER)
     list.addListSelectionListener {
       if (it.valueIsAdjusting) return@addListSelectionListener
@@ -52,8 +59,12 @@ class VibeDocsPanel(private val project: Project) : JPanel(BorderLayout()) {
   fun reload() {
     val base = project.basePath ?: return
     ApplicationManager.getApplication().executeOnPooledThread {
-      val root = Path.of(base, VibeAgentSettings.docsFolder)
-      val files = readMarkdown(root, base)
+      // The same walk as the ui-kit map and the semantic index — and, unlike this panel's own
+      // earlier version, one that honours `.vibe/ignore`: a file hidden from the agent had no
+      // business being offered here.
+      val prefix = VibeAgentSettings.docsFolder.trim('/')
+      val files = com.vibe.agent.context.ProjectFiles.read(project, setOf("md", "mdx"))
+        .filterKeys { prefix.isEmpty() || it.startsWith("$prefix/") }
       val analysis = DocsIndex.analyse(files)
       ApplicationManager.getApplication().invokeLater {
         model.clear()
@@ -72,19 +83,6 @@ class VibeDocsPanel(private val project: Project) : JPanel(BorderLayout()) {
     }
   }
 
-  private fun readMarkdown(root: Path, base: String): Map<String, String> {
-    if (!Files.isDirectory(root)) return emptyMap()
-    return runCatching {
-      Files.walk(root).use { stream ->
-        stream.filter { Files.isRegularFile(it) && (it.toString().endsWith(".md") || it.toString().endsWith(".mdx")) }
-          .toList()
-          .associate { path ->
-            Path.of(base).relativize(path).toString().replace('\\', '/') to
-              runCatching { Files.readString(path) }.getOrDefault("")
-          }
-      }
-    }.getOrDefault(emptyMap())
-  }
 
   private fun openDocument(relative: String) {
     val base = project.basePath ?: return

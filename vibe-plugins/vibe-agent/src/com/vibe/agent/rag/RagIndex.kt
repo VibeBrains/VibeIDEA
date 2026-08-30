@@ -54,14 +54,12 @@ class RagIndex(private val project: Project) {
   fun rebuild(onProgress: (Progress) -> Unit): Result<Progress> = runCatching {
     ensureLoaded()
     val base = project.basePath ?: error(NO_PROJECT)
-    val ignore = com.vibe.agent.context.ProjectContextService.getInstance(project).ignore()
     val root = Path.of(base)
-    val files = Files.walk(root).use { stream ->
-      stream.filter { Files.isRegularFile(it) }.toList()
-    }.mapNotNull { path ->
-      val relative = root.relativize(path).toString().replace('\\', '/')
-      if (!Chunker.isIndexable(relative) || ignore.isIgnored(relative)) null else relative to path
-    }
+    // One walk for the whole product: this used to have its own, and the three copies had already
+    // drifted in what they hid.
+    val files = com.vibe.agent.context.ProjectFiles.read(project, INDEXABLE_EXTENSIONS)
+      .keys.sorted()
+      .map { relative -> relative to root.resolve(relative) }
 
     var indexed = 0
     var skipped = 0
@@ -198,6 +196,12 @@ class RagIndex(private val project: Project) {
 
   companion object {
     private const val VERSION = 1
+
+    /** Kept next to the chunker's own list so «что индексируем» has one answer. */
+    private val INDEXABLE_EXTENSIONS = setOf(
+      "kt", "kts", "java", "ts", "tsx", "js", "jsx", "mjs", "cjs", "php", "py", "go", "rs", "rb", "cs",
+      "c", "h", "cpp", "hpp", "swift", "sql", "sh", "md", "mdx", "json", "yaml", "yml", "toml", "gradle",
+    )
     const val NOT_CONFIGURED = "not-configured"
     const val NOT_INDEXED = "not-indexed"
     const val NO_PROVIDER = "no-provider"
