@@ -138,6 +138,7 @@ object VibeAgentSettings {
   private const val KEY_EMBEDDING_MODEL = "vibe.agent.embeddingModel"
   private const val KEY_MINIMALISM = "vibe.agent.minimalismMode"
   private const val KEY_METRIC_PATTERN = "vibe.agent.metricPattern"
+  private const val KEY_OFFLINE = "vibe.agent.offline"
   private const val KEY_TELEGRAM_ENABLED = "vibe.agent.telegramEnabled"
   private const val KEY_TELEGRAM_CHATS = "vibe.agent.telegramChats"
   private const val KEY_TELEGRAM_PROJECT = "vibe.agent.telegramProject"
@@ -302,6 +303,16 @@ object VibeAgentSettings {
   /** `провайдер/модель` для эмбеддингов; пусто — поиск по смыслу выключен. */
   /** off | light | full | ultra — сколько кода агенту позволено добавить ради результата. */
   /** Регэксп с одной группой — чем измеряется результат в выводе команды. */
+  /**
+   * Офлайн-режим: наружу не уходит ничего, включая эмбеддинги и пробы провайдеров.
+   *
+   * Это не «экономия трафика», а обещание: бывают проекты, где содержимое файлов не может покинуть
+   * машину, и такое обещание должно исполняться механизмом, а не памятью человека.
+   */
+  var offline: Boolean
+    get() = props.getBoolean(KEY_OFFLINE, false)
+    set(value) = props.setValue(KEY_OFFLINE, value, false)
+
   var telegramEnabled: Boolean
     get() = props.getBoolean(KEY_TELEGRAM_ENABLED, false)
     set(value) = props.setValue(KEY_TELEGRAM_ENABLED, value, false)

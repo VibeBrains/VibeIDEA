@@ -971,6 +971,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     com.vibe.agent.rag.RagIndex.NOT_CONFIGURED -> t("rag.notConfigured")
     com.vibe.agent.rag.RagIndex.NOT_INDEXED -> t("rag.notIndexed")
     com.vibe.agent.rag.RagIndex.NO_PROVIDER -> t("rag.noProvider")
+    com.vibe.agent.rag.RagIndex.OFFLINE -> t("rag.offline")
     else -> t("rag.failed", "reason" to error.message)
   }
 

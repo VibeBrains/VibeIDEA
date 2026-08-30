@@ -110,6 +110,8 @@ class RagIndex(private val project: Project) {
     if (texts.isEmpty()) return emptyList()
     val spec = VibeAgentSettings.embeddingModel.trim()
     check(spec.isNotEmpty()) { NOT_CONFIGURED }
+    // Embeddings send file CONTENT, so the offline promise applies here first of all.
+    check(!VibeAgentSettings.offline || spec.startsWith("ollama") || spec.startsWith("lmstudio")) { OFFLINE }
     val providerId = spec.substringBefore('/')
     val modelId = spec.substringAfter('/')
     val provider = ProvidersService.load(project.basePath) { }.firstOrNull { it.id == providerId }
@@ -201,6 +203,7 @@ class RagIndex(private val project: Project) {
     const val NO_PROVIDER = "no-provider"
     const val NO_EMBEDDING = "no-embedding"
     const val NO_PROJECT = "no-project"
+    const val OFFLINE = "offline"
 
     fun getInstance(project: Project): RagIndex = project.getService(RagIndex::class.java)
   }

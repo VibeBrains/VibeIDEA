@@ -122,6 +122,12 @@ class LlmClient(private val http: HttpClient = defaultClient(Duration.ofSeconds(
     onDelta: (String) -> Unit,
   ) {
     this.cancelled = isCancelled
+    // The offline promise is kept HERE, at the single door out: a check in the UI would be a
+    // reminder, and a reminder is not a guarantee. A local provider is still allowed — nothing
+    // leaves the machine.
+    if (com.vibe.agent.settings.VibeAgentSettings.offline && !provider.isLocal) {
+      throw IllegalStateException(t("offline.blocked", "provider" to provider.entry.id))
+    }
     var attempt = 1
     while (true) {
       try {
@@ -280,7 +286,19 @@ class LlmClient(private val http: HttpClient = defaultClient(Duration.ofSeconds(
       model.temperature?.let { put("temperature", it) }
       model.topP?.let { put("top_p", it) }
       model.topK?.let { put("top_k", it) }
-      if (system.isNotBlank()) put("system", system)
+      // A big, unchanging preamble is re-sent every turn and billed every turn; marking it as
+      // cacheable turns that into a one-off cost. Marked only when it is big enough to matter —
+      // a cache entry is itself a write, and writing one for two lines is a loss.
+      if (system.isNotBlank()) {
+        if (PromptCache.shouldCacheSystem(system)) {
+          put("system", JsonArray(listOf(buildJsonObject {
+            put("type", "text")
+            put("text", system)
+            put("cache_control", buildJsonObject { put("type", "ephemeral") })
+          })))
+        }
+        else put("system", system)
+      }
       put("messages", JsonArray(messages.filter { it.role != "system" }.map(LlmMessages::anthropic)))
     }, model.extraBody)
     val request = requestBuilder(provider, "messages")

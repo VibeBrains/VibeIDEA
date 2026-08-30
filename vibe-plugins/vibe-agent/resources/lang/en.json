@@ -1120,5 +1120,9 @@
   "design.rule.ogTitle.message": "no og:title",
   "design.rule.ogTitle.why": "A link sent to a messenger unfurls as a URL instead of a name — and nobody clicks it.",
   "lsp.doctor.debuggers": "Debuggers (breakpoints):",
-  "lsp.doctor.debugSetup": "A debug adapter is installed as an ordinary package and attached through the LSP4IJ settings (Settings → Languages & Frameworks → Debug Adapter Protocol), where a run configuration naming this binary is created. We ship the client and the check; the adapter itself is an external program, like the language server."
+  "lsp.doctor.debugSetup": "A debug adapter is installed as an ordinary package and attached through the LSP4IJ settings (Settings → Languages & Frameworks → Debug Adapter Protocol), where a run configuration naming this binary is created. We ship the client and the check; the adapter itself is an external program, like the language server.",
+  "offline.blocked": "offline mode is on: the request to the «{provider}» provider was not sent. Local models still work, nothing else does.",
+  "settings.agent.offline": "Offline mode",
+  "settings.agent.hint.offline": "Nothing leaves the machine: no cloud model requests, no embeddings. Local providers (localhost) keep working. This is not about traffic but about a promise: some projects cannot let file contents leave the machine, and such a promise must be kept by a mechanism rather than by memory — so the check sits at the single door out, not in the interface.",
+  "rag.offline": "offline mode is on: embeddings send file content outside, so the index is not built. A local embedding model (ollama/lmstudio) still works."
 }
