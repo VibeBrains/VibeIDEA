@@ -7,6 +7,9 @@
     one-shot tasks with dependencies and readiness checks; the stack starts in waves.
   ]]></description>
   <depends>com.intellij.modules.platform</depends>
+  <!-- Каталог строк общий: две копии одной кнопки «Отмена» однажды разойдутся в формулировке.
+       Оба плагина всегда едут в одном дистрибутиве, поэтому зависимость ничего не ломает. -->
+  <depends>com.vibe.agent</depends>
   <extensions defaultExtensionNs="com.intellij">
     <toolWindow id="VibeServer" anchor="bottom" factoryClass="com.vibe.server.ui.VibeServerToolWindowFactory"/>
     <notificationGroup id="Vibe Server" displayType="BALLOON"/>

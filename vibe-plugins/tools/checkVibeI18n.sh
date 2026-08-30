@@ -15,7 +15,10 @@ cd "$(dirname "$0")/../.."
 
 BASE=vibe-plugins/vibe-agent/resources/lang/base.json
 LANG_DIR=vibe-plugins/vibe-agent/resources/lang
-SRC=vibe-plugins/vibe-agent/src
+# Каталог строк ОБЩИЙ для всех наших плагинов (решение владельца 2026-08-30): две копии одной
+# кнопки «Отмена» однажды разойдутся в формулировке. Значит и использования ключей ищем во всех
+# наших модулях, иначе строка, вызванная из vibe-server, считается мёртвой.
+SRC=vibe-plugins
 RATCHET_FILE=vibe-plugins/tools/i18nRatchet.txt
 fail=0
 

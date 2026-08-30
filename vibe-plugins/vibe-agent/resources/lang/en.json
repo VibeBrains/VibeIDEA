@@ -450,5 +450,19 @@
   "watch.error.downloadFailed": "could not download the video: {reason}",
   "watch.error.mediaMissing": "the video file is missing after the download",
   "watch.error.toolTimeout": "the tool did not answer within {seconds} s: {tool}",
-  "watch.warn.noSubtitles": "no subtitles — the review will rely on frames only"
+  "watch.warn.noSubtitles": "no subtitles — the review will rely on frames only",
+  "servers.action.startAll": "Start all",
+  "servers.action.stopAll": "Stop all",
+  "servers.action.startSelected": "Start the selected one",
+  "servers.action.reload": "Re-read the file",
+  "servers.empty": "No stack: create .vibe/servers.json (spec: docs/vibe/manuals/serversSpec.md)",
+  "servers.warn.noArray": "servers.json: no servers array",
+  "servers.warn.noId": "servers.json: an entry without an id was skipped",
+  "servers.warn.duplicateId": "servers.json: duplicate id '{id}' — the entry was skipped",
+  "servers.warn.noCommand": "no command",
+  "servers.warn.entrySkipped": "servers.json: entry skipped: {reason}",
+  "servers.warn.parseFailed": "servers.json could not be parsed: {reason} — the file is disabled",
+  "servers.warn.unknownDependency": "unknown dependency '{id}'",
+  "servers.warn.excludedDependency": "depends on the excluded '{id}'",
+  "servers.warn.cycle": "dependency cycle"
 }

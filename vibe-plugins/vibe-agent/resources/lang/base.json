@@ -450,5 +450,19 @@
   "watch.error.downloadFailed": "не удалось скачать видео: {reason}",
   "watch.error.mediaMissing": "файл видео не найден после скачивания",
   "watch.error.toolTimeout": "инструмент не ответил за {seconds} с: {tool}",
-  "watch.warn.noSubtitles": "субтитров нет — разбор пойдёт только по кадрам"
+  "watch.warn.noSubtitles": "субтитров нет — разбор пойдёт только по кадрам",
+  "servers.action.startAll": "Запустить всё",
+  "servers.action.stopAll": "Остановить всё",
+  "servers.action.startSelected": "Запустить выбранный",
+  "servers.action.reload": "Перечитать файл",
+  "servers.empty": "Нет стека: создайте .vibe/servers.json (спека — docs/vibe/manuals/serversSpec.md)",
+  "servers.warn.noArray": "servers.json: нет массива servers",
+  "servers.warn.noId": "servers.json: запись без id пропущена",
+  "servers.warn.duplicateId": "servers.json: дубль id '{id}' — запись пропущена",
+  "servers.warn.noCommand": "нет command",
+  "servers.warn.entrySkipped": "servers.json: запись пропущена: {reason}",
+  "servers.warn.parseFailed": "servers.json не разобран: {reason} — файл отключён",
+  "servers.warn.unknownDependency": "неизвестная зависимость '{id}'",
+  "servers.warn.excludedDependency": "зависит от исключённой '{id}'",
+  "servers.warn.cycle": "цикл зависимостей"
 }

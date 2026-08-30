@@ -21,6 +21,7 @@ jvm_library(
         "@lib//:kotlinx-serialization-json",
         "@lib//:kotlinx-serialization-core",
         "//platform/core-api:core",
+        "//vibe-plugins/vibe-agent",
         "//platform/projectModel-api:projectModel",
         "//platform/util",
         "//platform/extensions",

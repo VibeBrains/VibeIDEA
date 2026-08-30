@@ -1,6 +1,7 @@
 // Copyright 2026 VibeBrains. Use of this source code is governed by the Apache 2.0 license.
 package com.vibe.server
 
+import com.vibe.agent.i18n.VibeI18n.t
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.intOrNull
@@ -80,19 +81,19 @@ object ServersFile {
     val seen = HashSet<String>()
     try {
       val root = json.parseToJsonElement(stripJsonc(Files.readString(file))).jsonObject
-      for (el in root["servers"]?.jsonArray ?: run { onWarning("servers.json: нет массива servers"); return emptyList() }) {
+      for (el in root["servers"]?.jsonArray ?: run { onWarning(t("servers.warn.noArray")); return emptyList() }) {
         try {
           val o = el.jsonObject
           val id = o["id"]?.jsonPrimitive?.contentOrNull
-          if (id.isNullOrBlank()) { onWarning("servers.json: запись без id пропущена"); continue }
-          if (!seen.add(id)) { onWarning("servers.json: дубль id '$id' — запись пропущена"); continue }
+          if (id.isNullOrBlank()) { onWarning(t("servers.warn.noId")); continue }
+          if (!seen.add(id)) { onWarning(t("servers.warn.duplicateId", "id" to id)); continue }
           result.add(ServerEntry(
             id = id,
             name = o["name"]?.jsonPrimitive?.contentOrNull ?: id,
             kind = o["kind"]?.jsonPrimitive?.contentOrNull ?: "service",
             active = o["active"]?.jsonPrimitive?.booleanOrNull ?: true,
             command = o["command"]?.jsonPrimitive?.contentOrNull?.ifBlank { null }
-              ?: throw IllegalArgumentException("нет command"),
+              ?: throw IllegalArgumentException(t("servers.warn.noCommand")),
             dir = o["dir"]?.jsonPrimitive?.contentOrNull,
             env = o["env"]?.jsonObject?.mapValues { it.value.jsonPrimitive.content } ?: emptyMap(),
             envFile = o["envFile"]?.jsonPrimitive?.contentOrNull,
@@ -111,12 +112,12 @@ object ServersFile {
           ))
         }
         catch (e: Exception) {
-          onWarning("servers.json: запись пропущена: ${e.message}")
+          onWarning(t("servers.warn.entrySkipped", "reason" to e.message))
         }
       }
     }
     catch (e: Exception) {
-      onWarning("servers.json не разобран: ${e.message} — файл отключён")
+      onWarning(t("servers.warn.parseFailed", "reason" to e.message))
       return emptyList()
     }
     return result.filter { it.active }
@@ -130,7 +131,7 @@ object ServersFile {
     val byId = entries.associateBy { it.id }
     val excluded = LinkedHashMap<String, String>()
     for (e in entries) {
-      e.dependsOn.firstOrNull { it !in byId }?.let { excluded[e.id] = "неизвестная зависимость '$it'" }
+      e.dependsOn.firstOrNull { it !in byId }?.let { excluded[e.id] = t("servers.warn.unknownDependency", "id" to it) }
     }
     // transitively exclude dependents of excluded entries, then detect cycles by wave exhaustion
     var changed = true
@@ -139,7 +140,7 @@ object ServersFile {
       for (e in entries) {
         if (e.id in excluded) continue
         val bad = e.dependsOn.firstOrNull { it in excluded }
-        if (bad != null) { excluded[e.id] = "зависит от исключённой '$bad'"; changed = true }
+        if (bad != null) { excluded[e.id] = t("servers.warn.excludedDependency", "id" to bad); changed = true }
       }
     }
     val remaining = entries.filter { it.id !in excluded }.toMutableList()
@@ -148,7 +149,7 @@ object ServersFile {
     while (remaining.isNotEmpty()) {
       val wave = remaining.filter { e -> e.dependsOn.all { it in done } }
       if (wave.isEmpty()) {
-        remaining.forEach { excluded[it.id] = "цикл зависимостей" }
+        remaining.forEach { excluded[it.id] = t("servers.warn.cycle") }
         break
       }
       waves.add(wave)

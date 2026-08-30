@@ -1,6 +1,7 @@
 // Copyright 2026 VibeBrains. Use of this source code is governed by the Apache 2.0 license.
 package com.vibe.server.ui
 
+import com.vibe.agent.i18n.VibeI18n.t
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.project.Project
 import com.intellij.ui.components.JBScrollPane
@@ -45,10 +46,10 @@ class ServerPanel(private val project: Project) : JPanel(BorderLayout()) {
 
   init {
     border = JBUI.Borders.empty(4)
-    val startAll = JButton("Запустить всё")
-    val stopAll = JButton("Остановить всё")
-    val startOne = JButton("Запустить выбранный")
-    val reload = JButton("Перечитать файл")
+    val startAll = JButton(t("servers.action.startAll"))
+    val stopAll = JButton(t("servers.action.stopAll"))
+    val startOne = JButton(t("servers.action.startSelected"))
+    val reload = JButton(t("servers.action.reload"))
     startAll.addActionListener { pooled { runner.startAll(entries) } }
     stopAll.addActionListener { pooled { runner.stopAll(entries) } }
     startOne.addActionListener {
@@ -78,7 +79,7 @@ class ServerPanel(private val project: Project) : JPanel(BorderLayout()) {
     entries = ServersFile.load(project.basePath) { appendLog("[servers.json] $it") }
     // keep live statuses of same ids across re-reads (contract)
     status.keys.retainAll(entries.map { it.id }.toSet())
-    if (entries.isEmpty()) appendLog("Нет стека: создайте .vibe/servers.json (спека — docs/vibe/manuals/serversSpec.md)")
+    if (entries.isEmpty()) appendLog(t("servers.empty"))
     refreshList()
   }
 
