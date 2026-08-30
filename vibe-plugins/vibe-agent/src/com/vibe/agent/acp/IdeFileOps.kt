@@ -27,6 +27,10 @@ import java.nio.file.Path
  */
 internal class IdeFileOps(
   private val project: Project,
+  /** What the agent has read, so a write over someone else's change can be recognised. */
+  private val seen: com.vibe.agent.edits.WriteGuard.Seen = com.vibe.agent.edits.WriteGuard.Seen(),
+  /** One line into the feed: conflicts and applied editor fixes are told, never silent. */
+  private val onNotice: (String) -> Unit = {},
   /** Reports what the context guard found in a file the agent read; the panel turns it into a line. */
   private val onFinding: (String, List<com.vibe.agent.security.ContextSanitizer.Finding>) -> Unit = { _, _ -> },
 ) {
@@ -62,6 +66,10 @@ internal class IdeFileOps(
     // the guard found is reported to the user through [onFinding] (the panel prints one line).
     val clean = com.vibe.agent.security.ContextSanitizer.sanitize(content, maskSecrets = false)
     if (clean.findings.isNotEmpty()) onFinding(path, clean.findings)
+    // Remember the file AS THE AGENT SAW IT — a partial read (line/limit) is not the whole file
+    // and must not pass for one, or the guard would compare a fragment against the full text and
+    // cry conflict on every windowed read.
+    if (line == null && limit == null) seen.remember(path, content)
     return buildJsonObject { put("content", clean.text) }
   }
 
@@ -72,8 +80,16 @@ internal class IdeFileOps(
       throw IllegalStateException(t("access.writeDenied", "path" to path))
     }
     val content = params.getValue("content").jsonPrimitive.contentOrNull ?: ""
+    val exists = Files.exists(path)
     val oldText = readCurrentText(path)
     if (oldText == content) return buildJsonObject { }
+    // The silent damage this prevents: the agent read the file, thought for a minute while the
+    // human edited it, and is now about to write the whole content composed from the OLD text.
+    // Nothing errors; the human's work just disappears, looking like the agent's own edit.
+    val verdict = com.vibe.agent.edits.WriteGuard.check(path.toString(), if (exists) oldText else null, seen)
+    if (verdict == com.vibe.agent.edits.WriteGuard.Verdict.CONFLICT) {
+      onNotice(t("write.conflict", "path" to path))
+    }
     if (!WritePreview.confirm(project, path.toString(), oldText, content)) {
       throw IllegalStateException(t("write.refused", "path" to path))
     }
@@ -94,6 +110,10 @@ internal class IdeFileOps(
         VfsUtil.markDirtyAndRefresh(true, false, false, LocalFileSystem.getInstance().refreshAndFindFileByNioFile(path))
       }
     }
+    // The written text is now what the agent last saw: without this every second write of the same
+    // file would be reported as a conflict with the agent's own previous write.
+    seen.remember(path.toString(), content)
+    com.vibe.agent.edits.EditorAutoFix.apply(project, path) { message -> onNotice(message) }
     return buildJsonObject { }
   }
 

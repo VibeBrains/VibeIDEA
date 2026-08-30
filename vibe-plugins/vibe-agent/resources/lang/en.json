@@ -771,5 +771,8 @@
   "slash.command.git": "Repository state as a fact: branch, changes, recent commits",
   "slash.command.output": "Full text of an output that was compressed for the model",
   "git.noProject": "no project is open",
-  "git.timeout": "git did not answer within {seconds}s: {command}"
+  "git.timeout": "git did not answer within {seconds}s: {command}",
+  "write.conflict": "⚠️ {path} changed after the agent read it — this edit is being applied over someone else’s changes; read the diff carefully",
+  "autofix.command": "Editor fix after the agent",
+  "autofix.applied": "🔧 the editor finished the job: {count} fix(es) ({names})"
 }

@@ -150,7 +150,11 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
   private val llmClient = LlmClient()
   private val llmCancel = java.util.concurrent.atomic.AtomicBoolean(false)
   private val runs = com.vibe.agent.runs.VibeAgentRunService.getInstance(project)
-  private val fileOps = IdeFileOps(project) { path, findings -> reportContextFindings(path, findings) }
+  private val fileOps = IdeFileOps(
+    project,
+    onNotice = { message -> systemLine(message) },
+    onFinding = { path, findings -> reportContextFindings(path, findings) },
+  )
   @Volatile private var client: AcpClient? = null
   @Volatile private var clientConfig: AgentServerConfig? = null
   /** Guards check-then-act on [client]: ensureClient (pooled), onProcessExit (exit thread), dispose (EDT). */
