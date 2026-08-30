@@ -3315,11 +3315,19 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     val verdict = ShellSafetyAnalyzer.analyzeLine((listOf(command) + args).joinToString(" "))
     if (verdict != null) {
       var approved = false
+      // The same question in two places: the dialog here and, when the bridge is running, buttons
+      // on the phone. A long unattended run otherwise waits silently for someone who left the room.
+      val body = t("chat.destructive.body",
+                   "command" to (listOf(command) + args).joinToString(" ").take(DESTRUCTIVE_PREVIEW_LEN),
+                   "reasons" to verdict.reasons.joinToString(", "))
+      val request = com.vibe.agent.telegram.PendingApprovals.open(body)
+      val onPhone = runCatching {
+        com.vibe.agent.telegram.TelegramBridge.getInstance()
+          .askApproval(request, t("telegram.approvalQuestion", "body" to body))
+      }.getOrDefault(false)
       ApplicationManager.getApplication().invokeAndWait {
-        val choice = Messages.showYesNoDialog(project,
-          t("chat.destructive.body", "command" to (listOf(command) + args).joinToString(" ").take(DESTRUCTIVE_PREVIEW_LEN), "reasons" to verdict.reasons.joinToString(", ")),
-          t("chat.destructive.title"), t("chat.destructive.run"), t("common.cancel"), Messages.getWarningIcon())
-        approved = choice == Messages.YES
+        approved = com.vibe.agent.telegram.ApprovalDialog.ask(
+          project, t("chat.destructive.title"), body, request, onPhone, t("chat.destructive.run"))
       }
       audit?.append(AuditEvent(System.currentTimeMillis(), AuditEvent.Action.TERMINAL, ok = approved,
         meta = mapOf("gate" to "destructive", "reasons" to verdict.reasons.joinToString(","), "approved" to approved.toString())))

@@ -997,7 +997,6 @@
   "telegram.finished": "✅ done: {task}",
   "telegram.failed": "⛔ failed: {reason}",
   "telegram.unknown": "Command not recognised. Plain text is a task for the agent.",
-  "telegram.approvalUnsupported": "Approvals for destructive commands are still made in the IDE.",
   "telegram.token.action": "VibeIDEA: Telegram bot token",
   "telegram.token.title": "Telegram bot",
   "telegram.token.prompt": "The bot token from @BotFather ({state}). The bot is your own: no server of ours takes part in the conversation, and the token lives in the OS secure storage. An empty value turns the bridge off.",
@@ -1195,5 +1194,12 @@
   "design.rule.fonts.message": "font families on the page: {count}",
   "design.rule.fonts.why": "More than two families is a page assembled from two different designs.",
   "design.rule.shouting.message": "a {length}-character phrase is set in capitals",
-  "design.rule.shouting.why": "All caps reads slower, letter by letter, and sounds like shouting even where nobody meant to shout."
+  "design.rule.shouting.why": "All caps reads slower, letter by letter, and sounds like shouting even where nobody meant to shout.",
+  "telegram.button.approve": "Allow",
+  "telegram.button.deny": "Deny",
+  "telegram.approved": "Allowed.",
+  "telegram.denied": "Denied.",
+  "telegram.approvalGone": "That question is already decided — it was answered earlier.",
+  "telegram.alsoAsked": "The same question was sent to Telegram: it can be answered from there too.",
+  "telegram.approvalQuestion": "The agent is asking for permission:\n\n{body}"
 }

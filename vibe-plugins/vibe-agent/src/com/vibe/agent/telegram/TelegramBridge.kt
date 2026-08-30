@@ -123,8 +123,16 @@ class TelegramBridge {
         send(token, TelegramProtocol.sendMessage(incoming.chatId, t("telegram.stopped")))
       }
       is TelegramProtocol.Command.Task -> runTask(token, incoming.chatId, command.text)
-      is TelegramProtocol.Command.Approve -> send(token, TelegramProtocol.sendMessage(
-        incoming.chatId, t("telegram.approvalUnsupported")))
+      is TelegramProtocol.Command.Approve -> {
+        // Whoever answers first wins: the same question may be sitting in a dialog on the desktop,
+        // and a second answer must not undo the first.
+        val accepted = PendingApprovals.resolve(command.runId, command.approved)
+        send(token, TelegramProtocol.sendMessage(incoming.chatId, when {
+          !accepted -> t("telegram.approvalGone")
+          command.approved -> t("telegram.approved")
+          else -> t("telegram.denied")
+        }))
+      }
       is TelegramProtocol.Command.Unknown -> send(token, TelegramProtocol.sendMessage(
         incoming.chatId, t("telegram.unknown"), menuButtons()))
     }
@@ -152,6 +160,26 @@ class TelegramBridge {
       if (messageId != null) send(token, TelegramProtocol.editMessage(chatId, messageId, text), "editMessageText")
       else send(token, TelegramProtocol.sendMessage(chatId, text))
     }
+  }
+
+  /**
+   * Sends a permission question to every allowed chat.
+   *
+   * Only when the bridge is actually running: a question sent nowhere would leave the desktop
+   * dialog looking like it has a second answer coming, and someone waiting for a phone that never
+   * buzzed.
+   */
+  fun askApproval(request: PendingApprovals.Request, question: String): Boolean {
+    val token = token() ?: return false
+    if (!isRunning()) return false
+    val chats = allowedChats()
+    if (chats.isEmpty()) return false
+    val buttons = listOf(listOf(
+      TelegramProtocol.Button(t("telegram.button.approve"), "approve:" + request.id),
+      TelegramProtocol.Button(t("telegram.button.deny"), "deny:" + request.id),
+    ))
+    chats.forEach { chatId -> send(token, TelegramProtocol.sendMessage(chatId, question, buttons)) }
+    return true
   }
 
   private fun askOwner(incoming: TelegramProtocol.Incoming) {

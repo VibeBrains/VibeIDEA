@@ -997,7 +997,6 @@
   "telegram.finished": "✅ готово: {task}",
   "telegram.failed": "⛔ не получилось: {reason}",
   "telegram.unknown": "Не понял команду. Обычный текст — задача агенту.",
-  "telegram.approvalUnsupported": "Подтверждения разрушительных команд пока делаются в IDE.",
   "telegram.token.action": "VibeIDEA: токен Telegram-бота",
   "telegram.token.title": "Telegram-бот",
   "telegram.token.prompt": "Токен бота от @BotFather ({state}). Бот ваш собственный: наш сервер в переписке не участвует, токен хранится в защищённом хранилище ОС. Пустое значение отключает мост.",
@@ -1195,5 +1194,12 @@
   "design.rule.fonts.message": "на странице гарнитур: {count}",
   "design.rule.fonts.why": "Больше двух гарнитур — это страница, собранная из двух разных дизайнов.",
   "design.rule.shouting.message": "фраза из {length} символов набрана заглавными",
-  "design.rule.shouting.why": "Капслок читается медленнее (буква за буквой) и звучит как крик даже там, где кричать не хотели."
+  "design.rule.shouting.why": "Капслок читается медленнее (буква за буквой) и звучит как крик даже там, где кричать не хотели.",
+  "telegram.button.approve": "Разрешить",
+  "telegram.button.deny": "Отклонить",
+  "telegram.approved": "Разрешено.",
+  "telegram.denied": "Отклонено.",
+  "telegram.approvalGone": "Этот вопрос уже решён — ответили раньше.",
+  "telegram.alsoAsked": "Тот же вопрос отправлен в Telegram: ответить можно и оттуда.",
+  "telegram.approvalQuestion": "Агент просит разрешение:\n\n{body}"
 }
