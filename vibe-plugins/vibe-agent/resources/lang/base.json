@@ -1138,5 +1138,14 @@
   "bg.title": "хвост вывода: {command}",
   "slash.command.bg": "Запустить команду фоном и получить строку о завершении",
   "servers.portBusy": "порт {port} уже занят (процессы: {owners}) — сервер, найдя порт занятым, обычно молча уезжает на соседний, и это оборачивается днём вопросов «почему на телефоне ничего нет»",
-  "servers.portOwnerUnknown": "владелец не определился"
+  "servers.portOwnerUnknown": "владелец не определился",
+  "runs.action.repeat": "повторить задачу",
+  "runs.repeat.started": "Задача перезапущена — слова взяты из записи прогона, чтобы сравнивались модели, а не формулировки.",
+  "runs.repeat.failed": "Повторить не удалось: {reason}",
+  "runs.compare.line": "повтор: {verdict}, {outcome}",
+  "runs.compare.repeatFaster": "быстрее оказался повтор",
+  "runs.compare.originalFaster": "быстрее был первый прогон",
+  "runs.compare.same": "по времени поровну",
+  "runs.compare.sameOutcome": "исход тот же",
+  "runs.compare.otherOutcome": "исход другой"
 }

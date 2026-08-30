@@ -151,7 +151,45 @@ class VibeRunsPanel(private val project: Project) : JPanel(BorderLayout()), Disp
         foreground = JBColor.GRAY
         font = JBFont.label().deriveFont(11f)
       })
+      if (RerunPlan.canRepeat(run)) {
+        add(link(t("runs.action.repeat")) { repeat(run) }.apply { alignmentX = Component.LEFT_ALIGNMENT })
+      }
+      RerunPlan.findRepeat(loaded, run)?.let { repeat ->
+        val comparison = RerunPlan.Comparison(run, repeat)
+        add(JBLabel(comparisonText(comparison)).apply {
+          alignmentX = Component.LEFT_ALIGNMENT
+          foreground = JBColor.GRAY
+          font = JBFont.label().deriveFont(11f)
+        })
+      }
     }
+  }
+
+  /**
+   * Repeats the task on whatever target the chat is set to now.
+   *
+   * The words come from the record rather than from a new prompt: the whole value of a repeat is
+   * that both runs got the SAME task, so what differs is the model and not the phrasing.
+   */
+  private fun repeat(run: AgentRunLedger.Run) {
+    val started = com.vibe.agent.http.VibeAgentGateway.getInstance()
+      .runCatching { run(RerunPlan.repeatTask(run), null, false) }
+    if (started.isFailure) {
+      summaryLabel.text = t("runs.repeat.failed", "reason" to (started.exceptionOrNull()?.message ?: ""))
+      return
+    }
+    summaryLabel.text = t("runs.repeat.started")
+  }
+
+  private fun comparisonText(comparison: RerunPlan.Comparison): String {
+    val faster = comparison.fasterRunId
+    val verdict = when {
+      faster == null -> t("runs.compare.same")
+      faster == comparison.repeat.runId -> t("runs.compare.repeatFaster")
+      else -> t("runs.compare.originalFaster")
+    }
+    val outcome = if (comparison.sameOutcome) t("runs.compare.sameOutcome") else t("runs.compare.otherOutcome")
+    return t("runs.compare.line", "verdict" to verdict, "outcome" to outcome)
   }
 
   override fun dispose() {}
