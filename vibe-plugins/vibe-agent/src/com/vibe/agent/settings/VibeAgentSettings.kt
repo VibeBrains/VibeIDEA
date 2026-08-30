@@ -132,6 +132,8 @@ object VibeAgentSettings {
   private const val KEY_ROLE_BUDGET = "vibe.agent.roleBudgetTokens"
   private const val KEY_COUNCIL = "vibe.agent.councilAdvisers"
   private const val KEY_CONTEXT_FILTER = "vibe.agent.contextFilterMode"
+  private const val KEY_LLM_PROXY = "vibe.agent.llmProxyUrl"
+  private const val KEY_FAILOVER = "vibe.agent.failoverChain"
 
   /** Off by default: a ceiling nobody set must not become a wall in the middle of real work. */
   const val DEFAULT_ROLE_BUDGET_TOKENS = 0
@@ -284,6 +286,16 @@ object VibeAgentSettings {
   /** Tokens one pipeline role may spend per rolling day; 0 turns the budget off. */
   /** `провайдер/модель` через запятую; пусто — совет выключен и честно об этом говорит. */
   /** auto | raw | aggregate | off — как чистится вывод инструментов до попадания в контекст. */
+  /** Прокси только для запросов к моделям; пусто — прямое соединение. */
+  var llmProxyUrl: String
+    get() = props.getValue(KEY_LLM_PROXY, "")
+    set(value) = props.setValue(KEY_LLM_PROXY, value.trim(), "")
+
+  /** `провайдер/модель` через запятую: куда уходить, когда выбранная цель не отвечает. */
+  var failoverChain: String
+    get() = props.getValue(KEY_FAILOVER, "")
+    set(value) = props.setValue(KEY_FAILOVER, value.trim(), "")
+
   var contextFilterMode: String
     get() = props.getValue(KEY_CONTEXT_FILTER, "auto")
     set(value) = props.setValue(KEY_CONTEXT_FILTER, value.trim().lowercase(), "auto")

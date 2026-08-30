@@ -863,5 +863,12 @@
   "configGuard.rule.plaintextSecret": "a plaintext secret ({detail}) in {file} — the file will travel to the repository with the key",
   "configGuard.rule.insecureEndpoint": "an unencrypted endpoint {detail} in {file}",
   "configGuard.rule.credentialsInUrl": "credentials inside a URL ({detail}) in {file}",
-  "configGuard.rule.rawIpEndpoint": "a raw IP endpoint {detail} in {file}"
+  "configGuard.rule.rawIpEndpoint": "a raw IP endpoint {detail} in {file}",
+  "failover.switching": "🔀 {from} is not answering — switching to {to}: {reason}",
+  "failover.exhausted": "the failover chain is exhausted — every target was already tried in this turn",
+  "failover.unknownProvider": "the chain names an unknown provider «{id}» — the switch was cancelled",
+  "settings.agent.proxy": "Proxy for model requests",
+  "settings.agent.hint.proxy": "For example http://proxy.local:3128 or socks5://127.0.0.1:9050; the port may be omitted. This is a SEPARATE proxy from the system one and the IDE one: reaching the plugin repository and reaching a model provider are different questions, and people routinely need one without the other. Empty means a direct connection; a typo is logged rather than silently ignored.",
+  "settings.agent.failover": "Failover targets",
+  "settings.agent.hint.failover": "`provider/model` separated by commas. Used only when waiting has already failed: the IDE first waits out the provider’s limit and moves on only after the retries are exhausted. A bad key never fails over — the key is wrong at the next provider too, and switching would hide the real message behind an unrelated failure. No target is tried twice in one turn."
 }

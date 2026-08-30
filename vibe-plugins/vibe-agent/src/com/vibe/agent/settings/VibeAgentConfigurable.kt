@@ -28,6 +28,8 @@ class VibeAgentConfigurable : Configurable, Configurable.NoScroll {
   private var roleBudgetTokens: JBIntSpinner? = null
   private var councilField: com.intellij.ui.components.JBTextField? = null
   private var contextFilter: com.intellij.openapi.ui.ComboBox<String>? = null
+  private var proxyField: com.intellij.ui.components.JBTextField? = null
+  private var failoverField: com.intellij.ui.components.JBTextField? = null
   private var verifyMode: ComboBox<String>? = null
   private var verifyCommand: JBTextField? = null
   private var verifyMaxAttempts: JBIntSpinner? = null
@@ -56,6 +58,8 @@ class VibeAgentConfigurable : Configurable, Configurable.NoScroll {
   override fun createComponent(): JComponent {
     val hooks = JBCheckBox(t("settings.agent.hooks"), VibeAgentSettings.hooksEnabled).also { hooksEnabled = it }
     val audit = JBCheckBox(t("settings.agent.audit"), VibeAgentSettings.auditEnabled).also { auditEnabled = it }
+    val proxy = com.intellij.ui.components.JBTextField(VibeAgentSettings.llmProxyUrl, 32).also { proxyField = it }
+    val failover = com.intellij.ui.components.JBTextField(VibeAgentSettings.failoverChain, 32).also { failoverField = it }
     val filterMode = com.intellij.openapi.ui.ComboBox(arrayOf("auto", "raw", "aggregate", "off")).also {
       it.selectedItem = VibeAgentSettings.contextFilterMode
       contextFilter = it
@@ -105,6 +109,10 @@ class VibeAgentConfigurable : Configurable, Configurable.NoScroll {
       .addComponent(section(t("settings.agent.section.safety")))
       .addLabeledComponent(t("settings.agent.silence"), silence)
       .addComponent(hint(t("settings.agent.hint.silence")))
+      .addLabeledComponent(t("settings.agent.proxy"), proxy)
+      .addComponent(hint(t("settings.agent.hint.proxy")))
+      .addLabeledComponent(t("settings.agent.failover"), failover)
+      .addComponent(hint(t("settings.agent.hint.failover")))
       .addLabeledComponent(t("settings.agent.contextFilter"), filterMode)
       .addComponent(hint(t("settings.agent.hint.contextFilter")))
       .addLabeledComponent(t("settings.agent.council"), council)
@@ -178,6 +186,8 @@ class VibeAgentConfigurable : Configurable, Configurable.NoScroll {
     roleBudgetTokens?.number != VibeAgentSettings.roleBudgetTokens ||
     (councilField?.text?.trim() ?: VibeAgentSettings.councilAdvisers) != VibeAgentSettings.councilAdvisers ||
     (contextFilter?.selectedItem as? String ?: VibeAgentSettings.contextFilterMode) != VibeAgentSettings.contextFilterMode ||
+    (proxyField?.text?.trim() ?: VibeAgentSettings.llmProxyUrl) != VibeAgentSettings.llmProxyUrl ||
+    (failoverField?.text?.trim() ?: VibeAgentSettings.failoverChain) != VibeAgentSettings.failoverChain ||
     (verifyMode?.item ?: VibeAgentSettings.verifyMode) != VibeAgentSettings.verifyMode ||
     (verifyCommand?.text?.trim() ?: VibeAgentSettings.verifyCommand) != VibeAgentSettings.verifyCommand ||
     verifyMaxAttempts?.number != VibeAgentSettings.verifyMaxAttempts ||
@@ -209,6 +219,8 @@ class VibeAgentConfigurable : Configurable, Configurable.NoScroll {
     roleBudgetTokens?.let { VibeAgentSettings.roleBudgetTokens = it.number }
     councilField?.let { VibeAgentSettings.councilAdvisers = it.text }
     (contextFilter?.selectedItem as? String)?.let { VibeAgentSettings.contextFilterMode = it }
+    proxyField?.let { VibeAgentSettings.llmProxyUrl = it.text }
+    failoverField?.let { VibeAgentSettings.failoverChain = it.text }
     verifyMode?.let { VibeAgentSettings.verifyMode = it.item }
     verifyCommand?.let { VibeAgentSettings.verifyCommand = it.text }
     verifyMaxAttempts?.let { VibeAgentSettings.verifyMaxAttempts = it.number }
@@ -249,6 +261,8 @@ class VibeAgentConfigurable : Configurable, Configurable.NoScroll {
     roleBudgetTokens?.number = VibeAgentSettings.roleBudgetTokens
     councilField?.text = VibeAgentSettings.councilAdvisers
     contextFilter?.selectedItem = VibeAgentSettings.contextFilterMode
+    proxyField?.text = VibeAgentSettings.llmProxyUrl
+    failoverField?.text = VibeAgentSettings.failoverChain
     verifyMode?.item = VibeAgentSettings.verifyMode
     verifyCommand?.text = VibeAgentSettings.verifyCommand
     verifyMaxAttempts?.number = VibeAgentSettings.verifyMaxAttempts

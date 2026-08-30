@@ -169,6 +169,9 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
   /** Shapes of this turn's tool calls — the loop detector reads nothing else. */
   private val loopHistory = com.vibe.agent.safety.LoopDetector.History()
 
+  /** Targets already tried in this turn: a chain must never send the turn back where it just failed. */
+  private val failoverTried = java.util.Collections.synchronizedSet(HashSet<com.vibe.agent.resilience.FailoverPlan.Target>())
+
   /** What the turn actually did — the feed shows the agent's story, this shows the events. */
   private val trace = com.vibe.agent.trace.TurnTrace.Recorder()
 
@@ -596,6 +599,40 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     remaining = t("handoff.remaining"), traps = t("handoff.traps"), files = t("handoff.files"),
     verify = t("handoff.verify"), empty = t("handoff.empty"),
   )
+
+  /**
+   * Moves the turn to another provider when the chosen one cannot answer — and only then.
+   *
+   * Failover is not retry: retry waits out the SAME provider because it asked to be waited for,
+   * failover gives up and asks someone else. Confusing them produces the worst of both — hammering
+   * a dead endpoint, or abandoning a live one that merely asked for thirty seconds. So this runs
+   * after the retries inside the client are already exhausted, and never on a bad key: the key is
+   * wrong at the next provider too, and switching would hide the real message behind an unrelated
+   * second failure.
+   */
+  private fun failOver(from: ChatTarget.Model, error: Exception, startedAt: Long): Boolean {
+    val kind = com.vibe.agent.resilience.RetryPolicy.classify(
+      com.vibe.agent.resilience.RetryPolicy.statusFromMessage(error.message), error)
+    if (!com.vibe.agent.resilience.FailoverPlan.shouldFailOver(kind, retriesExhausted = true)) return false
+    val chain = com.vibe.agent.resilience.FailoverPlan.parseChain(VibeAgentSettings.failoverChain)
+    if (chain.isEmpty()) return false
+    val current = com.vibe.agent.resilience.FailoverPlan.Target(from.provider.id, from.model.id)
+    failoverTried.add(current)
+    val next = com.vibe.agent.resilience.FailoverPlan.next(chain, failoverTried) ?: run {
+      systemLine(t("failover.exhausted"))
+      return false
+    }
+    val provider = providers.firstOrNull { it.id == next.providerId } ?: run {
+      systemLine(t("failover.unknownProvider", "id" to next.providerId))
+      return false
+    }
+    failoverTried.add(next)
+    systemLine(t("failover.switching", "from" to current.toString(), "to" to next.toString(),
+                "reason" to (error.message?.take(120) ?: "")))
+    val target = ChatTarget.Model(provider, com.vibe.agent.providers.ModelEntry(id = next.modelId), static = true)
+    sendToLlm(target, startedAt)
+    return true
+  }
 
   /**
    * `/trace` — what the last turn actually did, step by step.
@@ -1332,6 +1369,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     loopHistory.clear()
     trace.clear()
     toolStarts.clear()
+    failoverTried.clear()
     turnStartedAtMs = System.currentTimeMillis()
     lastActivityMs.set(System.currentTimeMillis())
     staleAnnounced.set(false)
@@ -1617,6 +1655,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
       systemLine(t("chat.stopError", "reason" to e.message))
     }
     catch (e: Exception) {
+      if (failOver(t, e, startedAt)) return
       finishAgentBubble((System.currentTimeMillis() - startedAt) / 1000.0, t("chat.failed"))
       // A rejected payload must not poison every later request in this thread.
       turnThreadId?.let { if (history.dropImagesFromLastUser(it)) systemLine(t("chat.imagesDropped")) }

@@ -1,6 +1,7 @@
 // Copyright 2026 VibeBrains. Use of this source code is governed by the Apache 2.0 license.
 package com.vibe.agent.providers
 
+import com.intellij.openapi.diagnostic.logger
 import com.vibe.agent.i18n.VibeI18n.t
 import com.vibe.agent.resilience.RetryPolicy
 
@@ -97,7 +98,7 @@ internal object LlmMessages {
  * Model-level extraBody is merged into the request verbatim (vendor quirks).
  * Pure transport: no IDE types in here.
  */
-class LlmClient(private val http: HttpClient = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(20)).build()) {
+class LlmClient(private val http: HttpClient = defaultClient(Duration.ofSeconds(20))) {
   private val json = Json { ignoreUnknownKeys = true }
   @Volatile private var cancelled: () -> Boolean = { false }
   @Volatile private var activeBody: java.io.InputStream? = null
@@ -361,11 +362,30 @@ class LlmClient(private val http: HttpClient = HttpClient.newBuilder().connectTi
     const val SLEEP_STEP_MS = 250L
 
     /**
+     * Model traffic gets its own proxy, separate from the IDE's: people routinely need one and not
+     * the other, and folding them together means either sending corporate traffic through a
+     * personal tunnel or losing the tunnel exactly where it was the point.
+     *
+     * A malformed setting is logged and ignored rather than thrown: a typo in a proxy address must
+     * not make the chat unusable, but it must not pass for «прокси работает» either.
+     */
+    fun defaultClient(timeout: Duration): HttpClient {
+      val builder = HttpClient.newBuilder().connectTimeout(timeout)
+      val spec = runCatching { com.vibe.agent.resilience.ProxySettings.parse(com.vibe.agent.settings.VibeAgentSettings.llmProxyUrl) }
+        .getOrElse {
+          logger<LlmClient>().warn("LLM proxy setting is malformed and was ignored: ${it.message}")
+          null
+        }
+      spec?.let { builder.proxy(java.net.ProxySelector.of(java.net.InetSocketAddress(it.host, it.port))) }
+      return builder.build()
+    }
+
+    /**
      * Client for catalog polling only: the chat client waits 20 s for a connection (a chat is
      * worth waiting for), while a catalog refresh runs behind a served cache and must not.
      */
     fun forCatalog(): LlmClient =
-      LlmClient(HttpClient.newBuilder().connectTimeout(Duration.ofMillis(CATALOG_TIMEOUT_MS)).build())
+      LlmClient(defaultClient(Duration.ofMillis(CATALOG_TIMEOUT_MS)))
 
     val STOPPED_BY_USER: String get() = t("common.stoppedByUser")
     /** Default per-request timeout when a provider does not set `timeoutMs` (10 min). */
