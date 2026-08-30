@@ -13,6 +13,7 @@ import com.vibe.agent.i18n.VibeI18n.t
 class VibeLspDoctorAction : AnAction({ t("lsp.doctor.action") }) {
   override fun actionPerformed(e: AnActionEvent) {
     val checks = LspDoctor.check()
+    val debuggers = LspDoctor.check(LspDoctor.DEBUG_ADAPTERS)
     val report = buildString {
       appendLine(t("lsp.doctor.intro"))
       appendLine()
@@ -23,7 +24,18 @@ class VibeLspDoctorAction : AnAction({ t("lsp.doctor.action") }) {
         )
         if (!check.installed) appendLine("    " + check.spec.installCommand)
       }
-      if (checks.any { !it.installed }) {
+      appendLine()
+      appendLine(t("lsp.doctor.debuggers"))
+      for (check in debuggers) {
+        appendLine(
+          if (check.installed) t("lsp.doctor.installed", "server" to check.spec.displayName, "path" to check.path)
+          else t("lsp.doctor.missing", "server" to check.spec.displayName, "binary" to check.spec.binary)
+        )
+        if (!check.installed) appendLine("    " + check.spec.installCommand)
+      }
+      appendLine()
+      appendLine(t("lsp.doctor.debugSetup"))
+      if ((checks + debuggers).any { !it.installed }) {
         appendLine()
         appendLine(t("lsp.doctor.restartNote"))
       }

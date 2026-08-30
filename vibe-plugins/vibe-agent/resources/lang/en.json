@@ -1118,5 +1118,7 @@
   "design.rule.favicon.message": "no site icon",
   "design.rule.favicon.why": "People find a tab by its icon; without one it is a nameless rectangle among twenty identical ones.",
   "design.rule.ogTitle.message": "no og:title",
-  "design.rule.ogTitle.why": "A link sent to a messenger unfurls as a URL instead of a name — and nobody clicks it."
+  "design.rule.ogTitle.why": "A link sent to a messenger unfurls as a URL instead of a name — and nobody clicks it.",
+  "lsp.doctor.debuggers": "Debuggers (breakpoints):",
+  "lsp.doctor.debugSetup": "A debug adapter is installed as an ordinary package and attached through the LSP4IJ settings (Settings → Languages & Frameworks → Debug Adapter Protocol), where a run configuration naming this binary is created. We ship the client and the check; the adapter itself is an external program, like the language server."
 }

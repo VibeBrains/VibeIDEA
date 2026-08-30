@@ -46,7 +46,34 @@ object LspDoctor {
     extensions = setOf("php"),
   )
 
+  /**
+   * Debug adapters. Same shape as the language servers and the same reason: they are npm and
+   * composer packages, and bundling them would mean shipping someone else's runtime.
+   *
+   * They are checked separately from the servers because their absence breaks a different thing —
+   * breakpoints rather than navigation — and a report that mixes the two sends people to fix the
+   * wrong package.
+   */
+  val JS_DEBUG = ServerSpec(
+    id = "vibeJsDebug",
+    displayName = "JavaScript/TypeScript (vscode-js-debug)",
+    binary = "js-debug-adapter",
+    installCommand = "npm install -g js-debug-adapter",
+    extensions = setOf("ts", "tsx", "js", "jsx", "mjs", "cjs"),
+  )
+
+  val PHP_DEBUG = ServerSpec(
+    id = "vibePhpDebug",
+    displayName = "PHP (Xdebug)",
+    binary = "php-debug-adapter",
+    installCommand = "composer global require xdebug/vscode-php-debug",
+    extensions = setOf("php"),
+  )
+
   val ALL: List<ServerSpec> = listOf(VTSLS, PHPACTOR)
+
+  /** Checked on request rather than on every file open: debugging is a deliberate act. */
+  val DEBUG_ADAPTERS: List<ServerSpec> = listOf(JS_DEBUG, PHP_DEBUG)
 
   /** [resolve] returns the executable path, or null when the binary is nowhere to be found. */
   fun check(specs: List<ServerSpec> = ALL, resolve: (String) -> String? = ServerBinaries::find): List<Check> =
