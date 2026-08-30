@@ -909,5 +909,12 @@
   "help.doc.projectContextSpec": "project rules, reference folders, ignore, agent access",
   "help.doc.providersSpec": "providers.json: providers, models, keys, levels",
   "help.doc.serversSpec": "servers.json: the project server stack, waves, readiness",
-  "help.doc.skillsSpec": "skills: SKILL.md, format, validator"
+  "help.doc.skillsSpec": "skills: SKILL.md, format, validator",
+  "docs.action": "VibeIDEA: documentation connectivity",
+  "docs.title": "Documents",
+  "docs.summary": "Documents: {docs} · unreachable: {unreachable} · broken links: {broken}",
+  "docs.mark.unreachable": "unreachable from the entry point",
+  "docs.mark.broken": "broken links: {count}",
+  "docs.report.unreachable": "Nothing links to these documents — nobody will find them, however good they are:",
+  "docs.report.broken": "Links to nowhere (a renamed file is something no compiler catches):"
 }

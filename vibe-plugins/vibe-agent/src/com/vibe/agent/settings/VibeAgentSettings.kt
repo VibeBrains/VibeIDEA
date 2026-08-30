@@ -134,6 +134,7 @@ object VibeAgentSettings {
   private const val KEY_CONTEXT_FILTER = "vibe.agent.contextFilterMode"
   private const val KEY_LLM_PROXY = "vibe.agent.llmProxyUrl"
   private const val KEY_DIGEST_TIME = "vibe.agent.digestTime"
+  private const val KEY_DOCS_FOLDER = "vibe.agent.docsFolder"
   private const val KEY_FAILOVER = "vibe.agent.failoverChain"
 
   /** Off by default: a ceiling nobody set must not become a wall in the middle of real work. */
@@ -289,6 +290,11 @@ object VibeAgentSettings {
   /** auto | raw | aggregate | off — как чистится вывод инструментов до попадания в контекст. */
   /** Прокси только для запросов к моделям; пусто — прямое соединение. */
   /** `ЧЧ:ММ` по местному времени; пусто — сводка выключена. */
+  /** Папка документации проекта для панели «Документы». */
+  var docsFolder: String
+    get() = props.getValue(KEY_DOCS_FOLDER, "docs").ifBlank { "docs" }
+    set(value) = props.setValue(KEY_DOCS_FOLDER, value.trim(), "docs")
+
   var digestTime: String
     get() = props.getValue(KEY_DIGEST_TIME, "")
     set(value) = props.setValue(KEY_DIGEST_TIME, value.trim(), "")

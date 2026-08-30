@@ -909,5 +909,12 @@
   "help.doc.projectContextSpec": "правила проекта, папки-справочники, ignore, доступ агента",
   "help.doc.providersSpec": "providers.json: провайдеры, модели, ключи, уровни",
   "help.doc.serversSpec": "servers.json: стек серверов проекта, волны, готовность",
-  "help.doc.skillsSpec": "skills: SKILL.md, формат, валидатор"
+  "help.doc.skillsSpec": "skills: SKILL.md, формат, валидатор",
+  "docs.action": "VibeIDEA: связность документации",
+  "docs.title": "Документы",
+  "docs.summary": "Документов: {docs} · недостижимо: {unreachable} · битых ссылок: {broken}",
+  "docs.mark.unreachable": "недостижим от входа",
+  "docs.mark.broken": "битых ссылок: {count}",
+  "docs.report.unreachable": "На эти документы никто не ссылается — их не найдут, какими бы они ни были:",
+  "docs.report.broken": "Ссылки в никуда (переименованный файл компилятор не ловит):"
 }

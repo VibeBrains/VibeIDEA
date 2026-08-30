@@ -15,6 +15,8 @@
                 icon="/icons/vibeAgent.svg" doNotActivateOnStart="true"/>
     <toolWindow id="Аудит" anchor="bottom" secondary="true" factoryClass="com.vibe.agent.audit.VibeAuditToolWindowFactory"
                 icon="/icons/vibeAgent.svg" doNotActivateOnStart="true"/>
+    <toolWindow id="Документы" anchor="right" secondary="true" factoryClass="com.vibe.agent.docs.VibeDocsToolWindowFactory"
+                icon="/icons/vibeAgent.svg" doNotActivateOnStart="true"/>
     <toolWindow id="Диспетчерская" anchor="bottom" secondary="true" factoryClass="com.vibe.agent.runs.VibeRunsToolWindowFactory"
                 icon="/icons/vibeAgent.svg" doNotActivateOnStart="true"/>
     <toolWindow id="VibeAgent" anchor="right" factoryClass="com.vibe.agent.ui.VibeAgentToolWindowFactory" icon="/icons/vibeAgent.svg"/>
@@ -57,6 +59,8 @@
               text="Найти локальные модели" description="Проба привычных портов Ollama, LM Studio, llama.cpp, Jan"/>
       <action id="Vibe.ProjectCommands" class="com.vibe.agent.commands.VibeProjectCommandsAction"
               text="Команды проекта" description="Команды из .vibe/commands.json: список, разрешение и запуск"/>
+      <action id="Vibe.DocsReport" class="com.vibe.agent.docs.VibeDocsReportAction"
+              text="Связность документации" description="Недостижимые документы и ссылки в никуда"/>
       <action id="Vibe.DailyDigest" class="com.vibe.agent.digest.DailyDigestAction"
               text="Сводка за сутки" description="Что агенты сделали за последние сутки"/>
       <action id="Vibe.SpendReport" class="com.vibe.agent.budget.VibeSpendReportAction"
