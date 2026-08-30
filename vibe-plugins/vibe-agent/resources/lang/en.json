@@ -1124,5 +1124,7 @@
   "offline.blocked": "offline mode is on: the request to the «{provider}» provider was not sent. Local models still work, nothing else does.",
   "settings.agent.offline": "Offline mode",
   "settings.agent.hint.offline": "Nothing leaves the machine: no cloud model requests, no embeddings. Local providers (localhost) keep working. This is not about traffic but about a promise: some projects cannot let file contents leave the machine, and such a promise must be kept by a mechanism rather than by memory — so the check sits at the single door out, not in the interface.",
-  "rag.offline": "offline mode is on: embeddings send file content outside, so the index is not built. A local embedding model (ollama/lmstudio) still works."
+  "rag.offline": "offline mode is on: embeddings send file content outside, so the index is not built. A local embedding model (ollama/lmstudio) still works.",
+  "settings.agent.reasoning": "Reasoning depth",
+  "settings.agent.hint.reasoning": "off / low / medium / high. Every vendor named this differently: Anthropic takes a token budget, OpenAI a word, Gemini its own budget. One slider is honest only if translated into each dialect: reasoning_effort sent to Anthropic does nothing, silently, and the user concludes the setting is decorative. The budget always leaves room for the answer — a budget equal to max_tokens is rejected by the API, and that looks like «the model says nothing»."
 }

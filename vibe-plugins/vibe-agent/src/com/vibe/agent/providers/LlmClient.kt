@@ -237,7 +237,7 @@ class LlmClient(private val http: HttpClient = defaultClient(Duration.ofSeconds(
         model.topK?.let { put("topK", it) }
         model.maxOutputTokens?.let { put("maxOutputTokens", it) }
       })
-    }, model.extraBody)
+    }.let { withReasoning(it, "gemini", model) }, model.extraBody)
     var url = provider.baseUrl.trimEnd('/') + "/models/" + model.id + ":streamGenerateContent?alt=sse"
     val key = provider.apiKey
     if (key != null && provider.entry.auth.type == "query") {
@@ -265,7 +265,7 @@ class LlmClient(private val http: HttpClient = defaultClient(Duration.ofSeconds(
       model.topP?.let { put("top_p", it) }
       model.maxOutputTokens?.let { put("max_tokens", it) }
       put("messages", JsonArray(messages.map(LlmMessages::openAi)))
-    }, model.extraBody)
+    }.let { withReasoning(it, "openai", model) }, model.extraBody)
     val request = requestBuilder(provider, "chat/completions")
       .POST(HttpRequest.BodyPublishers.ofString(body.toString()))
       .build()
@@ -300,7 +300,7 @@ class LlmClient(private val http: HttpClient = defaultClient(Duration.ofSeconds(
         else put("system", system)
       }
       put("messages", JsonArray(messages.filter { it.role != "system" }.map(LlmMessages::anthropic)))
-    }, model.extraBody)
+    }.let { withReasoning(it, "anthropic", model) }, model.extraBody)
     val request = requestBuilder(provider, "messages")
       .header("anthropic-version", "2023-06-01")
       .POST(HttpRequest.BodyPublishers.ofString(body.toString()))
@@ -340,6 +340,16 @@ class LlmClient(private val http: HttpClient = defaultClient(Duration.ofSeconds(
       }
     }
     return builder
+  }
+
+  /**
+   * Reasoning fields are merged the same way as model extras, and BEFORE them: a model that spells
+   * its own thinking field differently must be able to override ours from `extraBody`.
+   */
+  private fun withReasoning(body: JsonObject, protocol: String, model: ModelEntry): JsonObject {
+    val level = ReasoningMode.levelOf(com.vibe.agent.settings.VibeAgentSettings.reasoningLevel)
+    val fields = ReasoningMode.bodyFields(protocol, level, model.maxOutputTokens ?: DEFAULT_MAX_OUTPUT_TOKENS)
+    return if (fields.isEmpty()) body else JsonObject(body + fields)
   }
 
   private fun withExtras(body: JsonObject, extra: JsonObject?): JsonObject {

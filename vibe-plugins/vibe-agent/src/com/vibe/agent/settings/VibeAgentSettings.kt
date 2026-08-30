@@ -139,6 +139,7 @@ object VibeAgentSettings {
   private const val KEY_MINIMALISM = "vibe.agent.minimalismMode"
   private const val KEY_METRIC_PATTERN = "vibe.agent.metricPattern"
   private const val KEY_OFFLINE = "vibe.agent.offline"
+  private const val KEY_REASONING = "vibe.agent.reasoningLevel"
   private const val KEY_TELEGRAM_ENABLED = "vibe.agent.telegramEnabled"
   private const val KEY_TELEGRAM_CHATS = "vibe.agent.telegramChats"
   private const val KEY_TELEGRAM_PROJECT = "vibe.agent.telegramProject"
@@ -309,6 +310,11 @@ object VibeAgentSettings {
    * Это не «экономия трафика», а обещание: бывают проекты, где содержимое файлов не может покинуть
    * машину, и такое обещание должно исполняться механизмом, а не памятью человека.
    */
+  /** off | low | medium | high — глубина рассуждений, переведённая на диалект каждого провайдера. */
+  var reasoningLevel: String
+    get() = props.getValue(KEY_REASONING, "off")
+    set(value) = props.setValue(KEY_REASONING, value.trim().lowercase(), "off")
+
   var offline: Boolean
     get() = props.getBoolean(KEY_OFFLINE, false)
     set(value) = props.setValue(KEY_OFFLINE, value, false)

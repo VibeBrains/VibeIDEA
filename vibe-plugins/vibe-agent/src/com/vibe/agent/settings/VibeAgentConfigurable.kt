@@ -34,6 +34,7 @@ class VibeAgentConfigurable : Configurable, Configurable.NoScroll {
   private var minimalismMode: com.intellij.openapi.ui.ComboBox<String>? = null
   private var metricPattern: com.intellij.ui.components.JBTextField? = null
   private var offlineBox: com.intellij.ui.components.JBCheckBox? = null
+  private var reasoningLevel: com.intellij.openapi.ui.ComboBox<String>? = null
   private var metricDirection: com.intellij.openapi.ui.ComboBox<String>? = null
   private var failoverField: com.intellij.ui.components.JBTextField? = null
   private var verifyMode: ComboBox<String>? = null
@@ -64,6 +65,10 @@ class VibeAgentConfigurable : Configurable, Configurable.NoScroll {
   override fun createComponent(): JComponent {
     val hooks = JBCheckBox(t("settings.agent.hooks"), VibeAgentSettings.hooksEnabled).also { hooksEnabled = it }
     val audit = JBCheckBox(t("settings.agent.audit"), VibeAgentSettings.auditEnabled).also { auditEnabled = it }
+    val reasoning = com.intellij.openapi.ui.ComboBox(arrayOf("off", "low", "medium", "high")).also {
+      it.selectedItem = VibeAgentSettings.reasoningLevel
+      reasoningLevel = it
+    }
     val offline = com.intellij.ui.components.JBCheckBox(t("settings.agent.offline"), VibeAgentSettings.offline).also { offlineBox = it }
     val metric = com.intellij.ui.components.JBTextField(VibeAgentSettings.metricPattern, 28).also { metricPattern = it }
     val metricDir = com.intellij.openapi.ui.ComboBox(arrayOf("lower", "higher")).also {
@@ -127,6 +132,8 @@ class VibeAgentConfigurable : Configurable, Configurable.NoScroll {
       .addComponent(section(t("settings.agent.section.safety")))
       .addLabeledComponent(t("settings.agent.silence"), silence)
       .addComponent(hint(t("settings.agent.hint.silence")))
+      .addLabeledComponent(t("settings.agent.reasoning"), reasoning)
+      .addComponent(hint(t("settings.agent.hint.reasoning")))
       .addComponent(offline)
       .addComponent(hint(t("settings.agent.hint.offline")))
       .addLabeledComponent(t("settings.agent.metricPattern"), metric)
@@ -221,6 +228,7 @@ class VibeAgentConfigurable : Configurable, Configurable.NoScroll {
     (minimalismMode?.selectedItem as? String ?: VibeAgentSettings.minimalismMode) != VibeAgentSettings.minimalismMode ||
     (metricPattern?.text?.trim() ?: VibeAgentSettings.metricPattern) != VibeAgentSettings.metricPattern ||
     (offlineBox?.isSelected ?: VibeAgentSettings.offline) != VibeAgentSettings.offline ||
+    (reasoningLevel?.selectedItem as? String ?: VibeAgentSettings.reasoningLevel) != VibeAgentSettings.reasoningLevel ||
     (metricDirection?.selectedItem as? String ?: VibeAgentSettings.metricDirection) != VibeAgentSettings.metricDirection ||
     (failoverField?.text?.trim() ?: VibeAgentSettings.failoverChain) != VibeAgentSettings.failoverChain ||
     (verifyMode?.item ?: VibeAgentSettings.verifyMode) != VibeAgentSettings.verifyMode ||
@@ -260,6 +268,7 @@ class VibeAgentConfigurable : Configurable, Configurable.NoScroll {
     (minimalismMode?.selectedItem as? String)?.let { VibeAgentSettings.minimalismMode = it }
     metricPattern?.let { VibeAgentSettings.metricPattern = it.text }
     offlineBox?.let { VibeAgentSettings.offline = it.isSelected }
+    (reasoningLevel?.selectedItem as? String)?.let { VibeAgentSettings.reasoningLevel = it }
     (metricDirection?.selectedItem as? String)?.let { VibeAgentSettings.metricDirection = it }
     failoverField?.let { VibeAgentSettings.failoverChain = it.text }
     verifyMode?.let { VibeAgentSettings.verifyMode = it.item }
@@ -308,6 +317,7 @@ class VibeAgentConfigurable : Configurable, Configurable.NoScroll {
     minimalismMode?.selectedItem = VibeAgentSettings.minimalismMode
     metricPattern?.text = VibeAgentSettings.metricPattern
     offlineBox?.isSelected = VibeAgentSettings.offline
+    reasoningLevel?.selectedItem = VibeAgentSettings.reasoningLevel
     metricDirection?.selectedItem = VibeAgentSettings.metricDirection
     failoverField?.text = VibeAgentSettings.failoverChain
     verifyMode?.item = VibeAgentSettings.verifyMode
