@@ -8,6 +8,14 @@ import com.redhat.devtools.lsp4ij.server.StreamConnectionProvider
 
 class VtslsServerFactory : LanguageServerFactory {
   override fun createConnectionProvider(project: Project): StreamConnectionProvider {
-    return object : ProcessStreamConnectionProvider(ServerBinaries.vtslsCommand(), project.basePath) {}
+    return VtslsConnectionProvider(project.basePath)
   }
 }
+
+/**
+ * Named rather than anonymous on purpose: the JUnit vintage engine scans every class of the
+ * module and cannot build a display name for an anonymous subclass, which fails test discovery
+ * for the whole module before a single test runs.
+ */
+private class VtslsConnectionProvider(workingDirectory: String?) :
+  ProcessStreamConnectionProvider(ServerBinaries.vtslsCommand(), workingDirectory)

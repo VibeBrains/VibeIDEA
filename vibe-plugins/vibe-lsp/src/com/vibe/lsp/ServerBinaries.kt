@@ -21,14 +21,20 @@ internal object ServerBinaries {
     add(Path.of("/usr/local/bin"))
   }
 
-  internal fun resolve(binary: String): String {
+  /**
+   * The executable, or null when it is nowhere to be found. The doctor needs the honest
+   * answer: a path invented from the bare name would report an installed server that then
+   * fails to start, which is exactly the silence the doctor exists to remove.
+   */
+  fun find(binary: String): String? {
     val fromPath = System.getenv("PATH")?.split(java.io.File.pathSeparator).orEmpty()
       .asSequence().map { Path.of(it, binary) }.firstOrNull { Files.isExecutable(it) }
     if (fromPath != null) return fromPath.toString()
-    val fromKnown = EXTRA_DIRS.asSequence().map { it.resolve(binary) }.firstOrNull { Files.isExecutable(it) }
-    // Fall back to the bare name: the failure to start then names exactly what is missing.
-    return (fromKnown ?: Path.of(binary)).toString()
+    return EXTRA_DIRS.asSequence().map { it.resolve(binary) }.firstOrNull { Files.isExecutable(it) }?.toString()
   }
+
+  // Falls back to the bare name: the failure to start then names exactly what is missing.
+  internal fun resolve(binary: String): String = find(binary) ?: binary
 
   fun vtslsCommand(): List<String> = listOf(resolve("vtsls"), "--stdio")
 

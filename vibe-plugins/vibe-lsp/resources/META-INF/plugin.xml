@@ -8,5 +8,24 @@
     Syntax highlighting comes from the bundled TextMate grammars.
   ]]></description>
   <depends>com.intellij.modules.platform</depends>
+  <!-- Каталог строк общий для всех наших плагинов (решение владельца 2026-08-30). -->
+  <depends>com.vibe.agent</depends>
   <depends optional="true" config-file="vibe-lsp4ij-integration.xml">com.redhat.devtools.lsp4ij</depends>
+
+  <extensions defaultExtensionNs="com.intellij">
+    <notificationGroup id="Vibe Languages" displayType="BALLOON"/>
+  </extensions>
+
+  <projectListeners>
+    <listener class="com.vibe.lsp.VibeLspMissingServerNotifier"
+              topic="com.intellij.openapi.fileEditor.FileEditorManagerListener"/>
+  </projectListeners>
+
+  <actions>
+    <action id="Vibe.LspDoctor" class="com.vibe.lsp.VibeLspDoctorAction"
+            text="VibeIDEA: языковые серверы"
+            description="Установлены ли vtsls и Phpactor, и как поставить недостающий">
+      <add-to-group group-id="ToolsMenu" anchor="last"/>
+    </action>
+  </actions>
 </idea-plugin>

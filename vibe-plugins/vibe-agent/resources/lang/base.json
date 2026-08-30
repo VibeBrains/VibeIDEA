@@ -716,5 +716,15 @@
   "write.refused": "пользователь отклонил запись в {path} (закрытый диалог = отказ)",
   "tool.fallbackTitle": "инструмент",
   "runs.outcome.windowClosed": "окно закрылось, не завершив прогон",
-  "gates.timeout": "таймаут"
+  "gates.timeout": "таймаут",
+  "lsp.doctor.action": "VibeIDEA: языковые серверы",
+  "lsp.doctor.title": "Языковые серверы",
+  "lsp.doctor.intro": "VibeIDEA поставляет клиента LSP, а сами серверы ставятся отдельно — они распространяются через npm и composer.",
+  "lsp.doctor.installed": "✔ {server} — установлен: {path}",
+  "lsp.doctor.missing": "✖ {server} — не найден: бинарь «{binary}» отсутствует в PATH и в известных местах установки. Без него переход к определению и подсказки не работают. Установите:",
+  "lsp.doctor.restartNote": "После установки перезапустите IDE: PATH читается при старте процесса.",
+  "lsp.missing.title": "{server}: сервер не установлен",
+  "lsp.missing.body": "Файл открыт, но бинаря «{binary}» нет — подсказки и переход к определению работать не будут. Установите и перезапустите IDE:\n{command}",
+  "lsp.missing.copyCommand": "Скопировать команду",
+  "lsp.missing.mute": "Больше не напоминать"
 }
