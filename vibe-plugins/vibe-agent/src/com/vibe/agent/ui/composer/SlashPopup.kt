@@ -280,6 +280,7 @@ class SlashPopup(
       Row("/simplify", "/simplify", t("slash.command.simplify")),
       Row("/measure ", "/measure", t("slash.command.measure")),
       Row("/learn ", "/learn", t("slash.command.learn")),
+      Row("/deploy", "/deploy", t("slash.command.deploy")),
       Row("/index", "/index", t("slash.command.index")),
       Row("/output ", "/output", t("slash.command.output")),
       Row(null, "/skill:", t("slash.command.skill"), toSkills = true),

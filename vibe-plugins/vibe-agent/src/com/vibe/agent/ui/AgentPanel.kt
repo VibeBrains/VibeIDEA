@@ -259,6 +259,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
       handleSimplifyCommand(message) -> true
       handleMeasureCommand(message) -> true
       handleLearnCommand(message) -> true
+      handleDeployCommand(message) -> true
       sessionCeilingReached(message.text) -> false
       handleWatchCommand(message) -> true
       else -> startTurn(message)
@@ -681,6 +682,76 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     override val empty: String get() = t("trace.empty")
     override val ms: String get() = t("trace.ms")
     override val failureMark: String get() = "✖"
+  }
+
+  /**
+   * `/deploy` — the plan for getting this project out of the laptop, and the rule that governs it.
+   *
+   * The plan is generated because the answer is boring and the same every time; what is not boring
+   * is which steps reach outside. Those cost money, create resources with someone's name on them
+   * and cannot be undone, so they are marked and each one is confirmed separately. A deploy that
+   * «просто взяло и сделало» is the story people tell about the tool they stopped using.
+   */
+  private fun handleDeployCommand(message: ComposedMessage): Boolean {
+    if (message.text.trim() != DEPLOY_COMMAND) return false
+    userBubble(message.text.trim())
+    val base = project.basePath ?: run { systemLine(t("deploy.noProject")); return true }
+    val files = runCatching {
+      java.nio.file.Files.list(java.nio.file.Path.of(base)).use { stream ->
+        stream.map { it.fileName.toString() }.toList().toSet()
+      }
+    }.getOrDefault(emptySet())
+    val kind = com.vibe.agent.deploy.DeployPlan.detect(files)
+    val plan = com.vibe.agent.deploy.DeployPlan.plan(kind, files)
+    val text = buildString {
+      appendLine(t("deploy.kind", "kind" to kindLabel(kind)))
+      appendLine()
+      plan.steps.forEachIndexed { index, step ->
+        appendLine((index + 1).toString() + ". " + stepLabel(step.id) + (if (step.external) "  " + t("deploy.externalMark") else ""))
+      }
+      if (plan.warnings.isNotEmpty()) {
+        appendLine()
+        plan.warnings.forEach { appendLine("⚠️ " + warningLabel(it)) }
+      }
+      appendLine()
+      append(t("deploy.rule"))
+    }
+    SwingUtilities.invokeLater {
+      val console = TerminalConsole(t("deploy.title"))
+      console.append(text)
+      messages.add(console)
+      revalidateScroll()
+    }
+    return true
+  }
+
+  private fun kindLabel(kind: com.vibe.agent.deploy.DeployPlan.Kind): String = when (kind) {
+    com.vibe.agent.deploy.DeployPlan.Kind.NODE -> "Node.js"
+    com.vibe.agent.deploy.DeployPlan.Kind.PYTHON -> "Python"
+    com.vibe.agent.deploy.DeployPlan.Kind.GO -> "Go"
+    com.vibe.agent.deploy.DeployPlan.Kind.JVM -> "JVM"
+    com.vibe.agent.deploy.DeployPlan.Kind.STATIC -> t("deploy.kind.static")
+    com.vibe.agent.deploy.DeployPlan.Kind.DOCKER -> "Docker"
+    com.vibe.agent.deploy.DeployPlan.Kind.UNKNOWN -> t("deploy.kind.unknown")
+  }
+
+  private fun stepLabel(id: String): String = when (id) {
+    com.vibe.agent.deploy.DeployPlan.STEP_CHECK -> t("deploy.step.check")
+    com.vibe.agent.deploy.DeployPlan.STEP_DOCKERFILE -> t("deploy.step.dockerfile")
+    com.vibe.agent.deploy.DeployPlan.STEP_STATIC_SERVER -> t("deploy.step.staticServer")
+    com.vibe.agent.deploy.DeployPlan.STEP_BUILD_IMAGE -> t("deploy.step.buildImage")
+    com.vibe.agent.deploy.DeployPlan.STEP_LOCAL_RUN -> t("deploy.step.localRun")
+    com.vibe.agent.deploy.DeployPlan.STEP_REGISTRY -> t("deploy.step.registry")
+    com.vibe.agent.deploy.DeployPlan.STEP_HOST -> t("deploy.step.host")
+    com.vibe.agent.deploy.DeployPlan.STEP_DOMAIN -> t("deploy.step.domain")
+    com.vibe.agent.deploy.DeployPlan.STEP_TLS -> t("deploy.step.tls")
+    else -> t("deploy.step.ci")
+  }
+
+  private fun warningLabel(id: String): String = when (id) {
+    com.vibe.agent.deploy.DeployPlan.WARN_UNKNOWN_KIND -> t("deploy.warn.unknownKind")
+    com.vibe.agent.deploy.DeployPlan.WARN_NO_DOCKERIGNORE -> t("deploy.warn.noDockerignore")
+    else -> t("deploy.warn.envInRepo")
   }
 
   /**
@@ -3129,6 +3200,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     const val SIMPLIFY_COMMAND = "/simplify"
     const val MEASURE_COMMAND = "/measure"
     const val LEARN_COMMAND = "/learn"
+    const val DEPLOY_COMMAND = "/deploy"
     const val MEASURE_TIMEOUT_SEC = 900L
     const val INDEX_COMMAND = "/index"
     const val INDEX_PROGRESS_STEP = 25
