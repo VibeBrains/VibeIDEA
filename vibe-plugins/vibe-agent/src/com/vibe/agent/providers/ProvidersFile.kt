@@ -1,6 +1,8 @@
 // Copyright 2026 VibeBrains. Use of this source code is governed by the Apache 2.0 license.
 package com.vibe.agent.providers
 
+import com.vibe.agent.i18n.VibeI18n.t
+
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.booleanOrNull
@@ -101,7 +103,7 @@ object ProvidersFile {
   fun parse(text: String, source: String = "providers.json", onWarning: (String) -> Unit): List<ProviderEntry> {
     val root = json.parseToJsonElement(stripJsonc(text)).jsonObject
     val providers = root["providers"]?.jsonArray ?: run {
-      onWarning("$source: нет массива providers")
+      onWarning(t("providers.warn.noArray", "source" to source))
       return emptyList()
     }
     val result = ArrayList<ProviderEntry>()
@@ -109,11 +111,11 @@ object ProvidersFile {
       try {
         val o = el.jsonObject
         val id = o["id"]?.jsonPrimitive?.contentOrNull
-        if (id.isNullOrBlank()) { onWarning("$source: запись без id пропущена"); continue }
+        if (id.isNullOrBlank()) { onWarning(t("providers.warn.noId", "source" to source)); continue }
         result.add(parseProvider(id, o))
       }
       catch (e: Exception) {
-        onWarning("$source: запись пропущена: ${e.message}")
+        onWarning(t("providers.warn.entrySkipped", "source" to source, "reason" to e.message))
       }
     }
     return result

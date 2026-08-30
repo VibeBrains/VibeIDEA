@@ -1,6 +1,8 @@
 // Copyright 2026 VibeBrains. Use of this source code is governed by the Apache 2.0 license.
 package com.vibe.agent.hooks
 
+import com.vibe.agent.i18n.VibeI18n.t
+
 /**
  * Pure exit-code semantics for hooks, VibeIDE contract verbatim:
  * 0 = allowed (non-empty stdout becomes a note to the agent); 2 = refuse;
@@ -26,8 +28,8 @@ object HookOutcome {
   const val OUTPUT_LIMIT = 4000
 
   fun verdictOf(hook: Hook, exitCode: Int?, timedOut: Boolean, spawnFailed: Boolean, stdout: String, stderr: String): HookResult {
-    if (spawnFailed) return HookResult(hook, HookVerdict.BROKEN, "хук «${hook.name()}» не запустился")
-    if (timedOut) return HookResult(hook, HookVerdict.BROKEN, "хук «${hook.name()}» не уложился в ${hook.timeoutMs} мс и был остановлен")
+    if (spawnFailed) return HookResult(hook, HookVerdict.BROKEN, t("hooks.result.spawnFailed", "hook" to hook.name()))
+    if (timedOut) return HookResult(hook, HookVerdict.BROKEN, t("hooks.result.timedOut", "hook" to hook.name(), "timeout" to hook.timeoutMs))
     return when (exitCode) {
       0 -> {
         val note = clip(stdout)
@@ -37,12 +39,12 @@ object HookOutcome {
       REFUSE_EXIT_CODE -> {
         val reason = clip(stderr).takeUnless { it.isNullOrBlank() }
           ?: clip(stdout).takeUnless { it.isNullOrBlank() }
-          ?: "хук «${hook.name()}» отклонил действие без объяснения"
+          ?: t("hooks.result.refusedSilently", "hook" to hook.name())
         HookResult(hook, HookVerdict.REFUSE, reason)
       }
       else -> {
         val detail = listOf(clip(stderr), clip(stdout)).firstOrNull { !it.isNullOrBlank() }
-        HookResult(hook, HookVerdict.BROKEN, "хук «${hook.name()}» завершился с кодом $exitCode (отказ — это код $REFUSE_EXIT_CODE)" +
+        HookResult(hook, HookVerdict.BROKEN, t("hooks.result.badExit", "hook" to hook.name(), "code" to exitCode, "refuseCode" to REFUSE_EXIT_CODE) +
           (detail?.let { ": $it" } ?: ""))
       }
     }
@@ -57,8 +59,8 @@ object HookOutcome {
     val broken = results.filter { it.verdict == HookVerdict.BROKEN }.map { it.hook.name() }
     val refuse = results.firstOrNull { it.verdict == HookVerdict.REFUSE }
     val notes = results.filter { it.verdict == HookVerdict.NOTE }.mapNotNull { it.message }
-    val header = if (event == HookEvent.PRE_TOOL_USE) "Действие остановлено проверкой проекта:"
-                 else "Проверка проекта нашла проблему в том, что только что сделано:"
+    val header = if (event == HookEvent.PRE_TOOL_USE) t("hooks.header.blocked")
+                 else t("hooks.header.flagged")
     return when {
       refuse != null -> HookDecision(
         blocked = event == HookEvent.PRE_TOOL_USE,
@@ -74,6 +76,6 @@ object HookOutcome {
   private fun clip(s: String): String? {
     val t = s.trim()
     if (t.isEmpty()) return null
-    return if (t.length > OUTPUT_LIMIT) t.take(OUTPUT_LIMIT) + "\n…(вывод обрезан)" else t
+    return if (t.length > OUTPUT_LIMIT) t.take(OUTPUT_LIMIT) + "\n" + t("hooks.output.clipped") else t
   }
 }

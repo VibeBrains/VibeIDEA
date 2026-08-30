@@ -1,6 +1,8 @@
 // Copyright 2026 VibeBrains. Use of this source code is governed by the Apache 2.0 license.
 package com.vibe.agent.ui.composer
 
+import com.vibe.agent.i18n.VibeI18n.t
+
 import com.intellij.ui.ColorUtil
 import com.intellij.ui.JBColor
 import com.intellij.util.ui.JBFont
@@ -28,7 +30,7 @@ class LandingBlock(pastChats: JComponent, private val onPrompt: (String) -> Unit
   private val suggestionsSection = JPanel().apply {
     layout = BoxLayout(this, BoxLayout.Y_AXIS)
     isOpaque = false
-    add(sectionTitle("Подсказки"))
+    add(sectionTitle(t("landing.hints")))
     SUGGESTIONS.forEach { text ->
       add(PillButton(text = text) { onPrompt(text) }.apply {
         alignmentX = Component.LEFT_ALIGNMENT
@@ -41,7 +43,7 @@ class LandingBlock(pastChats: JComponent, private val onPrompt: (String) -> Unit
   private val pastChatsSection = JPanel().apply {
     layout = BoxLayout(this, BoxLayout.Y_AXIS)
     isOpaque = false
-    add(sectionTitle("Прошлые чаты"))
+    add(sectionTitle(t("landing.pastChats")))
     add(pastChats.apply { alignmentX = Component.LEFT_ALIGNMENT })
     isVisible = false
   }
@@ -64,8 +66,8 @@ class LandingBlock(pastChats: JComponent, private val onPrompt: (String) -> Unit
 
   fun update(activeFileName: String?, modelLabel: String?, showPastChats: Boolean) {
     chips.removeAll()
-    activeFileName?.let { chips.add(InfoChip("Файл", it)) }
-    modelLabel?.let { chips.add(InfoChip("Модель", it)) }
+    activeFileName?.let { chips.add(InfoChip(t("landing.file"), it)) }
+    modelLabel?.let { chips.add(InfoChip(t("landing.model"), it)) }
     chips.isVisible = chips.componentCount > 0
     pastChatsSection.isVisible = showPastChats
     suggestionsSection.isVisible = !showPastChats
@@ -99,10 +101,10 @@ class LandingBlock(pastChats: JComponent, private val onPrompt: (String) -> Unit
 
   companion object {
     val SUGGESTIONS = listOf(
-      "Кратко опиши мой проект",
-      "Как устроены типы в этом проекте?",
-      "Помоги написать AGENTS.md для этого репозитория",
-      "Прикрепить правила агента (@agent)",
+      t("landing.prompt.describe"),
+      t("landing.prompt.types"),
+      t("landing.prompt.agentsMd"),
+      t("landing.prompt.attachRules"),
     )
     private const val GAP = 6
     private const val SECTION_GAP = 16

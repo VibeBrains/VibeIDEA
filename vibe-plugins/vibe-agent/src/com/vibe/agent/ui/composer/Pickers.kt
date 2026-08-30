@@ -1,6 +1,8 @@
 // Copyright 2026 VibeBrains. Use of this source code is governed by the Apache 2.0 license.
 package com.vibe.agent.ui.composer
 
+import com.vibe.agent.i18n.VibeI18n.t
+
 import com.intellij.icons.AllIcons
 import com.intellij.openapi.ui.popup.JBPopupFactory
 import com.intellij.ui.ColoredListCellRenderer
@@ -52,9 +54,9 @@ class ModelPicker(private val onChoose: (ChatTarget) -> Unit, private val onOpen
     val current = selected
     pill.text = current?.label ?: NONE_LABEL
     pill.toolTipText = when (current) {
-      is ChatTarget.Agent -> "Агент ACP: ${current.config.command} ${current.config.args.joinToString(" ")}"
+      is ChatTarget.Agent -> t("picker.target.agentTooltip", "command" to current.config.command, "args" to current.config.args.joinToString(" "))
       is ChatTarget.Model -> "${current.provider.name} · ${current.model.id}"
-      null -> "Нет ни агента, ни провайдера с моделями — откройте настройки"
+      null -> t("picker.target.emptyTooltip")
     }
   }
 
@@ -69,21 +71,21 @@ class ModelPicker(private val onChoose: (ChatTarget) -> Unit, private val onOpen
           icon = if (value.id == selected?.id) AllIcons.Actions.Checked else EmptyIcon.ICON_16
           append(value.label)
           when (value) {
-            is ChatTarget.Agent -> append("  агент ACP", SimpleTextAttributes.GRAYED_ATTRIBUTES)
+            is ChatTarget.Agent -> append("  " + t("picker.target.acp"), SimpleTextAttributes.GRAYED_ATTRIBUTES)
             is ChatTarget.Model -> {
               append("  ${value.provider.name}", SimpleTextAttributes.GRAYED_ATTRIBUTES)
-              if (value.static) append("  · кастом", SimpleTextAttributes.GRAYED_SMALL_ATTRIBUTES)
+              if (value.static) append("  · " + t("picker.target.custom"), SimpleTextAttributes.GRAYED_SMALL_ATTRIBUTES)
             }
           }
         }
       })
-      .setNamerForFiltering { t -> t.label + " " + ((t as? ChatTarget.Model)?.provider?.name ?: "агент") }
+      .setNamerForFiltering { target -> target.label + " " + ((target as? ChatTarget.Model)?.provider?.name ?: t("picker.target.agentWord")) }
       .setFilterAlwaysVisible(true)
       .setSelectedValue(selected, true)
-      .setItemChosenCallback { t ->
-        selected = t
+      .setItemChosenCallback { target ->
+        selected = target
         refresh()
-        onChoose(t)
+        onChoose(target)
       }
       .createPopup()
       // The popup builds its own scroll pane deep inside and never exposes it — reach for it
@@ -94,7 +96,7 @@ class ModelPicker(private val onChoose: (ChatTarget) -> Unit, private val onOpen
 
   private companion object {
     // Providers are seeded active out of the box, so an empty target list usually means «no key yet».
-    const val NONE_LABEL = "Нужен ключ провайдера"
+    val NONE_LABEL: String get() = t("picker.target.needKey")
   }
 }
 
@@ -111,7 +113,7 @@ class ModePicker(private val onChoose: (modeId: String) -> Unit) {
     pill.isVisible = modes != null && modes.available.isNotEmpty()
     val current = modes?.available?.firstOrNull { it.id == modes.currentModeId }
     pill.text = current?.name ?: modes?.currentModeId ?: ""
-    pill.toolTipText = current?.description ?: "Режим сессии агента"
+    pill.toolTipText = current?.description ?: t("picker.mode.tooltip")
     pill.revalidate()
   }
 

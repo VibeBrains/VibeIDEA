@@ -1,6 +1,8 @@
 // Copyright 2026 VibeBrains. Use of this source code is governed by the Apache 2.0 license.
 package com.vibe.agent.hooks
 
+import com.vibe.agent.i18n.VibeI18n.t
+
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
@@ -50,38 +52,38 @@ object HookConfig {
       Json { ignoreUnknownKeys = true }.parseToJsonElement(text)
     }
     catch (e: Exception) {
-      onWarning("hooks.json: не разобран как JSON (${e.message})")
+      onWarning(t("hooks.warn.badJson", "reason" to e.message))
       return emptyList()
     }
     val obj = root as? JsonObject ?: run {
-      onWarning("hooks.json: ожидался объект с массивом \"hooks\"")
+      onWarning(t("hooks.warn.noArray"))
       return emptyList()
     }
     val array = obj["hooks"] as? JsonArray ?: run {
-      onWarning("hooks.json: ожидался объект с массивом \"hooks\"")
+      onWarning(t("hooks.warn.noArray"))
       return emptyList()
     }
     val result = ArrayList<Hook>()
     for ((i, element) in array.withIndex()) {
-      val hookObj = element as? JsonObject ?: run { onWarning("hooks.json: хук #${i + 1} не объект — пропущен"); continue }
+      val hookObj = element as? JsonObject ?: run { onWarning(t("hooks.warn.notObject", "index" to (i + 1))); continue }
       val event = HookEvent.fromWire(hookObj["event"]?.jsonPrimitive?.contentOrNull) ?: run {
-        onWarning("hooks.json: хук #${i + 1} с неизвестным event — пропущен")
+        onWarning(t("hooks.warn.unknownEvent", "index" to (i + 1)))
         continue
       }
       val command = hookObj["command"]?.jsonPrimitive?.contentOrNull?.takeIf { it.isNotBlank() } ?: run {
-        onWarning("hooks.json: хук #${i + 1} без command — пропущен")
+        onWarning(t("hooks.warn.noCommand", "index" to (i + 1)))
         continue
       }
       var tools = (hookObj["tools"] as? JsonArray).orEmptyList().mapNotNull { it.jsonPrimitive.contentOrNull }
       if (event == HookEvent.TURN_END && tools.isNotEmpty()) {
-        onWarning("hooks.json: у turnEnd-хука \"${hookObj["label"]?.jsonPrimitive?.contentOrNull ?: command}\" поле tools игнорируется")
+        onWarning(t("hooks.warn.turnEndTools", "hook" to (hookObj["label"]?.jsonPrimitive?.contentOrNull ?: command)))
         tools = emptyList()
       }
       val timeoutMs = when (val raw = hookObj["timeoutMs"]?.jsonPrimitive?.longOrNull) {
         null -> DEFAULT_TIMEOUT_MS
         in 1..MAX_TIMEOUT_MS -> raw
         else -> if (raw > MAX_TIMEOUT_MS) {
-          onWarning("hooks.json: timeoutMs $raw урезан до потолка $MAX_TIMEOUT_MS")
+          onWarning(t("hooks.warn.timeoutClamped", "value" to raw, "max" to MAX_TIMEOUT_MS))
           MAX_TIMEOUT_MS
         } else DEFAULT_TIMEOUT_MS
       }

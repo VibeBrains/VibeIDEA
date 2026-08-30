@@ -1,6 +1,8 @@
 // Copyright 2026 VibeBrains. Use of this source code is governed by the Apache 2.0 license.
 package com.vibe.agent.hooks
 
+import com.vibe.agent.i18n.VibeI18n.t
+
 import com.intellij.ide.trustedProjects.TrustedProjects
 import com.intellij.openapi.project.Project
 import com.vibe.agent.settings.VibeAgentSettings
@@ -76,7 +78,7 @@ class HookRunner(private val project: Project, private val onWarning: (String) -
     if (!Files.isRegularFile(file)) { cached = emptyList(); cachedMtime = -1L; return emptyList() }
     // Guard against a pathological/huge file OOMing the read (a config, not a data file).
     if (Files.size(file) > MAX_HOOKS_BYTES) {
-      if (cachedMtime != -2L) { onWarning("hooks.json больше ${MAX_HOOKS_BYTES / 1024} КБ — пропущен"); cachedMtime = -2L }
+      if (cachedMtime != -2L) { onWarning(t("hooks.warn.tooBig", "limit" to (MAX_HOOKS_BYTES / 1024))); cachedMtime = -2L }
       cached = emptyList()
       return emptyList()
     }
