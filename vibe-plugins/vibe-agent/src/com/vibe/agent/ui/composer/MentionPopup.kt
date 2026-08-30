@@ -1,6 +1,8 @@
 // Copyright 2026 VibeBrains. Use of this source code is governed by the Apache 2.0 license.
 package com.vibe.agent.ui.composer
 
+import com.vibe.agent.i18n.VibeI18n.t
+
 import com.intellij.icons.AllIcons
 import com.intellij.openapi.Disposable
 import com.intellij.openapi.actionSystem.ActionUpdateThread
@@ -72,11 +74,11 @@ class MentionPopup(
 
   /** Sub-levels of the menu; the root is `level == null`. */
   private enum class Branch(val title: String, val icon: Icon) {
-    SELECTION("Выделение", AllIcons.Actions.InSelection),
-    RECENT("Недавние", AllIcons.Vcs.History),
-    WORKSPACE("Воркспейс", AllIcons.Nodes.ModuleGroup),
-    FILES("Файлы", AllIcons.Actions.Search),
-    FOLDERS("Папки", AllIcons.Nodes.Folder),
+    SELECTION(t("mention.group.selection"), AllIcons.Actions.InSelection),
+    RECENT(t("mention.group.recent"), AllIcons.Vcs.History),
+    WORKSPACE(t("mention.group.workspace"), AllIcons.Nodes.ModuleGroup),
+    FILES(t("mention.group.files"), AllIcons.Actions.Search),
+    FOLDERS(t("mention.group.folders"), AllIcons.Nodes.Folder),
   }
 
   private sealed interface Row {
@@ -454,10 +456,10 @@ class MentionPopup(
     const val BRANCH_SUFFIX = " ›"
     const val DETAIL_SEPARATOR = "  "
 
-    const val PROMPT_TEXT = "Введите текст для фильтра…"
-    const val NOT_FOUND_TEXT = "Ничего не найдено"
-    const val NO_SELECTION_TEXT = "Нет выделения"
-    const val INDEXING_TEXT = "Индексация… попробуйте чуть позже"
+    val PROMPT_TEXT: String get() = t("mention.hint.type")
+    val NOT_FOUND_TEXT: String get() = t("mention.hint.empty")
+    val NO_SELECTION_TEXT: String get() = t("mention.hint.noSelection")
+    val INDEXING_TEXT: String get() = t("mention.hint.indexing")
 
     val HEADER_FG = JBColor.namedColor("Vibe.Mention.headerForeground", JBColor.namedColor("Label.foreground", JBColor.foreground()))
     val HINT_FG = JBColor.namedColor("Vibe.Mention.hintForeground", JBColor.namedColor("Label.infoForeground", JBColor.GRAY))

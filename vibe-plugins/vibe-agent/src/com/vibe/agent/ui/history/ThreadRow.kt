@@ -1,6 +1,8 @@
 // Copyright 2026 VibeBrains. Use of this source code is governed by the Apache 2.0 license.
 package com.vibe.agent.ui.history
 
+import com.vibe.agent.i18n.VibeI18n.t
+
 import com.intellij.icons.AllIcons
 import com.intellij.ui.JBColor
 import com.intellij.util.ui.JBFont
@@ -97,14 +99,14 @@ internal class ThreadRow(
 
   private fun buildQuoteLine(quote: TranscriptSearch.Quote, onOpenQuote: () -> Unit): JLabel {
     val prefix = when (quote.role) {
-      Role.USER -> "Вы:"
-      Role.ASSISTANT -> "Ответ:"
-      Role.OTHER -> "В переписке:"
+      Role.USER -> t("history.quote.you")
+      Role.ASSISTANT -> t("history.quote.answer")
+      Role.OTHER -> t("history.quote.other")
     }
     return JLabel("$prefix ${quote.snippet}").apply {
       font = JBFont.label().deriveFont(QUOTE_FONT_SIZE)
       foreground = MUTED
-      toolTipText = "Открыть чат на этом сообщении"
+      toolTipText = t("history.quote.open")
       cursor = Cursor.getPredefinedCursor(Cursor.HAND_CURSOR)
       trackHover(this)
       addMouseListener(object : MouseAdapter() {
@@ -126,15 +128,15 @@ internal class ThreadRow(
 
     val actions = iconRow()
     if (showMoveHere) {
-      actions.add(iconButton(AllIcons.Actions.MoveTo2, "Переместить в этот проект", onMoveHere))
+      actions.add(iconButton(AllIcons.Actions.MoveTo2, t("history.action.moveHere"), onMoveHere))
     }
-    actions.add(iconButton(AllIcons.Actions.Copy, "Дублировать", onDuplicate))
-    actions.add(iconButton(AllIcons.Actions.GC, "Удалить") { armed = true; showCard(CARD_CONFIRM) })
+    actions.add(iconButton(AllIcons.Actions.Copy, t("history.action.duplicate"), onDuplicate))
+    actions.add(iconButton(AllIcons.Actions.GC, t("history.action.delete")) { armed = true; showCard(CARD_CONFIRM) })
     cards.add(actions, CARD_ACTIONS)
 
     val confirm = iconRow()
-    confirm.add(iconButton(AllIcons.Actions.Cancel, "Отмена") { armed = false; showCard(CARD_ACTIONS) })
-    confirm.add(iconButton(AllIcons.Actions.Checked, "Удалить", onDelete))
+    confirm.add(iconButton(AllIcons.Actions.Cancel, t("common.cancel")) { armed = false; showCard(CARD_ACTIONS) })
+    confirm.add(iconButton(AllIcons.Actions.Checked, t("history.action.delete"), onDelete))
     cards.add(confirm, CARD_CONFIRM)
   }
 

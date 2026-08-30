@@ -1,6 +1,8 @@
 // Copyright 2026 VibeBrains. Use of this source code is governed by the Apache 2.0 license.
 package com.vibe.agent.ui
 
+import com.vibe.agent.i18n.VibeI18n.t
+
 import com.intellij.ui.JBColor
 import com.intellij.util.ui.JBUI
 import java.awt.BorderLayout
@@ -22,7 +24,7 @@ class TerminalConsole(title: String) : JPanel(BorderLayout()) {
   private var collapsed = false
   private val header = JLabel("▾ ▹ $titleText")
   // Shared factory (ChatTheme): the same affordance as message/code copy links.
-  private val copy = ChatTheme.copyLabel("Скопировать вывод терминала") { raw.toString() }
+  private val copy = ChatTheme.copyLabel(t("terminal.copyOutput")) { raw.toString() }
   private val area = JTextArea().apply {
     isEditable = false
     font = Font(Font.MONOSPACED, Font.PLAIN, JBUI.scaleFontSize(11f))
@@ -43,7 +45,7 @@ class TerminalConsole(title: String) : JPanel(BorderLayout()) {
     header.foreground = JBColor.namedColor("Vibe.Chat.metaForeground", JBColor.GRAY)
     header.border = JBUI.Borders.empty(3, 6)
     header.cursor = java.awt.Cursor.getPredefinedCursor(java.awt.Cursor.HAND_CURSOR)
-    header.toolTipText = "Свернуть/развернуть вывод"
+    header.toolTipText = t("terminal.toggleOutput")
     header.addMouseListener(object : java.awt.event.MouseAdapter() {
       override fun mouseClicked(e: java.awt.event.MouseEvent) = toggleCollapsed()
     })
@@ -85,10 +87,10 @@ class TerminalConsole(title: String) : JPanel(BorderLayout()) {
 
   fun markExit(exitCode: Int?, signal: String?) {
     exitBadge = when {
-      signal != null -> "убит ($signal)"
-      exitCode == 0 -> "завершено (0)"
-      exitCode != null -> "код $exitCode"
-      else -> "завершено"
+      signal != null -> t("terminal.exit.killed", "signal" to signal)
+      exitCode == 0 -> t("terminal.exit.ok")
+      exitCode != null -> t("terminal.exit.code", "code" to exitCode)
+      else -> t("terminal.exit.done")
     }
     refreshHeader()
     header.foreground = if (exitCode == 0) OK_FG else if (exitCode != null || signal != null) ERR_FG else header.foreground

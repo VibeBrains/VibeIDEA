@@ -1,6 +1,8 @@
 // Copyright 2026 VibeBrains. Use of this source code is governed by the Apache 2.0 license.
 package com.vibe.agent.ui.composer
 
+import com.vibe.agent.i18n.VibeI18n.t
+
 import com.intellij.icons.AllIcons
 import com.intellij.ide.dnd.FileCopyPasteUtil
 import com.intellij.openapi.Disposable
@@ -60,7 +62,7 @@ class ComposerPanel(
     /** Validate and start sending; return false to keep the draft in the field (blocking error). */
     fun onSend(message: ComposedMessage): Boolean
     fun onStop()
-    /** Short status line for the feed (e.g. "картинки не поддерживаются агентом"). */
+    /** Short status line for the feed (e.g. "the agent does not support images"). */
     fun onNotice(text: String)
   }
 
@@ -103,10 +105,10 @@ class ComposerPanel(
   }
   private val continueButton = PillButton(icon = AllIcons.Actions.Play_forward) { sendContinue() }
   private val sendButton = PillButton(icon = AllIcons.Actions.Upload, accent = true) { submit() }.apply {
-    toolTipText = "Отправить сообщение (Enter; Shift+Enter — перенос строки)"
+    toolTipText = t("composer.send.tooltip")
   }
   private val stopButton = PillButton(icon = AllIcons.Run.Stop) { listener.onStop() }.apply {
-    toolTipText = "Остановить генерацию (Esc)"
+    toolTipText = t("composer.stop.tooltip")
     isVisible = false
   }
   private val spinner = AsyncProcessIcon("vibe-composer-busy").apply { isVisible = false }
@@ -377,8 +379,8 @@ class ComposerPanel(
         is ContextRef.Selection -> AllIcons.Actions.InSelection
       }
       val tooltip = when (ref) {
-        is ContextRef.Selection -> "${ref.file.path}:${ref.fromLine}-${ref.toLine} — открыть с выделением"
-        else -> "${ref.file.path} — открыть"
+        is ContextRef.Selection -> t("composer.ref.selection", "path" to ref.file.path, "from" to ref.fromLine, "to" to ref.toLine)
+        else -> t("composer.ref.file", "path" to ref.file.path)
       }
       Chip(icon, ref.label, tooltip, { EditorContext.open(project, ref) }) {
         context.remove(ref.key)
@@ -402,7 +404,7 @@ class ComposerPanel(
       return
     }
     val (ok, tooLarge) = picked.partition { it.bytes.size <= Attachments.MAX_IMAGE_BYTES }
-    tooLarge.forEach { listener.onNotice("изображение ${it.name} (${it.sizeKb} КБ) больше лимита ${Attachments.MAX_IMAGE_MB} МБ — не прикреплено") }
+    tooLarge.forEach { listener.onNotice(t("composer.image.tooLarge", "name" to it.name, "size" to it.sizeKb, "limit" to Attachments.MAX_IMAGE_MB)) }
     if (ok.isEmpty()) return
     images.addAll(ok)
     renderAttachments()
@@ -411,7 +413,7 @@ class ComposerPanel(
 
   private fun renderAttachments() {
     attachmentsStrip.setChips(images.map { image ->
-      Chip(AllIcons.FileTypes.Image, "${image.name} · ${image.sizeKb} КБ", image.mimeType, null) {
+      Chip(AllIcons.FileTypes.Image, t("composer.image.chip", "name" to image.name, "size" to image.sizeKb), image.mimeType, null) {
         images.remove(image)
         renderAttachments()
       }
@@ -478,8 +480,8 @@ class ComposerPanel(
   }
 
   companion object {
-    const val PLACEHOLDER = "План, @ для контекста"
-    private const val ATTACH_TOOLTIP = "Прикрепить изображение (или вставить / перетащить)"
+    val PLACEHOLDER: String get() = t("composer.placeholder")
+    private val ATTACH_TOOLTIP: String get() = t("composer.attach.tooltip")
     private const val ACTION_SUBMIT = "vibe.composer.submit"
     /** VibeIDE: textarea min 60px, max 500px, then inner scroll. */
     private const val INPUT_MIN_HEIGHT = 60
