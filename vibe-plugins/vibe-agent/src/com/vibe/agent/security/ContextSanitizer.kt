@@ -58,7 +58,7 @@ object ContextSanitizer {
     if (invisible > 0) findings.add(Finding(Kind.INVISIBLE, "невидимые символы", invisible))
     if (bidi > 0) findings.add(Finding(Kind.BIDI, "переопределения направления текста", bidi))
 
-    val phrase = INSTRUCTION_PHRASES.firstOrNull { it.containsMatchIn(cleaned) }
+    val phrase = SecurityPhrases.INSTRUCTIONS.firstOrNull { it.containsMatchIn(cleaned) }
     if (phrase != null) findings.add(Finding(Kind.INSTRUCTION, "похоже на инструкцию для агента"))
 
     val secrets = SecretPatterns.labels(cleaned)
@@ -90,23 +90,4 @@ object ContextSanitizer {
     else -> false
   }
 
-  /**
-   * Deliberately narrow: shapes that only make sense as an address to a model.
-   *
-   * `(?iU)` on the Russian ones is not decoration. In Java `(?i)` alone folds case for ASCII only,
-   * so «Игнорируй» with a capital И would slip past a lowercase pattern, and `\b` treats Cyrillic
-   * as a non-word character until UNICODE_CHARACTER_CLASS is on. A guard that quietly matches
-   * nothing is worse than no guard.
-   */
-  private val INSTRUCTION_PHRASES = listOf(
-    Regex("(?i)ignore\\s+(all\\s+)?(previous|prior|above)\\s+instructions"),
-    Regex("(?i)disregard\\s+(all\\s+)?(previous|prior|above)"),
-    Regex("(?i)you\\s+are\\s+now\\s+(a|an|the)\\b"),
-    Regex("(?i)new\\s+system\\s+prompt"),
-    Regex("(?i)<\\s*(system|assistant)\\s*>"),
-    Regex("(?iU)игнорируй\\s+(все\\s+)?(предыдущие|прошлые)\\s+(инструкции|указания)"),
-    Regex("(?iU)забудь\\s+(все\\s+)?(предыдущие|прошлые)\\s+(инструкции|указания)"),
-    Regex("(?iU)теперь\\s+ты\\s+(—\\s*)?(другой|новый)\\b"),
-    Regex("(?iU)системный\\s+промпт\\s*:"),
-  )
 }

@@ -1,5 +1,6 @@
 // Copyright 2026 VibeBrains. Use of this source code is governed by the Apache 2.0 license.
 package com.vibe.agent.design
+import com.vibe.agent.i18n.VibeI18n.t
 
 /**
  * Defects a screenshot cannot show: what the page sounds like to a screen reader.
@@ -25,9 +26,9 @@ object DesignMarkupRules {
     if (element.accessibleName.isNotBlank()) return@mapNotNull null
     DesignFloorRules.finding(
       DesignRuleCatalog.ICON_BUTTON_WITHOUT_NAME, Severity.ERROR, element, doc,
-      message = "Кнопка с иконкой без доступного имени",
-      why = "Программа чтения произнесёт просто «кнопка» — что она делает, узнать неоткуда.",
-      evidence = "нет aria-label, aria-labelledby и текста",
+      message = t("design.rule.iconButton.message"),
+      why = t("design.rule.iconButton.why"),
+      evidence = t("design.rule.iconButton.evidence"),
     )
   }
 
@@ -38,9 +39,9 @@ object DesignMarkupRules {
     if (!element.hasPlaceholder) return@mapNotNull null
     DesignFloorRules.finding(
       DesignRuleCatalog.PLACEHOLDER_AS_LABEL, Severity.ERROR, element, doc,
-      message = "У поля только плейсхолдер вместо подписи",
-      why = "Плейсхолдер исчезает при вводе: заполненная форма превращается в набор безымянных прямоугольников.",
-      evidence = "type=${element.inputType.ifBlank { "text" }}, подписи нет",
+      message = t("design.rule.placeholderLabel.message"),
+      why = t("design.rule.placeholderLabel.why"),
+      evidence = t("design.rule.placeholderLabel.evidence", "type" to element.inputType.ifBlank { "text" }),
     )
   }
 
@@ -50,9 +51,9 @@ object DesignMarkupRules {
     if (element.hasAltAttribute) return@mapNotNull null
     DesignFloorRules.finding(
       DesignRuleCatalog.IMAGE_WITHOUT_ALT, Severity.ERROR, element, doc,
-      message = "У изображения нет атрибута alt",
-      why = "Программа чтения зачитает имя файла; пустой alt=\"\" — законное «картинка декоративная».",
-      evidence = element.imgSrc.take(120).ifBlank { "src не указан" },
+      message = t("design.rule.imageAlt.message"),
+      why = t("design.rule.imageAlt.why"),
+      evidence = element.imgSrc.take(120).ifBlank { t("design.rule.imageAlt.noSrc") },
     )
   }
 
@@ -62,9 +63,9 @@ object DesignMarkupRules {
     if (element.describedByText.isNotBlank()) return@mapNotNull null
     DesignFloorRules.finding(
       DesignRuleCatalog.ERROR_NOT_LINKED_TO_FIELD, Severity.ERROR, element, doc,
-      message = "Поле помечено ошибочным, но объяснение к нему не привязано",
-      why = "Программа чтения скажет «неверное значение» и замолчит: что именно не так — не прозвучит.",
-      evidence = "aria-invalid=true, aria-describedby пуст или ведёт в никуда",
+      message = t("design.rule.errorLink.message"),
+      why = t("design.rule.errorLink.why"),
+      evidence = t("design.rule.errorLink.evidence"),
     )
   }
 
@@ -75,9 +76,9 @@ object DesignMarkupRules {
     if (!element.accessibleName.contains('*')) return@mapNotNull null
     DesignFloorRules.finding(
       DesignRuleCatalog.REQUIRED_ONLY_VISUAL, Severity.WARNING, element, doc,
-      message = "Обязательность поля объявлена только звёздочкой в подписи",
-      why = "Звёздочка будет зачитана как символ посреди фразы — обязательность на слух не считывается.",
-      evidence = "«${element.accessibleName.take(60)}» без атрибута required",
+      message = t("design.rule.requiredVisual.message"),
+      why = t("design.rule.requiredVisual.why"),
+      evidence = t("design.rule.requiredVisual.evidence", "label" to element.accessibleName.take(60)),
     )
   }
 }

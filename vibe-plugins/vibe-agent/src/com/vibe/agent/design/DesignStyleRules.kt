@@ -1,6 +1,7 @@
 // Copyright 2026 VibeBrains. Use of this source code is governed by the Apache 2.0 license.
 package com.vibe.agent.design
 
+import com.vibe.agent.i18n.VibeI18n.t
 import kotlin.math.abs
 
 /**
@@ -32,10 +33,6 @@ object DesignStyleRules {
   /** Properties whose animation moves the layout of everything around them. */
   private val LAYOUT_PROPERTIES = listOf("width", "height", "top", "left", "right", "bottom", "margin", "padding")
 
-  private val MARKETING = listOf(
-    Regex("(?iU)революцион"), Regex("(?iU)непревзойд"), Regex("(?iU)лучш(ий|ая|ее) в мире"),
-    Regex("(?i)game.?chang"), Regex("(?i)revolutionar"), Regex("(?i)seamless"), Regex("(?i)cutting.?edge"),
-  )
 
   fun all(doc: DocumentSnapshot): List<Finding> =
     gradientText(doc) + glow(doc) + glass(doc) + purple(doc) + eyebrow(doc) + clones(doc) +
@@ -48,8 +45,8 @@ object DesignStyleRules {
     if (!element.backgroundImage.contains("gradient")) return@mapNotNull null
     DesignFloorRules.finding(
       DesignRuleCatalog.GRADIENT_TEXT, Severity.HINT, element, doc,
-      message = "Заголовок залит градиентом",
-      why = "Градиентный текст — самая узнаваемая примета сгенерированной страницы; он же хуже читается.",
+      message = t("design.rule.gradientText.message"),
+      why = t("design.rule.gradientText.why"),
       evidence = element.backgroundImage.take(80),
     )
   }
@@ -61,8 +58,8 @@ object DesignStyleRules {
     if (!Regex("0px 0px").containsMatchIn(shadow)) return@mapNotNull null
     DesignFloorRules.finding(
       DesignRuleCatalog.GLOW_INSTEAD_OF_SHADOW, Severity.HINT, element, doc,
-      message = "Свечение вместо тени",
-      why = "Тень без смещения означает источник света ниоткуда — предмет перестаёт стоять на плоскости.",
+      message = t("design.rule.glow.message"),
+      why = t("design.rule.glow.why"),
       evidence = shadow.take(80),
     )
   }
@@ -71,8 +68,8 @@ object DesignStyleRules {
     if (!element.backdropFilter.contains("blur")) return@mapNotNull null
     DesignFloorRules.finding(
       DesignRuleCatalog.GLASSMORPHISM, Severity.HINT, element, doc,
-      message = "Эффект «стекла» (размытие под слоем)",
-      why = "Стекло почти всегда снижает контраст текста на слое и дорого стоит при прокрутке.",
+      message = t("design.rule.glass.message"),
+      why = t("design.rule.glass.why"),
       evidence = element.backdropFilter.take(60),
     )
   }
@@ -87,9 +84,9 @@ object DesignStyleRules {
     return listOf(
       DesignFloorRules.finding(
         DesignRuleCatalog.PURPLE_PALETTE, Severity.HINT, worst, doc,
-        message = "Палитра держится на фиолетовом (${purple.size} из ${colored.size} цветных поверхностей)",
-        why = "Фиолетово-синий градиент — палитра по умолчанию у генераторов; продукт с ней не отличить от соседнего.",
-        evidence = "оттенок ${DesignFloorRules.format(DesignColor.hue(worst.backgroundColor))}°",
+        message = t("design.rule.purple.message", "purple" to purple.size, "colored" to colored.size),
+        why = t("design.rule.purple.why"),
+        evidence = t("design.rule.purple.evidence", "hue" to DesignFloorRules.format(DesignColor.hue(worst.backgroundColor))),
       )
     )
   }
@@ -101,9 +98,9 @@ object DesignStyleRules {
     if (element.fontSizePx > 16.0) return@mapNotNull null
     DesignFloorRules.finding(
       DesignRuleCatalog.EYEBROW_CHIP, Severity.HINT, element, doc,
-      message = "Чип-надпись над заголовком",
-      why = "Капслок в пилюле перед заголовком — штамп лендинга-заготовки, смысла он не несёт.",
-      evidence = "«${element.text.take(40)}», радиус ${DesignFloorRules.format(element.borderRadiusPx)}px",
+      message = t("design.rule.eyebrow.message"),
+      why = t("design.rule.eyebrow.why"),
+      evidence = t("design.rule.eyebrow.evidence", "text" to element.text.take(40), "radius" to DesignFloorRules.format(element.borderRadiusPx)),
     )
   }
 
@@ -117,9 +114,9 @@ object DesignStyleRules {
       if (sizes.size > 1) return@mapNotNull null
       DesignFloorRules.finding(
         DesignRuleCatalog.CLONED_CARDS, Severity.HINT, siblings.first(), doc,
-        message = "${siblings.size} одинаковых карточек подряд",
-        why = "Карточки-клоны одинакового размера с одинаковой структурой — заполнитель, а не содержание.",
-        evidence = "структура ${siblings.first().childTags.joinToString(",")}",
+        message = t("design.rule.clones.message", "count" to siblings.size),
+        why = t("design.rule.clones.why"),
+        evidence = t("design.rule.clones.evidence", "structure" to siblings.first().childTags.joinToString(",")),
       )
     }
   }
@@ -131,8 +128,8 @@ object DesignStyleRules {
     return listOf(
       DesignFloorRules.finding(
         DesignRuleCatalog.RADIUS_SCALE_DRIFT, Severity.HINT, element, doc,
-        message = "Разнобой скруглений: ${radii.size} разных радиусов на странице",
-        why = "Шкала радиусов — часть системы; пять близких значений читаются как случайность, а не решение.",
+        message = t("design.rule.radiusDrift.message", "count" to radii.size),
+        why = t("design.rule.radiusDrift.why"),
         evidence = radii.joinToString(", ") { DesignFloorRules.format(it) + "px" },
       )
     )
@@ -144,9 +141,9 @@ object DesignStyleRules {
     if (element.heightPx > 0 && element.borderRadiusPx >= element.heightPx / 2 - 1) return@mapNotNull null
     DesignFloorRules.finding(
       DesignRuleCatalog.EXTREME_RADIUS, Severity.HINT, element, doc,
-      message = "Скругление ${DesignFloorRules.format(element.borderRadiusPx)}px",
-      why = "Радиус такого размера перестаёт быть скруглением и становится формой — обычно случайно.",
-      evidence = "${DesignFloorRules.format(element.borderRadiusPx)}px при высоте ${DesignFloorRules.format(element.heightPx)}px",
+      message = t("design.rule.extremeRadius.message", "radius" to DesignFloorRules.format(element.borderRadiusPx)),
+      why = t("design.rule.extremeRadius.why"),
+      evidence = t("design.rule.extremeRadius.evidence", "radius" to DesignFloorRules.format(element.borderRadiusPx), "height" to DesignFloorRules.format(element.heightPx)),
     )
   }
 
@@ -156,8 +153,8 @@ object DesignStyleRules {
     val offender = LAYOUT_PROPERTIES.firstOrNull { property.contains(it) } ?: return@mapNotNull null
     DesignFloorRules.finding(
       DesignRuleCatalog.ANIMATED_LAYOUT_PROPERTY, Severity.HINT, element, doc,
-      message = "Анимируется свойство раскладки: $offender",
-      why = "Каждый кадр пересчитывает положение соседей — анимация дёргается, а вокруг всё прыгает.",
+      message = t("design.rule.animatedLayout.message", "property" to offender),
+      why = t("design.rule.animatedLayout.why"),
       evidence = element.transitionProperty.take(80),
     )
   }
@@ -167,8 +164,8 @@ object DesignStyleRules {
     if (OVERSHOOT.none { timing.contains(it) }) return@mapNotNull null
     DesignFloorRules.finding(
       DesignRuleCatalog.OVERSHOOT_ANIMATION, Severity.HINT, element, doc,
-      message = "Анимация с перелётом",
-      why = "Отскок уместен в игре и мешает в инструменте: он задерживает то, ради чего нажали.",
+      message = t("design.rule.overshoot.message"),
+      why = t("design.rule.overshoot.why"),
       evidence = element.animationTimingFunction.take(60),
     )
   }
@@ -178,9 +175,9 @@ object DesignStyleRules {
     if (element.textLineCount < 2 || element.linesEndingWithShortWord <= 0) return@mapNotNull null
     DesignFloorRules.finding(
       DesignRuleCatalog.HANGING_PREPOSITION, Severity.HINT, element, doc,
-      message = "Висячий предлог: строк с коротким словом на конце — ${element.linesEndingWithShortWord}",
-      why = "Предлог, оторванный от своего слова, спотыкает чтение — в русском наборе это правило, а не вкус.",
-      evidence = "${element.linesEndingWithShortWord} из ${element.textLineCount} строк",
+      message = t("design.rule.hangingPreposition.message", "count" to element.linesEndingWithShortWord),
+      why = t("design.rule.hangingPreposition.why"),
+      evidence = t("design.rule.hangingPreposition.evidence", "count" to element.linesEndingWithShortWord, "total" to element.textLineCount),
     )
   }
 
@@ -188,19 +185,19 @@ object DesignStyleRules {
     if (element.textLineCount < 2 || element.lastLineWordCount != 1) return@mapNotNull null
     DesignFloorRules.finding(
       DesignRuleCatalog.ORPHAN_WORD, Severity.HINT, element, doc,
-      message = "Одинокое слово на последней строке",
-      why = "Слово, повисшее под абзацем, выглядит обрывком — читатель ищет продолжение.",
-      evidence = "строк ${element.textLineCount}, в последней 1 слово",
+      message = t("design.rule.orphan.message"),
+      why = t("design.rule.orphan.why"),
+      evidence = t("design.rule.orphan.evidence", "total" to element.textLineCount),
     )
   }
 
   fun marketing(doc: DocumentSnapshot): List<Finding> = doc.elements.mapNotNull { element ->
     if (element.text.isBlank()) return@mapNotNull null
-    val hit = MARKETING.firstOrNull { it.containsMatchIn(element.text) } ?: return@mapNotNull null
+    val hit = DesignPhrases.MARKETING.firstOrNull { it.containsMatchIn(element.text) } ?: return@mapNotNull null
     DesignFloorRules.finding(
       DesignRuleCatalog.MARKETING_PROMISE, Severity.HINT, element, doc,
-      message = "Маркетинговое обещание в тексте",
-      why = "Слова вроде «революционный» ничего не сообщают о продукте и читаются как заполнитель.",
+      message = t("design.rule.marketing.message"),
+      why = t("design.rule.marketing.why"),
       evidence = "«" + hit.find(element.text)?.value.orEmpty() + "»",
     )
   }
@@ -212,9 +209,9 @@ object DesignStyleRules {
     // A hint, never a defect: on a touch device there is no hover at all, so this is taste.
     DesignFloorRules.finding(
       DesignRuleCatalog.NO_HOVER_RESPONSE, Severity.HINT, element, doc,
-      message = "Нет отклика на наведение",
-      why = "На мыши отклик подтверждает, что элемент живой; на касании его нет вовсе — потому подсказка, а не дефект.",
-      evidence = "правила :hover не найдено",
+      message = t("design.rule.hover.message"),
+      why = t("design.rule.hover.why"),
+      evidence = t("design.rule.hover.evidence"),
     )
   }
 

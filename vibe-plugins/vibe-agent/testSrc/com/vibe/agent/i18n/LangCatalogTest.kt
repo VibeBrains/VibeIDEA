@@ -52,4 +52,19 @@ class LangCatalogTest {
   fun `no value is empty — an empty string renders as a missing label`() {
     for ((key, value) in base + english) assertTrue(value.isNotBlank(), "пустое значение у $key")
   }
+
+  @Test
+  fun `every design rule has both a message and an explanation`() {
+    // A finding without a «why» is useless to whoever meets it for the first time: they see a
+    // verdict and no reason to believe it.
+    val base = VibeI18n.parse(
+      LangCatalogTest::class.java.getResourceAsStream("/lang/base.json")!!.bufferedReader().readText())
+    val messages = base.keys.filter { it.startsWith("design.rule.") && it.endsWith(".message") }
+    assertTrue(messages.size >= 25, "правил в каталоге: ${messages.size}")
+    for (key in messages) {
+      val why = key.removeSuffix(".message") + ".why"
+      assertTrue(base.containsKey(why), "у правила нет объяснения: $why")
+      assertTrue(base.getValue(why).length > 30, "объяснение слишком короткое, чтобы объяснять: $why")
+    }
+  }
 }

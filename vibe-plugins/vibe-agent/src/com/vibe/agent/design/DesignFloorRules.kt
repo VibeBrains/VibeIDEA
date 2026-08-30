@@ -1,6 +1,7 @@
 // Copyright 2026 VibeBrains. Use of this source code is governed by the Apache 2.0 license.
 package com.vibe.agent.design
 
+import com.vibe.agent.i18n.VibeI18n.t
 import kotlin.math.abs
 
 /**
@@ -40,9 +41,10 @@ object DesignFloorRules {
     if (ratio >= required) return@mapNotNull null
     finding(
       DesignRuleCatalog.CONTRAST_TEXT, Severity.ERROR, element, doc,
-      message = "Контраст текста ${format(ratio)}:1 при норме ${format(required)}:1",
-      why = "Текст с таким контрастом не читается при ярком свете и людьми со слабым зрением.",
-      evidence = "${format(ratio)}:1, кегль ${format(element.fontSizePx)}px, вес ${element.fontWeight}",
+      message = t("design.rule.contrast.message", "ratio" to format(ratio), "required" to format(required)),
+      why = t("design.rule.contrast.why"),
+      evidence = t("design.rule.contrast.evidence",
+                   "ratio" to format(ratio), "size" to format(element.fontSizePx), "weight" to element.fontWeight),
     )
   }
 
@@ -50,9 +52,9 @@ object DesignFloorRules {
     if (element.text.isBlank() || element.fontSizePx <= 0 || element.fontSizePx >= MIN_BODY_FONT_PX) return@mapNotNull null
     finding(
       DesignRuleCatalog.TEXT_TOO_SMALL, Severity.ERROR, element, doc,
-      message = "Кегль ${format(element.fontSizePx)}px — меньше минимальных ${format(MIN_BODY_FONT_PX)}px",
-      why = "Такой текст не прочитать с руки на телефоне без масштабирования.",
-      evidence = "${format(element.fontSizePx)}px",
+      message = t("design.rule.tinyText.message", "size" to format(element.fontSizePx), "min" to format(MIN_BODY_FONT_PX)),
+      why = t("design.rule.tinyText.why"),
+      evidence = format(element.fontSizePx) + "px",
     )
   }
 
@@ -65,9 +67,10 @@ object DesignFloorRules {
     if (element.widthPx >= MIN_TAP_TARGET_PX && element.heightPx >= MIN_TAP_TARGET_PX) return@mapNotNull null
     finding(
       DesignRuleCatalog.TAP_TARGET_TOO_SMALL, Severity.ERROR, element, doc,
-      message = "Зона нажатия ${format(element.widthPx)}×${format(element.heightPx)} px",
-      why = "В такую цель не попасть пальцем: промах читается как «интерфейс не работает».",
-      evidence = "${format(element.widthPx)}×${format(element.heightPx)} px при норме от ${format(MIN_TAP_TARGET_PX)}",
+      message = t("design.rule.tapTarget.message", "width" to format(element.widthPx), "height" to format(element.heightPx)),
+      why = t("design.rule.tapTarget.why"),
+      evidence = t("design.rule.tapTarget.evidence",
+                   "width" to format(element.widthPx), "height" to format(element.heightPx), "min" to format(MIN_TAP_TARGET_PX)),
     )
   }
 
@@ -79,9 +82,10 @@ object DesignFloorRules {
     if (element.overflowX == "auto" || element.overflowX == "scroll") return@mapNotNull null
     finding(
       DesignRuleCatalog.CONTENT_CLIPPED, Severity.ERROR, element, doc,
-      message = "Содержимое шире контейнера на ${format(overflow)}px и обрезано",
-      why = "Часть текста или элементов не увидеть и не достать прокруткой.",
-      evidence = "scrollWidth ${format(element.scrollWidthPx)} > clientWidth ${format(element.clientWidthPx)}",
+      message = t("design.rule.clipped.message", "overflow" to format(overflow)),
+      why = t("design.rule.clipped.why"),
+      evidence = t("design.rule.clipped.evidence",
+                   "scroll" to format(element.scrollWidthPx), "client" to format(element.clientWidthPx)),
     )
   }
 
@@ -105,9 +109,10 @@ object DesignFloorRules {
       } ?: return@mapIndexedNotNull null
       finding(
         DesignRuleCatalog.ELEMENT_OCCLUDED, Severity.ERROR, element, doc,
-        message = "Текст перекрыт непрозрачным слоем «${covering.selector}»",
-        why = "Содержимое есть в разметке, но его не видно — читатель считает, что оно пропало.",
-        evidence = "z-index ${covering.zIndex} против ${element.zIndex}, alpha фона ${format(covering.ownBackgroundAlpha)}",
+        message = t("design.rule.occluded.message", "selector" to covering.selector),
+        why = t("design.rule.occluded.why"),
+        evidence = t("design.rule.occluded.evidence",
+                     "over" to covering.zIndex, "under" to element.zIndex, "alpha" to format(covering.ownBackgroundAlpha)),
       )
     }
   }
@@ -120,10 +125,11 @@ object DesignFloorRules {
       Finding(
         rule = DesignRuleCatalog.PAGE_WIDER_THAN_VIEWPORT,
         severity = Severity.ERROR,
-        message = "Страница шире окна на ${format(overflow)}px — появилась горизонтальная прокрутка",
-        why = "Горизонтальная прокрутка на телефоне ломает чтение: строки уезжают за край.",
+        message = t("design.rule.pageOverflow.message", "overflow" to format(overflow)),
+        why = t("design.rule.pageOverflow.why"),
         selector = "html",
-        evidence = "документ ${format(doc.documentScrollWidthPx)}px при окне ${format(doc.viewportWidthPx)}px",
+        evidence = t("design.rule.pageOverflow.evidence",
+                     "document" to format(doc.documentScrollWidthPx), "viewport" to format(doc.viewportWidthPx)),
         ruleClass = RuleClass.FLOOR,
         viewport = doc.viewport,
       )
@@ -136,8 +142,8 @@ object DesignFloorRules {
     if (element.imgNaturalWidthPx > 0) return@mapNotNull null
     finding(
       DesignRuleCatalog.BROKEN_IMAGE, Severity.ERROR, element, doc,
-      message = "Изображение не загрузилось",
-      why = "На месте картинки пустая рамка или значок ошибки — страница выглядит сломанной.",
+      message = t("design.rule.brokenImage.message"),
+      why = t("design.rule.brokenImage.why"),
       evidence = element.imgSrc.take(120),
     )
   }
@@ -152,9 +158,9 @@ object DesignFloorRules {
     if (element.hasFocusRule) return@mapNotNull null
     finding(
       DesignRuleCatalog.FOCUS_RING_REMOVED, Severity.ERROR, element, doc,
-      message = "Обводка фокуса снята и ничем не заменена",
-      why = "С клавиатуры не видно, где находишься: страница становится непроходимой без мыши.",
-      evidence = "outline: ${element.outlineStyle}, правила :focus нет",
+      message = t("design.rule.focusRing.message"),
+      why = t("design.rule.focusRing.why"),
+      evidence = t("design.rule.focusRing.evidence", "outline" to element.outlineStyle),
     )
   }
 
@@ -166,9 +172,9 @@ object DesignFloorRules {
     if (ratio < CONTRAST_AA_SMALL) return@mapNotNull null
     finding(
       DesignRuleCatalog.DISABLED_LOOKS_ENABLED, Severity.WARNING, element, doc,
-      message = "Выключенный элемент выглядит как рабочий (контраст ${format(ratio)}:1)",
-      why = "Человек нажимает и ничего не происходит — он решает, что интерфейс сломался.",
-      evidence = "контраст ${format(ratio)}:1 при disabled",
+      message = t("design.rule.disabledLook.message", "ratio" to format(ratio)),
+      why = t("design.rule.disabledLook.why"),
+      evidence = t("design.rule.disabledLook.evidence", "ratio" to format(ratio)),
     )
   }
 
@@ -186,8 +192,8 @@ object DesignFloorRules {
           Finding(
             rule = DesignRuleCatalog.HEADING_LEVEL_SKIPPED,
             severity = Severity.WARNING,
-            message = "Уровень заголовка перепрыгнут: h$previous → h$level",
-            why = "Программа чтения строит по заголовкам оглавление — пропуск ломает навигацию по странице.",
+            message = t("design.rule.headingSkip.message", "from" to previous, "to" to level),
+            why = t("design.rule.headingSkip.why"),
             selector = "h$level",
             evidence = "«${heading.text.take(60)}»",
             ruleClass = RuleClass.FLOOR,
