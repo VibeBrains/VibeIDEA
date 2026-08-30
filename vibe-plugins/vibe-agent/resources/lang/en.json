@@ -739,5 +739,11 @@
   "reference.added": "Attached read-only: {path}\n\nThe agent may read it; writes there are always refused.",
   "reference.already": "This folder is already attached: {path}",
   "reference.removed": "Detached: {path}",
-  "reference.none": "No reference folders. Attach one with «VibeIDEA: attach a reference folder (read-only)»."
+  "reference.none": "No reference folders. Attach one with «VibeIDEA: attach a reference folder (read-only)».",
+  "chat.pin.on": "Pin: keep this message when the history is trimmed",
+  "chat.pin.off": "Unpin",
+  "chat.pin.done": "📌 message pinned — trimming the history will not touch it",
+  "chat.pin.undone": "the pin is off",
+  "chat.branch.tooltip": "Branch the conversation here (a copy up to this message)",
+  "chat.branch.done": "⑂ conversation branched: the original chat is untouched"
 }

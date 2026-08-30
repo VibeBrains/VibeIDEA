@@ -1352,9 +1352,9 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     recordRows.clear()
     currentAgentMessage = null
     uiConsumed = 0
-    for (record in thread.messages) {
+    for ((index, record) in thread.messages.withIndex()) {
       val row = when (record.role) {
-        Role.USER -> buildUserRow(record.text, timeOf(record.at))
+        Role.USER -> buildUserRow(record.text, timeOf(record.at), index, record.pinned)
         Role.ASSISTANT -> buildAssistantRow(record.text, timeOf(record.at))
         Role.OTHER -> buildToolRow(record.text)
       }
@@ -1704,7 +1704,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
 
   private fun now(): String = LocalTime.now().format(DateTimeFormatter.ofPattern("HH:mm"))
 
-  private fun buildUserRow(text: String, time: String): JPanel {
+  private fun buildUserRow(text: String, time: String, recordIndex: Int = -1, pinned: Boolean = false): JPanel {
     val bubble = RoundedPanel(USER_BUBBLE, radius = 8).apply {
       layout = BorderLayout()
       border = JBUI.Borders.empty(6, 8)
@@ -1713,10 +1713,55 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     return ChatRow(BorderLayout(0, JBUI.scale(2))).apply {
       border = JBUI.Borders.empty(4, 4, 8, 4)
       add(bubble, BorderLayout.CENTER)
-      add(metaLabel(t("chat.role.you", "time" to time), right = true), BorderLayout.SOUTH)
+      add(messageFooter(time, recordIndex, pinned), BorderLayout.SOUTH)
       // width-fit вправо: слева распорка съедает всё лишнее (мин. четверть ширины)
       add(Box.createHorizontalStrut(JBUI.scale(160)), BorderLayout.WEST)
     }
+  }
+
+  /**
+   * Time plus the two things one wants to do with a message that already happened: keep it from
+   * being forgotten, and try another path from it.
+   *
+   * Both need the record index, so a live row created before the record is stored (index -1) shows
+   * the time alone rather than buttons that would act on the wrong message.
+   */
+  private fun messageFooter(time: String, recordIndex: Int, pinned: Boolean): JComponent {
+    val meta = metaLabel(t("chat.role.you", "time" to time), right = true)
+    if (recordIndex < 0) return meta
+    val strip = JPanel(java.awt.FlowLayout(java.awt.FlowLayout.RIGHT, JBUI.scale(4), 0)).apply { isOpaque = false }
+    val pin = JLabel(if (pinned) PIN_ON else PIN_OFF).apply {
+      toolTipText = if (pinned) t("chat.pin.off") else t("chat.pin.on")
+      cursor = java.awt.Cursor.getPredefinedCursor(java.awt.Cursor.HAND_CURSOR)
+      foreground = META_FG
+      font = com.intellij.util.ui.JBFont.label().deriveFont(11f)
+    }
+    pin.addMouseListener(object : java.awt.event.MouseAdapter() {
+      override fun mouseClicked(e: java.awt.event.MouseEvent) {
+        val threadId = currentThreadId ?: return
+        val now = history.setPinned(threadId, recordIndex, !pinned) ?: return
+        systemLine(if (now) t("chat.pin.done") else t("chat.pin.undone"))
+        history.get(threadId)?.let { renderTranscript(it) }
+      }
+    })
+    val branch = JLabel(BRANCH_ICON).apply {
+      toolTipText = t("chat.branch.tooltip")
+      cursor = java.awt.Cursor.getPredefinedCursor(java.awt.Cursor.HAND_CURSOR)
+      foreground = META_FG
+      font = com.intellij.util.ui.JBFont.label().deriveFont(11f)
+    }
+    branch.addMouseListener(object : java.awt.event.MouseAdapter() {
+      override fun mouseClicked(e: java.awt.event.MouseEvent) {
+        val threadId = currentThreadId ?: return
+        val copy = history.branch(threadId, recordIndex) ?: return
+        activateThread(copy.id)
+        systemLine(t("chat.branch.done"))
+      }
+    })
+    strip.add(pin)
+    strip.add(branch)
+    strip.add(meta)
+    return strip
   }
 
   private fun buildAssistantRow(text: String, time: String): JPanel = AgentMessage().let { m ->
@@ -1742,8 +1787,11 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
   }
 
   private fun userBubble(text: String) {
+    // The record is stored before the bubble is drawn, so its index is the last one — that is what
+    // makes the pin and the branch act on THIS message and not on a neighbour.
+    val index = currentThreadId?.let { history.get(it)?.messages?.lastIndex } ?: -1
     SwingUtilities.invokeLater {
-      val row = buildUserRow(text, now())
+      val row = buildUserRow(text, now(), index)
       messages.add(row)
       recordRows.add(row)
       revalidateScroll()
@@ -2172,6 +2220,9 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
   }
 
   private companion object {
+    const val PIN_ON = "📌"
+    const val PIN_OFF = "📍"
+    const val BRANCH_ICON = "⑂"
     /** How long an external caller waits just for the turn to START (EDT hop + validation). */
     const val SUBMIT_TIMEOUT_SEC = 30L
     val NO_IMAGE_AGENT: String get() = t("chat.noImagesCapability")

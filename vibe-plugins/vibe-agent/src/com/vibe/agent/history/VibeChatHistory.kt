@@ -111,6 +111,7 @@ internal class HistoryStore(val now: () -> String = { Instant.now().toString() }
           images = m.images.map { StoredImage(it.name, it.mimeType, it.base64) },
           at = m.at,
           wireText = m.wireText,
+          pinned = m.pinned,
         )
       },
       state = ThreadState(targetId = source.state.targetId),
@@ -121,6 +122,42 @@ internal class HistoryStore(val now: () -> String = { Instant.now().toString() }
 
   fun delete(id: String): Boolean = threads.remove(id) != null
 
+  /** Toggles the pin on one message; returns the new state, or null when there is no such message. */
+  fun setPinned(id: String, index: Int, pinned: Boolean): Boolean? {
+    val thread = threads[id] ?: return null
+    if (index !in thread.messages.indices) return null
+    val updated = thread.withMessages(thread.messages.toMutableList().also {
+      it[index] = it[index].withPinned(pinned)
+    })
+    threads[id] = updated
+    return pinned
+  }
+
+  /**
+   * A new thread carrying the conversation up to [index] — the original stays untouched, which is
+   * the whole point: a branch is for trying another path, not for rewriting the walked one.
+   */
+  fun branch(id: String, index: Int): ChatThread? {
+    val at = now()
+    val source = threads[id] ?: return null
+    val kept = ChatThread.branch(source.messages, index)
+    if (kept.isEmpty()) return null
+    val copy = ChatThread(
+      id = UUID.randomUUID().toString(),
+      createdAt = at,
+      lastModified = at,
+      workspaceId = source.workspaceId,
+      workspaceLabel = source.workspaceLabel,
+      messages = kept.map { m ->
+        ChatMessageRecord(m.role, m.text, m.images.map { StoredImage(it.name, it.mimeType, it.base64) },
+                          m.at, m.wireText, m.pinned)
+      },
+      state = ThreadState(targetId = source.state.targetId),
+    )
+    threads[copy.id] = copy
+    return copy
+  }
+
   /** Fills in the wire text of the LAST user message once it is known (context loads async). */
   fun setLastUserWireText(id: String, wireText: String?): ChatThread? {
     val thread = threads[id] ?: return null
@@ -129,7 +166,7 @@ internal class HistoryStore(val now: () -> String = { Instant.now().toString() }
     val m = thread.messages[index]
     if (m.wireText != null) return null
     val updated = thread.withMessages(thread.messages.toMutableList().also {
-      it[index] = ChatMessageRecord(m.role, m.text, m.images, m.at, wireText)
+      it[index] = ChatMessageRecord(m.role, m.text, m.images, m.at, wireText, m.pinned)
     })
     threads[id] = updated
     return updated
@@ -229,6 +266,18 @@ class VibeChatHistory : Disposable {
   fun delete(id: String) {
     val changed = synchronized(lock) { store.delete(id) }
     if (changed) mutated()
+  }
+
+  fun setPinned(id: String, index: Int, pinned: Boolean): Boolean? {
+    val result = synchronized(lock) { store.setPinned(id, index, pinned) }
+    if (result != null) mutated()
+    return result
+  }
+
+  fun branch(id: String, index: Int): ChatThread? {
+    val copy = synchronized(lock) { store.branch(id, index) }
+    if (copy != null) mutated()
+    return copy
   }
 
   fun setLastUserWireText(id: String, wireText: String?) {

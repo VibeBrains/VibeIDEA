@@ -33,7 +33,12 @@ class ChatMessageRecord(
   val at: String,
   /** USER only: the wire text actually sent to the LLM (with inlined context blocks); null = same as [text]. */
   val wireText: String? = null,
-)
+  /** Pinned messages survive trimming: the one thing the user asked not to forget. */
+  val pinned: Boolean = false,
+) {
+  fun withPinned(pinned: Boolean): ChatMessageRecord =
+    ChatMessageRecord(role, text, images, at, wireText, pinned)
+}
 
 /** Per-thread snapshot of composer choices (restored when the tab is activated). */
 class ThreadState(val targetId: String? = null)
@@ -65,6 +70,20 @@ class ChatThread(
     ChatThread(id, createdAt, lastModified, workspaceId, workspaceLabel, messages, state)
 
   companion object {
+    /**
+     * A copy of the conversation UP TO the chosen message — the way to try another path without
+     * losing the one already walked.
+     *
+     * The cut point moves back over trailing service lines: a branch that ends on «ход отменён»
+     * or a tool report gives the model a conversation it cannot continue, and the first thing it
+     * does is apologise for something the user never saw.
+     */
+    fun branch(messages: List<ChatMessageRecord>, index: Int): List<ChatMessageRecord> {
+      if (messages.isEmpty()) return emptyList()
+      val upTo = messages.take((index + 1).coerceIn(1, messages.size))
+      return upTo.dropLastWhile { it.role == Role.OTHER }
+    }
+
     /** Spec: on overflow the oldest messages are cut down to `cap - headroom` plus one marker row. */
     const val TRIM_HEADROOM = 100
     val TRIM_MARKER_PREFIX: String get() = t("history.trimPrefix")
@@ -80,11 +99,19 @@ class ChatThread(
       if (appended.size <= cap) return thread.withMessages(appended, lastModified = now)
       // A tiny cap must still keep a useful tail: the headroom never eats more than half of it.
       val keep = (cap - TRIM_HEADROOM).coerceAtLeast(cap / 2).coerceAtLeast(1)
+      val tail = appended.takeLast(keep)
+      // A pin is a promise: «этого не теряй». Pinned messages are lifted out of the part being
+      // destroyed and kept in their original order in front of the tail — without this the pin
+      // would be a decoration that quietly fails exactly when the history grows long enough to
+      // need it.
       val cut = appended.dropLast(keep)
-      val previouslyDropped = cut.sumOf { TRIM_MARKER_REGEX.find(it.text)?.groupValues?.get(1)?.toIntOrNull() ?: 0 }
-      val dropped = previouslyDropped + cut.count { TRIM_MARKER_REGEX.find(it.text) == null }
+      val rescued = cut.filter { it.pinned }
+      val destroyed = cut.filterNot { it.pinned }
+      val previouslyDropped = destroyed.sumOf { TRIM_MARKER_REGEX.find(it.text)?.groupValues?.get(1)?.toIntOrNull() ?: 0 }
+      val dropped = previouslyDropped + destroyed.count { TRIM_MARKER_REGEX.find(it.text) == null }
+      if (dropped == 0) return thread.withMessages(rescued + tail, lastModified = now)
       val marker = ChatMessageRecord(Role.OTHER, TRIM_MARKER_PREFIX + t("history.trimSuffix", "count" to dropped), at = now)
-      return thread.withMessages(listOf(marker) + appended.takeLast(keep), lastModified = now)
+      return thread.withMessages(listOf(marker) + rescued + tail, lastModified = now)
     }
   }
 }
@@ -103,6 +130,7 @@ object ChatTranscriptCodec {
         put("text", m.text)
         put("at", m.at)
         m.wireText?.let { put("wireText", it) }
+        if (m.pinned) put("pinned", true)
         if (m.images.isNotEmpty()) put("images", JsonArray(m.images.map { img ->
           buildJsonObject {
             put("name", img.name)
@@ -136,6 +164,7 @@ object ChatTranscriptCodec {
         },
         at = m.str("at") ?: "",
         wireText = m.str("wireText"),
+        pinned = (m["pinned"] as? kotlinx.serialization.json.JsonPrimitive)?.content == "true",
       )
     }
     return ChatThread(
