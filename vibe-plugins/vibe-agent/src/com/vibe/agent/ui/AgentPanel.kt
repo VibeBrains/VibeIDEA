@@ -979,6 +979,29 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
                  "current" to (plan.current?.content ?: "")))
   }
 
+  /**
+   * The daily ceiling for a role, asked BEFORE the step: a budget reported after the spend is a
+   * receipt. Per role rather than per run because the runaway case is not one expensive turn — it
+   * is a reviewer restarted forty times by a loop nobody was watching.
+   */
+  private fun roleBudgetExceeded(role: String): Boolean {
+    val limit = VibeAgentSettings.roleBudgetTokens.toLong()
+    if (limit <= 0) return false
+    val spent = com.vibe.agent.budget.VibeSpendService.getInstance().spentByRole(role)
+    val status = com.vibe.agent.budget.RoleBudget.check(spent, limit)
+    when (status.verdict) {
+      com.vibe.agent.budget.RoleBudget.Verdict.EXCEEDED -> {
+        systemLine(t("budget.exceeded", "role" to role, "spent" to "%,d".format(spent), "limit" to "%,d".format(limit)))
+        return true
+      }
+      com.vibe.agent.budget.RoleBudget.Verdict.WARN ->
+        systemLine(t("budget.warn", "role" to role, "percent" to status.percent,
+                     "spent" to "%,d".format(spent), "limit" to "%,d".format(limit)))
+      else -> {}
+    }
+    return false
+  }
+
   private fun noteLoop(call: com.vibe.agent.acp.ToolCall) {
     loopHistory.add(com.vibe.agent.safety.LoopDetector.fingerprint(call.toolName ?: call.kind, call.rawInput?.toString()))
     val finding = com.vibe.agent.safety.LoopDetector.check(loopHistory.snapshot())
@@ -1667,6 +1690,10 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
             systemLine(t("pipeline.stepSkipped", "header" to header))
             return@forEachIndexed
           }
+          if (roleBudgetExceeded(step.role)) {
+            failed = true
+            return@forEachIndexed
+          }
           systemLine("$header ${step.task.take(80)}")
           val prompt = buildString {
             appendLine(PipelinesFile.rolePreamble(step.role))
@@ -2072,7 +2099,9 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
       history.append(threadId, ChatMessageRecord(Role.ASSISTANT, fullText, at = nowIso()))
       // Rough, and pessimistic on purpose: the session ceiling is about money, and a counter that
       // under-counts is a ceiling that never trips.
-      sessionTokens.addAndGet(com.vibe.agent.context.ContextBudget.estimateTokens(fullText))
+      val estimated = com.vibe.agent.context.ContextBudget.estimateTokens(fullText)
+      sessionTokens.addAndGet(estimated)
+      com.vibe.agent.budget.VibeSpendService.getInstance().record(currentRole, targetLabel(), estimated, null, null)
     }
     // currentAgentMessage is EDT-owned (appendAgentText also touches it on the EDT); read+clear it there.
     SwingUtilities.invokeLater {
@@ -2254,6 +2283,21 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
       )
     }
     noteWindowFill(used, size)
+    // Recorded per role: a single total says the month cost money, a split by role says WHICH
+    // role burned it, and only the second is something one can act on.
+    val amount = (u["cost"] as? JsonObject)?.get("amount")?.jsonPrimitive?.contentOrNull?.toDoubleOrNull()
+    val currency = (u["cost"] as? JsonObject)?.get("currency")?.jsonPrimitive?.contentOrNull
+    com.vibe.agent.budget.VibeSpendService.getInstance()
+      .record(currentRole, targetLabel(), used - lastAccountedUsed.getAndSet(used), amount, currency)
+  }
+
+  /** ACP reports the window total, not a delta: the difference is what this turn actually added. */
+  private val lastAccountedUsed = java.util.concurrent.atomic.AtomicLong(0)
+
+  private fun targetLabel(): String = when (val t = target) {
+    is ChatTarget.Agent -> "acp/${t.config.name}"
+    is ChatTarget.Model -> "${t.provider.id}/${t.model.id}"
+    null -> "?"
   }
 
   /**

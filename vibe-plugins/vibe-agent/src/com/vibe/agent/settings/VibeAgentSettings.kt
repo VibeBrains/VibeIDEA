@@ -129,6 +129,11 @@ object VibeAgentSettings {
   private const val KEY_WATCH_MAX_FRAMES = "vibe.agent.watch.maxFrames"
   private const val KEY_WATCH_FRAME_HEIGHT = "vibe.agent.watch.frameHeight"
   private const val KEY_SILENCE_MINUTES = "vibe.agent.silenceMinutes"
+  private const val KEY_ROLE_BUDGET = "vibe.agent.roleBudgetTokens"
+
+  /** Off by default: a ceiling nobody set must not become a wall in the middle of real work. */
+  const val DEFAULT_ROLE_BUDGET_TOKENS = 0
+  const val MAX_ROLE_BUDGET_TOKENS = 100_000_000
 
   /** Minutes of total silence before the turn is called hung; 0 turns the switch off. */
   const val DEFAULT_SILENCE_MINUTES = 5
@@ -274,6 +279,11 @@ object VibeAgentSettings {
    * Doubled internally: at the limit the chat says so, at twice the limit it stops. Saying and
    * stopping at the same moment would remove the one chance to say «подожди, оно думает».
    */
+  /** Tokens one pipeline role may spend per rolling day; 0 turns the budget off. */
+  var roleBudgetTokens: Int
+    get() = props.getInt(KEY_ROLE_BUDGET, DEFAULT_ROLE_BUDGET_TOKENS).coerceIn(0, MAX_ROLE_BUDGET_TOKENS)
+    set(value) = props.setValue(KEY_ROLE_BUDGET, value.coerceIn(0, MAX_ROLE_BUDGET_TOKENS), DEFAULT_ROLE_BUDGET_TOKENS)
+
   var agentSilenceMinutes: Int
     get() = props.getInt(KEY_SILENCE_MINUTES, DEFAULT_SILENCE_MINUTES).coerceIn(0, MAX_SILENCE_MINUTES)
     set(value) = props.setValue(KEY_SILENCE_MINUTES, value.coerceIn(0, MAX_SILENCE_MINUTES), DEFAULT_SILENCE_MINUTES)
