@@ -33,6 +33,7 @@
     <postStartupActivity implementation="com.vibe.agent.i18n.VibeLangSeeder"/>
     <postStartupActivity implementation="com.vibe.agent.history.VibeHistoryWarmUp"/>
     <postStartupActivity implementation="com.vibe.agent.guard.ConfigGuardStartup"/>
+    <postStartupActivity implementation="com.vibe.agent.providers.LocalProbeStartup"/>
     <postStartupActivity implementation="com.vibe.agent.settings.VibePromoDefaults"/>
     <postStartupActivity implementation="com.vibe.agent.defaults.VibeDefaultsSeeder"/>
     <postStartupActivity implementation="com.vibe.agent.providers.VibeProvidersWatcherStarter"/>
@@ -51,6 +52,8 @@
               description="Материалы вне проекта: агент читает, но правит только проект"/>
       <action id="Vibe.ManageReferenceFolders" class="com.vibe.agent.context.VibeManageReferenceFoldersAction"
               text="Папки-справочники" description="Показать подключённые папки и отключить лишние"/>
+      <action id="Vibe.DetectLocalModels" class="com.vibe.agent.providers.VibeDetectLocalModelsAction"
+              text="Найти локальные модели" description="Проба привычных портов Ollama, LM Studio, llama.cpp, Jan"/>
       <action id="Vibe.ProjectCommands" class="com.vibe.agent.commands.VibeProjectCommandsAction"
               text="Команды проекта" description="Команды из .vibe/commands.json: список, разрешение и запуск"/>
       <action id="Vibe.SpendReport" class="com.vibe.agent.budget.VibeSpendReportAction"
