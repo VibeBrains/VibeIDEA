@@ -1,6 +1,8 @@
 // Copyright 2026 VibeBrains. Use of this source code is governed by the Apache 2.0 license.
 package com.vibe.agent.ui
 
+import com.vibe.agent.i18n.VibeI18n.t
+
 import com.intellij.openapi.components.Service
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.wm.StatusBar
@@ -37,9 +39,9 @@ class VibeAgentStatusService {
   /** Widget label: empty when idle so the widget stays quiet during normal editing. */
   fun label(): String = when (state) {
     State.IDLE -> ""
-    State.RUNNING -> "⏳ агент"
-    State.GATE -> "🔎 проверка"
-    State.BLOCKED -> "⛔ предохранитель"
+    State.RUNNING -> "⏳ " + t("status.agent")
+    State.GATE -> "🔎 " + t("status.check")
+    State.BLOCKED -> "⛔ " + t("status.breaker")
   }
 
   companion object {
@@ -69,7 +71,7 @@ class VibeAgentStatusWidget(private val project: Project) : StatusBarWidget, Sta
 
   override fun getText(): String = service.label()
   override fun getAlignment(): Float = Component.LEFT_ALIGNMENT
-  override fun getTooltipText(): String = "Состояние агента Vibe — нажмите, чтобы открыть чат"
+  override fun getTooltipText(): String = t("status.tooltip.click")
   override fun getClickConsumer(): Consumer<MouseEvent> = Consumer {
     ToolWindowManager.getInstance(project).getToolWindow("VibeAgent")?.activate(null)
   }
@@ -77,7 +79,7 @@ class VibeAgentStatusWidget(private val project: Project) : StatusBarWidget, Sta
 
 class VibeAgentStatusWidgetFactory : StatusBarWidgetFactory {
   override fun getId(): String = WIDGET_ID
-  override fun getDisplayName(): String = "Состояние агента Vibe"
+  override fun getDisplayName(): String = t("status.tooltip")
   override fun createWidget(project: Project): StatusBarWidget = VibeAgentStatusWidget(project)
   override fun disposeWidget(widget: StatusBarWidget) = widget.dispose()
 }

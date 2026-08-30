@@ -1,6 +1,8 @@
 // Copyright 2026 VibeBrains. Use of this source code is governed by the Apache 2.0 license.
 package com.vibe.agent.ui
 
+import com.vibe.agent.i18n.VibeI18n.t
+
 import com.intellij.icons.AllIcons
 import com.intellij.ui.JBColor
 import com.intellij.util.ui.JBFont
@@ -74,14 +76,14 @@ class ChatTabsStrip(private val callbacks: Callbacks) : JPanel(BorderLayout()) {
       tabsRow.add(Tab(tab, active = tab.id == activeId, closable = tabs.size > 1))
     }
     tabsRow.add(JLabel(AllIcons.General.Add).apply {
-      toolTipText = "Новый чат"
+      toolTipText = t("tabs.newChat")
       cursor = Cursor.getPredefinedCursor(Cursor.HAND_CURSOR)
       border = JBUI.Borders.empty(TAB_PAD_V, TAB_PAD_H)
       addMouseListener(object : MouseAdapter() {
         override fun mouseClicked(e: MouseEvent) { callbacks.onNewChat() }
       })
     })
-    railButton.toolTipText = if (railOpen) "Свернуть историю (оставить только чат)" else "Показать историю"
+    railButton.toolTipText = if (railOpen) t("tabs.collapseHistory") else t("tabs.showHistory")
     revalidate()
     repaint()
   }
@@ -89,7 +91,7 @@ class ChatTabsStrip(private val callbacks: Callbacks) : JPanel(BorderLayout()) {
   private inner class Tab(info: TabInfo, private val active: Boolean, closable: Boolean) : JPanel(FlowLayout(FlowLayout.LEFT, JBUI.scale(2), 0)) {
     private var hover = false
     private val close = JLabel(AllIcons.Actions.Close).apply {
-      toolTipText = "Закрыть вкладку (чат останется в истории)"
+      toolTipText = t("tabs.closeTab")
       cursor = Cursor.getPredefinedCursor(Cursor.HAND_CURSOR)
       isVisible = false
       addMouseListener(object : MouseAdapter() {
@@ -145,7 +147,7 @@ class ChatTabsStrip(private val callbacks: Callbacks) : JPanel(BorderLayout()) {
   companion object {
     /** VibeIDE: the tab label is the first 22 chars of the first user message. */
     const val LABEL_LIMIT = 22
-    const val EMPTY_LABEL = "Новый чат"
+    val EMPTY_LABEL: String get() = t("tabs.newChat")
 
     fun label(title: String): String = when {
       title.isBlank() -> EMPTY_LABEL

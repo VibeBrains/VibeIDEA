@@ -1,6 +1,8 @@
 // Copyright 2026 VibeBrains. Use of this source code is governed by the Apache 2.0 license.
 package com.vibe.agent.providers
 
+import com.vibe.agent.i18n.VibeI18n.t
+
 /**
  * One line about a whole round of catalog polling instead of a line per provider.
  *
@@ -30,15 +32,15 @@ data class CatalogReport(
   fun summary(): String {
     if (isEmpty) return ""
     val parts = buildList {
-      if (updated.isNotEmpty()) add("обновлено ${updated.size} (${updated.joinToString(", ")})")
+      if (updated.isNotEmpty()) add(t("catalog.updated", "count" to updated.size, "list" to updated.joinToString(", ")))
       if (keyless.isNotEmpty()) {
-        add("без ключа ${keyless.size} (${keyless.joinToString(", ")}) — Settings → Tools → VibeIDEA → Провайдеры")
+        add(t("catalog.keyless", "count" to keyless.size, "list" to keyless.joinToString(", ")))
       }
-      if (rejected.isNotEmpty()) add("ключ отклонён у ${rejected.joinToString(", ")}")
-      if (localDown.isNotEmpty()) add("локальный сервер не запущен: ${localDown.joinToString(", ")}")
-      if (failed.isNotEmpty()) add("не ответили: " + failed.joinToString(", ") { "${it.first} (${it.second})" })
+      if (rejected.isNotEmpty()) add(t("catalog.rejected", "list" to rejected.joinToString(", ")))
+      if (localDown.isNotEmpty()) add(t("catalog.localDown", "list" to localDown.joinToString(", ")))
+      if (failed.isNotEmpty()) add(t("catalog.failed", "list" to failed.joinToString(", ") { "${it.first} (${it.second})" }))
     }
-    return "[providers] каталоги моделей: " + parts.joinToString("; ")
+    return t("catalog.summaryPrefix") + " " + parts.joinToString("; ")
   }
 
   companion object {

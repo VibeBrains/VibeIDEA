@@ -1,6 +1,8 @@
 // Copyright 2026 VibeBrains. Use of this source code is governed by the Apache 2.0 license.
 package com.vibe.agent.ui.composer
 
+import com.vibe.agent.i18n.VibeI18n.t
+
 import com.intellij.icons.AllIcons
 import com.intellij.ui.JBColor
 import com.intellij.util.ui.JBFont
@@ -45,7 +47,7 @@ class QueueBanner(private val queue: InjectionQueue) : JPanel(BorderLayout(0, JB
   private fun refresh() {
     rows.removeAll()
     isVisible = !queue.isEmpty
-    title.text = "📌 В очереди — подмешается в следующем ходе агента (${queue.size})"
+    title.text = "📌 " + t("queue.banner", "count" to queue.size)
     queue.snapshot().forEachIndexed { index, note ->
       rows.add(row(index, note))
     }
@@ -78,7 +80,7 @@ class QueueBanner(private val queue: InjectionQueue) : JPanel(BorderLayout(0, JB
       foreground = FG
     }, BorderLayout.CENTER)
     east.add(JLabel(AllIcons.Actions.Close).apply {
-      toolTipText = "Убрать из очереди"
+      toolTipText = t("queue.remove")
       cursor = Cursor.getPredefinedCursor(Cursor.HAND_CURSOR)
       addMouseListener(object : MouseAdapter() {
         override fun mouseClicked(e: MouseEvent) { queue.removeAt(index) }

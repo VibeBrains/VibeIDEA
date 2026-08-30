@@ -1,6 +1,8 @@
 // Copyright 2026 VibeBrains. Use of this source code is governed by the Apache 2.0 license.
 package com.vibe.agent.ui.composer
 
+import com.vibe.agent.i18n.VibeI18n.t
+
 import com.intellij.openapi.Disposable
 import com.intellij.openapi.actionSystem.ActionUpdateThread
 import com.intellij.openapi.actionSystem.AnActionEvent
@@ -167,13 +169,13 @@ class SlashPopup(
         skills.isEmpty() -> listOf(Row(null, NO_SKILLS_TEXT, ""))
         else -> skills.filter { it.id.lowercase().contains(query) }
           .map { Row("$SKILL_PREFIX${it.id} ", "$SKILL_PREFIX${it.id}", it.description) }
-          .ifEmpty { listOf(Row(null, "Нет скиллов по фильтру «${filter()}»", "")) }
+          .ifEmpty { listOf(Row(null, t("slash.noSkillsFor", "filter" to filter()), "")) }
       }
     }
     else {
       header.text = COMMANDS_HEADER
       rows = COMMANDS.filter { it.title.lowercase().contains("$SLASH$query".lowercase()) || query.isEmpty() }
-        .ifEmpty { listOf(Row(null, "Нет команд по фильтру «${filter()}»", "")) }
+        .ifEmpty { listOf(Row(null, t("slash.noCommandsFor", "filter" to filter()), "")) }
     }
     model.replaceAll(rows)
     list.visibleRowCount = rows.size.coerceIn(1, MAX_VISIBLE_ROWS)
@@ -257,9 +259,9 @@ class SlashPopup(
     const val SLASH = "/"
     const val SKILL_PREFIX = "/skill:"
     val SKILL_TAIL = Regex("/skill:[\\w-]*$")
-    const val COMMANDS_HEADER = "Команды чата:"
+    val COMMANDS_HEADER: String get() = t("slash.header.commands")
     const val SKILLS_HEADER = "Skills:"
-    const val NO_SKILLS_TEXT = "Скиллов нет — добавьте .vibe/skills/<id>/SKILL.md"
+    val NO_SKILLS_TEXT: String get() = t("slash.noSkills")
     const val MAX_VISIBLE_ROWS = 10
     const val MIN_POPUP_WIDTH = 320
     const val POPUP_CHROME_WIDTH = 12
@@ -267,9 +269,9 @@ class SlashPopup(
     const val HEADER_PAD_V = 6
     const val HEADER_PAD_H = 10
 
-    val COMMANDS = listOf(
-      Row("/commit ", "/commit", "Сгенерировать Conventional Commit из застейдженных изменений"),
-      Row(null, "/skill:", "Вызвать навык из .vibe/skills", toSkills = true),
+    val COMMANDS: List<Row> get() = listOf(
+      Row("/commit ", "/commit", t("slash.command.commit")),
+      Row(null, "/skill:", t("slash.command.skill"), toSkills = true),
     )
   }
 }

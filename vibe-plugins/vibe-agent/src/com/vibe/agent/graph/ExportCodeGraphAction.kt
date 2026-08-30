@@ -1,6 +1,8 @@
 // Copyright 2026 VibeBrains. Use of this source code is governed by the Apache 2.0 license.
 package com.vibe.agent.graph
 
+import com.vibe.agent.i18n.VibeI18n.t
+
 import com.intellij.notification.NotificationGroupManager
 import com.intellij.notification.NotificationType
 import com.intellij.openapi.actionSystem.AnAction
@@ -12,13 +14,13 @@ import java.nio.file.Files
 import java.nio.file.Path
 
 /**
- * Tools → "Vibe: экспорт графа проекта" → `.vibe/codeGraph.json`.
+ * Tools → "Vibe: export the project graph" → `.vibe/codeGraph.json`.
  * Agents read the file themselves (paths, not content — the VibeIDE principle).
  */
-class ExportCodeGraphAction : AnAction("Vibe: экспорт графа проекта") {
+class ExportCodeGraphAction : AnAction({ t("graph.action.title") }) {
   override fun actionPerformed(e: AnActionEvent) {
     val project = e.project ?: return
-    ProgressManager.getInstance().run(object : Task.Backgroundable(project, "Vibe: граф проекта", true) {
+    ProgressManager.getInstance().run(object : Task.Backgroundable(project, t("graph.task.title"), true) {
       override fun run(indicator: ProgressIndicator) {
         val base = project.basePath ?: return
         val out = Path.of(base, ".vibe", "codeGraph.json")
@@ -29,7 +31,8 @@ class ExportCodeGraphAction : AnAction("Vibe: экспорт графа прое
         val previous = runCatching { if (Files.exists(out)) CodeGraphStore.decode(Files.readString(out)) else emptyList() }
           .getOrDefault(emptyList())
         val (reused, stale) = CodeGraphStore.plan(current, previous)
-        indicator.text = if (previous.isEmpty()) "Разбор ${stale.size} файлов" else "Изменилось файлов: ${stale.size} из ${current.size}"
+        indicator.text = if (previous.isEmpty()) t("graph.progress.parsing", "count" to stale.size)
+          else t("graph.progress.changed", "changed" to stale.size, "total" to current.size)
 
         val parsed = CodeGraphBuilder.buildSome(project, stale)
         val nodes = (reused + parsed).sortedBy { it.path }
@@ -41,8 +44,8 @@ class ExportCodeGraphAction : AnAction("Vibe: экспорт графа прое
         val facts = graph.edges.count { it.provenance == CodeGraphIndex.Provenance.FACT }
         NotificationGroupManager.getInstance().getNotificationGroup("Vibe Agent")
           .createNotification(
-            "Граф проекта выгружен: .vibe/codeGraph.json — файлов ${nodes.size} (заново разобрано ${parsed.size}), " +
-            "связей ${graph.edges.size} (фактов $facts, догадок ${graph.edges.size - facts})",
+            t("graph.done", "files" to nodes.size, "parsed" to parsed.size,
+              "edges" to graph.edges.size, "facts" to facts, "guesses" to (graph.edges.size - facts)),
             NotificationType.INFORMATION)
           .notify(project)
       }

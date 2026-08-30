@@ -1,6 +1,8 @@
 // Copyright 2026 VibeBrains. Use of this source code is governed by the Apache 2.0 license.
 package com.vibe.agent.design
 
+import com.vibe.agent.i18n.VibeI18n.t
+
 /**
  * The design hook: measure the page after the agent touched the interface, without being asked.
  *
@@ -59,18 +61,17 @@ object DesignHookPolicy {
   fun corrective(findings: List<Finding>, attempt: Int, maxAttempts: Int): String {
     val blocking = findings.filter { it.ruleClass == RuleClass.FLOOR && it.acceptedReason == null }
     return buildString {
-      append("ДИЗАЙН-ГЕЙТ (попытка ").append(attempt).append(" из ").append(maxAttempts)
-      append("): замер страницы нашёл нарушения пола качества. Исправьте их и продолжайте.\n")
+      appendLine(t("design.gate.header", "attempt" to attempt, "max" to maxAttempts))
       for (finding in blocking.take(MAX_LISTED)) {
         append("- ").append(finding.message)
         append(" — ").append(finding.selector)
         append(" (").append(finding.evidence).append(")")
-        append(if (finding.viewport == Viewport.MOBILE) " [телефон]" else " [десктоп]")
+        append(if (finding.viewport == Viewport.MOBILE) " [" + t("design.viewport.mobile") + "]" else " [" + t("design.viewport.desktop") + "]")
         append("\n")
       }
-      if (blocking.size > MAX_LISTED) append("…и ещё ").append(blocking.size - MAX_LISTED).append(".\n")
+      if (blocking.size > MAX_LISTED) appendLine(t("design.gate.more", "count" to (blocking.size - MAX_LISTED)))
       // Said explicitly so the model does not start "fixing" taste to please the gate.
-      append("Стилевые замечания гейт не блокируют — их правьте только по просьбе человека.")
+      append(t("design.gate.styleNote"))
     }
   }
 
