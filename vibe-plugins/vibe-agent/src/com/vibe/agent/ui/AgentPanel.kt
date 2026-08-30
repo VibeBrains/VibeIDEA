@@ -169,6 +169,14 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
   /** Shapes of this turn's tool calls — the loop detector reads nothing else. */
   private val loopHistory = com.vibe.agent.safety.LoopDetector.History()
 
+  /** What the turn actually did — the feed shows the agent's story, this shows the events. */
+  private val trace = com.vibe.agent.trace.TurnTrace.Recorder()
+
+  @Volatile private var turnStartedAtMs = 0L
+
+  /** Start times of running tool calls, so a finished call can report how long it took. */
+  private val toolStarts = java.util.concurrent.ConcurrentHashMap<String, Long>()
+
   /**
    * The pipeline role running right now, or null in an ordinary chat.
    *
@@ -242,6 +250,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
       handleGitCommand(message) -> true
       handleCouncilCommand(message) -> true
       handleHandoffCommand(message) -> true
+      handleTraceCommand(message) -> true
       sessionCeilingReached(message.text) -> false
       handleWatchCommand(message) -> true
       else -> startTurn(message)
@@ -587,6 +596,50 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     remaining = t("handoff.remaining"), traps = t("handoff.traps"), files = t("handoff.files"),
     verify = t("handoff.verify"), empty = t("handoff.empty"),
   )
+
+  /**
+   * `/trace` — what the last turn actually did, step by step.
+   *
+   * The feed shows the story the agent tells about itself; the trace shows the events. The two
+   * differ exactly where it matters — a tool retried three times, a gate that bounced the turn
+   * back, a file read twice — and none of that is visible in prose.
+   */
+  private fun handleTraceCommand(message: ComposedMessage): Boolean {
+    if (message.text.trim() != TRACE_COMMAND) return false
+    val events = trace.snapshot()
+    userBubble(message.text.trim())
+    val text = com.vibe.agent.trace.TurnTrace.render(events, turnStartedAtMs, traceLabels())
+    val repeated = com.vibe.agent.trace.TurnTrace.repeated(events)
+    SwingUtilities.invokeLater {
+      val console = TerminalConsole(t("trace.title"))
+      console.append(text)
+      if (repeated.isNotEmpty()) {
+        console.append("\n\n" + t("trace.repeated", "items" to repeated.entries.joinToString { "${it.key} ×${it.value}" }))
+      }
+      messages.add(console)
+      revalidateScroll()
+    }
+    return true
+  }
+
+  private fun traceLabels() = object : com.vibe.agent.trace.TurnTrace.Labels {
+    override fun header(count: Int) = t("trace.header", "count" to count)
+    // Literal keys, not «"trace.kind." + name»: a key assembled by concatenation cannot be found
+    // by searching the code, and the catalogue gate reports it as both missing and dead at once.
+    override fun kind(kind: com.vibe.agent.trace.TurnTrace.Kind) = when (kind) {
+      com.vibe.agent.trace.TurnTrace.Kind.TOOL -> t("trace.kind.tool")
+      com.vibe.agent.trace.TurnTrace.Kind.GATE -> t("trace.kind.gate")
+      com.vibe.agent.trace.TurnTrace.Kind.RETRY -> t("trace.kind.retry")
+      com.vibe.agent.trace.TurnTrace.Kind.LOOP -> t("trace.kind.loop")
+      com.vibe.agent.trace.TurnTrace.Kind.PLAN -> t("trace.kind.plan")
+      com.vibe.agent.trace.TurnTrace.Kind.HOOK -> t("trace.kind.hook")
+      com.vibe.agent.trace.TurnTrace.Kind.ERROR -> t("trace.kind.error")
+      com.vibe.agent.trace.TurnTrace.Kind.NOTE -> t("trace.kind.note")
+    }
+    override val empty: String get() = t("trace.empty")
+    override val ms: String get() = t("trace.ms")
+    override val failureMark: String get() = "✖"
+  }
 
   /**
    * `/council <вопрос>` — one question to several DIFFERENT models, each blind to the others.
@@ -1277,6 +1330,9 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     // A fresh turn: tool-call ids and the changed-files set are per-turn.
     toolCalls.reset()
     loopHistory.clear()
+    trace.clear()
+    toolStarts.clear()
+    turnStartedAtMs = System.currentTimeMillis()
     lastActivityMs.set(System.currentTimeMillis())
     staleAnnounced.set(false)
     terminalConsoles.clear()
@@ -2384,7 +2440,10 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
       "usage_update" -> onUsageUpdate(u)
       "tool_call" -> {
         val call = toolCalls.onToolCall(u)
-        if (call != null) { auditToolCall(AuditEvent.Action.TOOL_CALL_START, call); harvestMutation(call); noteLoop(call) }
+        if (call != null) {
+          auditToolCall(AuditEvent.Action.TOOL_CALL_START, call); harvestMutation(call); noteLoop(call)
+          toolStarts[call.id] = System.currentTimeMillis()
+        }
         toolCard(call?.title ?: u["title"]?.jsonPrimitive?.contentOrNull ?: u["kind"]?.jsonPrimitive?.contentOrNull ?: t("chat.tool"))
         // Claude adapter announces a terminal for this tool-call — open a live console.
         terminalInfoId(u)?.let { openTerminalConsole(it, call?.title ?: t("chat.terminal")) }
@@ -2397,6 +2456,14 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
         terminalExitFrame(u)?.let { (id, code, sig) -> markTerminalExit(id, code, sig) }
         if (call.isDone) {
           auditToolCall(AuditEvent.Action.TOOL_CALL_DONE, call)
+          val startedAt = toolStarts.remove(call.id)
+          trace.add(com.vibe.agent.trace.TurnTrace.Event(
+            atMs = System.currentTimeMillis(),
+            kind = com.vibe.agent.trace.TurnTrace.Kind.TOOL,
+            name = call.title.take(80),
+            durationMs = startedAt?.let { System.currentTimeMillis() - it },
+            ok = call.status != com.vibe.agent.acp.ToolCall.STATUS_FAILED,
+          ))
           // postToolUse: the tool already ran and cannot be undone, so run the hook OFF the reader thread —
           // a 30 s hook must not stall the session/update stream.
           val tool = call.toolName ?: call.kind
@@ -2675,9 +2742,16 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     // Shrunk BEFORE it reaches the model, and never silently: a test run says what matters in its
     // first and last lines, the middle is scrollback that costs the same tokens as the code the
     // model still has to read. The full text stays available through /output <handle>.
-    val handle = if (snap.output.lines().size >= com.vibe.agent.context.OutputCompressor.MIN_LINES_TO_COMPRESS)
+    // Noise goes BEFORE the cut: collapsing four hundred progress lines first means the head and
+    // tail that survive the cut carry information instead of a redrawn progress bar.
+    val filtered = com.vibe.agent.context.ContextFilter.filter(
+      snap.output, com.vibe.agent.context.ContextFilter.modeOf(VibeAgentSettings.contextFilterMode),
+      repeatMark = { count -> t("filter.repeat", "count" to count) },
+    )
+    if (filtered.removedLines > 0) systemLine(t("filter.removed", "count" to filtered.removedLines))
+    val handle = if (filtered.text.lines().size >= com.vibe.agent.context.OutputCompressor.MIN_LINES_TO_COMPRESS)
       outputStore.put(snap.output) else ""
-    val shrunk = com.vibe.agent.context.OutputCompressor.compress(snap.output, handle, { dropped, h ->
+    val shrunk = com.vibe.agent.context.OutputCompressor.compress(filtered.text, handle, { dropped, h ->
       t("output.compressed", "dropped" to dropped, "handle" to h)
     })
     if (shrunk.compressed) systemLine(t("output.compressedNote", "dropped" to shrunk.droppedLines, "handle" to handle))
@@ -2735,6 +2809,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     const val GIT_COMMAND = "/git"
     const val COUNCIL_COMMAND = "/council"
     const val HANDOFF_COMMAND = "/handoff"
+    const val TRACE_COMMAND = "/trace"
     const val COUNCIL_TIMEOUT_MS = 180_000L
     const val GIT_REPORT_LIMIT = 25
     const val PIN_ON = "📌"

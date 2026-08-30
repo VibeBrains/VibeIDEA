@@ -131,6 +131,7 @@ object VibeAgentSettings {
   private const val KEY_SILENCE_MINUTES = "vibe.agent.silenceMinutes"
   private const val KEY_ROLE_BUDGET = "vibe.agent.roleBudgetTokens"
   private const val KEY_COUNCIL = "vibe.agent.councilAdvisers"
+  private const val KEY_CONTEXT_FILTER = "vibe.agent.contextFilterMode"
 
   /** Off by default: a ceiling nobody set must not become a wall in the middle of real work. */
   const val DEFAULT_ROLE_BUDGET_TOKENS = 0
@@ -282,6 +283,11 @@ object VibeAgentSettings {
    */
   /** Tokens one pipeline role may spend per rolling day; 0 turns the budget off. */
   /** `провайдер/модель` через запятую; пусто — совет выключен и честно об этом говорит. */
+  /** auto | raw | aggregate | off — как чистится вывод инструментов до попадания в контекст. */
+  var contextFilterMode: String
+    get() = props.getValue(KEY_CONTEXT_FILTER, "auto")
+    set(value) = props.setValue(KEY_CONTEXT_FILTER, value.trim().lowercase(), "auto")
+
   var councilAdvisers: String
     get() = props.getValue(KEY_COUNCIL, "")
     set(value) = props.setValue(KEY_COUNCIL, value.trim(), "")
