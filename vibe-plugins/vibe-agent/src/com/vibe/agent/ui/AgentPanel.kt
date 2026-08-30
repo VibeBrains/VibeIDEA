@@ -211,6 +211,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
   private val composer = ComposerPanel(project, this, object : ComposerPanel.Listener {
     override fun onSend(message: ComposedMessage): Boolean = when {
       handleOutputCommand(message) -> true
+      handleGitCommand(message) -> true
       sessionCeilingReached(message.text) -> false
       handleWatchCommand(message) -> true
       else -> startTurn(message)
@@ -491,6 +492,63 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
    * progress line and a working Стоп: downloading a lecture takes minutes, and a cancel that only
    * lands at the end is not a cancel.
    */
+  /**
+   * `/git [вопрос]` — the state of the repository as a fact, attached to the turn.
+   *
+   * Without it the model reaches for the terminal: it pays for `git status`, then for `git diff`,
+   * then re-reads a diff it half-remembers — three round trips and a wall of output for four lines
+   * of answer. A large `git diff` is also exactly the shape that fills the window and makes the
+   * model forget the task it was given.
+   *
+   * The state goes in as CONTEXT, not as the message: the user's question stays the question.
+   */
+  private fun handleGitCommand(message: ComposedMessage): Boolean {
+    val text = message.text.trim()
+    if (text != GIT_COMMAND && !text.startsWith("$GIT_COMMAND ")) return false
+    val question = text.removePrefix(GIT_COMMAND).trim()
+    val state = com.vibe.agent.git.GitStateService.getInstance(project).collect().getOrElse { error ->
+      systemLine(
+        if (error.message == com.vibe.agent.git.GitStateService.NOT_A_REPO) t("git.notARepo")
+        else t("git.failed", "reason" to error.message)
+      )
+      return true
+    }
+    val report = com.vibe.agent.git.RepoState.report(state, GIT_REPORT_LIMIT, gitLabels())
+    userBubble(text)
+    systemLine(t("git.collected", "files" to state.changes.size))
+    // A question of its own turns the state into a turn; a bare /git just shows it.
+    if (question.isEmpty()) {
+      SwingUtilities.invokeLater {
+        val console = TerminalConsole(t("git.title"))
+        console.append(report)
+        messages.add(console)
+        revalidateScroll()
+      }
+      return true
+    }
+    return startTurn(ComposedMessage(
+      text = question + "\n\n<context ref=\"git\">\n" + report + "\n</context>",
+      images = message.images, context = message.context,
+    ))
+  }
+
+  private fun gitLabels(): com.vibe.agent.git.RepoState.Labels = object : com.vibe.agent.git.RepoState.Labels {
+    override fun header(branch: String?, upstream: String?, ahead: Int, behind: Int, detached: Boolean): String = when {
+      detached -> t("git.header.detached")
+      upstream != null -> t("git.header.tracking", "branch" to branch, "upstream" to upstream, "ahead" to ahead, "behind" to behind)
+      else -> t("git.header.branch", "branch" to (branch ?: "?"))
+    }
+    override val clean: String get() = t("git.clean")
+    override fun change(change: com.vibe.agent.git.RepoState.Change): String {
+      val size = if (change.binary) t("git.binary")
+                 else if (change.untracked) t("git.new")
+                 else t("git.size", "added" to change.added, "removed" to change.removed)
+      return "  ${change.status} ${change.path} — $size"
+    }
+    override fun more(count: Int): String = "  " + t("git.more", "count" to count)
+    override val commitsHeader: String get() = t("git.commits")
+  }
+
   /**
    * `/output <handle>` — the full text of an output that was shrunk for the model.
    *
@@ -2319,6 +2377,8 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
 
   private companion object {
     const val OUTPUT_COMMAND = "/output"
+    const val GIT_COMMAND = "/git"
+    const val GIT_REPORT_LIMIT = 25
     const val PIN_ON = "📌"
     const val PIN_OFF = "📍"
     const val BRANCH_ICON = "⑂"

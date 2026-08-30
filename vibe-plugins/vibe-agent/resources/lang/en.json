@@ -754,5 +754,22 @@
   "output.unknownHandle": "no stored output with the «{handle}» handle — handles live for the session and only the last 20 are kept",
   "output.full": "full output {handle}",
   "settings.chat.sessionTokens": "Token ceiling per chat",
-  "settings.chat.sessionTokensHint": "0 means no limit. Counted across the whole conversation rather than one request: the model window answers «will it fit», this ceiling answers «how much will it cost». On reaching it the chat says so and suggests starting a new one."
+  "settings.chat.sessionTokensHint": "0 means no limit. Counted across the whole conversation rather than one request: the model window answers «will it fit», this ceiling answers «how much will it cost». On reaching it the chat says so and suggests starting a new one.",
+  "git.notARepo": "there is no git repository here — nothing to report",
+  "git.failed": "git failed: {reason}",
+  "git.collected": "🌿 repository state collected: {files} changed files",
+  "git.title": "repository state",
+  "git.header.tracking": "Branch {branch} → {upstream}, ahead {ahead}, behind {behind}",
+  "git.header.branch": "Branch {branch} (no upstream)",
+  "git.header.detached": "HEAD is detached",
+  "git.clean": "  the working tree is clean",
+  "git.size": "+{added} −{removed}",
+  "git.binary": "binary file",
+  "git.new": "new file, not tracked yet",
+  "git.more": "… and {count} more files",
+  "git.commits": "Recent commits:",
+  "slash.command.git": "Repository state as a fact: branch, changes, recent commits",
+  "slash.command.output": "Full text of an output that was compressed for the model",
+  "git.noProject": "no project is open",
+  "git.timeout": "git did not answer within {seconds}s: {command}"
 }

@@ -271,6 +271,8 @@ class SlashPopup(
 
     val COMMANDS: List<Row> get() = listOf(
       Row("/commit ", "/commit", t("slash.command.commit")),
+      Row("/git ", "/git", t("slash.command.git")),
+      Row("/output ", "/output", t("slash.command.output")),
       Row(null, "/skill:", t("slash.command.skill"), toSkills = true),
     )
   }
