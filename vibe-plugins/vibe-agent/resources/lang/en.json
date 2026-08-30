@@ -1182,5 +1182,18 @@
   "settings.agent.telegramProject": "Project for Telegram",
   "settings.agent.telegramProxy": "Proxy for Telegram",
   "settings.agent.hint.telegram": "The project is where tasks from the bot chat go (empty means the first open window). The proxy is separate from the model proxy: Telegram and model APIs are blocked in different places by different people. The bot token is set with «VibeIDEA: Telegram bot token» and lives in the OS secure storage, not here.",
-  "settings.agent.watchHeight": "Frame height, px"
+  "settings.agent.watchHeight": "Frame height, px",
+  "design.rule.lineLong.message": "a line of about {chars} characters, past the {max} limit",
+  "design.rule.lineLong.why": "On a long line the eye loses where to return at the end: reading becomes physically harder.",
+  "design.rule.lineHeight.tight": "line height {ratio} — the lines stick together",
+  "design.rule.lineHeight.loose": "line height {ratio} — the paragraph falls apart into separate lines",
+  "design.rule.lineHeight.why": "Line height is what keeps a paragraph a paragraph: too tight makes it a wall, too loose makes it a list.",
+  "design.rule.fontScale.message": "the page has {count} distinct font sizes, {max} being reasonable",
+  "design.rule.fontScale.why": "A scale is a decision; a dozen sizes is what happens when every component picked its own.",
+  "design.rule.spacing.message": "padding off the {step}px step: {values}",
+  "design.rule.spacing.why": "Values off the step are the ones typed by hand while everything else came from tokens; the eye reads it as unevenness.",
+  "design.rule.fonts.message": "font families on the page: {count}",
+  "design.rule.fonts.why": "More than two families is a page assembled from two different designs.",
+  "design.rule.shouting.message": "a {length}-character phrase is set in capitals",
+  "design.rule.shouting.why": "All caps reads slower, letter by letter, and sounds like shouting even where nobody meant to shout."
 }

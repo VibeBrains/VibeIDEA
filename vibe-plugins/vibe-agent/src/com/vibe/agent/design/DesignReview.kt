@@ -32,7 +32,7 @@ object DesignReview {
     val raw = DesignFloorRules.all(doc) + DesignMarkupRules.all(doc) + DesignStyleRules.all(doc) +
       // Findability runs once per page rather than per element, so it lands here rather than in a
       // per-element pass: a title is not a property of a div.
-      DesignFindabilityRules.all(doc)
+      DesignFindabilityRules.all(doc) + DesignRhythmRules.all(doc)
     val findings = raw.map { finding ->
       // The class always comes from the catalogue, never from the rule that produced the finding.
       val stamped = finding.copy(ruleClass = DesignRuleCatalog.classOf(finding.rule))

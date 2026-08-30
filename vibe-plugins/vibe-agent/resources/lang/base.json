@@ -1182,5 +1182,18 @@
   "settings.agent.telegramProject": "Проект для Telegram",
   "settings.agent.telegramProxy": "Прокси для Telegram",
   "settings.agent.hint.telegram": "Проект — куда уходят задачи из чата бота (пусто — первое открытое окно). Прокси отдельный от прокси моделей: Telegram и API моделей блокируются в разных местах и разными людьми. Токен бота задаётся командой «VibeIDEA: токен Telegram-бота» и живёт в защищённом хранилище ОС, а не здесь.",
-  "settings.agent.watchHeight": "Высота кадра, px"
+  "settings.agent.watchHeight": "Высота кадра, px",
+  "design.rule.lineLong.message": "строка длиной около {chars} символов при пределе {max}",
+  "design.rule.lineLong.why": "На длинной строке глаз теряет, куда возвращаться в конце: читать становится физически труднее.",
+  "design.rule.lineHeight.tight": "межстрочный интервал {ratio} — строки слипаются",
+  "design.rule.lineHeight.loose": "межстрочный интервал {ratio} — абзац рассыпается на отдельные строки",
+  "design.rule.lineHeight.why": "Интервал держит абзац абзацем: слишком тесный превращает его в стену, слишком широкий — в список.",
+  "design.rule.fontScale.message": "на странице {count} разных кеглей при разумных {max}",
+  "design.rule.fontScale.why": "Шкала — это решение; дюжина кеглей — это когда каждый компонент выбрал свой.",
+  "design.rule.spacing.message": "отступы мимо шага {step}px: {values}",
+  "design.rule.spacing.why": "Значения мимо шага — те, что набрали руками, пока остальное бралось из токенов; глазом это читается как неровность.",
+  "design.rule.fonts.message": "на странице гарнитур: {count}",
+  "design.rule.fonts.why": "Больше двух гарнитур — это страница, собранная из двух разных дизайнов.",
+  "design.rule.shouting.message": "фраза из {length} символов набрана заглавными",
+  "design.rule.shouting.why": "Капслок читается медленнее (буква за буквой) и звучит как крик даже там, где кричать не хотели."
 }

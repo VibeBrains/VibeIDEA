@@ -64,6 +64,14 @@ object DesignRuleCatalog {
   const val FAVICON_MISSING = "favicon-missing"
   const val OG_TITLE_MISSING = "og-title-missing"
 
+  // Rhythm and typography: what makes a page feel wrong before anyone can say why.
+  const val LINE_TOO_LONG = "line-too-long"
+  const val LINE_HEIGHT_OFF = "line-height-off"
+  const val FONT_SCALE_DRIFT = "font-scale-drift"
+  const val SPACING_OFF_GRID = "spacing-off-grid"
+  const val TOO_MANY_FONTS = "too-many-fonts"
+  const val SHOUTING_TEXT = "shouting-text"
+
   private val FLOOR = setOf(
     CONTRAST_TEXT, TEXT_TOO_SMALL, TAP_TARGET_TOO_SMALL, CONTENT_CLIPPED, ELEMENT_OCCLUDED,
     PAGE_WIDER_THAN_VIEWPORT, BROKEN_IMAGE, FOCUS_RING_REMOVED, DISABLED_LOOKS_ENABLED,
@@ -91,5 +99,6 @@ object DesignRuleCatalog {
     DESCRIPTION_MISSING, DESCRIPTION_TOO_SHORT, DESCRIPTION_TOO_LONG, LANG_MISSING,
     VIEWPORT_MISSING, VIEWPORT_BLOCKS_ZOOM, CANONICAL_MISSING, CANONICAL_RELATIVE,
     ROBOTS_NOINDEX, CHARSET_NOT_UTF8, FAVICON_MISSING, OG_TITLE_MISSING,
+    LINE_TOO_LONG, LINE_HEIGHT_OFF, FONT_SCALE_DRIFT, SPACING_OFF_GRID, TOO_MANY_FONTS, SHOUTING_TEXT,
   )
 }
