@@ -67,6 +67,10 @@
               text="Команды проекта" description="Команды из .vibe/commands.json: список, разрешение и запуск"/>
       <action id="Vibe.TelegramToken" class="com.vibe.agent.telegram.VibeTelegramTokenAction"
               text="Токен Telegram-бота" description="Мост в Telegram: свой бот, токен в защищённом хранилище"/>
+      <action id="Vibe.UiKitMap" class="com.vibe.agent.design.VibeUiKitMapAction"
+              text="Снять карту построенного" description="Токены, классы и компоненты проекта в .vibe/design/uiKit.md"/>
+      <action id="Vibe.DesignDoctor" class="com.vibe.agent.design.VibeDesignDoctorAction"
+              text="Проверка дизайн-контура" description="Есть ли контекст, достижима ли страница, сколько правил, нет ли опечаток в отклонениях"/>
       <action id="Vibe.Specs" class="com.vibe.agent.specs.VibeSpecsAction"
               text="Спеки проекта" description="PRODUCT.md и TECH.md: что должно быть правдой и как это сделано"/>
       <action id="Vibe.DocsReport" class="com.vibe.agent.docs.VibeDocsReportAction"
