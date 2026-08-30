@@ -63,6 +63,17 @@ class ServerRunner(
       }
     }
     onStatus(e.id, ServerStatus.STARTING, null)
+    // Asked BEFORE starting: a framework that finds its port busy quietly moves to the next one,
+    // and a server running somewhere the configuration does not name produces an afternoon of
+    // «почему на телефоне ничего нет». Better to say it now than to be helpful and wrong.
+    e.port?.let { port ->
+      if (isPortBusy(port)) {
+        val owners = PortConflict.parsePids(runCatching { readOwners(port) }.getOrDefault(""))
+          .filter { PortConflict.isSafeToKill(it, ProcessHandle.current().pid()) }
+        onLog(e.id, t("servers.portBusy", "port" to port,
+                      "owners" to (owners.joinToString(", ").ifEmpty { t("servers.portOwnerUnknown") })))
+      }
+    }
     val process = try { spawn(e, e.command) }
     catch (ex: Exception) {
       onStatus(e.id, ServerStatus.FAILED, t("servers.spawnFailed", "reason" to ex.message))
@@ -117,13 +128,35 @@ class ServerRunner(
     val p = processes.remove(e.id)
     if (p != null) {
       onStatus(e.id, ServerStatus.STOPPED, null) // before killing: expected death
+      // Descendants first: a dev-server is usually a shell that spawned node, and killing only the
+      // shell leaves the node holding the port — the zombie everyone meets on the second start.
+      p.descendants().forEach { it.destroy() }
       p.destroy()
+      if (!p.waitFor(STOP_GRACE_MS, java.util.concurrent.TimeUnit.MILLISECONDS)) {
+        p.descendants().forEach { it.destroyForcibly() }
+        p.destroyForcibly()
+      }
     }
     e.stopCommand?.let { cmd ->
       // best-effort: failure is not fatal
       runCatching { runShort(e, cmd) }
     }
   }
+
+  /** A TCP connect, not a bind: binding to check would itself take the port for a moment. */
+  private fun isPortBusy(port: Int): Boolean = runCatching {
+    Socket().use { it.connect(InetSocketAddress("127.0.0.1", port), 300); true }
+  }.getOrDefault(false)
+
+  private fun readOwners(port: Int): String {
+    val process = ProcessBuilder(PortConflict.ownerCommand(port)).redirectErrorStream(true).start()
+    val text = process.inputStream.bufferedReader().readText()
+    process.waitFor(2, java.util.concurrent.TimeUnit.SECONDS)
+    return text
+  }
+
+  /** How long a polite stop is given before it becomes an impolite one. */
+  private val STOP_GRACE_MS = 3_000L
 
   private fun spawn(e: ServerEntry, command: String): Process {
     val pb = ProcessBuilder("/bin/sh", "-c", command)

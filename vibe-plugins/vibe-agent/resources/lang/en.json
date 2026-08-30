@@ -1136,5 +1136,7 @@
   "bg.finished": "✅ the background command finished in {seconds}s: {command}",
   "bg.failed": "⛔ the background command did not start: {command} — {reason}",
   "bg.title": "output tail: {command}",
-  "slash.command.bg": "Run a command in the background and get a line when it ends"
+  "slash.command.bg": "Run a command in the background and get a line when it ends",
+  "servers.portBusy": "port {port} is already taken (processes: {owners}) — a server that finds its port busy usually moves to the next one silently, which turns into a day of «why is there nothing on the phone»",
+  "servers.portOwnerUnknown": "the owner could not be determined"
 }
