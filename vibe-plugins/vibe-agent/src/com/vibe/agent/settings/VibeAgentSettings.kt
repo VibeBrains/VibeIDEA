@@ -137,6 +137,8 @@ object VibeAgentSettings {
   private const val KEY_DOCS_FOLDER = "vibe.agent.docsFolder"
   private const val KEY_EMBEDDING_MODEL = "vibe.agent.embeddingModel"
   private const val KEY_MINIMALISM = "vibe.agent.minimalismMode"
+  private const val KEY_METRIC_PATTERN = "vibe.agent.metricPattern"
+  private const val KEY_METRIC_DIRECTION = "vibe.agent.metricDirection"
   private const val KEY_FAILOVER = "vibe.agent.failoverChain"
 
   /** Off by default: a ceiling nobody set must not become a wall in the middle of real work. */
@@ -295,6 +297,16 @@ object VibeAgentSettings {
   /** Папка документации проекта для панели «Документы». */
   /** `провайдер/модель` для эмбеддингов; пусто — поиск по смыслу выключен. */
   /** off | light | full | ultra — сколько кода агенту позволено добавить ради результата. */
+  /** Регэксп с одной группой — чем измеряется результат в выводе команды. */
+  var metricPattern: String
+    get() = props.getValue(KEY_METRIC_PATTERN, "")
+    set(value) = props.setValue(KEY_METRIC_PATTERN, value.trim(), "")
+
+  /** lower | higher — что считается улучшением; решается ДО работы, а не после. */
+  var metricDirection: String
+    get() = props.getValue(KEY_METRIC_DIRECTION, "lower")
+    set(value) = props.setValue(KEY_METRIC_DIRECTION, value.trim().lowercase(), "lower")
+
   var minimalismMode: String
     get() = props.getValue(KEY_MINIMALISM, "off")
     set(value) = props.setValue(KEY_MINIMALISM, value.trim().lowercase(), "off")

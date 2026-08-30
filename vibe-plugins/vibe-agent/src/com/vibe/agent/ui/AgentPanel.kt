@@ -257,6 +257,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
       handleHelpCommand(message) -> true
       handleFindCommand(message) -> true
       handleSimplifyCommand(message) -> true
+      handleMeasureCommand(message) -> true
       sessionCeilingReached(message.text) -> false
       handleWatchCommand(message) -> true
       else -> startTurn(message)
@@ -679,6 +680,69 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     override val empty: String get() = t("trace.empty")
     override val ms: String get() = t("trace.ms")
     override val failureMark: String get() = "✖"
+  }
+
+  /**
+   * `/measure <команда>` — the number this task is optimised against, measured rather than felt.
+   *
+   * «Ускорь», «урежь размер сборки», «подними покрытие» have no threshold at which they are done, so
+   * a model working on them declares victory by adjective. The first measurement becomes the
+   * baseline, every later one is compared against it, and the direction of «better» is fixed in the
+   * settings BEFORE the work starts — deciding it afterwards is how a regression becomes a success.
+   */
+  private fun handleMeasureCommand(message: ComposedMessage): Boolean {
+    val text = message.text.trim()
+    if (!text.startsWith("$MEASURE_COMMAND ") && text != MEASURE_COMMAND) return false
+    val command = text.removePrefix(MEASURE_COMMAND).trim()
+    if (command.isEmpty()) {
+      systemLine(t("measure.usage"))
+      return true
+    }
+    userBubble(text)
+    systemLine(t("measure.running", "command" to command))
+    ApplicationManager.getApplication().executeOnPooledThread {
+      val output = runCatching { runShell(command) }.getOrElse {
+        systemLine(t("measure.failed", "reason" to it.message))
+        return@executeOnPooledThread
+      }
+      val result = com.vibe.agent.specs.MetricRun.extract(output, VibeAgentSettings.metricPattern)
+      if (result == null) {
+        systemLine(t("measure.noNumber", "pattern" to VibeAgentSettings.metricPattern.ifBlank { com.vibe.agent.specs.MetricRun.DEFAULT_PATTERN }))
+        return@executeOnPooledThread
+      }
+      val direction = com.vibe.agent.specs.MetricRun.directionOf(VibeAgentSettings.metricDirection)
+      val baseline = metricBaseline
+      if (baseline == null) {
+        metricBaseline = result.value
+        systemLine(t("measure.baseline", "value" to result.value, "raw" to result.raw))
+        return@executeOnPooledThread
+      }
+      val comparison = com.vibe.agent.specs.MetricRun.compare(baseline, result.value, direction)
+      // Literal keys in both branches: a key chosen inside the t(...) call is invisible to the
+      // catalogue gate, which then reports it as dead while the code uses it.
+      val percent = "%.1f".format(comparison.percent)
+      systemLine(
+        if (comparison.improved) t("measure.better", "before" to baseline, "after" to result.value, "percent" to percent)
+        else t("measure.worse", "before" to baseline, "after" to result.value, "percent" to percent)
+      )
+    }
+    return true
+  }
+
+  /** Baseline of the current optimisation; cleared with a new baseline, not by time. */
+  @Volatile private var metricBaseline: Double? = null
+
+  private fun runShell(command: String): String {
+    val process = ProcessBuilder(com.vibe.agent.util.ProcessSupport.shellCommand(command))
+      .directory(project.basePath?.let { java.io.File(it) })
+      .redirectErrorStream(true)
+      .start()
+    val out = com.vibe.agent.util.ProcessSupport.drain(process.inputStream, "vibe-measure")
+    if (!process.waitFor(MEASURE_TIMEOUT_SEC, java.util.concurrent.TimeUnit.SECONDS)) {
+      process.destroyForcibly()
+      error(t("measure.timeout", "seconds" to MEASURE_TIMEOUT_SEC))
+    }
+    return out.get(5, java.util.concurrent.TimeUnit.SECONDS).orEmpty()
   }
 
   /**
@@ -3009,6 +3073,8 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     const val HELP_COMMAND = "/help"
     const val FIND_COMMAND = "/find"
     const val SIMPLIFY_COMMAND = "/simplify"
+    const val MEASURE_COMMAND = "/measure"
+    const val MEASURE_TIMEOUT_SEC = 900L
     const val INDEX_COMMAND = "/index"
     const val INDEX_PROGRESS_STEP = 25
 

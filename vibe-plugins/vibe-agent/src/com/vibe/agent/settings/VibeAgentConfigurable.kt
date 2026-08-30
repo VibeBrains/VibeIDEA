@@ -32,6 +32,8 @@ class VibeAgentConfigurable : Configurable, Configurable.NoScroll {
   private var digestField: com.intellij.ui.components.JBTextField? = null
   private var embeddingField: com.intellij.ui.components.JBTextField? = null
   private var minimalismMode: com.intellij.openapi.ui.ComboBox<String>? = null
+  private var metricPattern: com.intellij.ui.components.JBTextField? = null
+  private var metricDirection: com.intellij.openapi.ui.ComboBox<String>? = null
   private var failoverField: com.intellij.ui.components.JBTextField? = null
   private var verifyMode: ComboBox<String>? = null
   private var verifyCommand: JBTextField? = null
@@ -61,6 +63,11 @@ class VibeAgentConfigurable : Configurable, Configurable.NoScroll {
   override fun createComponent(): JComponent {
     val hooks = JBCheckBox(t("settings.agent.hooks"), VibeAgentSettings.hooksEnabled).also { hooksEnabled = it }
     val audit = JBCheckBox(t("settings.agent.audit"), VibeAgentSettings.auditEnabled).also { auditEnabled = it }
+    val metric = com.intellij.ui.components.JBTextField(VibeAgentSettings.metricPattern, 28).also { metricPattern = it }
+    val metricDir = com.intellij.openapi.ui.ComboBox(arrayOf("lower", "higher")).also {
+      it.selectedItem = VibeAgentSettings.metricDirection
+      metricDirection = it
+    }
     val minimalism = com.intellij.openapi.ui.ComboBox(arrayOf("off", "light", "full", "ultra")).also {
       it.selectedItem = VibeAgentSettings.minimalismMode
       minimalismMode = it
@@ -118,6 +125,9 @@ class VibeAgentConfigurable : Configurable, Configurable.NoScroll {
       .addComponent(section(t("settings.agent.section.safety")))
       .addLabeledComponent(t("settings.agent.silence"), silence)
       .addComponent(hint(t("settings.agent.hint.silence")))
+      .addLabeledComponent(t("settings.agent.metricPattern"), metric)
+      .addLabeledComponent(t("settings.agent.metricDirection"), metricDir)
+      .addComponent(hint(t("settings.agent.hint.metricPattern")))
       .addLabeledComponent(t("settings.agent.minimalism"), minimalism)
       .addComponent(hint(t("settings.agent.hint.minimalism")))
       .addLabeledComponent(t("settings.agent.embedding"), embedding)
@@ -205,6 +215,8 @@ class VibeAgentConfigurable : Configurable, Configurable.NoScroll {
     (digestField?.text?.trim() ?: VibeAgentSettings.digestTime) != VibeAgentSettings.digestTime ||
     (embeddingField?.text?.trim() ?: VibeAgentSettings.embeddingModel) != VibeAgentSettings.embeddingModel ||
     (minimalismMode?.selectedItem as? String ?: VibeAgentSettings.minimalismMode) != VibeAgentSettings.minimalismMode ||
+    (metricPattern?.text?.trim() ?: VibeAgentSettings.metricPattern) != VibeAgentSettings.metricPattern ||
+    (metricDirection?.selectedItem as? String ?: VibeAgentSettings.metricDirection) != VibeAgentSettings.metricDirection ||
     (failoverField?.text?.trim() ?: VibeAgentSettings.failoverChain) != VibeAgentSettings.failoverChain ||
     (verifyMode?.item ?: VibeAgentSettings.verifyMode) != VibeAgentSettings.verifyMode ||
     (verifyCommand?.text?.trim() ?: VibeAgentSettings.verifyCommand) != VibeAgentSettings.verifyCommand ||
@@ -241,6 +253,8 @@ class VibeAgentConfigurable : Configurable, Configurable.NoScroll {
     digestField?.let { VibeAgentSettings.digestTime = it.text }
     embeddingField?.let { VibeAgentSettings.embeddingModel = it.text }
     (minimalismMode?.selectedItem as? String)?.let { VibeAgentSettings.minimalismMode = it }
+    metricPattern?.let { VibeAgentSettings.metricPattern = it.text }
+    (metricDirection?.selectedItem as? String)?.let { VibeAgentSettings.metricDirection = it }
     failoverField?.let { VibeAgentSettings.failoverChain = it.text }
     verifyMode?.let { VibeAgentSettings.verifyMode = it.item }
     verifyCommand?.let { VibeAgentSettings.verifyCommand = it.text }
@@ -286,6 +300,8 @@ class VibeAgentConfigurable : Configurable, Configurable.NoScroll {
     digestField?.text = VibeAgentSettings.digestTime
     embeddingField?.text = VibeAgentSettings.embeddingModel
     minimalismMode?.selectedItem = VibeAgentSettings.minimalismMode
+    metricPattern?.text = VibeAgentSettings.metricPattern
+    metricDirection?.selectedItem = VibeAgentSettings.metricDirection
     failoverField?.text = VibeAgentSettings.failoverChain
     verifyMode?.item = VibeAgentSettings.verifyMode
     verifyCommand?.text = VibeAgentSettings.verifyCommand

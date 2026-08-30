@@ -64,6 +64,8 @@
               text="Найти локальные модели" description="Проба привычных портов Ollama, LM Studio, llama.cpp, Jan"/>
       <action id="Vibe.ProjectCommands" class="com.vibe.agent.commands.VibeProjectCommandsAction"
               text="Команды проекта" description="Команды из .vibe/commands.json: список, разрешение и запуск"/>
+      <action id="Vibe.Specs" class="com.vibe.agent.specs.VibeSpecsAction"
+              text="Спеки проекта" description="PRODUCT.md и TECH.md: что должно быть правдой и как это сделано"/>
       <action id="Vibe.DocsReport" class="com.vibe.agent.docs.VibeDocsReportAction"
               text="Связность документации" description="Недостижимые документы и ссылки в никуда"/>
       <action id="Vibe.DailyDigest" class="com.vibe.agent.digest.DailyDigestAction"
