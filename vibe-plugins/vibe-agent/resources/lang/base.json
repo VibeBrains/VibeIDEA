@@ -1201,5 +1201,7 @@
   "telegram.denied": "Отклонено.",
   "telegram.approvalGone": "Этот вопрос уже решён — ответили раньше.",
   "telegram.alsoAsked": "Тот же вопрос отправлен в Telegram: ответить можно и оттуда.",
-  "telegram.approvalQuestion": "Агент просит разрешение:\n\n{body}"
+  "telegram.approvalQuestion": "Агент просит разрешение:\n\n{body}",
+  "commands.pinned.title": "Команда проекта {index}",
+  "commands.noPinned": "Закреплённой команды №{index} нет: закреплено {count}. Закрепить — поле \"pinned\": true в .vibe/commands.json."
 }

@@ -44,8 +44,10 @@ class VibeProjectCommandsAction : AnAction({ t("commands.action") }) {
       .showCenteredInCurrentWindow(project)
   }
 
-  private fun run(project: Project, command: ProjectCommands.Command) {
-    if (!approved(project, command)) return
+  private fun run(project: Project, command: ProjectCommands.Command) = runCommand(project, command)
+
+  private fun runInternal(project: Project, command: ProjectCommands.Command) {
+    if (!approvedFor(project, command)) return
     val resolved = ProjectCommands.substituteSecrets(command.command) { name ->
       // .vibe/.env first, then the process environment: the project's own file is the answer
       // people expect, and the environment is the fallback for CI.
@@ -65,7 +67,7 @@ class VibeProjectCommandsAction : AnAction({ t("commands.action") }) {
   }
 
   /** The approval is remembered per project and per exact command text. */
-  private fun approved(project: Project, command: ProjectCommands.Command): Boolean {
+  private fun approvedFor(project: Project, command: ProjectCommands.Command): Boolean {
     val properties = PropertiesComponent.getInstance(project)
     val key = KEY_PREFIX + command.id
     val hash = ProjectCommands.approvalHash(command)
@@ -80,7 +82,16 @@ class VibeProjectCommandsAction : AnAction({ t("commands.action") }) {
     return true
   }
 
-  private companion object {
-    const val KEY_PREFIX = "vibe.commands.approved."
+  companion object {
+    private const val KEY_PREFIX = "vibe.commands.approved."
+
+    /**
+     * Shared with the number-key actions: the approval, the secret substitution and the terminal
+     * are the same wherever the command was started from — a second copy of that logic is a second
+     * place for the security model to drift.
+     */
+    fun runCommand(project: Project, command: ProjectCommands.Command) {
+      VibeProjectCommandsAction().runInternal(project, command)
+    }
   }
 }

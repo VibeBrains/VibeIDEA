@@ -1201,5 +1201,7 @@
   "telegram.denied": "Denied.",
   "telegram.approvalGone": "That question is already decided — it was answered earlier.",
   "telegram.alsoAsked": "The same question was sent to Telegram: it can be answered from there too.",
-  "telegram.approvalQuestion": "The agent is asking for permission:\n\n{body}"
+  "telegram.approvalQuestion": "The agent is asking for permission:\n\n{body}",
+  "commands.pinned.title": "Project command {index}",
+  "commands.noPinned": "There is no pinned command #{index}: {count} are pinned. To pin one, set \"pinned\": true in .vibe/commands.json."
 }

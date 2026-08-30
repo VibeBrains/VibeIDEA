@@ -65,6 +65,33 @@
               text="Папки-справочники" description="Показать подключённые папки и отключить лишние"/>
       <action id="Vibe.DetectLocalModels" class="com.vibe.agent.providers.VibeDetectLocalModelsAction"
               text="Найти локальные модели" description="Проба привычных портов Ollama, LM Studio, llama.cpp, Jan"/>
+      <action id="Vibe.PinnedCommand1" class="com.vibe.agent.commands.VibePinnedCommand1" text="Команда проекта 1">
+        <keyboard-shortcut keymap="$default" first-keystroke="control shift alt 1"/>
+      </action>
+      <action id="Vibe.PinnedCommand2" class="com.vibe.agent.commands.VibePinnedCommand2" text="Команда проекта 2">
+        <keyboard-shortcut keymap="$default" first-keystroke="control shift alt 2"/>
+      </action>
+      <action id="Vibe.PinnedCommand3" class="com.vibe.agent.commands.VibePinnedCommand3" text="Команда проекта 3">
+        <keyboard-shortcut keymap="$default" first-keystroke="control shift alt 3"/>
+      </action>
+      <action id="Vibe.PinnedCommand4" class="com.vibe.agent.commands.VibePinnedCommand4" text="Команда проекта 4">
+        <keyboard-shortcut keymap="$default" first-keystroke="control shift alt 4"/>
+      </action>
+      <action id="Vibe.PinnedCommand5" class="com.vibe.agent.commands.VibePinnedCommand5" text="Команда проекта 5">
+        <keyboard-shortcut keymap="$default" first-keystroke="control shift alt 5"/>
+      </action>
+      <action id="Vibe.PinnedCommand6" class="com.vibe.agent.commands.VibePinnedCommand6" text="Команда проекта 6">
+        <keyboard-shortcut keymap="$default" first-keystroke="control shift alt 6"/>
+      </action>
+      <action id="Vibe.PinnedCommand7" class="com.vibe.agent.commands.VibePinnedCommand7" text="Команда проекта 7">
+        <keyboard-shortcut keymap="$default" first-keystroke="control shift alt 7"/>
+      </action>
+      <action id="Vibe.PinnedCommand8" class="com.vibe.agent.commands.VibePinnedCommand8" text="Команда проекта 8">
+        <keyboard-shortcut keymap="$default" first-keystroke="control shift alt 8"/>
+      </action>
+      <action id="Vibe.PinnedCommand9" class="com.vibe.agent.commands.VibePinnedCommand9" text="Команда проекта 9">
+        <keyboard-shortcut keymap="$default" first-keystroke="control shift alt 9"/>
+      </action>
       <action id="Vibe.ProjectCommands" class="com.vibe.agent.commands.VibeProjectCommandsAction"
               text="Команды проекта" description="Команды из .vibe/commands.json: список, разрешение и запуск"/>
       <action id="Vibe.TelegramToken" class="com.vibe.agent.telegram.VibeTelegramTokenAction"
