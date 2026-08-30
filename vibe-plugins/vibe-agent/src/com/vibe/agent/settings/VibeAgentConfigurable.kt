@@ -24,6 +24,7 @@ class VibeAgentConfigurable : Configurable, Configurable.NoScroll {
   private var hooksEnabled: JBCheckBox? = null
   private var auditEnabled: JBCheckBox? = null
   private var auditRotation: JBIntSpinner? = null
+  private var silenceMinutes: JBIntSpinner? = null
   private var verifyMode: ComboBox<String>? = null
   private var verifyCommand: JBTextField? = null
   private var verifyMaxAttempts: JBIntSpinner? = null
@@ -52,6 +53,7 @@ class VibeAgentConfigurable : Configurable, Configurable.NoScroll {
   override fun createComponent(): JComponent {
     val hooks = JBCheckBox(t("settings.agent.hooks"), VibeAgentSettings.hooksEnabled).also { hooksEnabled = it }
     val audit = JBCheckBox(t("settings.agent.audit"), VibeAgentSettings.auditEnabled).also { auditEnabled = it }
+    val silence = JBIntSpinner(VibeAgentSettings.agentSilenceMinutes, 0, VibeAgentSettings.MAX_SILENCE_MINUTES).also { silenceMinutes = it }
     val rotation = JBIntSpinner(VibeAgentSettings.auditRotationMb, VibeAgentSettings.MIN_AUDIT_ROTATION_MB, VibeAgentSettings.MAX_AUDIT_ROTATION_MB).also { auditRotation = it }
     val vMode = ComboBox(VibeAgentSettings.VERIFY_MODES.toTypedArray()).apply { item = VibeAgentSettings.verifyMode }.also { verifyMode = it }
     val vCommand = JBTextField(VibeAgentSettings.verifyCommand, 28).also { verifyCommand = it }
@@ -91,6 +93,9 @@ class VibeAgentConfigurable : Configurable, Configurable.NoScroll {
       .addComponent(audit)
       .addComponent(hint(t("settings.agent.hint.audit")))
       .addLabeledComponent(t("settings.agent.auditRotation"), rotation)
+      .addComponent(section(t("settings.agent.section.safety")))
+      .addLabeledComponent(t("settings.agent.silence"), silence)
+      .addComponent(hint(t("settings.agent.hint.silence")))
       .addComponent(section("VERIFY-GATE"))
       .addLabeledComponent(t("settings.agent.mode"), vMode)
       .addComponent(hint(t("settings.agent.hint.verifyModes")))
@@ -154,6 +159,7 @@ class VibeAgentConfigurable : Configurable, Configurable.NoScroll {
     hooksEnabled?.isSelected != VibeAgentSettings.hooksEnabled ||
     auditEnabled?.isSelected != VibeAgentSettings.auditEnabled ||
     auditRotation?.number != VibeAgentSettings.auditRotationMb ||
+    silenceMinutes?.number != VibeAgentSettings.agentSilenceMinutes ||
     (verifyMode?.item ?: VibeAgentSettings.verifyMode) != VibeAgentSettings.verifyMode ||
     (verifyCommand?.text?.trim() ?: VibeAgentSettings.verifyCommand) != VibeAgentSettings.verifyCommand ||
     verifyMaxAttempts?.number != VibeAgentSettings.verifyMaxAttempts ||
@@ -181,6 +187,7 @@ class VibeAgentConfigurable : Configurable, Configurable.NoScroll {
     hooksEnabled?.let { VibeAgentSettings.hooksEnabled = it.isSelected }
     auditEnabled?.let { VibeAgentSettings.auditEnabled = it.isSelected }
     auditRotation?.let { VibeAgentSettings.auditRotationMb = it.number }
+    silenceMinutes?.let { VibeAgentSettings.agentSilenceMinutes = it.number }
     verifyMode?.let { VibeAgentSettings.verifyMode = it.item }
     verifyCommand?.let { VibeAgentSettings.verifyCommand = it.text }
     verifyMaxAttempts?.let { VibeAgentSettings.verifyMaxAttempts = it.number }
@@ -217,6 +224,7 @@ class VibeAgentConfigurable : Configurable, Configurable.NoScroll {
     hooksEnabled?.isSelected = VibeAgentSettings.hooksEnabled
     auditEnabled?.isSelected = VibeAgentSettings.auditEnabled
     auditRotation?.number = VibeAgentSettings.auditRotationMb
+    silenceMinutes?.number = VibeAgentSettings.agentSilenceMinutes
     verifyMode?.item = VibeAgentSettings.verifyMode
     verifyCommand?.text = VibeAgentSettings.verifyCommand
     verifyMaxAttempts?.number = VibeAgentSettings.verifyMaxAttempts

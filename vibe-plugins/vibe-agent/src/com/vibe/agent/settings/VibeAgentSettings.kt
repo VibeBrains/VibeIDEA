@@ -128,6 +128,11 @@ object VibeAgentSettings {
   private const val KEY_WATCH_SCENE_THRESHOLD = "vibe.agent.watch.sceneThreshold"
   private const val KEY_WATCH_MAX_FRAMES = "vibe.agent.watch.maxFrames"
   private const val KEY_WATCH_FRAME_HEIGHT = "vibe.agent.watch.frameHeight"
+  private const val KEY_SILENCE_MINUTES = "vibe.agent.silenceMinutes"
+
+  /** Minutes of total silence before the turn is called hung; 0 turns the switch off. */
+  const val DEFAULT_SILENCE_MINUTES = 5
+  const val MAX_SILENCE_MINUTES = 120
   private const val KEY_WATCH_SUB_LANGS = "vibe.agent.watch.subtitleLanguages"
   private const val KEY_DESIGN_MODE = "vibe.agent.design.mode"
   private const val KEY_DESIGN_MAX_ATTEMPTS = "vibe.agent.design.maxAttempts"
@@ -262,6 +267,16 @@ object VibeAgentSettings {
   var watchSceneThreshold: Double
     get() = props.getValue(KEY_WATCH_SCENE_THRESHOLD)?.toDoubleOrNull()?.coerceIn(0.05, 0.9) ?: DEFAULT_WATCH_SCENE_THRESHOLD
     set(value) = props.setValue(KEY_WATCH_SCENE_THRESHOLD, value.coerceIn(0.05, 0.9).toString())
+
+  /**
+   * How long a turn may show no sign of life at all before it is ended.
+   *
+   * Doubled internally: at the limit the chat says so, at twice the limit it stops. Saying and
+   * stopping at the same moment would remove the one chance to say «подожди, оно думает».
+   */
+  var agentSilenceMinutes: Int
+    get() = props.getInt(KEY_SILENCE_MINUTES, DEFAULT_SILENCE_MINUTES).coerceIn(0, MAX_SILENCE_MINUTES)
+    set(value) = props.setValue(KEY_SILENCE_MINUTES, value.coerceIn(0, MAX_SILENCE_MINUTES), DEFAULT_SILENCE_MINUTES)
 
   var watchMaxFrames: Int
     get() = props.getInt(KEY_WATCH_MAX_FRAMES, DEFAULT_WATCH_MAX_FRAMES).coerceIn(MIN_WATCH_MAX_FRAMES, MAX_WATCH_MAX_FRAMES)

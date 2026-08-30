@@ -774,5 +774,12 @@
   "git.timeout": "git did not answer within {seconds}s: {command}",
   "write.conflict": "⚠️ {path} changed after the agent read it — this edit is being applied over someone else’s changes; read the diff carefully",
   "autofix.command": "Editor fix after the agent",
-  "autofix.applied": "🔧 the editor finished the job: {count} fix(es) ({names})"
+  "autofix.applied": "🔧 the editor finished the job: {count} fix(es) ({names})",
+  "loop.repeat": "the agent repeated the same call {count} times in a row — the turn was stopped by a breaker: {call}",
+  "loop.cycle": "the agent is going in circles — the turn was stopped by a breaker: {pattern}",
+  "deadman.stale": "⏱ the agent has been silent for {minutes} min — the turn is not stopped yet, but there is no sign of life",
+  "deadman.dead": "⛔ the agent has been silent for {minutes} min — the turn was ended as hung",
+  "settings.agent.section.safety": "Long-run safety",
+  "settings.agent.silence": "Agent silence, minutes",
+  "settings.agent.hint.silence": "0 turns it off. At this mark the chat says there is no sign of life; at twice it, the turn is ended as hung. A hung turn looks exactly like a thinking one: same spinner, same silence. The loop detector works separately and always: four identical calls in a row, or a repeating cycle (read A → edit B → read A…), stop the turn with a breaker — from the inside every step of a loop looks reasonable, and only someone counting from outside notices."
 }

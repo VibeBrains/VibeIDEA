@@ -164,6 +164,21 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
   private val audit: AuditLog? = com.vibe.agent.audit.VibeAuditService.getInstance(project).get()
   /** Tool-calls of the running turn, assembled from the session/update stream by id. */
   private val toolCalls = ToolCallRegistry()
+
+  /** Shapes of this turn's tool calls — the loop detector reads nothing else. */
+  private val loopHistory = com.vibe.agent.safety.LoopDetector.History()
+
+  /** Last sign of life in the current turn: a token, a tool call, any update. */
+  private val lastActivityMs = java.util.concurrent.atomic.AtomicLong(0)
+
+  /** Said once per turn: repeating «агент молчит» every minute teaches people to ignore it. */
+  private val staleAnnounced = java.util.concurrent.atomic.AtomicBoolean(false)
+
+  /**
+   * One timer for the whole panel rather than one per turn: a turn that dies without finishing
+   * would leave its own timer behind, and leaked timers are how a quiet IDE starts warming a lap.
+   */
+  private val silenceTimer = Timer(SILENCE_CHECK_MS) { checkSilence() }.apply { isRepeats = true; start() }
   private val hooks = HookRunner(project) { systemLine(t("chat.hookNotice", "text" to it)) }
   private val terminals = AgentTerminalService(project.basePath)
   /** Live terminal consoles by terminal id (Claude _meta.terminal_output stream). */
@@ -325,6 +340,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
 
   override fun dispose() {
     disposed = true
+    silenceTimer.stop()
     com.vibe.agent.http.VibeAgentGateway.getInstance().unregister(this)
     externalWaiters.values.forEach { it.countDown() }
     externalWaiters.clear()
@@ -909,6 +925,54 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     }
   }
 
+  /**
+   * Watches the SHAPE of the turn's tool calls and stops an agent that is going in circles.
+   *
+   * A loop is not a mistake the model can notice: from the inside every step looks reasonable, and
+   * the same step looks reasonable again. It ends when someone outside counts. The breaker is
+   * tripped rather than the turn merely cancelled, so the next turn has to be started deliberately
+   * — an agent released straight back into the same circle would simply resume it.
+   */
+  private fun noteLoop(call: com.vibe.agent.acp.ToolCall) {
+    loopHistory.add(com.vibe.agent.safety.LoopDetector.fingerprint(call.toolName ?: call.kind, call.rawInput?.toString()))
+    val finding = com.vibe.agent.safety.LoopDetector.check(loopHistory.snapshot())
+    if (finding.verdict == com.vibe.agent.safety.LoopDetector.Verdict.OK) return
+    val reason = if (finding.verdict == com.vibe.agent.safety.LoopDetector.Verdict.REPEAT)
+      t("loop.repeat", "count" to finding.count, "call" to finding.fingerprint.take(120))
+    else t("loop.cycle", "pattern" to finding.fingerprint.take(160))
+    systemLine("🔁 " + reason)
+    breakers.trip(com.vibe.agent.safety.LoopDetector::class.java.simpleName.lowercase(), reason, System.currentTimeMillis())
+    loopHistory.clear()
+    cancelTurn()
+  }
+
+  /** Any sign of life from the agent resets the silence clock. */
+  private fun noteActivity() {
+    lastActivityMs.set(System.currentTimeMillis())
+  }
+
+  /**
+   * A hung turn looks exactly like a thinking one — same spinner, same silence. Without a clock the
+   * honest answer to «оно ещё работает?» is a shrug, and people find out by leaving it overnight.
+   */
+  private fun checkSilence() {
+    if (!turnInFlight.get()) return
+    val silenceMs = VibeAgentSettings.agentSilenceMinutes * 60_000L
+    val now = System.currentTimeMillis()
+    when (com.vibe.agent.safety.DeadManSwitch.check(lastActivityMs.get(), now, silenceMs)) {
+      com.vibe.agent.safety.DeadManSwitch.Verdict.ALIVE -> return
+      com.vibe.agent.safety.DeadManSwitch.Verdict.STALE -> {
+        if (staleAnnounced.compareAndSet(false, true)) {
+          systemLine(t("deadman.stale", "minutes" to com.vibe.agent.safety.DeadManSwitch.silentMinutes(lastActivityMs.get(), now)))
+        }
+      }
+      com.vibe.agent.safety.DeadManSwitch.Verdict.DEAD -> {
+        systemLine(t("deadman.dead", "minutes" to com.vibe.agent.safety.DeadManSwitch.silentMinutes(lastActivityMs.get(), now)))
+        cancelTurn()
+      }
+    }
+  }
+
   private fun cancelTurn() {
     llmCancel.set(true)
     llmClient.cancel()
@@ -971,6 +1035,9 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     val c = ensureClient(t.config)
     // A fresh turn: tool-call ids and the changed-files set are per-turn.
     toolCalls.reset()
+    loopHistory.clear()
+    lastActivityMs.set(System.currentTimeMillis())
+    staleAnnounced.set(false)
     terminalConsoles.clear()
     changedPaths.clear()
     turnHadMutatingTool = false
@@ -2043,6 +2110,8 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
 
   override fun onSessionUpdate(update: JsonObject) {
     val u = update["update"]?.jsonObject ?: return
+    // Any frame at all is a sign of life — including one we do not handle below.
+    noteActivity()
     when (u["sessionUpdate"]?.jsonPrimitive?.contentOrNull) {
       "agent_message_chunk" -> {
         val text = u["content"]?.jsonObject?.get("text")?.jsonPrimitive?.contentOrNull ?: return
@@ -2056,7 +2125,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
       "usage_update" -> onUsageUpdate(u)
       "tool_call" -> {
         val call = toolCalls.onToolCall(u)
-        if (call != null) { auditToolCall(AuditEvent.Action.TOOL_CALL_START, call); harvestMutation(call) }
+        if (call != null) { auditToolCall(AuditEvent.Action.TOOL_CALL_START, call); harvestMutation(call); noteLoop(call) }
         toolCard(call?.title ?: u["title"]?.jsonPrimitive?.contentOrNull ?: u["kind"]?.jsonPrimitive?.contentOrNull ?: t("chat.tool"))
         // Claude adapter announces a terminal for this tool-call — open a live console.
         terminalInfoId(u)?.let { openTerminalConsole(it, call?.title ?: t("chat.terminal")) }
@@ -2380,6 +2449,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
   }
 
   private companion object {
+    const val SILENCE_CHECK_MS = 30_000
     const val OUTPUT_COMMAND = "/output"
     const val GIT_COMMAND = "/git"
     const val GIT_REPORT_LIMIT = 25
