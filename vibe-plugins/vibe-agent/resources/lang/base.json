@@ -1203,5 +1203,9 @@
   "telegram.alsoAsked": "Тот же вопрос отправлен в Telegram: ответить можно и оттуда.",
   "telegram.approvalQuestion": "Агент просит разрешение:\n\n{body}",
   "commands.pinned.title": "Команда проекта {index}",
-  "commands.noPinned": "Закреплённой команды №{index} нет: закреплено {count}. Закрепить — поле \"pinned\": true в .vibe/commands.json."
+  "commands.noPinned": "Закреплённой команды №{index} нет: закреплено {count}. Закрепить — поле \"pinned\": true в .vibe/commands.json.",
+  "preview.phone.title": "Открыть превью на телефоне",
+  "preview.phone.copy": "Скопировать адрес",
+  "preview.phone.hint": "Наведите камеру телефона — телефон должен быть в той же сети",
+  "design.status.lanShown": "адрес для телефона: {url}"
 }

@@ -1203,5 +1203,9 @@
   "telegram.alsoAsked": "The same question was sent to Telegram: it can be answered from there too.",
   "telegram.approvalQuestion": "The agent is asking for permission:\n\n{body}",
   "commands.pinned.title": "Project command {index}",
-  "commands.noPinned": "There is no pinned command #{index}: {count} are pinned. To pin one, set \"pinned\": true in .vibe/commands.json."
+  "commands.noPinned": "There is no pinned command #{index}: {count} are pinned. To pin one, set \"pinned\": true in .vibe/commands.json.",
+  "preview.phone.title": "Open the preview on a phone",
+  "preview.phone.copy": "Copy the address",
+  "preview.phone.hint": "Point your phone camera at it — the phone must be on the same network",
+  "design.status.lanShown": "address for the phone: {url}"
 }

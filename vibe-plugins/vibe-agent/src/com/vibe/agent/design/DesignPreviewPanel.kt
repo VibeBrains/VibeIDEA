@@ -203,9 +203,17 @@ class DesignPreviewPanel(private val project: Project) : JPanel(BorderLayout()),
       status.text = t("design.status.noLan")
       return
     }
-    com.intellij.openapi.ide.CopyPasteManager.getInstance()
-      .setContents(java.awt.datatransfer.StringSelection(lan))
-    status.text = t("design.status.lanCopied", "url" to lan)
+    // The clipboard alone would be useless here: it lives on the computer, and the address is
+    // needed on the phone. So the address is shown as a QR code, and copied only if asked.
+    val dialog = com.vibe.agent.preview.PhoneAddressDialog(project, lan)
+    if (dialog.showAndGet()) {
+      com.intellij.openapi.ide.CopyPasteManager.getInstance()
+        .setContents(java.awt.datatransfer.StringSelection(lan))
+      status.text = t("design.status.lanCopied", "url" to lan)
+    }
+    else {
+      status.text = t("design.status.lanShown", "url" to lan)
+    }
   }
 
   /**
