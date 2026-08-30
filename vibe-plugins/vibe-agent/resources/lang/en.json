@@ -802,5 +802,6 @@
   "budget.warn": "💸 the «{role}» role has used {percent}% of its daily budget ({spent} of {limit})",
   "budget.exceeded": "⛔ the daily budget of the «{role}» role is used up: {spent} of {limit} tokens — the step was skipped",
   "settings.agent.roleBudget": "Daily token budget per role",
-  "settings.agent.hint.roleBudget": "0 means no limit. Counted per role over a rolling day rather than per run: the ruinous case is not one expensive turn but a reviewer restarted forty times by a loop. Checked BEFORE the step; at 80% the chat warns, at 100% the step is skipped. The report is the «VibeIDEA: spend by role» command."
+  "settings.agent.hint.roleBudget": "0 means no limit. Counted per role over a rolling day rather than per run: the ruinous case is not one expensive turn but a reviewer restarted forty times by a loop. Checked BEFORE the step; at 80% the chat warns, at 100% the step is skipped. The report is the «VibeIDEA: spend by role» command.",
+  "retry.waiting": "⏳ the provider asked to wait — waiting {seconds}s and retrying (attempt {attempt}): {reason}"
 }

@@ -1372,9 +1372,15 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
       }
       // A model declared non-vision must not receive images lingering in the history either.
       val wire = if (t.model.vision == false) wireMessages.map { it.withoutImages() } else wireMessages
-      llmClient.chat(resolved, t.model, wire, { llmCancel.get() }) { delta ->
-        appendAgentText(delta)
-      }
+      llmClient.chat(
+        resolved, t.model, wire, { llmCancel.get() },
+        onWaiting = { attempt, delayMs, reason ->
+          // Said out loud: a silent wait is indistinguishable from a hang, and the user reaches
+          // for Stop exactly when the provider was about to let us back in.
+          systemLine(t("retry.waiting", "attempt" to attempt, "seconds" to (delayMs / 1000),
+                       "reason" to (reason ?: "")))
+        },
+      ) { delta -> appendAgentText(delta) }
       finishAgentBubble((System.currentTimeMillis() - startedAt) / 1000.0, t.model.id)
     }
     catch (e: java.io.InterruptedIOException) {

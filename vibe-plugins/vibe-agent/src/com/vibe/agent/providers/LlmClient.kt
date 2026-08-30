@@ -2,6 +2,7 @@
 package com.vibe.agent.providers
 
 import com.vibe.agent.i18n.VibeI18n.t
+import com.vibe.agent.resilience.RetryPolicy
 
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
@@ -101,6 +102,9 @@ class LlmClient(private val http: HttpClient = HttpClient.newBuilder().connectTi
   @Volatile private var cancelled: () -> Boolean = { false }
   @Volatile private var activeBody: java.io.InputStream? = null
 
+  /** `Retry-After` of the last response, if the provider sent one. */
+  @Volatile private var lastRetryAfter: String? = null
+
   /** Aborts the in-flight stream from any thread: closing the body wakes a read blocked on a silent server. */
   fun cancel() {
     activeBody?.let { runCatching { it.close() } }
@@ -112,14 +116,47 @@ class LlmClient(private val http: HttpClient = HttpClient.newBuilder().connectTi
     model: ModelEntry,
     messages: List<ChatMessage>,
     isCancelled: () -> Boolean = { false },
+    /** Told when a wait starts, so the chat can say «жду провайдера» instead of looking frozen. */
+    onWaiting: (attempt: Int, delayMs: Long, reason: String?) -> Unit = { _, _, _ -> },
     onDelta: (String) -> Unit,
   ) {
     this.cancelled = isCancelled
-    when (provider.protocol) {
-      "anthropic" -> anthropicChat(provider, model, messages, onDelta)
-      "gemini" -> geminiChat(provider, model, messages, onDelta)
-      else -> openAiChat(provider, model, messages, onDelta)
+    var attempt = 1
+    while (true) {
+      try {
+        when (provider.protocol) {
+          "anthropic" -> anthropicChat(provider, model, messages, onDelta)
+          "gemini" -> geminiChat(provider, model, messages, onDelta)
+          else -> openAiChat(provider, model, messages, onDelta)
+        }
+        return
+      }
+      catch (e: Exception) {
+        // A rate limit is a queue, not an error: the provider said «через тридцать секунд», and
+        // turning that into a red line throws away a turn the user already paid to compose.
+        val kind = RetryPolicy.classify(RetryPolicy.statusFromMessage(e.message), e)
+        if (cancelled() || !RetryPolicy.shouldRetry(kind, attempt)) throw e
+        // Anything already streamed stays on screen; the retry appends to it rather than replacing
+        // it, which is honest — those tokens were produced and paid for.
+        val delay = RetryPolicy.delayMs(attempt, kind, RetryPolicy.retryAfterSeconds(lastRetryAfter))
+        onWaiting(attempt, delay, e.message?.take(200))
+        val slept = sleepInterruptibly(delay)
+        if (!slept) throw e
+        attempt++
+      }
     }
+  }
+
+  /** Sleeps in short steps so a stop pressed during a wait is honoured immediately. */
+  private fun sleepInterruptibly(delayMs: Long): Boolean {
+    var left = delayMs
+    while (left > 0) {
+      if (cancelled()) return false
+      val step = minOf(left, SLEEP_STEP_MS)
+      Thread.sleep(step)
+      left -= step
+    }
+    return !cancelled()
   }
 
   /** GET model catalog; openai-style {data:[{id}]} and gemini-style {models:[{name}]} are both understood. */
@@ -293,6 +330,8 @@ class LlmClient(private val http: HttpClient = HttpClient.newBuilder().connectTi
 
   private fun streamSse(request: HttpRequest, onData: (String) -> Unit) {
     val response = http.send(request, HttpResponse.BodyHandlers.ofInputStream())
+    // The provider knows its own window; guessing shorter means being refused again.
+    lastRetryAfter = response.headers().firstValue("retry-after").orElse(null)
     val body = response.body()
     activeBody = body
     try {
@@ -318,6 +357,9 @@ class LlmClient(private val http: HttpClient = HttpClient.newBuilder().connectTi
   }
 
   internal companion object {
+    /** Waking up this often makes a stop during a wait feel immediate without busy-waiting. */
+    const val SLEEP_STEP_MS = 250L
+
     /**
      * Client for catalog polling only: the chat client waits 20 s for a connection (a chat is
      * worth waiting for), while a catalog refresh runs behind a served cache and must not.
