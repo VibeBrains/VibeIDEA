@@ -154,6 +154,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     project,
     onNotice = { message -> systemLine(message) },
     onFinding = { path, findings -> reportContextFindings(path, findings) },
+    roleNow = { currentRole },
   )
   @Volatile private var client: AcpClient? = null
   @Volatile private var clientConfig: AgentServerConfig? = null
@@ -167,6 +168,14 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
 
   /** Shapes of this turn's tool calls — the loop detector reads nothing else. */
   private val loopHistory = com.vibe.agent.safety.LoopDetector.History()
+
+  /**
+   * The pipeline role running right now, or null in an ordinary chat.
+   *
+   * Volatile because it is set on the pipeline thread and read on the ACP reader thread: the whole
+   * value of the restriction is that it is in force at the moment the write arrives.
+   */
+  @Volatile private var currentRole: String? = null
 
   /** Last sign of life in the current turn: a token, a tool call, any update. */
   private val lastActivityMs = java.util.concurrent.atomic.AtomicLong(0)
@@ -1670,6 +1679,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
           }
           try {
             val c = ensureClient(agent)
+            currentRole = step.role
             changedPaths.clear()
             stepBuffer = StringBuilder()
             val startedAt = System.currentTimeMillis()
@@ -1693,6 +1703,9 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
           }
           finally {
             stepBuffer = null
+            // The role dies with its step: an ordinary chat inheriting «ревьюер» rights would be a
+            // restriction appearing from nowhere, which is worse than no restriction at all.
+            currentRole = null
           }
         }
         systemLine(t("pipeline.finished", "name" to pipeline.name, "outcome" to (if (failed) t("pipeline.outcome.failed") else t("pipeline.outcome.done"))))
@@ -1703,6 +1716,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
         )
       }
       finally {
+        currentRole = null
         finishTurn()
       }
     }
@@ -2398,6 +2412,13 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
 
   override fun onCreateTerminal(params: JsonObject): JsonElement {
     if (!VibeAgentSettings.terminalEnabled) throw IllegalStateException(t("chat.terminal.disabled"))
+    // A role that only judges cannot run commands either: running a command is how a read-only
+    // role writes anyway.
+    val role = currentRole
+    if (!com.vibe.agent.pipelines.RoleRights.mayRunCommands(role)) {
+      systemLine(t("role.commandDenied", "role" to role))
+      throw IllegalStateException(t("role.commandDenied", "role" to role))
+    }
     val command = params["command"]?.jsonPrimitive?.contentOrNull ?: throw IllegalStateException(t("chat.terminal.noCommand"))
     val args = (params["args"] as? JsonArray)?.mapNotNull { it.jsonPrimitive.contentOrNull } ?: emptyList()
     val env = (params["env"] as? JsonArray)?.mapNotNull { e ->

@@ -31,6 +31,8 @@ internal class IdeFileOps(
   private val seen: com.vibe.agent.edits.WriteGuard.Seen = com.vibe.agent.edits.WriteGuard.Seen(),
   /** One line into the feed: conflicts and applied editor fixes are told, never silent. */
   private val onNotice: (String) -> Unit = {},
+  /** The pipeline role in force right now; a judging role is refused the write. */
+  private val roleNow: () -> String? = { null },
   /** Reports what the context guard found in a file the agent read; the panel turns it into a line. */
   private val onFinding: (String, List<com.vibe.agent.security.ContextSanitizer.Finding>) -> Unit = { _, _ -> },
 ) {
@@ -75,6 +77,13 @@ internal class IdeFileOps(
 
   fun writeTextFile(params: JsonObject): JsonElement {
     val path = Path.of(params.getValue("path").jsonPrimitive.content)
+    // A reviewer told «только отчёт» obeys most of the time, and «most of the time» is the whole
+    // problem: the one run where it "just fixes" what it found is the run where the review and the
+    // fix are the same act, and nobody reviewed the fix.
+    val role = roleNow()
+    if (!com.vibe.agent.pipelines.RoleRights.mayWrite(role)) {
+      throw IllegalStateException(t("role.writeDenied", "role" to role))
+    }
     // "Read my notes but do not edit them" is a rule only while something enforces it.
     if (!com.vibe.agent.context.AccessPolicy.mayWrite(path.toString(), roots())) {
       throw IllegalStateException(t("access.writeDenied", "path" to path))
