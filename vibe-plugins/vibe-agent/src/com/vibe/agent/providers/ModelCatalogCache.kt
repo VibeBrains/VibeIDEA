@@ -66,20 +66,52 @@ object ModelCatalogCache {
     val minutes = (nowMs - fetchedAtMs).coerceAtLeast(0L) / 60_000L
     return when {
       minutes < 1 -> t("cache.age.justNow")
-      minutes < 60 -> age(minutes, "minute")
-      minutes < 24 * 60 -> age(minutes / 60, "hour")
-      else -> age(minutes / (24 * 60), "day")
+      minutes < 60 -> ageMinutes(minutes)
+      minutes < 24 * 60 -> ageHours(minutes / 60)
+      else -> ageDays(minutes / (24 * 60))
     }
   }
 
-  /** Plural form comes from the catalogue: other languages count differently than Russian does. */
-  private fun age(count: Long, unit: String): String {
-    val form = when {
-      count % 10 == 1L && count % 100 != 11L -> "one"
-      count % 10 in 2..4 && count % 100 !in 12..14 -> "few"
-      else -> "many"
-    }
-    return t("cache.age.minutes", "count" to count, "word" to t("cache.word.$unit.$form"))
+  /**
+   * Plural form comes from the catalogue: other languages count differently than Russian does.
+   *
+   * Keys are written out LITERALLY rather than assembled from parts — a key built by string
+   * concatenation cannot be found by searching the code, which is precisely how a catalogue starts
+   * rotting: the gate sees an unused key, a person sees no usage, and the string quietly dies.
+   */
+  private fun ageMinutes(count: Long): String = t(
+    "cache.age.minutes", "count" to count,
+    "word" to when (form(count)) {
+      Form.ONE -> t("cache.word.minute.one")
+      Form.FEW -> t("cache.word.minute.few")
+      Form.MANY -> t("cache.word.minute.many")
+    },
+  )
+
+  private fun ageHours(count: Long): String = t(
+    "cache.age.minutes", "count" to count,
+    "word" to when (form(count)) {
+      Form.ONE -> t("cache.word.hour.one")
+      Form.FEW -> t("cache.word.hour.few")
+      Form.MANY -> t("cache.word.hour.many")
+    },
+  )
+
+  private fun ageDays(count: Long): String = t(
+    "cache.age.minutes", "count" to count,
+    "word" to when (form(count)) {
+      Form.ONE -> t("cache.word.day.one")
+      Form.FEW -> t("cache.word.day.few")
+      Form.MANY -> t("cache.word.day.many")
+    },
+  )
+
+  private enum class Form { ONE, FEW, MANY }
+
+  private fun form(count: Long): Form = when {
+    count % 10 == 1L && count % 100 != 11L -> Form.ONE
+    count % 10 in 2..4 && count % 100 !in 12..14 -> Form.FEW
+    else -> Form.MANY
   }
 
   fun decode(text: String): Map<String, Entry> {
