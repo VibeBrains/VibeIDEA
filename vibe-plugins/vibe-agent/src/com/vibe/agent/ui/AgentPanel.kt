@@ -933,6 +933,43 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
    * tripped rather than the turn merely cancelled, so the next turn has to be started deliberately
    * — an agent released straight back into the same circle would simply resume it.
    */
+  /**
+   * The plan the agent narrates, kept as data: shown as a checklist now, and — more importantly —
+   * still on disk after the IDE is restarted mid-task, which is exactly when one installs updates.
+   */
+  private fun onPlanUpdate(update: JsonObject) {
+    val plan = com.vibe.agent.plans.AgentPlan.parse(update, System.currentTimeMillis())
+    val threadId = turnThreadId ?: currentThreadId ?: return
+    com.vibe.agent.plans.PlanStore.getInstance(project).save(threadId, plan)
+    if (plan.isEmpty) return
+    toolCard(t("plan.updated", "done" to plan.done, "total" to plan.total))
+    SwingUtilities.invokeLater {
+      val console = TerminalConsole(t("plan.title", "done" to plan.done, "total" to plan.total))
+      console.append(com.vibe.agent.plans.AgentPlan.render(plan) { status -> planMark(status) })
+      messages.add(console)
+      revalidateScroll()
+    }
+  }
+
+  private fun planMark(status: com.vibe.agent.plans.AgentPlan.Status): String = when (status) {
+    com.vibe.agent.plans.AgentPlan.Status.COMPLETED -> "✔"
+    com.vibe.agent.plans.AgentPlan.Status.IN_PROGRESS -> "▸"
+    com.vibe.agent.plans.AgentPlan.Status.PENDING -> "·"
+  }
+
+  /**
+   * Says an unfinished plan is waiting — once, when the thread is opened.
+   *
+   * Without this the restart leaves a chat that ends mid-sentence: the steps that were done, the
+   * one in progress and the point of the whole thing are all gone, and «продолжай» means nothing.
+   */
+  private fun announceUnfinishedPlan(threadId: String) {
+    val plan = com.vibe.agent.plans.PlanStore.getInstance(project).load(threadId) ?: return
+    if (plan.isEmpty || plan.isFinished) return
+    systemLine(t("plan.unfinished", "done" to plan.done, "total" to plan.total,
+                 "current" to (plan.current?.content ?: "")))
+  }
+
   private fun noteLoop(call: com.vibe.agent.acp.ToolCall) {
     loopHistory.add(com.vibe.agent.safety.LoopDetector.fingerprint(call.toolName ?: call.kind, call.rawInput?.toString()))
     val finding = com.vibe.agent.safety.LoopDetector.check(loopHistory.snapshot())
@@ -1409,6 +1446,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     updateTabsStrip()
     saveTabs()
     rail?.currentThreadId = id
+    announceUnfinishedPlan(id)
     composer.focusInput()
   }
 
@@ -2145,7 +2183,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
           ApplicationManager.getApplication().executeOnPooledThread { runToolHook(HookEvent.POST_TOOL_USE, tool, params) }
         }
       }
-      "plan" -> toolCard(t("chat.planUpdated"))
+      "plan" -> onPlanUpdate(u)
       else -> {}
     }
   }

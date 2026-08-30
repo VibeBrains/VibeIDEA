@@ -501,7 +501,6 @@
   "chat.checkpoint.failed": "[checkpoints] the rollback failed (see git)",
   "chat.tool": "tool",
   "chat.terminal": "terminal",
-  "chat.planUpdated": "the plan was updated",
   "chat.permission.title": "Vibe Agent: permission",
   "chat.permission.default": "An agent action",
   "chat.permission.destructive": "⚠️ Destructive command ({reasons})",
@@ -781,5 +780,8 @@
   "deadman.dead": "⛔ the agent has been silent for {minutes} min — the turn was ended as hung",
   "settings.agent.section.safety": "Long-run safety",
   "settings.agent.silence": "Agent silence, minutes",
-  "settings.agent.hint.silence": "0 turns it off. At this mark the chat says there is no sign of life; at twice it, the turn is ended as hung. A hung turn looks exactly like a thinking one: same spinner, same silence. The loop detector works separately and always: four identical calls in a row, or a repeating cycle (read A → edit B → read A…), stop the turn with a breaker — from the inside every step of a loop looks reasonable, and only someone counting from outside notices."
+  "settings.agent.hint.silence": "0 turns it off. At this mark the chat says there is no sign of life; at twice it, the turn is ended as hung. A hung turn looks exactly like a thinking one: same spinner, same silence. The loop detector works separately and always: four identical calls in a row, or a repeating cycle (read A → edit B → read A…), stop the turn with a breaker — from the inside every step of a loop looks reasonable, and only someone counting from outside notices.",
+  "plan.updated": "📋 plan updated: {done} of {total}",
+  "plan.title": "plan: {done} of {total}",
+  "plan.unfinished": "📋 this chat has an unfinished plan: {done} of {total}, next step — «{current}». Say «continue» to return to it."
 }
