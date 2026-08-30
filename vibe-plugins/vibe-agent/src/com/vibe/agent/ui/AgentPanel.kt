@@ -240,6 +240,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     override fun onSend(message: ComposedMessage): Boolean = when {
       handleOutputCommand(message) -> true
       handleGitCommand(message) -> true
+      handleCouncilCommand(message) -> true
       sessionCeilingReached(message.text) -> false
       handleWatchCommand(message) -> true
       else -> startTurn(message)
@@ -521,6 +522,87 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
    * progress line and a working Стоп: downloading a lecture takes minutes, and a cancel that only
    * lands at the end is not a cancel.
    */
+  /**
+   * `/council <вопрос>` — one question to several DIFFERENT models, each blind to the others.
+   *
+   * The value is the difference between them: the same model asked twice agrees with itself, and
+   * that second answer reads as confirmation while being nothing of the kind. Two models trained
+   * differently disagreeing is information — the question is open, or one of them knows something.
+   *
+   * Advisers answer in parallel because a council that takes four sequential round trips is a
+   * council nobody uses.
+   */
+  private fun handleCouncilCommand(message: ComposedMessage): Boolean {
+    val text = message.text.trim()
+    if (!text.startsWith("$COUNCIL_COMMAND ") && text != COUNCIL_COMMAND) return false
+    val question = text.removePrefix(COUNCIL_COMMAND).trim()
+    if (question.isEmpty()) {
+      systemLine(t("council.noQuestion"))
+      return true
+    }
+    val plan = com.vibe.agent.council.CouncilPlan.parse(
+      VibeAgentSettings.councilAdvisers,
+      unknownProvider = { id -> providers.none { it.id == id } },
+    )
+    if (plan.problems.isNotEmpty()) systemLine(t("council.badEntries", "entries" to plan.problems.joinToString(", ")))
+    if (!plan.isUsable) {
+      systemLine(t("council.notConfigured", "min" to com.vibe.agent.council.CouncilPlan.MIN_ADVISERS))
+      return true
+    }
+    userBubble(text)
+    systemLine(t("council.asking", "advisers" to plan.advisers.joinToString { it.toString() }))
+    ApplicationManager.getApplication().executeOnPooledThread {
+      val answers = java.util.concurrent.ConcurrentHashMap<Int, String>()
+      val threads = plan.advisers.mapIndexed { index, adviser ->
+        Thread({
+          val answer = askAdviser(adviser, question)
+          if (answer != null) answers[index] = answer
+        }, "vibe-council-$index").apply { isDaemon = true }
+      }
+      threads.forEach { it.start() }
+      threads.forEach { it.join(COUNCIL_TIMEOUT_MS) }
+      val collected = answers.toSortedMap().values.toList()
+      if (collected.size < com.vibe.agent.council.CouncilPlan.MIN_ADVISERS) {
+        systemLine(t("council.tooFewAnswers", "count" to collected.size))
+        return@executeOnPooledThread
+      }
+      SwingUtilities.invokeLater {
+        collected.forEachIndexed { index, answer ->
+          val console = TerminalConsole(t("council.opinion", "index" to (index + 1)))
+          console.append(answer)
+          messages.add(console)
+        }
+        revalidateScroll()
+      }
+      // The synthesis goes through the ordinary turn: it is an answer like any other, and it must
+      // land in the transcript so the chat can be continued from it.
+      SwingUtilities.invokeLater {
+        startTurn(ComposedMessage(text = com.vibe.agent.council.CouncilPlan.synthesisPrompt(
+          question, collected, t("council.synthesis"))))
+      }
+    }
+    return true
+  }
+
+  /** One adviser, one blocking call; failures are reported and do not take the council down. */
+  private fun askAdviser(adviser: com.vibe.agent.council.CouncilPlan.Adviser, question: String): String? {
+    val provider = providers.firstOrNull { it.id == adviser.providerId } ?: return null
+    val resolved = ProvidersService.resolve(provider, project.basePath) { } ?: return null
+    val model = com.vibe.agent.providers.ModelEntry(id = adviser.modelId)
+    val answer = StringBuilder()
+    return runCatching {
+      com.vibe.agent.providers.LlmClient().chat(
+        resolved, model,
+        listOf(com.vibe.agent.providers.ChatMessage("user",
+          com.vibe.agent.council.CouncilPlan.adviserPrompt(question, t("council.adviser")))),
+      ) { delta -> answer.append(delta) }
+      answer.toString().trim().ifEmpty { null }
+    }.getOrElse { error ->
+      systemLine(t("council.adviserFailed", "adviser" to adviser.toString(), "reason" to error.message))
+      null
+    }
+  }
+
   /**
    * `/git [вопрос]` — the state of the repository as a fact, attached to the turn.
    *
@@ -870,7 +952,8 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
         // The wire text (with inlined context) becomes known only now — fill it into the stored record.
         if (t is ChatTarget.Model) {
           history.setLastUserWireText(threadId,
-            prependProjectRules(ContextSerializer.llmText(message.text, loaded, skills), message.text, loaded)
+            prependProjectRules(prependKnowledge(ContextSerializer.llmText(message.text, loaded, skills), message.text),
+                                message.text, loaded)
               .takeIf { it != displayText })
         }
         if (llmCancel.get() || disposed) {
@@ -1088,6 +1171,28 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     return com.vibe.agent.context.ProjectRules.promptBlock(guarded, t("rules.header")) + "\n\n" + prompt
   }
 
+  /**
+   * What the project already wrote down about this — named before the agent starts guessing.
+   *
+   * Projects accumulate hard-won notes («этот гейт нельзя чинить так»), and an agent that does not
+   * read them re-derives them badly at full price. Nobody remembers to paste the right note at the
+   * right moment, so the index is matched against the request and the two or three relevant
+   * entries are named. Paths, not contents: a note is a page long, and the agent reads what it
+   * decides it needs — which is how a person uses an index too.
+   */
+  private fun prependKnowledge(prompt: String, userText: String): String {
+    val index = com.vibe.agent.knowledge.KnowledgeIndex.getInstance(project)
+    val entries = index.entries()
+    if (entries.isEmpty()) return prompt
+    val hits = com.vibe.agent.knowledge.Librarian.find(entries, userText)
+    if (hits.isEmpty()) return prompt
+    val withPaths = hits.map { hit ->
+      hit.copy(entry = hit.entry.copy(path = index.relativeTo(hit.entry)))
+    }
+    systemLine(t("knowledge.found", "paths" to withPaths.joinToString { it.entry.path }))
+    return com.vibe.agent.knowledge.Librarian.promptBlock(withPaths, t("knowledge.header")) + "\n\n" + prompt
+  }
+
   private fun sendToAcp(
     t: ChatTarget.Agent, text: String, loaded: List<ContextSerializer.Loaded>,
     images: List<ImageAttachment>, startedAt: Long,
@@ -1100,7 +1205,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     }
     val design = DesignContextFile.load(project.basePath)
     val designed = if (design != null) DesignContextFile.promptBlock(design) + "\n" + text else text
-    val fullPrompt = prependProjectRules(designed, text, loaded)
+    val fullPrompt = prependProjectRules(prependKnowledge(designed, text), text, loaded)
     val c = ensureClient(t.config)
     // A fresh turn: tool-call ids and the changed-files set are per-turn.
     toolCalls.reset()
@@ -2561,6 +2666,8 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     const val SILENCE_CHECK_MS = 30_000
     const val OUTPUT_COMMAND = "/output"
     const val GIT_COMMAND = "/git"
+    const val COUNCIL_COMMAND = "/council"
+    const val COUNCIL_TIMEOUT_MS = 180_000L
     const val GIT_REPORT_LIMIT = 25
     const val PIN_ON = "📌"
     const val PIN_OFF = "📍"

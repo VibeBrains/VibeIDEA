@@ -26,6 +26,7 @@ class VibeAgentConfigurable : Configurable, Configurable.NoScroll {
   private var auditRotation: JBIntSpinner? = null
   private var silenceMinutes: JBIntSpinner? = null
   private var roleBudgetTokens: JBIntSpinner? = null
+  private var councilField: com.intellij.ui.components.JBTextField? = null
   private var verifyMode: ComboBox<String>? = null
   private var verifyCommand: JBTextField? = null
   private var verifyMaxAttempts: JBIntSpinner? = null
@@ -54,6 +55,7 @@ class VibeAgentConfigurable : Configurable, Configurable.NoScroll {
   override fun createComponent(): JComponent {
     val hooks = JBCheckBox(t("settings.agent.hooks"), VibeAgentSettings.hooksEnabled).also { hooksEnabled = it }
     val audit = JBCheckBox(t("settings.agent.audit"), VibeAgentSettings.auditEnabled).also { auditEnabled = it }
+    val council = com.intellij.ui.components.JBTextField(VibeAgentSettings.councilAdvisers, 32).also { councilField = it }
     val roleBudget = JBIntSpinner(VibeAgentSettings.roleBudgetTokens, 0, VibeAgentSettings.MAX_ROLE_BUDGET_TOKENS).also { roleBudgetTokens = it }
     val silence = JBIntSpinner(VibeAgentSettings.agentSilenceMinutes, 0, VibeAgentSettings.MAX_SILENCE_MINUTES).also { silenceMinutes = it }
     val rotation = JBIntSpinner(VibeAgentSettings.auditRotationMb, VibeAgentSettings.MIN_AUDIT_ROTATION_MB, VibeAgentSettings.MAX_AUDIT_ROTATION_MB).also { auditRotation = it }
@@ -98,6 +100,8 @@ class VibeAgentConfigurable : Configurable, Configurable.NoScroll {
       .addComponent(section(t("settings.agent.section.safety")))
       .addLabeledComponent(t("settings.agent.silence"), silence)
       .addComponent(hint(t("settings.agent.hint.silence")))
+      .addLabeledComponent(t("settings.agent.council"), council)
+      .addComponent(hint(t("settings.agent.hint.council")))
       .addLabeledComponent(t("settings.agent.roleBudget"), roleBudget)
       .addComponent(hint(t("settings.agent.hint.roleBudget")))
       .addComponent(section("VERIFY-GATE"))
@@ -165,6 +169,7 @@ class VibeAgentConfigurable : Configurable, Configurable.NoScroll {
     auditRotation?.number != VibeAgentSettings.auditRotationMb ||
     silenceMinutes?.number != VibeAgentSettings.agentSilenceMinutes ||
     roleBudgetTokens?.number != VibeAgentSettings.roleBudgetTokens ||
+    (councilField?.text?.trim() ?: VibeAgentSettings.councilAdvisers) != VibeAgentSettings.councilAdvisers ||
     (verifyMode?.item ?: VibeAgentSettings.verifyMode) != VibeAgentSettings.verifyMode ||
     (verifyCommand?.text?.trim() ?: VibeAgentSettings.verifyCommand) != VibeAgentSettings.verifyCommand ||
     verifyMaxAttempts?.number != VibeAgentSettings.verifyMaxAttempts ||
@@ -194,6 +199,7 @@ class VibeAgentConfigurable : Configurable, Configurable.NoScroll {
     auditRotation?.let { VibeAgentSettings.auditRotationMb = it.number }
     silenceMinutes?.let { VibeAgentSettings.agentSilenceMinutes = it.number }
     roleBudgetTokens?.let { VibeAgentSettings.roleBudgetTokens = it.number }
+    councilField?.let { VibeAgentSettings.councilAdvisers = it.text }
     verifyMode?.let { VibeAgentSettings.verifyMode = it.item }
     verifyCommand?.let { VibeAgentSettings.verifyCommand = it.text }
     verifyMaxAttempts?.let { VibeAgentSettings.verifyMaxAttempts = it.number }
@@ -232,6 +238,7 @@ class VibeAgentConfigurable : Configurable, Configurable.NoScroll {
     auditRotation?.number = VibeAgentSettings.auditRotationMb
     silenceMinutes?.number = VibeAgentSettings.agentSilenceMinutes
     roleBudgetTokens?.number = VibeAgentSettings.roleBudgetTokens
+    councilField?.text = VibeAgentSettings.councilAdvisers
     verifyMode?.item = VibeAgentSettings.verifyMode
     verifyCommand?.text = VibeAgentSettings.verifyCommand
     verifyMaxAttempts?.number = VibeAgentSettings.verifyMaxAttempts

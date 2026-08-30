@@ -803,5 +803,19 @@
   "budget.exceeded": "⛔ the daily budget of the «{role}» role is used up: {spent} of {limit} tokens — the step was skipped",
   "settings.agent.roleBudget": "Daily token budget per role",
   "settings.agent.hint.roleBudget": "0 means no limit. Counted per role over a rolling day rather than per run: the ruinous case is not one expensive turn but a reviewer restarted forty times by a loop. Checked BEFORE the step; at 80% the chat warns, at 100% the step is skipped. The report is the «VibeIDEA: spend by role» command.",
-  "retry.waiting": "⏳ the provider asked to wait — waiting {seconds}s and retrying (attempt {attempt}): {reason}"
+  "retry.waiting": "⏳ the provider asked to wait — waiting {seconds}s and retrying (attempt {attempt}): {reason}",
+  "knowledge.header": "The project has already written about this (read what you need yourself — this is an index, not a summary):",
+  "knowledge.found": "📚 the knowledge base has entries on this: {paths}",
+  "council.noQuestion": "a question is required after /council",
+  "council.notConfigured": "The model council is not configured: at least {min} DIFFERENT models are required in the «Advisers» field (Settings → Tools → VibeIDEA → Agent), as provider/model separated by commas. The same model asked twice agrees with itself — that is not a second opinion.",
+  "council.badEntries": "these adviser entries could not be parsed: {entries}",
+  "council.asking": "🧑‍⚖️ asking the council: {advisers}",
+  "council.opinion": "opinion {index}",
+  "council.adviser": "Answer the question briefly and to the point. On a separate final line, name what you are NOT sure about and what should be checked.",
+  "council.adviserFailed": "adviser {adviser} did not answer: {reason}",
+  "council.tooFewAnswers": "fewer than two answers ({count}) — nothing to reconcile",
+  "council.synthesis": "Below are independent answers from several models to one question. Reconcile them: where they agree (that is the ground), where they differ (that is the open question), and what should be checked by fact. Do not pick an answer for the elegance of its wording.",
+  "settings.agent.council": "Advisers (model council)",
+  "settings.agent.hint.council": "Format: provider/model separated by commas, e.g. zai/glm-4.6, minimax/abab6. DIFFERENT models are required: the same one asked twice agrees with itself, and the second answer looks like confirmation without being one. Invoked with /council <question>: advisers answer in parallel, blind to each other, and a turn then reconciles them. Empty turns the council off.",
+  "slash.command.council": "One question to several different models, then a reconciliation of their opinions"
 }

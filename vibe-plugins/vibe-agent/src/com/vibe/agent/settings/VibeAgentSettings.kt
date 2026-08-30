@@ -130,6 +130,7 @@ object VibeAgentSettings {
   private const val KEY_WATCH_FRAME_HEIGHT = "vibe.agent.watch.frameHeight"
   private const val KEY_SILENCE_MINUTES = "vibe.agent.silenceMinutes"
   private const val KEY_ROLE_BUDGET = "vibe.agent.roleBudgetTokens"
+  private const val KEY_COUNCIL = "vibe.agent.councilAdvisers"
 
   /** Off by default: a ceiling nobody set must not become a wall in the middle of real work. */
   const val DEFAULT_ROLE_BUDGET_TOKENS = 0
@@ -280,6 +281,11 @@ object VibeAgentSettings {
    * stopping at the same moment would remove the one chance to say «подожди, оно думает».
    */
   /** Tokens one pipeline role may spend per rolling day; 0 turns the budget off. */
+  /** `провайдер/модель` через запятую; пусто — совет выключен и честно об этом говорит. */
+  var councilAdvisers: String
+    get() = props.getValue(KEY_COUNCIL, "")
+    set(value) = props.setValue(KEY_COUNCIL, value.trim(), "")
+
   var roleBudgetTokens: Int
     get() = props.getInt(KEY_ROLE_BUDGET, DEFAULT_ROLE_BUDGET_TOKENS).coerceIn(0, MAX_ROLE_BUDGET_TOKENS)
     set(value) = props.setValue(KEY_ROLE_BUDGET, value.coerceIn(0, MAX_ROLE_BUDGET_TOKENS), DEFAULT_ROLE_BUDGET_TOKENS)
