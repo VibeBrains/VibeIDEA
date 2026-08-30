@@ -1,6 +1,7 @@
 // Copyright 2026 VibeBrains. Use of this source code is governed by the Apache 2.0 license.
 package com.vibe.agent.audit
 
+import com.vibe.agent.i18n.VibeI18n.t
 import com.intellij.openapi.actionSystem.ActionUpdateThread
 import com.intellij.openapi.actionSystem.AnActionEvent
 import com.intellij.openapi.fileChooser.FileChooserFactory
@@ -44,9 +45,9 @@ private class AuditViewerDialog(private val project: Project, private val log: A
   }
 
   init {
-    title = "Журнал аудита агента"
-    area.text = "Загрузка…"
-    setOKButtonText("Закрыть")
+    title = t("auditAction.title")
+    area.text = t("auditAction.loading")
+    setOKButtonText(t("common.close"))
     init()
     reload()
   }
@@ -56,7 +57,7 @@ private class AuditViewerDialog(private val project: Project, private val log: A
     com.intellij.openapi.application.ApplicationManager.getApplication().executeOnPooledThread {
       val lines = log.readRecent(RECENT_LIMIT)
       com.intellij.openapi.application.ApplicationManager.getApplication().invokeLater {
-        area.text = if (lines.isEmpty()) "Журнал пуст (или аудит выключен: Settings → Tools → VibeIDEA → Агент)."
+        area.text = if (lines.isEmpty()) t("auditAction.empty")
                     else lines.joinToString("\n")
       }
     }
@@ -68,9 +69,9 @@ private class AuditViewerDialog(private val project: Project, private val log: A
 
   // Left-aligned extra buttons: Export + Clear.
   override fun createLeftSideActions(): Array<Action> = arrayOf(
-    object : DialogWrapperAction("Экспортировать…") {
+    object : DialogWrapperAction(t("auditAction.export")) {
       override fun doAction(e: java.awt.event.ActionEvent?) {
-        val descriptor = FileSaverDescriptor("Экспорт журнала аудита", "Сохранить .vibe/audit.jsonl в файл", "jsonl")
+        val descriptor = FileSaverDescriptor(t("auditAction.exportTitle"), t("auditAction.exportPrompt"), "jsonl")
         val wrapper = FileChooserFactory.getInstance().createSaveFileDialog(descriptor, project)
           .save(null as java.nio.file.Path?, "vibeidea-audit.jsonl")
         if (wrapper != null) {
@@ -78,21 +79,21 @@ private class AuditViewerDialog(private val project: Project, private val log: A
           com.intellij.openapi.application.ApplicationManager.getApplication().executeOnPooledThread {
             val err = runCatching { log.exportTo(target) }.exceptionOrNull()
             if (err != null) com.intellij.openapi.application.ApplicationManager.getApplication().invokeLater {
-              Messages.showErrorDialog(project, "Не удалось экспортировать: ${err.message}", "Аудит")
+              Messages.showErrorDialog(project, t("auditAction.exportFailed", "reason" to err.message), t("auditAction.short"))
             }
           }
         }
       }
     },
-    object : DialogWrapperAction("Очистить журнал") {
+    object : DialogWrapperAction(t("auditAction.clear")) {
       override fun doAction(e: java.awt.event.ActionEvent?) {
         val confirm = Messages.showYesNoDialog(project,
-          "Удалить весь журнал аудита (.vibe/audit.jsonl и сжатые сегменты)? Отменить нельзя.",
-          "Очистка журнала аудита", "Удалить", "Отмена", Messages.getWarningIcon())
+          t("auditAction.clearConfirm"),
+          t("auditAction.clearTitle"), t("common.delete"), t("common.cancel"), Messages.getWarningIcon())
         if (confirm == Messages.YES) {
           com.intellij.openapi.application.ApplicationManager.getApplication().executeOnPooledThread {
             val n = log.deleteAll()
-            com.intellij.openapi.application.ApplicationManager.getApplication().invokeLater { area.text = "Удалено файлов: $n. Журнал пуст." }
+            com.intellij.openapi.application.ApplicationManager.getApplication().invokeLater { area.text = t("auditAction.cleared", "count" to n) }
           }
         }
       }

@@ -1,6 +1,7 @@
 // Copyright 2026 VibeBrains. Use of this source code is governed by the Apache 2.0 license.
 package com.vibe.agent.http
 
+import com.vibe.agent.i18n.VibeI18n.t
 import com.intellij.openapi.actionSystem.AnAction
 import com.intellij.openapi.actionSystem.AnActionEvent
 import com.intellij.openapi.application.ApplicationManager
@@ -13,7 +14,7 @@ import java.awt.datatransfer.StringSelection
  * Shows the HTTP API token inside the IDE — the only place it is ever revealed. The API itself
  * never returns it, and it is not kept in synchronised settings.
  */
-class VibeShowApiTokenAction : AnAction("VibeIDEA: показать токен HTTP API") {
+class VibeShowApiTokenAction : AnAction(t("httpToken.showAction")) {
   override fun actionPerformed(e: AnActionEvent) {
     val project = e.project
     // PasswordSafe may block on the OS keychain — off the EDT, then back for the dialog.
@@ -25,18 +26,18 @@ class VibeShowApiTokenAction : AnAction("VibeIDEA: показать токен H
       ApplicationManager.getApplication().invokeLater {
         if (!enabled) {
           Messages.showInfoMessage(project,
-            "HTTP API выключен. Включить: Settings → Tools → VibeIDEA → Агент → «Входящий HTTP API».",
-            "VibeIDEA: HTTP API")
+            t("httpToken.disabled"),
+            t("httpToken.title"))
           return@invokeLater
         }
         if (token == null) {
-          Messages.showErrorDialog(project, "Токен недоступен: хранилище паролей не ответило.", "VibeIDEA: HTTP API")
+          Messages.showErrorDialog(project, t("httpToken.unavailable"), t("httpToken.title"))
           return@invokeLater
         }
-        val address = if (port > 0) "http://127.0.0.1:$port" else "порт ещё не занят"
+        val address = if (port > 0) "http://127.0.0.1:$port" else t("httpToken.noPort")
         val answer = Messages.showYesNoDialog(project,
-          "Адрес: $address\nТокен: $token\n\nТокен даёт право запускать агента на этой машине — не пересылайте его.",
-          "VibeIDEA: HTTP API", "Скопировать токен", "Закрыть", null)
+          t("httpToken.body", "address" to address, "token" to token),
+          t("httpToken.title"), t("httpToken.copy"), t("common.close"), null)
         if (answer == Messages.YES) CopyPasteManager.getInstance().setContents(StringSelection(token))
       }
     }
@@ -44,18 +45,18 @@ class VibeShowApiTokenAction : AnAction("VibeIDEA: показать токен H
 }
 
 /** Issues a new token and forgets the old one — what to press when the token leaked. */
-class VibeRegenerateApiTokenAction : AnAction("VibeIDEA: перевыпустить токен HTTP API") {
+class VibeRegenerateApiTokenAction : AnAction(t("httpToken.regenerateAction")) {
   override fun actionPerformed(e: AnActionEvent) {
     val project = e.project
     val confirmed = Messages.showYesNoDialog(project,
-      "Старый токен перестанет работать немедленно. Скрипты и CI, которые им пользуются, придётся обновить.",
-      "Перевыпустить токен?", "Перевыпустить", "Отмена", null) == Messages.YES
+      t("httpToken.regenerateConfirm"),
+      t("httpToken.regenerateTitle"), t("httpToken.regenerate"), t("common.cancel"), null) == Messages.YES
     if (!confirmed) return
     ApplicationManager.getApplication().executeOnPooledThread {
       val token = runCatching { VibeApiToken.regenerate() }.getOrNull()
       ApplicationManager.getApplication().invokeLater {
-        if (token == null) Messages.showErrorDialog(project, "Не удалось записать токен в хранилище.", "VibeIDEA: HTTP API")
-        else Messages.showInfoMessage(project, "Новый токен: $token", "VibeIDEA: HTTP API")
+        if (token == null) Messages.showErrorDialog(project, t("httpToken.writeFailed"), t("httpToken.title"))
+        else Messages.showInfoMessage(project, t("httpToken.newToken", "token" to token), t("httpToken.title"))
       }
     }
   }

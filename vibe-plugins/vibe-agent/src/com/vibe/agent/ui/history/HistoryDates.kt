@@ -1,6 +1,7 @@
 // Copyright 2026 VibeBrains. Use of this source code is governed by the Apache 2.0 license.
 package com.vibe.agent.ui.history
 
+import com.vibe.agent.i18n.VibeI18n.t
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
@@ -25,15 +26,26 @@ object HistoryDates {
 
   /** Short Russian month names, deliberately genitive-less («23 авг», «7 янв», «5 май»). */
   val MONTHS_SHORT_RU: List<String> =
-    listOf("янв", "фев", "мар", "апр", "май", "июн", "июл", "авг", "сен", "окт", "ноя", "дек")
+    listOf(t("date.month.01"),
+    t("date.month.02"),
+    t("date.month.03"),
+    t("date.month.04"),
+    t("date.month.05"),
+    t("date.month.06"),
+    t("date.month.07"),
+    t("date.month.08"),
+    t("date.month.09"),
+    t("date.month.10"),
+    t("date.month.11"),
+    t("date.month.12"))
 
   /** Rail group headers, in display order. */
   enum class Group(val title: String) {
-    TODAY("Сегодня"),
-    YESTERDAY("Вчера"),
-    LAST_7("Последние 7 дней"),
-    LAST_30("Последние 30 дней"),
-    OLDER("Ранее"),
+    TODAY(t("date.today")),
+    YESTERDAY(t("date.yesterday")),
+    LAST_7(t("date.last7")),
+    LAST_30(t("date.last30")),
+    OLDER(t("date.earlier")),
   }
 
   /** ISO-8601 instant → local calendar date; null when the stamp is absent or broken. */

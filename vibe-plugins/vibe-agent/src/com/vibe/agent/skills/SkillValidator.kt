@@ -1,6 +1,8 @@
 // Copyright 2026 VibeBrains. Use of this source code is governed by the Apache 2.0 license.
 package com.vibe.agent.skills
 
+import com.vibe.agent.i18n.VibeI18n.t
+
 /**
  * Checks a skill package against the open Agent Skills contract.
  *
@@ -30,34 +32,34 @@ object SkillValidator {
     escapingAttachments: List<String> = emptyList(),
   ): List<Finding> = buildList {
     if (!pkg.hasFrontmatter) {
-      add(Finding(Level.ERROR, "нет frontmatter: файл должен начинаться со строки --- и содержать name и description"))
+      add(Finding(Level.ERROR, t("skill.error.noFrontmatter")))
     }
     when {
-      pkg.name == null -> add(Finding(Level.ERROR, "нет обязательного поля name"))
-      pkg.name != pkg.id -> add(Finding(Level.ERROR, "name «${pkg.name}» не совпадает с именем папки «${pkg.id}» — вызов /skill:${pkg.id} не найдёт его"))
-      pkg.name.length > MAX_NAME_CHARS -> add(Finding(Level.ERROR, "name длиннее $MAX_NAME_CHARS символов"))
-      !NAME_SHAPE.matches(pkg.name) -> add(Finding(Level.ERROR, "name «${pkg.name}»: допустимы строчные латинские буквы, цифры и дефис"))
+      pkg.name == null -> add(Finding(Level.ERROR, t("skill.error.noName")))
+      pkg.name != pkg.id -> add(Finding(Level.ERROR, t("skill.error.nameMismatch", "name" to pkg.name, "id" to pkg.id)))
+      pkg.name.length > MAX_NAME_CHARS -> add(Finding(Level.ERROR, t("skill.error.nameLong", "max" to MAX_NAME_CHARS)))
+      !NAME_SHAPE.matches(pkg.name) -> add(Finding(Level.ERROR, t("skill.error.nameShape", "name" to pkg.name)))
     }
     when {
-      pkg.description == null -> add(Finding(Level.ERROR, "нет обязательного поля description — по нему модель понимает, когда навык уместен"))
+      pkg.description == null -> add(Finding(Level.ERROR, t("skill.error.noDescription")))
       pkg.description.length > MAX_DESCRIPTION_CHARS ->
-        add(Finding(Level.WARNING, "description длиннее $MAX_DESCRIPTION_CHARS символов (${pkg.description.length}) — это подсказка, а не глава"))
+        add(Finding(Level.WARNING, t("skill.warn.descriptionLong", "max" to MAX_DESCRIPTION_CHARS, "actual" to pkg.description.length)))
     }
     // Unknown top-level keys are an ERROR, not a nicety: the reference validator rejects the whole
     // package, so a skill that works here would be refused everywhere else.
     val unknown = pkg.topLevelKeys.filterNot { it in SkillPackage.ALLOWED_TOP_LEVEL }
     if (unknown.isNotEmpty()) {
-      add(Finding(Level.ERROR, "лишние ключи верхнего уровня: ${unknown.joinToString(", ")} — своё кладите под metadata:"))
+      add(Finding(Level.ERROR, t("skill.error.unknownKeys", "keys" to unknown.joinToString(", "))))
     }
-    if (pkg.body.isBlank()) add(Finding(Level.ERROR, "пустое тело: навык без инструкций ничего не даёт модели"))
+    if (pkg.body.isBlank()) add(Finding(Level.ERROR, t("skill.error.emptyBody")))
     else if (pkg.body.length > MAX_BODY_CHARS) {
-      add(Finding(Level.WARNING, "тело больше $MAX_BODY_CHARS символов (${pkg.body.length}) — в контекст оно не поместится целиком"))
+      add(Finding(Level.WARNING, t("skill.warn.bodyLong", "max" to MAX_BODY_CHARS, "actual" to pkg.body.length)))
     }
     for (path in escapingAttachments) {
-      add(Finding(Level.ERROR, "вложение «$path» уводит за пределы $SKILLS_TREE — так навык может подтянуть чужой файл"))
+      add(Finding(Level.ERROR, t("skill.error.escapingAttachment", "path" to path, "tree" to SKILLS_TREE)))
     }
     if (attachments.any { it == "scripts" || it.startsWith("scripts/") }) {
-      add(Finding(Level.WARNING, "рядом лежит scripts/ — исполняемое из навыка ничем не ограничено, проверьте содержимое"))
+      add(Finding(Level.WARNING, t("skill.warn.scripts")))
     }
   }
 

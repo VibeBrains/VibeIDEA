@@ -2,6 +2,7 @@
 package com.vibe.agent.providers
 
 import com.intellij.openapi.application.PathManager
+import com.vibe.agent.i18n.VibeI18n.t
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
@@ -64,17 +65,21 @@ object ModelCatalogCache {
   fun ageText(fetchedAtMs: Long, nowMs: Long): String {
     val minutes = (nowMs - fetchedAtMs).coerceAtLeast(0L) / 60_000L
     return when {
-      minutes < 1 -> "только что"
-      minutes < 60 -> "$minutes ${plural(minutes, "минуту", "минуты", "минут")} назад"
-      minutes < 24 * 60 -> (minutes / 60).let { "$it ${plural(it, "час", "часа", "часов")} назад" }
-      else -> (minutes / (24 * 60)).let { "$it ${plural(it, "день", "дня", "дней")} назад" }
+      minutes < 1 -> t("cache.age.justNow")
+      minutes < 60 -> age(minutes, "minute")
+      minutes < 24 * 60 -> age(minutes / 60, "hour")
+      else -> age(minutes / (24 * 60), "day")
     }
   }
 
-  private fun plural(n: Long, one: String, few: String, many: String): String = when {
-    n % 10 == 1L && n % 100 != 11L -> one
-    n % 10 in 2..4 && n % 100 !in 12..14 -> few
-    else -> many
+  /** Plural form comes from the catalogue: other languages count differently than Russian does. */
+  private fun age(count: Long, unit: String): String {
+    val form = when {
+      count % 10 == 1L && count % 100 != 11L -> "one"
+      count % 10 in 2..4 && count % 100 !in 12..14 -> "few"
+      else -> "many"
+    }
+    return t("cache.age.minutes", "count" to count, "word" to t("cache.word.$unit.$form"))
   }
 
   fun decode(text: String): Map<String, Entry> {

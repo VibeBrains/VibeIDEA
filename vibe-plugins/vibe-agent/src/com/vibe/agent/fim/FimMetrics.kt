@@ -1,6 +1,8 @@
 // Copyright 2026 VibeBrains. Use of this source code is governed by the Apache 2.0 license.
 package com.vibe.agent.fim
 
+import com.vibe.agent.i18n.VibeI18n.t
+
 /**
  * How the autocomplete is actually doing: hits, refusals, failures and latency.
  *
@@ -46,20 +48,13 @@ class FimMetrics(private val window: Int = DEFAULT_WINDOW) {
   @Synchronized fun snapshot(cache: FimCache): String {
     val total = cache.hits + cache.misses
     val hitRate = if (total == 0L) 0 else (cache.hits * 100 / total)
-    return buildString {
-      append("Запросов к модели: ").append(requested)
-      append(" · с подсказкой: ").append(served)
-      append(" · пустых: ").append(empty)
-      append(" · ошибок: ").append(failed).append("\n")
-      append("Отказов «не предсказываем»: ").append(refused)
-      append(" — столько запросов не ушло в сеть по форме места в коде\n")
-      append("Кэш: попаданий ").append(cache.hits).append(", промахов ").append(cache.misses)
-      append(" (").append(hitRate).append("%), вытеснено ").append(cache.evictions)
-      append(", записей ").append(cache.size()).append("\n")
-      append("Задержка модели: p50 ").append(percentile(50)).append(" мс")
-      append(" · p95 ").append(percentile(95)).append(" мс")
-      append(" · максимум ").append(percentile(100)).append(" мс")
-    }
+    return listOf(
+      t("fim.metrics.requests", "requested" to requested, "served" to served, "empty" to empty, "failed" to failed),
+      t("fim.metrics.refusals", "refused" to refused),
+      t("fim.metrics.cache", "hits" to cache.hits, "misses" to cache.misses,
+        "rate" to hitRate, "evictions" to cache.evictions, "size" to cache.size()),
+      t("fim.metrics.latency", "p50" to percentile(50), "p95" to percentile(95), "max" to percentile(100)),
+    ).joinToString("\n")
   }
 
   @Synchronized fun reset() {
