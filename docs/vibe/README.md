@@ -13,6 +13,7 @@
 - [manuals/codeGraphSpec.md](manuals/codeGraphSpec.md) — спека графа проекта `.vibe/codeGraph.json`: узлы, связи с происхождением, инкрементальность, примеры jq (для агентов и парсеров).
 - [manuals/agentRunsSpec.md](manuals/agentRunsSpec.md) — спека журнала прогонов `.vibe/agent-runs.jsonl`: формат, правило сиротства, усечение (для парсеров/дашбордов).
 - [manuals/projectContextSpec.md](manuals/projectContextSpec.md) — что агент обязан читать и чего не должен касаться: `.cursor/rules`, `.vibe/ignore`, папки-справочники, таблица доступа (самодостаточная, для LLM).
+- [manuals/release.md](manuals/release.md) — как выпустить релиз: ветка, сборка с гейтом дистрибутива, заметки, тег, публикация, права.
 - [manuals/compareModels.md](manuals/compareModels.md) — как сравнить две модели на своём репозитории: почему не по бенчмаркам, порядок прогонов, что считать кроме метрики.
 - [manuals/debugging.md](manuals/debugging.md) — отладка TS и PHP: адаптеры ставятся снаружи, проверка доктором, подключение через LSP4IJ.
 - [manuals/telegramBridge.md](manuals/telegramBridge.md) — мост в Telegram: свой бот, разрешение чата владельцем, команды, прокси и чего пока нет.
