@@ -39,6 +39,8 @@ object EditorContext {
         editor.selectionModel.setSelection(document.getLineStartOffset((ref.fromLine - 1).coerceIn(0, lastLine)), document.getLineEndOffset(lastLine))
         editor.scrollingModel.scrollToCaret(ScrollType.CENTER)
       }
+      // A PDF opens in whatever viewer the IDE has for it; there is no line to jump to.
+      is ContextRef.Document -> OpenFileDescriptor(project, ref.file).navigate(true)
       is ContextRef.Folder -> {
         val dir = PsiManager.getInstance(project).findDirectory(ref.file) ?: return
         PsiNavigationSupport.getInstance().navigateToDirectory(dir, true)

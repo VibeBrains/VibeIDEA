@@ -377,9 +377,12 @@ class ComposerPanel(
         is ContextRef.File -> ref.file.fileType.icon
         is ContextRef.Folder -> AllIcons.Nodes.Folder
         is ContextRef.Selection -> AllIcons.Actions.InSelection
+        is ContextRef.Document -> AllIcons.FileTypes.Text
       }
       val tooltip = when (ref) {
         is ContextRef.Selection -> t("composer.ref.selection", "path" to ref.file.path, "from" to ref.fromLine, "to" to ref.toLine)
+        is ContextRef.Document -> t("composer.ref.document", "path" to ref.file.path, "pages" to ref.pages,
+                                    "chars" to ref.text.length)
         else -> t("composer.ref.file", "path" to ref.file.path)
       }
       Chip(icon, ref.label, tooltip, { EditorContext.open(project, ref) }) {
@@ -391,6 +394,39 @@ class ComposerPanel(
   }
 
   // --- attachments ---
+
+  /**
+   * Extracts the text of dropped PDFs and stages each as its own chip.
+   *
+   * Every outcome is said out loud: a scan without a text layer, a document trimmed to the budget,
+   * a file that could not be read. A PDF attached as silence would reach the model as a document
+   * that exists and says nothing — and the answer about it would look just as confident.
+   */
+  private fun attachPdfs(files: List<java.io.File>) {
+    if (files.isEmpty()) return
+    com.intellij.openapi.application.ApplicationManager.getApplication().executeOnPooledThread {
+      val results = files.map { it to PdfExtract.read(it) }
+      com.intellij.openapi.application.ApplicationManager.getApplication().invokeLater({
+        val fs = LocalFileSystem.getInstance()
+        for ((file, result) in results) {
+          val document = result.getOrElse { error ->
+            listener.onNotice(error.message ?: t("pdf.error.unreadable", "name" to file.name, "reason" to ""))
+            continue
+          }
+          if (document.scanned) {
+            listener.onNotice(t("pdf.scanned", "name" to file.name, "pages" to document.pages))
+            continue
+          }
+          val vf = fs.findFileByIoFile(file) ?: continue
+          if (document.droppedChars > 0) {
+            listener.onNotice(t("pdf.trimmed", "name" to file.name, "dropped" to document.droppedChars,
+                                "limit" to PdfText.MAX_CHARS))
+          }
+          addContext(ContextRef.Document(vf, document.text, document.pages, document.droppedChars))
+        }
+      }, com.intellij.openapi.application.ModalityState.any())
+    }
+  }
 
   private fun chooseImages() {
     if (!imagesAllowed) return
@@ -442,10 +478,14 @@ class ComposerPanel(
         if (FileCopyPasteUtil.isFileListFlavorAvailable(support.dataFlavors)) {
           val files = FileCopyPasteUtil.getFileList(t).orEmpty()
           Attachments.loadAsync(files.filter { Attachments.isImageFile(it.name) }) { addImages(it) }
+          // A PDF dropped as a plain file would be attached as bytes nobody can read: the text has
+          // to be pulled out first, and that is slow enough to belong off the EDT.
+          attachPdfs(files.filter { Attachments.isPdfFile(it) })
           val fs = LocalFileSystem.getInstance()
-          files.filter { !Attachments.isImageFile(it.name) }.mapNotNull { fs.findFileByIoFile(it) }.forEach { vf ->
-            addContext(if (vf.isDirectory) ContextRef.Folder(vf) else ContextRef.File(vf))
-          }
+          files.filter { !Attachments.isImageFile(it.name) && !Attachments.isPdfFile(it) }
+            .mapNotNull { fs.findFileByIoFile(it) }.forEach { vf ->
+              addContext(if (vf.isDirectory) ContextRef.Folder(vf) else ContextRef.File(vf))
+            }
           return true
         }
         if (support.isDataFlavorSupported(DataFlavor.imageFlavor) && !support.isDataFlavorSupported(DataFlavor.stringFlavor)) {

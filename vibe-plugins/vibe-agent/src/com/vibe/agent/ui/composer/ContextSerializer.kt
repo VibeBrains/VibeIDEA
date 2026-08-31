@@ -48,6 +48,8 @@ object ContextSerializer {
       is ContextRef.File -> fileText(ref.file)
       is ContextRef.Folder -> folderListing(ref.file)
       is ContextRef.Selection -> ref.text
+      // Already extracted at attach time — see ContextRef.Document.
+      is ContextRef.Document -> ref.text
     }
     val clean = raw?.let { com.vibe.agent.security.ContextSanitizer.sanitize(it, maskSecrets) }
     val path = when (ref) {

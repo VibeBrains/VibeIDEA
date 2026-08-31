@@ -21,8 +21,11 @@ import javax.imageio.ImageIO
 
 /**
  * Image attachments: system chooser, clipboard paste and file drop all funnel into
- * [ImageAttachment]. PDF is deliberately absent (text extraction needs a PDF library —
- * a separate dependency decision, tracked in the roadmap).
+ * [ImageAttachment].
+ *
+ * A PDF takes the other road: it is not an image but a pile of text, so it is extracted at attach
+ * time ([PdfExtract]) and staged as a context chip. Sending its bytes would mean sending a document
+ * only a vision model could read, and only as pictures of pages.
  */
 object Attachments {
   private val IMAGE_EXTENSIONS = listOf("png", "jpg", "jpeg", "webp", "gif")
@@ -34,6 +37,14 @@ object Attachments {
   /** The strictest limit among supported vendors (Anthropic: 5 MB per image); larger files are refused at intake. */
   const val MAX_IMAGE_MB = 5L
   const val MAX_IMAGE_BYTES = MAX_IMAGE_MB * 1024 * 1024
+
+  /** Extension AND signature: `.pdf` on a file that is not one is a claim, not a fact. */
+  fun isPdfFile(file: File): Boolean = runCatching {
+    if (!file.isFile) return@runCatching false
+    val head = ByteArray(4)
+    file.inputStream().use { it.read(head) }
+    PdfText.looksLikePdf(file.name, head)
+  }.getOrDefault(false)
 
   fun isImageFile(name: String): Boolean = name.substringAfterLast('.', "").lowercase() in MIME_BY_EXTENSION
 

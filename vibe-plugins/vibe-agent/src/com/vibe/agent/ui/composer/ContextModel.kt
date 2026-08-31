@@ -23,12 +23,29 @@ sealed interface ContextRef {
     override val label: String get() = "${file.name} ($fromLine-$toLine)"
   }
 
+  /**
+   * A document whose text was extracted at attach time (PDF).
+   *
+   * The text is carried in the chip rather than read again when the message is sent: extraction is
+   * slow, and a file replaced between attaching and sending must not silently change what was
+   * attached — the person saw a page count and agreed to that.
+   */
+  data class Document(
+    override val file: VirtualFile,
+    val text: String,
+    val pages: Int,
+    val droppedChars: Int = 0,
+  ) : ContextRef {
+    override val label: String get() = file.name + " (" + pages + ")"
+  }
+
   /** Stable identity for dedup: the same file/range staged twice is one chip. */
   val key: String
     get() = when (this) {
       is File -> "f:${file.path}"
       is Folder -> "d:${file.path}"
       is Selection -> "s:${file.path}#$fromLine-$toLine"
+      is Document -> "p:${file.path}"
     }
 }
 
