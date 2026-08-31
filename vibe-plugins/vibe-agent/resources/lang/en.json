@@ -1296,5 +1296,16 @@
   "doctor.detail.failoverOneVendor": "the whole chain leads to one vendor ({vendor}) — that is not a spare plan: a vendor takes its models away all at once",
   "doctor.detail.failoverOk": "targets in the chain: {count}, more than one vendor",
   "autopilot.maxTokens": "tokens per unattended stretch (0 — no ceiling)",
-  "autopilot.budget": "the autopilot stopped: {spent} tokens spent on this stretch, the ceiling is {max}. Turns are not money, and it is money that usually runs out first."
+  "autopilot.budget": "the autopilot stopped: {spent} tokens spent on this stretch, the ceiling is {max}. Turns are not money, and it is money that usually runs out first.",
+  "skills.catalog.title": "VibeIDEA: project skills",
+  "skills.catalog.dialogTitle": "Project skills",
+  "skills.catalog.summary": "Skills: {total}, own: {own}, changed against the shipped set: {edited}",
+  "skills.catalog.legend": "=  same as shipped    *  changed here    +  own    -  deleted (returns at the next seeding)",
+  "skills.catalog.broken": "(the validator refused it)",
+  "skills.catalog.revertQuestion": "Changed skills: {count}. Revert one of them to the shipped version?",
+  "skills.catalog.revertYes": "Revert to shipped",
+  "skills.catalog.revertPrompt": "Which skill should be reverted? Your edit will be overwritten.",
+  "skills.catalog.reverted": "«{id}» is back at the shipped version",
+  "skills.catalog.revertFailed": "could not write «{id}» — check the file permissions",
+  "skills.catalog.noRelease": "«{id}» is not in the shipped set: there is nothing to revert to"
 }

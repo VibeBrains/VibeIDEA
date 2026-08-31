@@ -109,6 +109,9 @@ object VibeDefaults {
   /** Resource names of the manifest — the resources↔manifest gate test compares them with the embedded set. */
   internal fun manifestResourceNames(): List<String> = MANIFEST.map { it.first }
 
+  /** The set's revision registry, for anyone who needs to know which release a file came from. */
+  fun versionsContent(): String? = readResource(VERSIONS)
+
   /** Set files that serve the set itself (registries, its bump script) and are never seeded. */
   internal val SET_METADATA = setOf(DEPRECATED, VERSIONS, "bump.mjs")
 
@@ -217,6 +220,7 @@ object VibeDefaults {
   }
 
   /** The release's content for a seeded path (left side of the comparison). */
+  /** Content shipped for a target path inside `.vibe/`; also accepts the resource name itself. */
   fun releaseContent(relativePath: String): String? =
     MANIFEST.firstOrNull { it.second == relativePath }?.let { readResource(it.first) }
 

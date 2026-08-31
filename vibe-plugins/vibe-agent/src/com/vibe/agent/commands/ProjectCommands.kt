@@ -28,8 +28,8 @@ object ProjectCommands {
   const val FILE = ".vibe/commands.json"
   const val MAX_COMMANDS = 50
 
-  /** The only interpolation we perform: a named reference to a secret. */
-  private val SECRET_REF = Regex("\\$\\{secret:([A-Za-z0-9_]{1,64})}")
+  /** The only interpolation we perform, shared with everything else that runs things here. */
+  private val SECRET_REF = com.vibe.agent.security.SecretRefs.PATTERN
 
   /** Characters that turn one command into several, or hide what is being run. */
   private val FORBIDDEN = listOf(';', '&', '|', '`', '$', '\n', '\r')

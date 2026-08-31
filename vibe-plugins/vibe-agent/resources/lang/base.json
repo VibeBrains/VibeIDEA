@@ -1296,5 +1296,16 @@
   "doctor.detail.failoverOneVendor": "вся цепочка ведёт к одному вендору ({vendor}) — это не запасной план: вендор отключает модели все сразу",
   "doctor.detail.failoverOk": "целей в цепочке: {count}, вендоров больше одного",
   "autopilot.maxTokens": "токенов на один автономный отрезок (0 — без потолка)",
-  "autopilot.budget": "автопилот остановился: на этот отрезок потрачено {spent} токенов при потолке {max}. Ходы — не деньги, и ограничивает обычно второе."
+  "autopilot.budget": "автопилот остановился: на этот отрезок потрачено {spent} токенов при потолке {max}. Ходы — не деньги, и ограничивает обычно второе.",
+  "skills.catalog.title": "VibeIDEA: навыки проекта",
+  "skills.catalog.dialogTitle": "Навыки проекта",
+  "skills.catalog.summary": "Навыков: {total}, своих: {own}, изменённых относительно набора: {edited}",
+  "skills.catalog.legend": "=  как в наборе    *  изменён здесь    +  свой    -  удалён (вернётся при следующем засеве)",
+  "skills.catalog.broken": "(валидатор отказал)",
+  "skills.catalog.revertQuestion": "Изменённых навыков: {count}. Вернуть один из них к версии набора?",
+  "skills.catalog.revertYes": "Вернуть к набору",
+  "skills.catalog.revertPrompt": "Какой навык вернуть? Ваша правка будет перезаписана.",
+  "skills.catalog.reverted": "«{id}» возвращён к версии набора",
+  "skills.catalog.revertFailed": "не удалось записать «{id}» — проверьте права на файл",
+  "skills.catalog.noRelease": "«{id}» в наборе нет: возвращать не к чему"
 }

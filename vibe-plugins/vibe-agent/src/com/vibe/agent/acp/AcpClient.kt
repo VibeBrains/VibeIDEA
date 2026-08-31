@@ -79,6 +79,11 @@ class AcpClient(
 
   val isAlive: Boolean get() = process?.isAlive == true
 
+  /** Resolution order matches the providers': OS keychain via `.vibe/.env`, then the environment. */
+  private fun secrets(value: String): String = com.vibe.agent.security.SecretRefs.substitute(value) { name ->
+    com.vibe.agent.providers.ApiKeyResolver.dotEnv(workingDir)[name] ?: System.getenv(name)
+  }
+
   fun start() {
     check(process == null) { "already started" }
     val cmd = ArrayList<String>()
@@ -89,7 +94,16 @@ class AcpClient(
     // GUI apps on macOS do not inherit the shell PATH — extend it with well-known dirs.
     val path = (pb.environment()["PATH"] ?: "") + File.pathSeparator + EXTRA_PATH
     pb.environment()["PATH"] = path
-    pb.environment().putAll(config.env)
+    // `${secret:NAME}` in the agent's env is resolved HERE, at start, from the OS keychain and
+    // `.vibe/.env` — so the token is not written into `.vibe/acp.json`, which travels with the
+    // repository. What this does NOT do is shorten the token's life inside the agent: a child
+    // process keeps the environment it was started with, and re-launching the agent per call would
+    // throw away the session it exists to hold. The file is the leak we can close; the process
+    // lifetime is a limit we state rather than pretend to have fixed.
+    val resolvedEnv = config.env.mapValues { (_, value) -> secrets(value) }
+    pb.environment().putAll(resolvedEnv)
+    val used = config.env.values.flatMap { com.vibe.agent.security.SecretRefs.names(it) }.distinct()
+    if (used.isNotEmpty()) handler.onProtocolLog("[acp] secrets injected into the agent environment: " + used.joinToString(","))
     val p = pb.start()
     process = p
     writer = p.outputStream.bufferedWriter()
