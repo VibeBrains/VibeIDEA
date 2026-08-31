@@ -210,6 +210,8 @@ jvm_library(
         "//platform/build-scripts/downloader",
         "@community//build:zip",
         "//libraries/maven-resolver-provider",
+        # VibeIDEA: объявление лицензий поставляемых языковых серверов (VibeIdeaProperties).
+        "//platform/build-scripts/licenses",
     ],
 )
 

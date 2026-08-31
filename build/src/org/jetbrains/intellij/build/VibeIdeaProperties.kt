@@ -2,7 +2,7 @@
 package org.jetbrains.intellij.build
 
 import kotlinx.collections.immutable.persistentListOf
-import org.jetbrains.intellij.build.LibraryLicense
+import com.intellij.platform.buildScripts.licenses.LibraryLicense
 import org.jetbrains.intellij.build.impl.PluginLayout
 import org.jetbrains.intellij.build.io.copyDir
 import java.nio.file.Files
