@@ -1270,5 +1270,8 @@
   "design.rule.textOnImage.message": "the text lies straight on a photograph, with no scrim and no shadow",
   "design.rule.textOnImage.why": "the contrast here cannot be computed at all: it depends on the pixel under each letter, and tomorrow the photograph will be replaced by a lighter one",
   "design.rule.focusContrast.message": "the focus ring is at {ratio} contrast, at least {min} is needed",
-  "design.rule.focusContrast.why": "to someone navigating by keyboard an invisible ring is the same as a removed one: nothing on the screen answers «where am I»"
+  "design.rule.focusContrast.why": "to someone navigating by keyboard an invisible ring is the same as a removed one: nothing on the screen answers «where am I»",
+  "docs.view.graph": "graph",
+  "docs.view.list": "list",
+  "docs.graph.dropped": "the map is not complete: {count} hidden"
 }

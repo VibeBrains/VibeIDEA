@@ -100,6 +100,15 @@
         "usageForeground": "NeonCyanDim",
         "usageWarnForeground": "#E0A030"
       },
+      "Docs": {
+        "nodeBackground": "PanelBg",
+        "nodeHoverBackground": "#252A38",
+        "orphanBackground": "#2A2320",
+        "nodeBorder": "#2A2D36",
+        "brokenBorder": "#FF6B5A",
+        "edge": "NeonCyanDim",
+        "nodeForeground": "#E6E8EF"
+      },
       "Mention": {
         "headerForeground": "#E6E8EF",
         "hintForeground": "NeonCyanDim"

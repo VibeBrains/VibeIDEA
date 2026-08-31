@@ -31,6 +31,9 @@ class VibeDocsPanel(private val project: Project) : JPanel(BorderLayout()) {
   private val model = DefaultListModel<Row>()
   private val list = JBList(model).apply { selectionMode = ListSelectionModel.SINGLE_SELECTION }
   private val summary = JBLabel().apply { border = JBUI.Borders.empty(4, 8) }
+  private val graphView = DocsGraphView { openDocument(it) }
+  private val cards = JPanel(java.awt.CardLayout())
+  private var showingGraph = false
 
   /** One line of the list: the mark says WHY the document is worth attention. */
   private data class Row(val path: String, val label: String) {
@@ -44,16 +47,30 @@ class VibeDocsPanel(private val project: Project) : JPanel(BorderLayout()) {
       add(summary, java.awt.BorderLayout.CENTER)
       // The panel used to read the tree only when it was opened: after writing a document one had
       // to close and reopen it to see the link stop being broken.
-      add(com.intellij.ui.components.ActionLink(t("docs.refresh")) { reload() }, java.awt.BorderLayout.EAST)
+      add(JPanel(java.awt.FlowLayout(java.awt.FlowLayout.RIGHT, 8, 0)).apply {
+        isOpaque = false
+        // A list answers «что есть» and hides the shape: thirty tidy files and thirty files with
+        // four orphans look identical in a list and nothing alike on a map.
+        add(com.intellij.ui.components.ActionLink(t("docs.view.graph")) { toggleView(it.source as com.intellij.ui.components.ActionLink) })
+        add(com.intellij.ui.components.ActionLink(t("docs.refresh")) { reload() })
+      }, java.awt.BorderLayout.EAST)
     }
     add(header, BorderLayout.NORTH)
-    add(VibeScroll.pane(list), BorderLayout.CENTER)
+    cards.add(VibeScroll.pane(list), CARD_LIST)
+    cards.add(VibeScroll.pane(graphView), CARD_GRAPH)
+    add(cards, BorderLayout.CENTER)
     list.addListSelectionListener {
       if (it.valueIsAdjusting) return@addListSelectionListener
       val row = list.selectedValue ?: return@addListSelectionListener
       openDocument(row.path)
     }
     reload()
+  }
+
+  private fun toggleView(link: com.intellij.ui.components.ActionLink) {
+    showingGraph = !showingGraph
+    link.text = if (showingGraph) t("docs.view.list") else t("docs.view.graph")
+    (cards.layout as java.awt.CardLayout).show(cards, if (showingGraph) CARD_GRAPH else CARD_LIST)
   }
 
   fun reload() {
@@ -77,8 +94,13 @@ class VibeDocsPanel(private val project: Project) : JPanel(BorderLayout()) {
           val suffix = if (marks.isEmpty()) "" else "   — " + marks.joinToString(", ")
           model.addElement(Row(doc.path, doc.title + "   " + doc.path + suffix))
         }
+        graphView.show(DocsGraphLayout.layout(analysis))
+        val dropped = DocsGraphLayout.droppedCount(analysis)
         summary.text = t("docs.summary", "docs" to analysis.docs.size,
-                         "unreachable" to analysis.unreachable.size, "broken" to analysis.brokenLinks.size)
+                         "unreachable" to analysis.unreachable.size, "broken" to analysis.brokenLinks.size) +
+          // Saying what the drawing left out: a picture that quietly stops at the limit reads as
+          // «это всё», which is exactly the claim it cannot make.
+          (if (dropped > 0) "   " + t("docs.graph.dropped", "count" to dropped) else "")
       }
     }
   }
@@ -90,6 +112,9 @@ class VibeDocsPanel(private val project: Project) : JPanel(BorderLayout()) {
     FileEditorManager.getInstance(project).openFile(file, true)
   }
 }
+
+private const val CARD_LIST = "list"
+private const val CARD_GRAPH = "graph"
 
 class VibeDocsToolWindowFactory : com.intellij.openapi.wm.ToolWindowFactory, com.intellij.openapi.project.DumbAware {
   override fun createToolWindowContent(project: Project, toolWindow: com.intellij.openapi.wm.ToolWindow) {
