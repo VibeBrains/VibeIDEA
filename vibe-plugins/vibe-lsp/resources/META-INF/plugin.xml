@@ -1,10 +1,12 @@
 <idea-plugin>
   <id>com.vibe.lsp</id>
-  <name>Vibe Languages: TypeScript &amp; PHP</name>
+  <name>Vibe Languages: TypeScript, PHP, CSS, ESLint</name>
   <vendor>VibeBrains</vendor>
   <description><![CDATA[
     First-class TypeScript and PHP support for VibeIDEA through the Language Server Protocol:
-    vtsls (TypeScript, MIT) and Phpactor (PHP, MIT) wired into the bundled LSP4IJ client.
+    vtsls (TypeScript, MIT), Phpactor (PHP, MIT), the VS Code CSS server and ESLint (both MIT,
+    from vscode-langservers-extracted) wired into the bundled LSP4IJ client. HTML and JSON are left
+    to the platform, which serves them natively.
     Syntax highlighting comes from the bundled TextMate grammars.
   ]]></description>
   <depends>com.intellij.modules.platform</depends>
@@ -24,7 +26,7 @@
   <actions>
     <action id="Vibe.LspDoctor" class="com.vibe.lsp.VibeLspDoctorAction"
             text="VibeIDEA: языковые серверы"
-            description="Установлены ли vtsls и Phpactor, и как поставить недостающий">
+            description="Какие языковые серверы установлены и как поставить недостающие">
       <add-to-group group-id="ToolsMenu" anchor="last"/>
     </action>
   </actions>

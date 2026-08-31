@@ -53,6 +53,27 @@ object LspDoctor {
   )
 
   /**
+   * CSS/SCSS/LESS — the gap Community leaves open. HTML and JSON come from the same npm package
+   * and are deliberately not wired: the platform serves them itself.
+   */
+  val CSS = ServerSpec(
+    id = "vibeCss",
+    displayName = "CSS/SCSS/LESS (vscode-css-language-server)",
+    binary = "vscode-css-language-server",
+    installCommand = "npm install -g vscode-langservers-extracted",
+    extensions = setOf("css", "scss", "less"),
+  )
+
+  /** ESLint: the project's own rules in the editor. Silent in a project that has no ESLint config. */
+  val ESLINT = ServerSpec(
+    id = "vibeEslint",
+    displayName = "ESLint (vscode-eslint-language-server)",
+    binary = "vscode-eslint-language-server",
+    installCommand = "npm install -g vscode-langservers-extracted",
+    extensions = setOf("eslintrc"),
+  )
+
+  /**
    * Debug adapters. Same shape as the language servers and the same reason: they are npm and
    * composer packages, and bundling them would mean shipping someone else's runtime.
    *
@@ -76,7 +97,7 @@ object LspDoctor {
     extensions = setOf("php"),
   )
 
-  val ALL: List<ServerSpec> = listOf(VTSLS, PHPACTOR)
+  val ALL: List<ServerSpec> = listOf(VTSLS, PHPACTOR, CSS, ESLINT)
 
   /** Checked on request rather than on every file open: debugging is a deliberate act. */
   val DEBUG_ADAPTERS: List<ServerSpec> = listOf(JS_DEBUG, PHP_DEBUG)

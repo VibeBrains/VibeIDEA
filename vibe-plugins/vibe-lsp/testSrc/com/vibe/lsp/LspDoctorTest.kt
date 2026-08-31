@@ -55,6 +55,16 @@ class LspDoctorTest {
   fun `server ids match the ids declared to LSP4IJ`() {
     // The report names the server the way the LSP4IJ console does; a drift here sends the
     // user looking for a server that is not called that anywhere in the UI.
-    assertEquals(setOf("vibeVtsls", "vibePhpactor"), LspDoctor.ALL.map { it.id }.toSet())
+    assertEquals(setOf("vibeVtsls", "vibePhpactor", "vibeCss", "vibeEslint"), LspDoctor.ALL.map { it.id }.toSet())
+  }
+
+  @Test
+  fun `HTML и JSON отданы платформе, а не серверу`() {
+    // Тот же npm-пакет несёт серверы html и json, и подключать их нельзя: в Community они уже есть,
+    // а два движка на одном файле дают два набора подсказок, половина которых спорит с другой.
+    val served = LspDoctor.ALL.flatMap { it.extensions }.toSet()
+    assertFalse("html" in served)
+    assertFalse("json" in served)
+    assertTrue("css" in served, "CSS в Community нет вовсе — вот его и закрываем")
   }
 }

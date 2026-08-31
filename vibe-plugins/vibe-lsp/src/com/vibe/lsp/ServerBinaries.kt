@@ -39,4 +39,8 @@ internal object ServerBinaries {
   fun vtslsCommand(): List<String> = listOf(resolve("vtsls"), "--stdio")
 
   fun phpactorCommand(): List<String> = listOf(resolve("phpactor"), "language-server")
+
+  fun cssCommand(): List<String> = listOf(resolve("vscode-css-language-server"), "--stdio")
+
+  fun eslintCommand(): List<String> = listOf(resolve("vscode-eslint-language-server"), "--stdio")
 }

@@ -8,5 +8,15 @@
       <description>PHP language server (Phpactor)</description>
     </server>
     <fileNamePatternMapping patterns="*.php" serverId="vibePhpactor" languageId="php"/>
+    <!-- CSS/SCSS/LESS: единственный фронтовый язык, которого в Community нет вовсе.
+         HTML и JSON тем же пакетом НЕ подключаем — платформа обслуживает их сама. -->
+    <server id="vibeCss" name="CSS/SCSS/LESS" factoryClass="com.vibe.lsp.CssServerFactory">
+      <description>CSS, SCSS and LESS language server (vscode-langservers-extracted)</description>
+    </server>
+    <fileNamePatternMapping patterns="*.css;*.scss;*.less" serverId="vibeCss" languageId="css"/>
+    <server id="vibeEslint" name="ESLint" factoryClass="com.vibe.lsp.EslintServerFactory">
+      <description>ESLint language server: the project's own rules in the editor</description>
+    </server>
+    <fileNamePatternMapping patterns="*.ts;*.tsx;*.js;*.jsx;*.mjs;*.cjs;*.vue;*.svelte" serverId="vibeEslint" languageId="javascript"/>
   </extensions>
 </idea-plugin>
