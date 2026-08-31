@@ -1339,5 +1339,7 @@
   "seed.adopt.backups": "Your previous versions are saved next to them: {files}",
   "seed.conflict.merge": "Merge",
   "seed.merge.title": "{file}: pull what you need from the release into your file",
-  "seed.merge.yoursEditable": "your file (edited here)"
+  "seed.merge.yoursEditable": "your file (edited here)",
+  "thrash.timeout": "the same command has hung {count} times: «{call}». Waiting has been tried and the answer did not change — the turn is stopped.",
+  "thrash.failures": "{count} failures out of the last {window} calls: the turn is going nowhere while the money is spent — stopped."
 }

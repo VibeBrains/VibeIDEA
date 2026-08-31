@@ -224,6 +224,8 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
   @Volatile private var turnHadMutatingTool = false
   /** Did the turn end in anything other than a normal finish? The autopilot refuses to resume such a turn. */
   @Volatile private var turnEndedBadly = false
+  /** Outcomes of the recent tool calls, for the thrash and repeated-timeout breakers. */
+  private val thrashHistory = ArrayList<com.vibe.agent.safety.ThrashDetector.Event>()
   /** Turns the autopilot has taken since the person last spoke. */
   @Volatile private var autopilotTurns = 0
   /** What the last few turns moved, for the stall detector. */
@@ -1909,6 +1911,40 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     return false
   }
 
+  /**
+   * Watches OUTCOMES, where the loop detector watches shapes.
+   *
+   * A hung command restarted forever and a run where every second call fails both look fine to the
+   * loop detector: the calls differ. They look fine to a «подряд» counter too, because a success
+   * resets it. They do not look fine here.
+   */
+  private fun noteOutcome(call: com.vibe.agent.acp.ToolCall) {
+    val outcome = when {
+      call.status != com.vibe.agent.acp.ToolCall.STATUS_FAILED -> com.vibe.agent.safety.ThrashDetector.Outcome.OK
+      // A timeout is a failure of a special kind: waiting has been tried and did not help.
+      com.vibe.agent.safety.ThrashDetector.looksLikeTimeout(call.title) -> com.vibe.agent.safety.ThrashDetector.Outcome.TIMEOUT
+      else -> com.vibe.agent.safety.ThrashDetector.Outcome.ERROR
+    }
+    val fingerprint = com.vibe.agent.safety.LoopDetector.fingerprint(call.toolName ?: call.kind, call.rawInput?.toString())
+    synchronized(thrashHistory) {
+      thrashHistory.add(com.vibe.agent.safety.ThrashDetector.Event(fingerprint, outcome))
+      val trimmed = com.vibe.agent.safety.ThrashDetector.trim(thrashHistory.toList())
+      thrashHistory.clear()
+      thrashHistory.addAll(trimmed)
+    }
+    val finding = com.vibe.agent.safety.ThrashDetector.check(thrashHistory.toList())
+    if (finding.verdict == com.vibe.agent.safety.ThrashDetector.Verdict.OK) return
+    val reason = when (finding.verdict) {
+      com.vibe.agent.safety.ThrashDetector.Verdict.REPEATED_TIMEOUT ->
+        t("thrash.timeout", "count" to finding.count, "call" to finding.detail.take(120))
+      else -> t("thrash.failures", "count" to finding.count, "window" to com.vibe.agent.safety.ThrashDetector.WINDOW)
+    }
+    systemLine("⛔ " + reason)
+    breakers.trip(com.vibe.agent.safety.ThrashDetector::class.java.simpleName.lowercase(), reason, System.currentTimeMillis())
+    synchronized(thrashHistory) { thrashHistory.clear() }
+    cancelTurn()
+  }
+
   private fun noteLoop(call: com.vibe.agent.acp.ToolCall) {
     loopHistory.add(com.vibe.agent.safety.LoopDetector.fingerprint(call.toolName ?: call.kind, call.rawInput?.toString()))
     val finding = com.vibe.agent.safety.LoopDetector.check(loopHistory.snapshot())
@@ -3193,6 +3229,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
         terminalExitFrame(u)?.let { (id, code, sig) -> markTerminalExit(id, code, sig) }
         if (call.isDone) {
           auditToolCall(AuditEvent.Action.TOOL_CALL_DONE, call)
+          noteOutcome(call)
           val startedAt = toolStarts.remove(call.id)
           trace.add(com.vibe.agent.trace.TurnTrace.Event(
             atMs = System.currentTimeMillis(),
