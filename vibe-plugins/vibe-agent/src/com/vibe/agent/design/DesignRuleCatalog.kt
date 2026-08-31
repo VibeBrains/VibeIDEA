@@ -72,6 +72,41 @@ object DesignRuleCatalog {
   const val TOO_MANY_FONTS = "too-many-fonts"
   const val SHOUTING_TEXT = "shouting-text"
 
+  // --- forms: where a defect costs the data already typed ---
+  const val FIELD_WITHOUT_LABEL = "field-without-label"
+  const val AUTOCOMPLETE_MISSING = "autocomplete-missing"
+  const val INPUT_TYPE_GENERIC = "input-type-generic"
+  const val ERROR_WITHOUT_EXPLANATION = "error-without-explanation"
+  const val REQUIRED_AND_DISABLED = "required-and-disabled"
+  const val READONLY_LOOKS_EDITABLE = "readonly-looks-editable"
+  const val FIELD_TOO_NARROW = "field-too-narrow"
+  const val FIELD_WITHOUT_NAME = "field-without-name"
+  const val PLACEHOLDER_DUPLICATES_LABEL = "placeholder-duplicates-label"
+  const val FIELD_OUTSIDE_FORM = "field-outside-form"
+
+  // --- motion: judged by feel, so measured in milliseconds ---
+  const val ANIMATION_TOO_SLOW = "animation-too-slow"
+  const val TRANSITION_TOO_SLOW = "transition-too-slow"
+  const val ANIMATION_TOO_FAST = "animation-too-fast"
+  const val INFINITE_ANIMATION = "infinite-animation"
+  const val NO_REDUCED_MOTION = "no-reduced-motion"
+  const val TRANSITION_ALL = "transition-all"
+  const val HOVER_WITHOUT_TRANSITION = "hover-without-transition"
+  const val LINEAR_EASING = "linear-easing"
+  const val NO_PRESS_FEEDBACK = "no-press-feedback"
+
+  // --- colour: counted, because nobody counts it by eye ---
+  const val TOO_MANY_TEXT_COLORS = "too-many-text-colors"
+  const val TOO_MANY_ACCENT_HUES = "too-many-accent-hues"
+  const val PURE_BLACK_ON_WHITE = "pure-black-on-white"
+  const val SATURATED_LARGE_AREA = "saturated-large-area"
+  const val LINK_BY_COLOR_ONLY = "link-by-color-only"
+  const val LINK_SAME_COLOR_AS_TEXT = "link-same-color-as-text"
+  const val BORDER_INVISIBLE = "border-invisible"
+  const val ICON_LOW_CONTRAST = "icon-low-contrast"
+  const val TEXT_ON_IMAGE_WITHOUT_SCRIM = "text-on-image-without-scrim"
+  const val FOCUS_RING_LOW_CONTRAST = "focus-ring-low-contrast"
+
   private val FLOOR = setOf(
     CONTRAST_TEXT, TEXT_TOO_SMALL, TAP_TARGET_TOO_SMALL, CONTENT_CLIPPED, ELEMENT_OCCLUDED,
     PAGE_WIDER_THAN_VIEWPORT, BROKEN_IMAGE, FOCUS_RING_REMOVED, DISABLED_LOOKS_ENABLED,
@@ -80,6 +115,14 @@ object DesignRuleCatalog {
     // Floor, not taste: a page without a title, without a language or with zoom blocked is broken
     // for a person, not merely unfashionable.
     TITLE_MISSING, H1_MISSING, LANG_MISSING, VIEWPORT_MISSING, VIEWPORT_BLOCKS_ZOOM, CANONICAL_RELATIVE,
+    // A form that cannot be filled in is broken, not unfashionable: an unnamed field, an error
+    // without words, a required field that is disabled, a phone box with a text keyboard.
+    FIELD_WITHOUT_LABEL, ERROR_WITHOUT_EXPLANATION, REQUIRED_AND_DISABLED, INPUT_TYPE_GENERIC,
+    // Motion the system asked to stop is nausea for a person with vestibular disorder, not taste.
+    NO_REDUCED_MOTION,
+    // Colour as the ONLY signal, and an icon at decoration contrast: these are about people who
+    // cannot see the colour at all, which is the opposite of a matter of taste.
+    LINK_BY_COLOR_ONLY, LINK_SAME_COLOR_AS_TEXT, ICON_LOW_CONTRAST, FOCUS_RING_LOW_CONTRAST,
   )
 
   fun classOf(ruleId: String): RuleClass = if (ruleId in FLOOR) RuleClass.FLOOR else RuleClass.STYLE
@@ -100,5 +143,13 @@ object DesignRuleCatalog {
     VIEWPORT_MISSING, VIEWPORT_BLOCKS_ZOOM, CANONICAL_MISSING, CANONICAL_RELATIVE,
     ROBOTS_NOINDEX, CHARSET_NOT_UTF8, FAVICON_MISSING, OG_TITLE_MISSING,
     LINE_TOO_LONG, LINE_HEIGHT_OFF, FONT_SCALE_DRIFT, SPACING_OFF_GRID, TOO_MANY_FONTS, SHOUTING_TEXT,
+    FIELD_WITHOUT_LABEL, AUTOCOMPLETE_MISSING, INPUT_TYPE_GENERIC, ERROR_WITHOUT_EXPLANATION,
+    REQUIRED_AND_DISABLED, READONLY_LOOKS_EDITABLE, FIELD_TOO_NARROW, FIELD_WITHOUT_NAME,
+    PLACEHOLDER_DUPLICATES_LABEL, FIELD_OUTSIDE_FORM,
+    ANIMATION_TOO_SLOW, TRANSITION_TOO_SLOW, ANIMATION_TOO_FAST, INFINITE_ANIMATION,
+    NO_REDUCED_MOTION, TRANSITION_ALL, HOVER_WITHOUT_TRANSITION, LINEAR_EASING, NO_PRESS_FEEDBACK,
+    TOO_MANY_TEXT_COLORS, TOO_MANY_ACCENT_HUES, PURE_BLACK_ON_WHITE, SATURATED_LARGE_AREA,
+    LINK_BY_COLOR_ONLY, LINK_SAME_COLOR_AS_TEXT, BORDER_INVISIBLE, ICON_LOW_CONTRAST,
+    TEXT_ON_IMAGE_WITHOUT_SCRIM, FOCUS_RING_LOW_CONTRAST,
   )
 }

@@ -119,6 +119,28 @@ data class ElementSnapshot(
    */
   val describedByText: String = "",
   val isRequiredField: Boolean = false,
+  /** The `autocomplete` token, so the browser can fill what the person already typed a hundred times. */
+  val autocompleteAttr: String = "",
+  val inputMode: String = "",
+  /** The `name` attribute: without it the browser cannot autofill and a plain form does not submit the value. */
+  val fieldName: String = "",
+  val readOnly: Boolean = false,
+  /** A real `<label>` — an accessible name may also come from aria-label, which a sighted person never sees. */
+  val hasLabelElement: Boolean = false,
+  val placeholderText: String = "",
+  val insideForm: Boolean = false,
+  val cursorStyle: String = "",
+  /** Motion: how long, how many times, and whether pressing gives anything back. */
+  val animationIterationCount: String = "",
+  val transitionDurationMs: Double = 0.0,
+  val transitionTimingFunction: String = "",
+  val hasActiveRule: Boolean = false,
+  /** Colour: what a border and a link actually look like. */
+  val textDecorationLine: String = "none",
+  val borderColor: Rgb? = null,
+  val borderWidthPx: Double = 0.0,
+  val opacity: Double = 1.0,
+  val outlineColor: Rgb? = null,
 )
 
 data class HeadingSnapshot(val tag: String, val text: String, val fontSizePx: Double)
@@ -140,6 +162,8 @@ data class DocumentSnapshot(
    * asked about — the same discipline every other rule here follows.
    */
   val meta: PageMeta? = null,
+  /** Does any stylesheet answer `prefers-reduced-motion`? Absent means nobody asked, not "no motion". */
+  val hasReducedMotionRule: Boolean = false,
 )
 
 /** Head metadata, as read from the page rather than from the source: what shipped is what counts. */

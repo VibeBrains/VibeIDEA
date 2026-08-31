@@ -21,4 +21,27 @@ object DesignPhrases {
     Regex("(?i)seamless"),
     Regex("(?i)cutting.?edge"),
   )
+
+  /**
+   * Field names that name a value the browser already knows, keyed by the autocomplete token.
+   *
+   * Matched against somebody else's markup in both languages — detection data, exactly like the
+   * marketing patterns above, and for the same reason kept out of the string catalogue: translating
+   * a search pattern breaks the search instead of localising it.
+   */
+  val AUTOFILLABLE: Map<String, Regex> = mapOf(
+    "email" to Regex("(?iU)(e-?mail|почт|мейл)"),
+    "tel" to Regex("(?iU)(phone|tel|телефон|моб)"),
+    "name" to Regex("(?iU)(full-?name|fio|имя|фамил|фио)"),
+    "street-address" to Regex("(?iU)(address|street|адрес|улиц)"),
+    "postal-code" to Regex("(?iU)(zip|postal|индекс)"),
+    "cc-number" to Regex("(?iU)(card-?number|карт)"),
+  )
+
+  /** Field names whose value has its own keyboard on a phone, keyed by the input type. */
+  val TYPED_INPUT: Map<String, Regex> = mapOf(
+    "email" to Regex("(?iU)(e-?mail|почт|мейл)"),
+    "tel" to Regex("(?iU)(phone|tel|телефон)"),
+    "url" to Regex("(?iU)(url|site|сайт|ссылк)"),
+  )
 }

@@ -47,6 +47,10 @@
   var stylesUnreadable = false;
   var focusSelectors = [];
   var hoverSelectors = [];
+  var activeSelectors = [];
+  // Whether ANY stylesheet answers prefers-reduced-motion. Read once for the page: motion the
+  // system asked to stop is not a per-element property.
+  var reducedMotionRule = false;
   (function readStyleRules() {
     for (var i = 0; i < document.styleSheets.length; i++) {
       var sheet = document.styleSheets[i];
@@ -58,9 +62,20 @@
         if (!text) continue;
         if (text.indexOf(':focus') >= 0) focusSelectors.push(text);
         if (text.indexOf(':hover') >= 0) hoverSelectors.push(text);
+        if (text.indexOf(':active') >= 0) activeSelectors.push(text);
+      }
+      for (var k = 0; k < rules.length; k++) {
+        var media = rules[k].media && rules[k].media.mediaText;
+        if (media && media.indexOf('prefers-reduced-motion') >= 0) reducedMotionRule = true;
       }
     }
   })();
+
+  /** Escapes an id for use inside a selector — CSS.escape is absent in older engines. */
+  function cssEscape(value) {
+    if (window.CSS && CSS.escape) return CSS.escape(value);
+    return String(value).replace(/[^a-zA-Z0-9_-]/g, '\\$&');
+  }
 
   function matchesAny(el, selectors, pseudo) {
     for (var i = 0; i < selectors.length; i++) {
@@ -256,7 +271,25 @@
       hasAltAttribute: el.hasAttribute && el.hasAttribute('alt'),
       ariaInvalid: el.getAttribute('aria-invalid') === 'true',
       describedByText: describedBy(el),
-      isRequiredField: !!el.required || el.getAttribute('aria-required') === 'true'
+      isRequiredField: !!el.required || el.getAttribute('aria-required') === 'true',
+      autocompleteAttr: (el.getAttribute('autocomplete') || '').toLowerCase(),
+      inputMode: (el.getAttribute('inputmode') || '').toLowerCase(),
+      fieldName: (el.getAttribute('name') || '').toLowerCase(),
+      readOnly: !!el.readOnly,
+      // A real <label>, not merely an accessible name: aria-label is invisible to a sighted person.
+      hasLabelElement: !!(el.id && document.querySelector('label[for="' + cssEscape(el.id) + '"]')) || !!el.closest('label'),
+      placeholderText: (el.getAttribute('placeholder') || '').trim().slice(0, 120),
+      insideForm: !!el.closest('form'),
+      cursorStyle: style.cursor,
+      animationIterationCount: style.animationIterationCount,
+      transitionDurationMs: (parseFloat(style.transitionDuration) || 0) * 1000,
+      transitionTimingFunction: style.transitionTimingFunction,
+      hasActiveRule: matchesAny(el, activeSelectors, /:active/g),
+      textDecorationLine: style.textDecorationLine || 'none',
+      borderColor: rgb(style.borderTopColor).c,
+      borderWidthPx: parseFloat(style.borderTopWidth) || 0,
+      opacity: parseFloat(style.opacity),
+      outlineColor: rgb(style.outlineColor).c
     });
   }
 
@@ -294,6 +327,7 @@
     documentScrollWidthPx: document.documentElement.scrollWidth,
     elements: elements,
     headings: headings,
-    meta: meta
+    meta: meta,
+    hasReducedMotionRule: reducedMotionRule
   });
 })();

@@ -43,6 +43,7 @@ object DesignSnapshotCodec {
       elements = elements,
       headings = headings,
       meta = meta(root["meta"] as? JsonObject),
+      hasReducedMotionRule = root.bool("hasReducedMotionRule"),
     )
   }
 
@@ -125,6 +126,24 @@ object DesignSnapshotCodec {
       ariaInvalid = obj.bool("ariaInvalid"),
       describedByText = obj.str("describedByText").orEmpty(),
       isRequiredField = obj.bool("isRequiredField"),
+      autocompleteAttr = obj.str("autocompleteAttr").orEmpty(),
+      inputMode = obj.str("inputMode").orEmpty(),
+      fieldName = obj.str("fieldName").orEmpty(),
+      readOnly = obj.bool("readOnly"),
+      hasLabelElement = obj.bool("hasLabelElement"),
+      placeholderText = obj.str("placeholderText").orEmpty(),
+      insideForm = obj.bool("insideForm"),
+      cursorStyle = obj.str("cursorStyle").orEmpty(),
+      animationIterationCount = obj.str("animationIterationCount").orEmpty(),
+      transitionDurationMs = obj.num("transitionDurationMs"),
+      transitionTimingFunction = obj.str("transitionTimingFunction").orEmpty(),
+      hasActiveRule = obj.bool("hasActiveRule"),
+      textDecorationLine = obj.str("textDecorationLine") ?: "none",
+      borderColor = obj.rgb("borderColor"),
+      borderWidthPx = obj.num("borderWidthPx"),
+      // Absent opacity means "not reported", and an element is opaque until told otherwise.
+      opacity = obj["opacity"]?.jsonPrimitive?.doubleOrNull ?: 1.0,
+      outlineColor = obj.rgb("outlineColor"),
     )
   }
 
