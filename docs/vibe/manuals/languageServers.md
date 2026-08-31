@@ -17,9 +17,15 @@ npm install -g @vtsls/language-server
 Требуется PHP ≥ 8.1.
 
 ```bash
-curl -Lo phpactor.phar https://github.com/phpactor/phpactor/releases/latest/download/phpactor.phar
-chmod +x phpactor.phar && sudo mv phpactor.phar /usr/local/bin/phpactor
+mkdir -p ~/.local/bin && curl -Lo ~/.local/bin/phpactor https://github.com/phpactor/phpactor/releases/latest/download/phpactor.phar && chmod +x ~/.local/bin/phpactor
 ```
+
+`~/.local/bin` вместо `/usr/local/bin` — чтобы не требовалось `sudo`; эта папка входит в список,
+который IDE просматривает сама (GUI-приложение на macOS не наследует PATH оболочки).
+
+**`brew install phpactor` не работает** — такой формулы нет, и мы сами раздавали эту команду до
+31.08.2026. Команда, которая падает, хуже отсутствующей: человек делает вывод, что сломана вся
+поддержка языка.
 
 Проверка: `phpactor --version`. Ищется так же (плюс `~/.composer/vendor/bin`).
 

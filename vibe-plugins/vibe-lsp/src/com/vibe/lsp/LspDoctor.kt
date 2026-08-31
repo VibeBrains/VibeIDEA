@@ -42,7 +42,13 @@ object LspDoctor {
     id = "vibePhpactor",
     displayName = "PHP (Phpactor)",
     binary = "phpactor",
-    installCommand = "brew install phpactor",
+    // NOT `brew install phpactor`: there is no such formula, and a command that fails is worse
+    // than no command — the person concludes the whole feature is broken. The phar from the
+    // project's own releases lands in ~/.local/bin, which is searched by ServerBinaries and needs
+    // no sudo.
+    installCommand = "mkdir -p ~/.local/bin && curl -Lo ~/.local/bin/phpactor " +
+                     "https://github.com/phpactor/phpactor/releases/latest/download/phpactor.phar && " +
+                     "chmod +x ~/.local/bin/phpactor",
     extensions = setOf("php"),
   )
 
