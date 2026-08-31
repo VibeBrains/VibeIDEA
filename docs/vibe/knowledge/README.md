@@ -22,6 +22,7 @@
 
 | Файл | О чём |
 |---|---|
+| [benchmarksMeasureHarness.md](architecture/benchmarksMeasureHarness.md) | [правило] Бенчмарк меряет связку «модель + харнесс»: тот же Opus 4.8 — 69,2 % своим стендом и 51,9 % на SEAL (17,3 пункта разницы), у Gemini 3.1 Pro разброс 26,4. Вендорских процентов в `ModelQuirks` и в выборе модели не приводить; сравнивать только своим харнессом через `/measure`. |
 | [upstreamBoundary.md](architecture/upstreamBoundary.md) | [правило] Граница «наш код ↔ upstream»: платформу не правим ради стиля, свой код — в модулях `com.vibe.*`; каждая точечная правка платформы — запись в FORK_CHANGES.md. Перенос фундаментального правила VibeIDE с обострением: IC огромен, merge-налог выше. |
 
 ## build
