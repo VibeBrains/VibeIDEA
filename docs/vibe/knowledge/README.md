@@ -29,6 +29,7 @@
 
 | Файл | О чём |
 |---|---|
+| [bundledPluginIndex.md](build/bundledPluginIndex.md) | [инцидент] LSP4IJ не грузился НИ В ОДНОЙ собранной сборке: платформа грузит встроенные плагины только по `plugins/plugin-classpath.txt`, а каталог, скопированный туда после генерации индекса, невидим. Штатный механизм — `ProductProperties.getAdditionalPluginPaths()`. После каждой сборки читать в логе `Loaded bundled plugins`. |
 | [threePackagingSystems.md](build/threePackagingSystems.md) | [грабли] Состав дистрибутива решают ТРИ места: `BUILD.bazel` (компиляция), `.iml` (модель проекта) и раскладка плагина в `VibeIdeaProperties.kt` (упаковка). Правка первых двух даёт зелёные тесты и мёртвую фичу в dmg — проверено на ZXing и PDFBox. Проверка — только сборкой инсталлятора. |
 | [bazelBuild.md](build/bazelBuild.md) | [инструмент] Сборка IC на Bazel (2026): тулчейн герметичный (bazelisk + JBR сами качаются), android-репо обязателен для инсталлятора, ~100 GB диска на полный цикл, 16 GB RAM впритык (CI добавляет 30 GB swap). Команды запуска/сборки/тестов. |
 

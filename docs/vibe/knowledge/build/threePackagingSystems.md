@@ -42,3 +42,5 @@ ls /tmp/vi/VibeIDEA.app/Contents/plugins/vibe-agent/lib/
 
 Ни один юнит-тест этого не ловит и поймать не может: он выполняется в среде, где библиотека на
 classpath есть по построению.
+
+Родственный инцидент того же семейства — [bundledPluginIndex.md](bundledPluginIndex.md): готовый плагин, скопированный в `plugins/` мимо индекса `plugin-classpath.txt`, не загружается вовсе.

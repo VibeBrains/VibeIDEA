@@ -41,14 +41,26 @@ open class VibeIdeaProperties(communityHomeDir: Path) : IdeaCommunityProperties(
   }
 
   /**
-   * External artifacts bundled from pinned releases prepared by `vibe-plugins/deps/download.sh`:
-   * LSP4IJ (EPL-2.0, never from JetBrains Marketplace) and the Phpactor phar (MIT).
+   * LSP4IJ (EPL-2.0) as a PREBUILT PLUGIN, not as a copied directory.
+   *
+   * The difference is the whole feature. When `plugins/plugin-classpath.txt` exists — and it does in
+   * every real distribution — the platform loads bundled plugins from that index and NOTHING else:
+   * a directory copied into `plugins/` afterwards is invisible. That is exactly what happened for
+   * every dmg until 31.08.2026: the log said «plugin com.redhat.devtools.lsp4ij is not resolved»,
+   * our optional `<depends>` config was excluded, and TypeScript and PHP support silently did not
+   * exist. Tests could not see it: they run against the module, not the installer.
+   *
+   * `getAdditionalPluginPaths` is the platform's own answer for prebuilt plugins: the build copies
+   * the directory AND writes it into the index.
    */
-  override suspend fun bundleExternalPlugins(context: BuildContext, targetDirectory: Path) {
+  override suspend fun getAdditionalPluginPaths(context: BuildContext): List<Path> {
     val lsp4ij = context.paths.communityHomeDir.resolve("vibe-plugins/deps/extracted/lsp4ij")
     check(Files.isDirectory(lsp4ij)) { "LSP4IJ plugin dir not found: $lsp4ij — run vibe-plugins/deps/download.sh first" }
-    copyDir(lsp4ij, targetDirectory.resolve("plugins/lsp4ij"))
+    return listOf(lsp4ij)
+  }
 
+  /** Files that are DATA rather than plugins: the language servers we ship next to our own plugin. */
+  override suspend fun bundleExternalPlugins(context: BuildContext, targetDirectory: Path) {
     // Phpactor (MIT) as a single phar: PHP works out of the box for anyone who has PHP, which is
     // everyone who writes PHP. It lands next to our language plugin, and the search order at
     // runtime puts the user's own installation FIRST — a project pinned to another version must
