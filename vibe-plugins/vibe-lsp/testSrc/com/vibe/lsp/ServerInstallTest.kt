@@ -36,4 +36,11 @@ class ServerInstallTest {
     assertTrue(tail.length <= 40)
     assertEquals("", ServerInstall.failureTail("   "))
   }
+
+  @Test
+  fun `баннер LSP4IJ гасится один раз, а не каждый запуск`() {
+    // Второй раз — это уже мы, переигрывающие решение человека: включил обратно — значит хочет.
+    assertTrue(SuggestionSilencer.shouldSilence(alreadyDecided = false))
+    assertFalse(SuggestionSilencer.shouldSilence(alreadyDecided = true))
+  }
 }

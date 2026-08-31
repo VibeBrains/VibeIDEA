@@ -16,6 +16,7 @@
 
   <extensions defaultExtensionNs="com.intellij">
     <notificationGroup id="Vibe Languages" displayType="BALLOON"/>
+    <postStartupActivity implementation="com.vibe.lsp.VibeLspSuggestionSilencer"/>
   </extensions>
 
   <projectListeners>
