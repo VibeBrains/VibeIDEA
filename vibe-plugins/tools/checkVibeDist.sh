@@ -1,0 +1,114 @@
+#!/usr/bin/env bash
+# Гейт дистрибутива: проверяет СОБРАННЫЙ образ, а не исходники.
+#
+# Зачем отдельный скрипт: за один день 31.08.2026 четыре дефекта подряд нашлись только установкой —
+# библиотека не доехала в дистрибутив, висячие симлинки уронили сборку, готовый плагин не грузился
+# мимо индекса, встроенный сервер искался в пользовательской папке. Ни один юнит-тест не мог их
+# увидеть: тесты исполняются там, где всё уже на classpath и все пути совпадают.
+#
+# Использование:
+#   ./vibe-plugins/tools/checkVibeDist.sh [путь к .dmg или к распакованному .app]
+# Без аргумента берётся свежий dmg из out/vibeidea/artifacts.
+set -euo pipefail
+cd "$(dirname "$0")/../.."
+
+TARGET="${1:-}"
+MOUNTED=""
+cleanup() { [ -n "$MOUNTED" ] && hdiutil detach "$MOUNTED" >/dev/null 2>&1 || true; }
+trap cleanup EXIT
+
+if [ -z "$TARGET" ]; then
+  TARGET=$(ls -t out/vibeidea/artifacts/*.dmg 2>/dev/null | head -1 || true)
+  [ -n "$TARGET" ] || { echo "✖ нет собранного dmg в out/vibeidea/artifacts — сначала соберите инсталлятор"; exit 1; }
+fi
+
+case "$TARGET" in
+  *.dmg)
+    MOUNTED=$(mktemp -d)
+    hdiutil attach "$TARGET" -nobrowse -readonly -mountpoint "$MOUNTED" >/dev/null
+    APP="$MOUNTED/VibeIDEA.app"
+    ;;
+  *.app) APP="$TARGET" ;;
+  *) APP="$TARGET/VibeIDEA.app" ;;
+esac
+
+[ -d "$APP" ] || { echo "✖ не найдено приложение: $APP"; exit 1; }
+echo "  проверяю $TARGET"
+fail=0
+say() { printf '%s\n' "$1"; }
+
+# --- 1. Наши плагины на месте ---
+for plugin in vibe-agent vibe-lsp vibe-server vibe-theme; do
+  [ -d "$APP/Contents/plugins/$plugin" ] || { say "✖ нет плагина $plugin"; fail=1; }
+done
+
+# --- 2. Готовые плагины ВПИСАНЫ В ИНДЕКС, а не просто скопированы ---
+# Каталог в plugins/ ничего не значит: платформа грузит встроенные плагины только по
+# plugin-classpath.txt (разбор — knowledge/build/bundledPluginIndex.md).
+INDEX="$APP/Contents/plugins/plugin-classpath.txt"
+[ -f "$INDEX" ] || { say "✖ нет индекса встроенных плагинов $INDEX"; fail=1; }
+if [ -f "$INDEX" ]; then
+  hits=$(strings "$INDEX" | grep -ci "lsp4ij" || true)
+  # Двух-трёх упоминаний недостаточно: столько даёт само имя каталога в путях.
+  if [ "$hits" -lt 20 ]; then
+    say "✖ LSP4IJ не вписан в индекс встроенных плагинов (упоминаний: $hits) — плагин не загрузится,"
+    say "  и вместе с ним молча исчезнут TypeScript, PHP, CSS и ESLint. Поставка готового плагина —"
+    say "  только через ProductProperties.getAdditionalPluginPaths()."
+    fail=1
+  fi
+fi
+
+# --- 3. Библиотеки, которые едут внутри наших плагинов ---
+if ! ls "$APP/Contents/plugins/vibe-agent/lib/zxing-core.jar" >/dev/null 2>&1; then
+  say "✖ нет zxing-core.jar в vibe-agent/lib — QR-код адреса превью не заработает."
+  say "  Зависимость в BUILD.bazel на упаковку не влияет: её решает раскладка плагина."
+  fail=1
+fi
+
+# --- 4. Языковые серверы в комплекте ---
+SERVERS="$APP/Contents/plugins/vibe-lsp/servers"
+[ -f "$SERVERS/phpactor.phar" ] || { say "✖ нет встроенного phpactor.phar"; fail=1; }
+[ -f "$SERVERS/phpactor-LICENSE" ] || { say "✖ нет текста лицензии рядом с phar (MIT требует)"; fail=1; }
+for entry in \
+  "node/node_modules/@vtsls/language-server/bin/vtsls.js" \
+  "node/node_modules/vscode-langservers-extracted/bin/vscode-css-language-server" \
+  "node/node_modules/vscode-langservers-extracted/bin/vscode-eslint-language-server"; do
+  [ -f "$SERVERS/$entry" ] || { say "✖ нет встроенного сервера: $entry"; fail=1; }
+done
+
+# Висячие ссылки роняют сборку дистрибутива и бесполезны сами по себе.
+dangling=$(find "$SERVERS" -type l ! -exec test -e {} \; -print 2>/dev/null | head -3 || true)
+[ -z "$dangling" ] || { say "✖ висячие симлинки в наборе серверов:"; say "$dangling"; fail=1; }
+
+# --- 5. Серверы РЕАЛЬНО СТАРТУЮТ из образа, а не просто лежат ---
+# Файл на месте — это ещё не работающий сервер: проверяем ответом на настоящий LSP-запрос.
+CSS_ENTRY="$SERVERS/node/node_modules/vscode-langservers-extracted/bin/vscode-css-language-server"
+if [ ! -f "$CSS_ENTRY" ]; then
+  : # об отсутствии сервера уже сказано выше
+elif ! command -v node >/dev/null 2>&1; then
+  say "  node не найден — запуск встроенных серверов не проверялся"
+else
+  B='{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"processId":null,"rootUri":null,"capabilities":{}}}'
+  answer=$({ printf 'Content-Length: %d\r\n\r\n%s' ${#B} "$B"; sleep 3; } \
+    | node "$CSS_ENTRY" --stdio 2>/dev/null | head -c 200 || true)
+  case "$answer" in
+    *definitionProvider*) : ;;
+    *) say "✖ встроенный CSS-сервер не ответил на initialize"; fail=1 ;;
+  esac
+fi
+
+# Два условия разведены: «нет phar» и «нет php» — разные новости, и общее сообщение об одном из
+# них врёт про другое (поймано первым же прогоном по подложенному дефекту).
+if [ ! -f "$SERVERS/phpactor.phar" ]; then
+  : # об отсутствии phar уже сказано выше
+elif ! command -v php >/dev/null 2>&1; then
+  say "  php не найден — запуск встроенного Phpactor не проверялся"
+else
+  php "$SERVERS/phpactor.phar" --version >/dev/null 2>&1 || { say "✖ встроенный phpactor.phar не запускается"; fail=1; }
+fi
+
+if [ "$fail" -ne 0 ]; then
+  say "Гейт дистрибутива: ПРОВАЛЕН"
+  exit 1
+fi
+say "Гейт дистрибутива: плагины в индексе, библиотеки и серверы на месте и запускаются"
