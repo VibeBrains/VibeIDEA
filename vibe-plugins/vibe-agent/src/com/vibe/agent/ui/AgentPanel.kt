@@ -1558,10 +1558,15 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
       }
     }
     val threadId = started.get(SUBMIT_TIMEOUT_SEC, java.util.concurrent.TimeUnit.SECONDS)
+    // The corner of the project this task is about, guessed from its own words: asking a caller to
+    // declare it would be asking for the field everybody leaves empty.
+    val territory = com.vibe.agent.runs.TerritoryGuess.prefixes(task)
+    warnAboutTerritory(territory)
     val runId = runs.started(
       com.vibe.agent.runs.AgentRunLedger.Source.HTTP_API,
       goal = task,
       target = target?.id,
+      territory = territory,
     )
     // null when the ledger is off — then there is simply nothing to close later.
     runId?.let { externalRuns[threadId] = it }
@@ -1574,6 +1579,22 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
       throw IllegalStateException(t("chat.turnTimeout", "seconds" to timeout))
     }
     return threadId
+  }
+
+  /**
+   * Says out loud when another run is already working in the same corner.
+   *
+   * Says rather than refuses: the guess is made from words, and a guesser that BLOCKS work on its
+   * own reading of a sentence would stop legitimate runs for the crime of mentioning a path. The
+   * damage of two agents in one folder is silent, so naming it out loud is the whole fix — the
+   * decision stays with the person, who can see both goals.
+   */
+  private fun warnAboutTerritory(territory: List<String>) {
+    val busy = runCatching { runs.territoryConflicts(territory) }.getOrDefault(emptyList())
+    if (busy.isEmpty()) return
+    systemLine(t("runs.territoryBusy",
+                 "prefixes" to territory.joinToString(", "),
+                 "goals" to busy.joinToString("; ") { it.goal }))
   }
 
   /** Validates, shows the user bubble and starts the turn; false keeps the draft in the composer. */
@@ -2501,11 +2522,14 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
       var failed = false
       // Unattended work goes into the ledger: a pipeline runs for minutes with nobody watching,
       // and if the window dies mid-way the only trace left is this record.
+      val territory = com.vibe.agent.runs.TerritoryGuess.prefixes(pipeline.steps.joinToString("\n") { it.task })
+      warnAboutTerritory(territory)
       val runId = runs.started(
         com.vibe.agent.runs.AgentRunLedger.Source.PIPELINE,
         goal = t("pipeline.goal", "name" to pipeline.name),
         target = "acp/${agent.name}",
         maxSteps = pipeline.steps.size,
+        territory = territory,
       )
       try {
         pipeline.steps.forEachIndexed { i, step ->

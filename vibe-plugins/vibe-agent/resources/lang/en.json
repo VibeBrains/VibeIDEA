@@ -1273,5 +1273,6 @@
   "design.rule.focusContrast.why": "to someone navigating by keyboard an invisible ring is the same as a removed one: nothing on the screen answers «where am I»",
   "docs.view.graph": "graph",
   "docs.view.list": "list",
-  "docs.graph.dropped": "the map is not complete: {count} hidden"
+  "docs.graph.dropped": "the map is not complete: {count} hidden",
+  "runs.territoryBusy": "another run is already working in the same folders ({prefixes}): {goals}. Two edits of one file drift apart silently — decide whether to wait or to start."
 }

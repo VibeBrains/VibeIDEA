@@ -51,6 +51,8 @@ class VibeAgentRunService(private val project: Project) : Disposable {
     maxSteps: Int? = null,
     /** Caller key that makes a repeated start return the same run instead of doubling the work. */
     idempotencyKey: String? = null,
+    /** Path prefixes this run is about; empty claims nothing (see TerritoryGuess). */
+    territory: List<String> = emptyList(),
   ): String? {
     if (!isEnabled) return null
     val run = AgentRunLedger.Run(
@@ -64,9 +66,21 @@ class VibeAgentRunService(private val project: Project) : Disposable {
       startedAtMs = System.currentTimeMillis(),
       maxSteps = maxSteps,
       idempotencyKey = idempotencyKey,
+      territory = territory,
     )
     append(run)
     return run.runId
+  }
+
+  /**
+   * The runs already working in this corner.
+   *
+   * Answered from the ledger rather than from memory: the other run may belong to another window,
+   * and a lock that only sees its own process is a lock that fails exactly when it is needed.
+   */
+  fun territoryConflicts(prefixes: List<String>, runId: String = ""): List<AgentRunLedger.Run> {
+    if (!isEnabled || prefixes.isEmpty()) return emptyList()
+    return TerritoryGuess.conflicts(runs(), runId, prefixes)
   }
 
   fun progress(runId: String?, steps: Int, changedFiles: Int) {
