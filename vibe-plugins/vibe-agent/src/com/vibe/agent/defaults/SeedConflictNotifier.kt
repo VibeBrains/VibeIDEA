@@ -25,6 +25,11 @@ import java.nio.file.Path
  *  • «Обновить, сохранив мои тумблеры» — offered only when the sole difference is `active`
  *    values: the file is refreshed and their off-switches move to `<project>/.vibe/providers.json`,
  *    the overlay layer that always wins and that no release ever rewrites;
+ *  • «Смержить» — the release on the left, THEIR OWN FILE on the right, editable: the release may
+ *    bring something new while their edit is worth keeping, and only a person can say which chunk is
+ *    which. The platform's diff viewer moves chunks with its own arrows; we invent nothing;
+ *  • «Обновить» — takes the release version AFTER saving theirs as `<файл>.mine`: overwriting is the
+ *    only destructive thing seeding does, and it never happens alone;
  *  • «Оставить своё» — recorded against the current revision, so it stays quiet until the next bump.
  */
 object SeedConflictNotifier {
@@ -45,6 +50,12 @@ object SeedConflictNotifier {
       conflicts.forEach { showDiff(project, vibeDir, it.path) }
     })
 
+    notification.addAction(NotificationAction.createSimple(t("seed.conflict.merge")) {
+      conflicts.forEach { showMerge(project, vibeDir, it.path) }
+      // Not expired: merging is a conversation with the file, and the notice still holds the other
+      // two answers for the files the person decides not to merge.
+    })
+
     val toggleOnly = conflicts.filter { canMergeToggles(vibeDir, it.path) }
     if (toggleOnly.isNotEmpty()) {
       notification.addAction(NotificationAction.createSimple(t("seed.conflict.keepToggles")) {
@@ -61,6 +72,44 @@ object SeedConflictNotifier {
         notification.expire()
       })
     }
+
+    notification.addAction(NotificationAction.createSimple(t("seed.conflict.adopt")) {
+      ApplicationManager.getApplication().executeOnPooledThread {
+        val adopted = ArrayList<String>()
+        val backups = ArrayList<String>()
+        for (conflict in conflicts) {
+          val release = VibeDefaults.releaseContent(conflict.path) ?: continue
+          val target = vibeDir.resolve(conflict.path)
+          val local = readLocal(vibeDir, conflict.path)
+          val saved = runCatching {
+            // Their copy first, the overwrite second: a failed backup must not cost the edit.
+            if (local != null) {
+              val backup = vibeDir.resolve(SeedAdopt.backupName(conflict.path))
+              backup.parent?.let { Files.createDirectories(it) }
+              Files.writeString(backup, local)
+              backups.add(SeedAdopt.backupName(conflict.path))
+            }
+            Files.writeString(target, release)
+            true
+          }.getOrDefault(false)
+          if (saved) adopted.add(conflict.path)
+        }
+        VibeDefaults.markReconciled(projectBase, adopted)
+        refreshVfs(vibeDir)
+        ApplicationManager.getApplication().invokeLater {
+          if (project.isDisposed || adopted.isEmpty()) return@invokeLater
+          // Says where the old content went: a backup nobody knows about is a backup nobody uses.
+          NotificationGroupManager.getInstance().getNotificationGroup(GROUP)
+            .createNotification(
+              t("seed.adopt.done", "count" to adopted.size, "word" to filesWord(adopted.size)),
+              t("seed.adopt.backups", "files" to backups.joinToString(", ")),
+              NotificationType.INFORMATION,
+            ).notify(project)
+          project.messageBus.syncPublisher(ProvidersChangeListener.TOPIC).providersChanged()
+        }
+      }
+      notification.expire()
+    })
 
     notification.addAction(NotificationAction.createSimple(t("seed.conflict.keepMine")) {
       ApplicationManager.getApplication().executeOnPooledThread {
@@ -84,6 +133,32 @@ object SeedConflictNotifier {
         factory.create(project, local),
         t("seed.diff.release"),
         t("seed.diff.yours"),
+      ),
+    )
+  }
+
+  /**
+   * The release next to THEIR file, with their side editable.
+   *
+   * A three-way merge would need the base — the release revision their copy grew from — and we do
+   * not have its content: the set records only the sha256 of past revisions. Inventing a base to
+   * satisfy the merge dialog would produce confident nonsense in the middle pane. So: two panes,
+   * their own file on the right as a real document, and the viewer's own arrows to pull in whatever
+   * the release brought. Nothing is written behind their back — the file changes only where they
+   * click, and only until they save.
+   */
+  private fun showMerge(project: Project, vibeDir: Path, relative: String) {
+    val release = VibeDefaults.releaseContent(relative) ?: return
+    val file = LocalFileSystem.getInstance().refreshAndFindFileByNioFile(vibeDir.resolve(relative)) ?: return
+    val factory = DiffContentFactory.getInstance()
+    DiffManager.getInstance().showDiff(
+      project,
+      SimpleDiffRequest(
+        t("seed.merge.title", "file" to relative),
+        factory.create(project, release, file.fileType),
+        factory.create(project, file),
+        t("seed.diff.release"),
+        t("seed.merge.yoursEditable"),
       ),
     )
   }

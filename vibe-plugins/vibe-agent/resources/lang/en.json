@@ -1333,5 +1333,11 @@
   "lsp.install.done": "{server}: installed, found at {path}",
   "lsp.install.failed": "{server}: the install did not work (exit code {code}). The binary is not there — the tail of the output is below.",
   "lsp.doctor.bundled": "✔ {server} — bundled with the IDE ({path}); your own installation, if you have one, wins",
-  "lsp.doctor.needsRuntime": "but no {runtime} was found — the bundled server needs that runtime"
+  "lsp.doctor.needsRuntime": "but no {runtime} was found — the bundled server needs that runtime",
+  "seed.conflict.adopt": "Take the release version",
+  "seed.adopt.done": ".vibe environment: {count} {word} updated",
+  "seed.adopt.backups": "Your previous versions are saved next to them: {files}",
+  "seed.conflict.merge": "Merge",
+  "seed.merge.title": "{file}: pull what you need from the release into your file",
+  "seed.merge.yoursEditable": "your file (edited here)"
 }
