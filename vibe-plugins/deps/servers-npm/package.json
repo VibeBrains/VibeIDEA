@@ -1,0 +1,8 @@
+{
+  "name": "vibeidea-language-servers",
+  "private": true,
+  "dependencies": {
+    "@vtsls/language-server": "0.3.0",
+    "vscode-langservers-extracted": "4.10.0"
+  }
+}

@@ -121,9 +121,21 @@ object LspDoctor {
     if (shipped != null) Check(spec, shipped, Source.BUNDLED) else Check(spec, null, Source.ABSENT)
   }
 
-  /** What we ship ourselves. Only Phpactor today; the npm servers would drag Node along. */
+  /**
+   * What we ship ourselves: the Phpactor phar and the Node servers.
+   *
+   * Both need a runtime from the machine — PHP for the phar, Node for the rest. We ship neither:
+   * a second interpreter in the distribution is a second thing to patch on every vulnerability.
+   */
   fun bundledPath(spec: ServerSpec): String? = when (spec.id) {
     PHPACTOR.id -> ServerBinaries.bundledPhpactor()
+    else -> ServerBinaries.bundledNode(spec.binary)
+  }
+
+  /** The runtime a bundled server needs, or null when it needs none of ours. */
+  fun runtimeFor(spec: ServerSpec): String? = when (spec.id) {
+    PHPACTOR.id -> "php"
+    VTSLS.id, CSS.id, ESLINT.id -> "node"
     else -> null
   }
 

@@ -1333,5 +1333,5 @@
   "lsp.install.done": "{server}: installed, found at {path}",
   "lsp.install.failed": "{server}: the install did not work (exit code {code}). The binary is not there — the tail of the output is below.",
   "lsp.doctor.bundled": "✔ {server} — bundled with the IDE ({path}); your own installation, if you have one, wins",
-  "lsp.doctor.needsPhp": "but no PHP was found — the bundled phar needs an interpreter, install PHP 8.1+"
+  "lsp.doctor.needsRuntime": "but no {runtime} was found — the bundled server needs that runtime"
 }

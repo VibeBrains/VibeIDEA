@@ -22,8 +22,9 @@ class VibeLspDoctorAction : AnAction({ t("lsp.doctor.action") }) {
         if (!check.installed) appendLine("    " + check.spec.installCommand)
         // A bundled phar without an interpreter is a server that cannot start, and saying
         // «встроен» while it silently fails would be the same silence we exist to remove.
-        if (check.source == LspDoctor.Source.BUNDLED && ServerBinaries.find("php") == null) {
-          appendLine("    " + t("lsp.doctor.needsPhp"))
+        val runtime = LspDoctor.runtimeFor(check.spec)
+        if (check.source == LspDoctor.Source.BUNDLED && runtime != null && ServerBinaries.find(runtime) == null) {
+          appendLine("    " + t("lsp.doctor.needsRuntime", "runtime" to runtime))
         }
       }
       appendLine()

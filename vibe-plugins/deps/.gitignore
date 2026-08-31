@@ -1,2 +1,7 @@
 lsp4ij-*.zip
 extracted/
+phpactor-*.phar
+phpactor-LICENSE
+# Скачанное npm-деревом: в репозитории живут только package.json и package-lock.json,
+# 56 МБ чужого кода в истории форка не нужны — их восстанавливает download.sh по локу.
+servers-npm/node_modules/

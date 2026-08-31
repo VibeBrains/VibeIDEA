@@ -37,7 +37,14 @@ mkdir -p ~/.local/bin && curl -Lo ~/.local/bin/phpactor https://github.com/phpac
 
 Проверка: `phpactor --version`. Ищется так же (плюс `~/.composer/vendor/bin`).
 
-## Фронт: CSS/SCSS/LESS и ESLint
+## Фронт: TypeScript, CSS/SCSS/LESS и ESLint (в комплекте)
+
+**Ставить ничего не нужно**, если на машине есть Node: серверы едут с IDE и запускаются на нём.
+Свой сервер, если он установлен, всегда сильнее встроенного.
+
+Ниже — как поставить свой.
+
+## Фронт: свои серверы
 
 ```bash
 npm install -g vscode-langservers-extracted

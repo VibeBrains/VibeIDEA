@@ -28,3 +28,22 @@ mkdir -p extracted/servers && cp "phpactor-$PHPACTOR_V.phar" extracted/servers/p
 cp "phpactor-LICENSE" extracted/servers/phpactor-LICENSE
 printf 'Phpactor %s (MIT), bundled from the project release; see phpactor-LICENSE.\n' "$PHPACTOR_V" \
   > extracted/servers/README.txt
+
+# --- Языковые серверы на Node: vtsls (TS/JS), CSS и ESLint ---
+#
+# `npm ci` по закреплённому package-lock.json, а не `npm install`: lock несёт integrity-хеши
+# каждого пакета, то есть тот же уровень доверия, что sha256 у phar. Node в дистрибутив НЕ кладём —
+# запускаемся на машинном: фронтендер без Node так же редок, как PHP-разработчик без PHP, а второй
+# рантайм пришлось бы патчить при каждой уязвимости.
+(
+  cd servers-npm
+  npm ci --omit=dev --no-audit --no-fund
+  # Вложенная копия TypeScript внутри vscode-langservers-extracted — 64 МБ дубликата: она нужна
+  # серверам html/markdown, которых мы не подключаем (платформа обслуживает их сама). Проверено:
+  # css, eslint и vtsls стартуют без неё. Верхнеуровневый TypeScript остаётся — на нём работает vtsls.
+  rm -rf node_modules/vscode-langservers-extracted/node_modules/typescript
+)
+rm -rf extracted/servers/node && mkdir -p extracted/servers/node
+cp -R servers-npm/node_modules extracted/servers/node/node_modules
+printf 'Language servers (MIT/Apache-2.0) installed from a pinned package-lock.json; licences travel inside each package.\n' \
+  > extracted/servers/node/README.txt

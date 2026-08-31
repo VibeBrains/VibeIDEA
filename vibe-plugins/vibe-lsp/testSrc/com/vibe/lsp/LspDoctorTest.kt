@@ -89,4 +89,13 @@ class LspDoctorTest {
     assertEquals(LspDoctor.Source.ABSENT, absent.source)
     assertFalse(absent.installed)
   }
+
+  @Test
+  fun `у каждого поставляемого сервера назван нужный ему рантайм`() {
+    // Иначе «встроен» может означать «есть файл, который нечем запустить».
+    assertEquals("php", LspDoctor.runtimeFor(LspDoctor.PHPACTOR))
+    assertEquals("node", LspDoctor.runtimeFor(LspDoctor.VTSLS))
+    assertEquals("node", LspDoctor.runtimeFor(LspDoctor.CSS))
+    assertEquals("node", LspDoctor.runtimeFor(LspDoctor.ESLINT))
+  }
 }
