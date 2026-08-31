@@ -123,6 +123,7 @@ class TelegramBridge {
         send(token, TelegramProtocol.sendMessage(incoming.chatId, t("telegram.stopped")))
       }
       is TelegramProtocol.Command.Task -> runTask(token, incoming.chatId, command.text)
+      is TelegramProtocol.Command.Voice -> handleVoice(token, incoming.chatId, command)
       is TelegramProtocol.Command.Approve -> {
         // Whoever answers first wins: the same question may be sitting in a dialog on the desktop,
         // and a second answer must not undo the first.
@@ -137,6 +138,69 @@ class TelegramBridge {
         incoming.chatId, t("telegram.unknown"), menuButtons()))
     }
   }
+
+  /**
+   * A voice note becomes a task — if this machine has a transcriber.
+   *
+   * The recognised text is ECHOED BACK before the task starts. Recognition is never perfect, and an
+   * agent that silently starts working on its own idea of what was said is the single worst
+   * outcome here: the person hears nothing, and finds out from the diff.
+   */
+  private fun handleVoice(token: String, chatId: Long, voice: TelegramProtocol.Command.Voice) {
+    val transcriber = VoiceNote.find() ?: run {
+      send(token, TelegramProtocol.sendMessage(chatId, t("telegram.voice.noTranscriber")))
+      return
+    }
+    if (voice.durationSec > MAX_VOICE_SECONDS) {
+      send(token, TelegramProtocol.sendMessage(chatId,
+        t("telegram.voice.tooLong", "seconds" to voice.durationSec, "max" to MAX_VOICE_SECONDS)))
+      return
+    }
+    send(token, TelegramProtocol.sendMessage(chatId, t("telegram.voice.recognising")))
+    val text = runCatching { transcribe(token, transcriber, voice) }.getOrNull()
+    val task = text?.let { VoiceNote.taskFrom(it) }
+    if (task == null) {
+      send(token, TelegramProtocol.sendMessage(chatId, t("telegram.voice.empty")))
+      return
+    }
+    send(token, TelegramProtocol.sendMessage(chatId, t("telegram.voice.heard", "text" to task.take(300))))
+    runTask(token, chatId, task)
+  }
+
+  /** Downloads the note and runs the transcriber over it; the temporary directory is always removed. */
+  private fun transcribe(token: String, transcriber: VoiceNote.Transcriber, voice: TelegramProtocol.Command.Voice): String? {
+    val dir = java.nio.file.Files.createTempDirectory("vibe-voice").toFile()
+    try {
+      val meta = httpGet(VoiceNote.getFileUrl(token, voice.fileId)) ?: return null
+      val path = VoiceNote.parseFilePath(meta) ?: return null
+      val audio = java.io.File(dir, path.substringAfterLast('/'))
+      val bytes = httpBytes(VoiceNote.downloadUrl(token, path)) ?: return null
+      audio.writeBytes(bytes)
+      val process = ProcessBuilder(VoiceNote.command(transcriber, audio, dir, VibeAgentSettings.telegramVoiceLanguage))
+        .redirectErrorStream(true).start()
+      if (!process.waitFor(TRANSCRIBE_TIMEOUT_SEC, java.util.concurrent.TimeUnit.SECONDS)) {
+        process.destroyForcibly()
+        return null
+      }
+      val out = VoiceNote.outputFile(audio, dir)
+      return if (out.isFile) out.readText() else null
+    }
+    finally {
+      dir.deleteRecursively()
+    }
+  }
+
+  private fun httpGet(url: String): String? = runCatching {
+    val request = HttpRequest.newBuilder(java.net.URI.create(url)).GET().build()
+    val response = http.send(request, HttpResponse.BodyHandlers.ofString())
+    if (response.statusCode() in 200..299) response.body() else null
+  }.getOrNull()
+
+  private fun httpBytes(url: String): ByteArray? = runCatching {
+    val request = HttpRequest.newBuilder(java.net.URI.create(url)).GET().build()
+    val response = http.send(request, HttpResponse.BodyHandlers.ofByteArray())
+    if (response.statusCode() in 200..299) response.body() else null
+  }.getOrNull()
 
   /**
    * Runs the task and reports through ONE message that is edited as it goes: forty progress
@@ -246,6 +310,17 @@ class TelegramBridge {
     private const val API = "https://api.telegram.org/bot"
     private const val TOKEN_USER = "telegram"
     private const val LONG_POLL_SEC = 30
+
+    /**
+     * A voice note longer than this is a conversation, not a task.
+     *
+     * The limit is about honesty rather than resources: a five-minute recording transcribed into
+     * one prompt would be handed to the agent as if every sentence of it were an instruction.
+     */
+    private const val MAX_VOICE_SECONDS = 180
+
+    /** Local recognition on a laptop is minutes, not seconds — but not tens of minutes either. */
+    private const val TRANSCRIBE_TIMEOUT_SEC = 300L
     private const val ERROR_PAUSE_MS = 5_000L
 
     fun getInstance(): TelegramBridge = ApplicationManager.getApplication().service()

@@ -1307,5 +1307,19 @@
   "skills.catalog.revertPrompt": "Which skill should be reverted? Your edit will be overwritten.",
   "skills.catalog.reverted": "«{id}» is back at the shipped version",
   "skills.catalog.revertFailed": "could not write «{id}» — check the file permissions",
-  "skills.catalog.noRelease": "«{id}» is not in the shipped set: there is nothing to revert to"
+  "skills.catalog.noRelease": "«{id}» is not in the shipped set: there is nothing to revert to",
+  "servers.portConflict.title": "Port {port} is taken",
+  "servers.portConflict.body": "Port {port} is held by: {owners}. A server that finds its port taken usually moves to the next one silently, so the choice is yours.",
+  "servers.portConflict.free": "Free the port",
+  "servers.portConflict.session": "Run on another port (this session only)",
+  "servers.portFreed": "port {port} has been freed",
+  "servers.portStillBusy": "port {port} is still taken: the process did not let go — starting on top of it would silently move the server to another port",
+  "servers.noFreePort": "no free port was found next to {port}",
+  "servers.sessionPort": "starting on port {port} instead of {configured} — this session only, the configuration file is untouched",
+  "servers.portCancelled": "start cancelled: port {port} is taken",
+  "telegram.voice.noTranscriber": "I transcribe voice notes with a local whisper, and this machine has none. Install whisper-cli (whisper.cpp) or whisper and try again. We do not ship the model or the weights — a licensing and size question — and silently swallowing a voice note would be the worst of the options.",
+  "telegram.voice.tooLong": "a {seconds}s voice note is a conversation, not a task (the limit is {max}s). Say it shorter: everything in it reaches the agent as an instruction.",
+  "telegram.voice.recognising": "transcribing…",
+  "telegram.voice.empty": "nothing resembling a task came out of the recording",
+  "telegram.voice.heard": "heard: «{text}». Starting."
 }

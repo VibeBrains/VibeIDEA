@@ -91,4 +91,22 @@ class TelegramProtocolTest {
     assertEquals(77, TelegramProtocol.sentMessageId("""{"ok":true,"result":{"message_id":77}}"""))
     assertNull(TelegramProtocol.sentMessageId("не json"))
   }
+
+  @Test
+  fun `голосовое приходит командой до всякого текста`() {
+    val body = """{"result":[{"update_id":7,"message":{"chat":{"id":42},"voice":{"file_id":"AA","duration":9}}}]}"""
+    val incoming = TelegramProtocol.parseUpdates(body).single()
+    assertEquals("AA", incoming.voiceFileId)
+    assertEquals(9, incoming.voiceDurationSec)
+    val command = TelegramProtocol.parseCommand(incoming)
+    assertTrue(command is TelegramProtocol.Command.Voice)
+    assertEquals("AA", (command as TelegramProtocol.Command.Voice).fileId)
+  }
+
+  @Test
+  fun `присланный аудиофайл — та же речь`() {
+    val body = """{"result":[{"update_id":8,"message":{"chat":{"id":42},"audio":{"file_id":"BB","duration":30}}}]}"""
+    val command = TelegramProtocol.parseCommand(TelegramProtocol.parseUpdates(body).single())
+    assertTrue(command is TelegramProtocol.Command.Voice)
+  }
 }

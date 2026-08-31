@@ -7,6 +7,7 @@ import com.intellij.openapi.project.Project
 import com.intellij.ui.components.JBScrollPane
 import com.intellij.ui.components.JBThinOverlappingScrollBar
 import com.intellij.util.ui.JBUI
+import com.vibe.server.PortConflict
 import com.vibe.server.ServerEntry
 import com.vibe.server.ServerRunner
 import com.vibe.server.ServerStatus
@@ -42,7 +43,36 @@ class ServerPanel(private val project: Project) : JPanel(BorderLayout()) {
       refreshList()
     },
     onLog = { id, line -> appendLog("[$id] $line") },
+    onPortConflict = { entry, port, owners -> askPortConflict(entry, port, owners) },
   )
+
+  /**
+   * The choice a busy port deserves: free it, step aside for this session, or do nothing.
+   *
+   * Changing the port in the project's configuration is deliberately NOT among the options — a tool
+   * that edits the config to get past its own warning is worse than the warning.
+   */
+  private fun askPortConflict(entry: ServerEntry, port: Int, owners: List<Long>): PortConflict.Choice {
+    val names = owners.joinToString(", ").ifEmpty { t("servers.portOwnerUnknown") }
+    var choice = PortConflict.Choice.CANCEL
+    com.intellij.openapi.application.ApplicationManager.getApplication().invokeAndWait {
+      val answer = com.intellij.openapi.ui.Messages.showDialog(
+        project,
+        t("servers.portConflict.body", "port" to port, "owners" to names),
+        t("servers.portConflict.title", "port" to port),
+        arrayOf(t("servers.portConflict.free"), t("servers.portConflict.session"), t("common.cancel")),
+        // Freeing the port kills somebody's process, so the safe option is the default one.
+        2,
+        null,
+      )
+      choice = when (answer) {
+        0 -> PortConflict.Choice.FREE_PORT
+        1 -> PortConflict.Choice.SESSION_PORT
+        else -> PortConflict.Choice.CANCEL
+      }
+    }
+    return choice
+  }
 
   init {
     border = JBUI.Borders.empty(4)

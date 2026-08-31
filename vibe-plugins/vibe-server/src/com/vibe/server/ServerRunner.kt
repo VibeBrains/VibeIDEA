@@ -28,6 +28,14 @@ class ServerRunner(
   private val projectBase: String,
   private val onStatus: (String, ServerStatus, String?) -> Unit,
   private val onLog: (String, String) -> Unit,
+  /**
+   * Asked when the port is already taken; null means «спросить некого» — then the conflict is
+   * only announced, exactly as before, and the entry starts anyway.
+   *
+   * A callback rather than a dialog here: the runner must stay usable from a test and from a
+   * headless run, and a class that pops up a window cannot be either.
+   */
+  private val onPortConflict: ((ServerEntry, Int, List<Long>) -> PortConflict.Choice)? = null,
 ) {
   private val processes = ConcurrentHashMap<String, Process>()
   private val http = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(5)).build()
@@ -66,15 +74,48 @@ class ServerRunner(
     // Asked BEFORE starting: a framework that finds its port busy quietly moves to the next one,
     // and a server running somewhere the configuration does not name produces an afternoon of
     // «почему на телефоне ничего нет». Better to say it now than to be helpful and wrong.
+    var sessionPort: Int? = null
     e.port?.let { port ->
       if (isPortBusy(port)) {
         val owners = PortConflict.parsePids(runCatching { readOwners(port) }.getOrDefault(""))
           .filter { PortConflict.isSafeToKill(it, ProcessHandle.current().pid()) }
         onLog(e.id, t("servers.portBusy", "port" to port,
                       "owners" to (owners.joinToString(", ").ifEmpty { t("servers.portOwnerUnknown") })))
+        when (onPortConflict?.invoke(e, port, owners)) {
+          PortConflict.Choice.FREE_PORT -> {
+            killOwners(owners)
+            // Verified rather than assumed: a process that ignored the signal still holds the port,
+            // and starting on top of it would produce the silent move to another port we exist to
+            // prevent.
+            if (waitUntil(System.currentTimeMillis() + FREE_PORT_GRACE_MS) { !isPortBusy(port) }) {
+              onLog(e.id, t("servers.portFreed", "port" to port))
+            }
+            else {
+              onStatus(e.id, ServerStatus.FAILED, t("servers.portStillBusy", "port" to port))
+              return false
+            }
+          }
+          PortConflict.Choice.SESSION_PORT -> {
+            // For THIS session only: the port named in the configuration is not touched, because a
+            // tool that edits the project's config to get past its own warning is worse than the
+            // warning.
+            val free = PortConflict.sessionPort(port, isFree = { candidate -> !isPortBusy(candidate) })
+            if (free == null) {
+              onStatus(e.id, ServerStatus.FAILED, t("servers.noFreePort", "port" to port))
+              return false
+            }
+            sessionPort = free
+            onLog(e.id, t("servers.sessionPort", "port" to free, "configured" to port))
+          }
+          PortConflict.Choice.CANCEL -> {
+            onStatus(e.id, ServerStatus.SKIPPED, t("servers.portCancelled", "port" to port))
+            return false
+          }
+          null -> Unit   // nobody to ask: say it and start anyway, as before
+        }
       }
     }
-    val process = try { spawn(e, e.command) }
+    val process = try { spawn(e, e.command, sessionPort) }
     catch (ex: Exception) {
       onStatus(e.id, ServerStatus.FAILED, t("servers.spawnFailed", "reason" to ex.message))
       return false
@@ -155,14 +196,35 @@ class ServerRunner(
     return text
   }
 
+  /** How long a killed owner is given to actually let go of the port. */
+  private val FREE_PORT_GRACE_MS = 3_000L
+
   /** How long a polite stop is given before it becomes an impolite one. */
   private val STOP_GRACE_MS = 3_000L
 
-  private fun spawn(e: ServerEntry, command: String): Process {
+  /**
+   * Kills the holders, descendants first.
+   *
+   * A dev-server is usually a shell that spawned node: killing only the shell leaves node holding
+   * the port — the zombie everyone meets on the second start.
+   */
+  private fun killOwners(owners: List<Long>) {
+    for (pid in owners) {
+      val handle = ProcessHandle.of(pid).orElse(null) ?: continue
+      handle.descendants().forEach { it.destroy() }
+      handle.destroy()
+    }
+  }
+
+  private fun spawn(e: ServerEntry, command: String, sessionPort: Int? = null): Process {
     val pb = ProcessBuilder("/bin/sh", "-c", command)
     pb.directory(File(projectBase, e.dir ?: "."))
     pb.redirectErrorStream(true)
     val env = pb.environment()
+    // The session port travels as PORT, the variable every dev-server framework reads. Set BEFORE
+    // the entry's own env file, so a project that pins PORT itself still wins — its file is a
+    // decision, ours is a workaround.
+    sessionPort?.let { env["PORT"] = it.toString() }
     if (e.pathPrepend.isNotEmpty()) {
       env["PATH"] = e.pathPrepend.joinToString(File.pathSeparator) + File.pathSeparator + (env["PATH"] ?: "")
     }

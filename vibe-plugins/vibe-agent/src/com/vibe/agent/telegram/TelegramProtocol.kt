@@ -8,6 +8,7 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.longOrNull
 import kotlinx.serialization.json.put
 
@@ -31,6 +32,14 @@ object TelegramProtocol {
     /** Set when the message is a button press rather than typed text. */
     val callbackData: String? = null,
     val callbackId: String? = null,
+    /**
+     * Set when the message is a voice note: the file has to be fetched before it can be read.
+     *
+     * Last in the list on purpose — the existing callers pass these fields positionally, and a new
+     * parameter in the middle would silently rebind theirs.
+     */
+    val voiceFileId: String? = null,
+    val voiceDurationSec: Int = 0,
   )
 
   sealed interface Command {
@@ -41,6 +50,7 @@ object TelegramProtocol {
     data object Menu : Command
     data object Stop : Command
     data class Approve(val approved: Boolean, val runId: String) : Command
+    data class Voice(val fileId: String, val durationSec: Int) : Command
     data class Unknown(val text: String) : Command
   }
 
@@ -68,16 +78,22 @@ object TelegramProtocol {
       }
       val message = (update["message"] ?: update["edited_message"]) as? JsonObject ?: return@mapNotNull null
       val chatId = (message["chat"] as? JsonObject)?.get("id")?.jsonPrimitive?.longOrNull ?: return@mapNotNull null
+      // `voice` is a recorded note, `audio` is a file someone sent; both are speech to us.
+      val voice = (message["voice"] ?: message["audio"]) as? JsonObject
       Incoming(
         updateId = updateId,
         chatId = chatId,
         text = message["text"]?.jsonPrimitive?.contentOrNull.orEmpty(),
         fromUsername = ((message["from"] as? JsonObject)?.get("username"))?.jsonPrimitive?.contentOrNull,
+        voiceFileId = voice?.get("file_id")?.jsonPrimitive?.contentOrNull,
+        voiceDurationSec = voice?.get("duration")?.jsonPrimitive?.intOrNull ?: 0,
       )
     }
   }
 
   fun parseCommand(incoming: Incoming): Command {
+    // A voice note is a command before it is text: the text does not exist yet.
+    incoming.voiceFileId?.let { return Command.Voice(it, incoming.voiceDurationSec) }
     incoming.callbackData?.let { data ->
       val parts = data.split(':')
       return when (parts.firstOrNull()) {

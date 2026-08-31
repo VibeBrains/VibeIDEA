@@ -144,6 +144,7 @@ object VibeAgentSettings {
   private const val KEY_TELEGRAM_CHATS = "vibe.agent.telegramChats"
   private const val KEY_TELEGRAM_PROJECT = "vibe.agent.telegramProject"
   private const val KEY_TELEGRAM_PROXY = "vibe.agent.telegramProxy"
+  private const val KEY_TELEGRAM_VOICE_LANG = "vibe.agent.telegramVoiceLanguage"
   private const val KEY_METRIC_DIRECTION = "vibe.agent.metricDirection"
   private const val KEY_FAILOVER = "vibe.agent.failoverChain"
   private const val KEY_AUTOPILOT = "vibe.agent.autopilot.enabled"
@@ -164,6 +165,9 @@ object VibeAgentSettings {
   const val DEFAULT_AUTOPILOT_MAX_TURNS = 10
   const val MAX_AUTOPILOT_TURNS = 100
   const val DEFAULT_AUTOPILOT_CHECKPOINT = 3
+
+  /** Base language of the product; the person can clear it to let the transcriber decide. */
+  const val DEFAULT_VOICE_LANGUAGE = "ru"
 
   /** Tokens one unattended stretch may spend; 0 turns the ceiling off. Turns are not money. */
   const val DEFAULT_AUTOPILOT_MAX_TOKENS = 200_000
@@ -416,6 +420,16 @@ object VibeAgentSettings {
   var autopilotMaxTokens: Int
     get() = props.getInt(KEY_AUTOPILOT_MAX_TOKENS, DEFAULT_AUTOPILOT_MAX_TOKENS).coerceIn(0, MAX_AUTOPILOT_MAX_TOKENS)
     set(value) = props.setValue(KEY_AUTOPILOT_MAX_TOKENS, value.coerceIn(0, MAX_AUTOPILOT_MAX_TOKENS), DEFAULT_AUTOPILOT_MAX_TOKENS)
+
+  /**
+   * Language hint for voice notes; empty means «пусть определяет сам».
+   *
+   * Worth setting: a short note decoded as the wrong language is the classic failure, and the hint
+   * also saves the detection pass.
+   */
+  var telegramVoiceLanguage: String
+    get() = props.getValue(KEY_TELEGRAM_VOICE_LANG, DEFAULT_VOICE_LANGUAGE)
+    set(value) = props.setValue(KEY_TELEGRAM_VOICE_LANG, value.trim(), DEFAULT_VOICE_LANGUAGE)
 
   var agentSilenceMinutes: Int
     get() = props.getInt(KEY_SILENCE_MINUTES, DEFAULT_SILENCE_MINUTES).coerceIn(0, MAX_SILENCE_MINUTES)

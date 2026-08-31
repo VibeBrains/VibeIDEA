@@ -1307,5 +1307,19 @@
   "skills.catalog.revertPrompt": "Какой навык вернуть? Ваша правка будет перезаписана.",
   "skills.catalog.reverted": "«{id}» возвращён к версии набора",
   "skills.catalog.revertFailed": "не удалось записать «{id}» — проверьте права на файл",
-  "skills.catalog.noRelease": "«{id}» в наборе нет: возвращать не к чему"
+  "skills.catalog.noRelease": "«{id}» в наборе нет: возвращать не к чему",
+  "servers.portConflict.title": "Порт {port} занят",
+  "servers.portConflict.body": "Порт {port} держат процессы: {owners}. Сервер, найдя порт занятым, обычно молча уезжает на соседний, поэтому решение за вами.",
+  "servers.portConflict.free": "Освободить порт",
+  "servers.portConflict.session": "Запустить на другом порту (только сейчас)",
+  "servers.portFreed": "порт {port} освобождён",
+  "servers.portStillBusy": "порт {port} всё ещё занят: процесс не отпустил его — запускаться поверх нельзя, иначе сервер молча уедет на соседний порт",
+  "servers.noFreePort": "свободного порта рядом с {port} не нашлось",
+  "servers.sessionPort": "запуск на порту {port} вместо {configured} — только на эту сессию, файл конфигурации не тронут",
+  "servers.portCancelled": "запуск отменён: порт {port} занят",
+  "telegram.voice.noTranscriber": "голосовые я расшифровываю локальным whisper, а его на этой машине нет. Поставьте один из: whisper-cli (whisper.cpp) или whisper — и повторите. Модель и веса мы не поставляем: это вопрос лицензий и размера, а молча проглотить голосовое было бы хуже всего.",
+  "telegram.voice.tooLong": "голосовое на {seconds} с — это разговор, а не задача (предел {max} с). Скажите короче: всё сказанное уедет агенту как инструкция.",
+  "telegram.voice.recognising": "расшифровываю…",
+  "telegram.voice.empty": "в записи не разобралось ничего похожего на задачу",
+  "telegram.voice.heard": "услышал: «{text}». Берусь."
 }
