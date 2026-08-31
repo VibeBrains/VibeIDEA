@@ -2017,10 +2017,15 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
    */
   private fun prependProjectRules(prompt: String, userText: String, loaded: List<ContextSerializer.Loaded>): String {
     val context = com.vibe.agent.context.ProjectContextService.getInstance(project)
-    val all = context.rules()
-    if (all.isEmpty()) return prompt
     val touched = loaded.map { it.relPath }
+    // Rules of the folders in play, not only of the root: in a monorepo the package's own
+    // convention must beat the repository's for files inside that package.
+    val all = context.rules(touched)
+    if (all.isEmpty()) return prompt
     val applicable = com.vibe.agent.context.ProjectRules.applicable(all, touched, userText)
+      // A nested rule travels only with files under its own folder — otherwise a package rule
+      // would arrive in turns about other packages, which is the opposite of why it was written.
+      .filter { rule -> rule.dir.isEmpty() || touched.any { com.vibe.agent.context.ProjectRules.coversPath(rule, it) } }
     if (applicable.isEmpty()) return prompt
     val guarded = applicable.map { rule ->
       val clean = com.vibe.agent.security.ContextSanitizer.sanitize(rule.body)

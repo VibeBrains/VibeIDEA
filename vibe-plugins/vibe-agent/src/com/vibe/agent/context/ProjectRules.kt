@@ -36,6 +36,14 @@ object ProjectRules {
   data class Rule(
     /** File name without extension — this is what `@name` refers to. */
     val name: String,
+    /**
+     * Folder the rule came from, relative to the project root; empty for the root rules.
+     *
+     * A monorepo has one convention per package, and the rule of a package must beat the rule of
+     * the repository for files inside it — otherwise the shared root rule quietly overrides the
+     * team that wrote the local one.
+     */
+    val dir: String = "",
     val description: String?,
     val globs: List<String>,
     val alwaysApply: Boolean,
@@ -49,11 +57,11 @@ object ProjectRules {
    * rule, just one without metadata — refusing to read it would punish the user for a typo in
    * a format they did not invent.
    */
-  fun parse(name: String, text: String): Rule {
+  fun parse(name: String, text: String, dir: String = ""): Rule {
     val normalized = text.replace("\r\n", "\n")
-    if (!normalized.startsWith("---")) return Rule(name, null, emptyList(), false, normalized.trim())
+    if (!normalized.startsWith("---")) return Rule(name, dir, null, emptyList(), false, normalized.trim())
     val end = normalized.indexOf("\n---", 3)
-    if (end < 0) return Rule(name, null, emptyList(), false, normalized.trim())
+    if (end < 0) return Rule(name, dir, null, emptyList(), false, normalized.trim())
     val header = normalized.substring(3, end)
     val body = normalized.substring(end + 4).trim()
     var description: String? = null
@@ -70,7 +78,7 @@ object ProjectRules {
         "alwaysapply" -> always = value.equals("true", ignoreCase = true)
       }
     }
-    return Rule(name, description, globs, always, body)
+    return Rule(name, dir, description, globs, always, body)
   }
 
   /**
@@ -128,6 +136,57 @@ object ProjectRules {
   }
 
   /** The prompt block: names and bodies, marked as instructions FROM THE PROJECT. */
+  /**
+   * Where to look for rules, given the files this turn touches.
+   *
+   * By ANCESTOR folders of the touched files, never by walking the tree: a naive walk under the
+   * project root descends into `node_modules`, `.git` and `out`, and turns «прочитать правила» into
+   * a visible pause on every turn. This way the cost is proportional to the files in play, and a
+   * monorepo of five hundred packages costs exactly as much as the one package being edited.
+   *
+   * Ordered root first, deepest last — the order in which the nearest rule wins.
+   */
+  fun ruleDirsFor(touchedPaths: List<String>): List<String> {
+    val dirs = LinkedHashSet<String>()
+    dirs.add("")
+    for (path in touchedPaths) {
+      val normalized = path.replace('\\', '/').trim('/')
+      val parts = normalized.split('/').dropLast(1)
+      var prefix = ""
+      for (part in parts) {
+        if (part.isEmpty()) continue
+        prefix = if (prefix.isEmpty()) part else "$prefix/$part"
+        dirs.add(prefix)
+      }
+    }
+    return dirs.sortedBy { it.count { ch -> ch == '/' } + if (it.isEmpty()) 0 else 1 }
+  }
+
+  /**
+   * One rule per name: the deepest folder wins.
+   *
+   * Same name at two levels is not a conflict to report but a deliberate override — that is how
+   * per-package conventions are expressed. Reporting it would train people to ignore the report.
+   */
+  fun nearestWins(rules: List<Rule>): List<Rule> =
+    rules.groupBy { it.name }
+      .map { (_, sameName) -> sameName.maxByOrNull { depthOf(it.dir) }!! }
+      .sortedWith(compareBy({ depthOf(it.dir) }, { it.name }))
+
+  private fun depthOf(dir: String): Int = if (dir.isEmpty()) 0 else dir.count { it == '/' } + 1
+
+  /**
+   * A nested rule applies only to files under its own folder.
+   *
+   * Without this a package rule would travel into turns about other packages — the opposite of why
+   * it was written. Root rules apply everywhere, which is what "root" means.
+   */
+  fun coversPath(rule: Rule, path: String): Boolean {
+    if (rule.dir.isEmpty()) return true
+    val normalized = path.replace('\\', '/').trim('/')
+    return normalized == rule.dir || normalized.startsWith(rule.dir + "/")
+  }
+
   fun promptBlock(rules: List<Rule>, header: String): String {
     if (rules.isEmpty()) return ""
     return buildString {

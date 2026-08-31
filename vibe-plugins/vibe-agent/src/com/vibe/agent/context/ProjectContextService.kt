@@ -69,6 +69,31 @@ class ProjectContextService(private val project: Project) {
    * by file name), the legacy `.cursorrules` last, as a rule that always applies — that is what
    * the file meant before the folder format existed.
    */
+  /**
+   * Rules for this turn: the root ones plus those of the folders the touched files live in.
+   *
+   * Nested rules are read on demand rather than cached: the set of folders changes with every turn,
+   * and a cache keyed by it would be a cache that never hits. There are at most a handful of them,
+   * each a few kilobytes.
+   */
+  fun rules(touchedPaths: List<String>): List<ProjectRules.Rule> {
+    val base = project.basePath ?: return emptyList()
+    val root = rules()
+    val nested = ArrayList<ProjectRules.Rule>()
+    for (dir in ProjectRules.ruleDirsFor(touchedPaths)) {
+      if (dir.isEmpty()) continue
+      val rulesDir = Path.of(base, dir, ProjectRules.RULES_DIR)
+      if (!Files.isDirectory(rulesDir)) continue
+      val files = runCatching { Files.list(rulesDir).use { stream -> stream.toList() } }.getOrDefault(emptyList())
+      for (path in files.sortedBy { it.fileName.toString() }) {
+        if (!path.fileName.toString().endsWith(ProjectRules.RULE_EXTENSION)) continue
+        val text = runCatching { Files.readString(path) }.getOrNull() ?: continue
+        nested.add(ProjectRules.parse(path.fileName.toString().removeSuffix(ProjectRules.RULE_EXTENSION), text, dir))
+      }
+    }
+    return if (nested.isEmpty()) root else ProjectRules.nearestWins(root + nested)
+  }
+
   fun rules(): List<ProjectRules.Rule> {
     val base = project.basePath ?: return emptyList()
     val dir = Path.of(base, ProjectRules.RULES_DIR)
@@ -87,7 +112,8 @@ class ProjectContextService(private val project: Project) {
     }
     if (Files.isRegularFile(legacy)) {
       runCatching { Files.readString(legacy) }.getOrNull()?.takeIf { it.isNotBlank() }?.let {
-        loaded.add(ProjectRules.Rule(ProjectRules.LEGACY_FILE, null, emptyList(), alwaysApply = true, body = it.trim()))
+        loaded.add(ProjectRules.Rule(ProjectRules.LEGACY_FILE, dir = "", description = null, globs = emptyList(),
+                                     alwaysApply = true, body = it.trim()))
       }
     }
     rules = Cached(loaded, stamp)
