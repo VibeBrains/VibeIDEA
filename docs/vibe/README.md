@@ -29,6 +29,7 @@
 - [manuals/hooksSpec.md](manuals/hooksSpec.md) — спека `.vibe/hooks.json`: хуки проекта вокруг работы агента (самодостаточная, для LLM).
 - [manuals/auditSpec.md](manuals/auditSpec.md) — спека журнала `.vibe/audit.jsonl`: формат записей аудита агента (для парсеров/дашбордов).
 - [releaseDonationPhrases.md](releaseDonationPhrases.md) — фразы блока «Поддержать проект» в релизах: пул, отложенные, история использования.
+- [references/releaseNotes-v0.1.0.md](references/releaseNotes-v0.1.0.md) — заметки первого релиза: образец оформления, на который равняются следующие.
 - [references/digest20260831.md](references/digest20260831.md) — разбор внешнего дайджеста 31.08.2026: фолбэк при отзыве доступа к модели, подстановка секретов, навыки как пакет, режимы отказа агентов, сравнение моделей; бэклог с приоритетами.
 - [references/vibeideUxParity.md](references/vibeideUxParity.md) — поведенческие спеки экранов VibeIDE (эталон UX-паритета волн A/B/C).
 - [knowledge/README.md](knowledge/README.md) — база знаний: индекс обязателен, запись без строки в индексе не существует.
