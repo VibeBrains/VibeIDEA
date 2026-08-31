@@ -107,6 +107,25 @@ else
   php "$SERVERS/phpactor.phar" --version >/dev/null 2>&1 || { say "✖ встроенный phpactor.phar не запускается"; fail=1; }
 fi
 
+# --- 6. Лицензии поставляемых серверов названы, и версии не разъехались ---
+# Отчёт о третьих лицах генерируется из ЗАВИСИМОСТЕЙ модулей: phar и npm-дерево ему не видны, их
+# приходится объявлять руками — а значит версия объявленного однажды разойдётся с закреплённой.
+REPORT=$(ls "$APP/Contents/license/third-party-libraries.json" 2>/dev/null | head -1 || true)
+if [ -z "$REPORT" ]; then
+  say "✖ в дистрибутиве нет отчёта о третьих лицах (license/third-party-libraries.json)"
+  fail=1
+else
+  PHPACTOR_PIN=$(grep -m1 '^PHPACTOR_V=' vibe-plugins/deps/download.sh | cut -d= -f2)
+  grep -q "\"$PHPACTOR_PIN\"" "$REPORT" || {
+    say "✖ версия Phpactor в отчёте о лицензиях не совпадает с закреплённой ($PHPACTOR_PIN)"
+    fail=1
+  }
+  for pkg in "@vtsls/language-server" "vscode-langservers-extracted"; do
+    PIN=$(python3 -c "import json;print(json.load(open('vibe-plugins/deps/servers-npm/package.json'))['dependencies']['$pkg'])")
+    grep -q "\"$PIN\"" "$REPORT" || { say "✖ версия $pkg в отчёте о лицензиях не совпадает с закреплённой ($PIN)"; fail=1; }
+  done
+fi
+
 if [ "$fail" -ne 0 ]; then
   say "Гейт дистрибутива: ПРОВАЛЕН"
   exit 1

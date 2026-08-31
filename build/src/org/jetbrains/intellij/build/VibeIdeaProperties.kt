@@ -2,6 +2,7 @@
 package org.jetbrains.intellij.build
 
 import kotlinx.collections.immutable.persistentListOf
+import org.jetbrains.intellij.build.LibraryLicense
 import org.jetbrains.intellij.build.impl.PluginLayout
 import org.jetbrains.intellij.build.io.copyDir
 import java.nio.file.Files
@@ -27,6 +28,25 @@ open class VibeIdeaProperties(communityHomeDir: Path) : IdeaCommunityProperties(
     productLayout.bundledPluginModules = IDEA_BUNDLED_PLUGINS
       .removing("intellij.mcpserver.plugin")
       .removing("intellij.featuresTrainer") + persistentListOf("intellij.javaFX.community", "intellij.vibe.lsp", "intellij.vibe.agent", "intellij.vibe.theme", "intellij.vibe.server")
+
+    // Everything we bundle that is NOT a JPS library: the report is generated from library
+    // dependencies, and a phar or an npm tree is invisible to it. Shipping someone else's MIT code
+    // without naming it in the licence report is exactly the kind of quiet debt that surfaces at the
+    // worst possible moment.
+    allLibraryLicenses = allLibraryLicenses + listOf(
+      LibraryLicense(name = "LSP4IJ", version = "0.20.1", attachedTo = "intellij.vibe.lsp",
+                     url = "https://github.com/redhat-developer/lsp4ij")
+        .eplV2("https://github.com/redhat-developer/lsp4ij/blob/main/LICENSE"),
+      LibraryLicense(name = "Phpactor", version = "2026.06.23.0", attachedTo = "intellij.vibe.lsp",
+                     url = "https://phpactor.readthedocs.io")
+        .mit("https://github.com/phpactor/phpactor/blob/master/LICENSE"),
+      LibraryLicense(name = "vtsls", version = "0.3.0", attachedTo = "intellij.vibe.lsp",
+                     url = "https://github.com/yioneko/vtsls")
+        .mit("https://github.com/yioneko/vtsls/blob/main/LICENSE"),
+      LibraryLicense(name = "vscode-langservers-extracted", version = "4.10.0", attachedTo = "intellij.vibe.lsp",
+                     url = "https://github.com/hrsh7th/vscode-langservers-extracted")
+        .mit("https://github.com/hrsh7th/vscode-langservers-extracted/blob/master/LICENSE"),
+    )
 
     productLayout.pluginLayouts = productLayout.pluginLayouts + persistentListOf(
       PluginLayout.pluginAuto("intellij.vibe.lsp") {},
