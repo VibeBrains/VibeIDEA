@@ -1345,5 +1345,6 @@
   "spend.byFile": "Files that travelled in the context (this week):",
   "spend.fileLine": "{path} — {tokens} tokens, turns: {turns}",
   "spend.fileNote": "an estimate: a request is billed as a whole, and a file’s share is apportioned by its size rather than measured",
-  "telegram.voice.rawBelow": "heard verbatim: «{text}»"
+  "telegram.voice.rawBelow": "heard verbatim: «{text}»",
+  "trace.nearRepeated": "Similar calls (the same thing with different numbers — possibly circling one file): {items}"
 }

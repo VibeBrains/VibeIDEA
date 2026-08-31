@@ -64,6 +64,31 @@ object TurnTrace {
       .groupingBy { it.name }.eachCount()
       .filterValues { it >= threshold }
 
+  /**
+   * Calls that are not identical but are about the same thing — «прочитал 1–50, потом 1–60».
+   *
+   * OBSERVATION, not a verdict. A semantic loop is real and expensive, but a detector that stops a
+   * turn on it has to parse somebody else's tool arguments, and that parsing is exactly what
+   * VibeIDE found too fragile to ship. So the trace shows the count and the person decides whether
+   * they are looking at a loop or at a legitimate second pass; if the same pattern keeps showing up
+   * in real traces, THEN a detector has a case to be built on.
+   *
+   * Numbers and bracketed parts are dropped from the name, because that is where ranges, offsets
+   * and page numbers live — the parts that make two readings of one file look like two jobs.
+   */
+  fun nearRepeats(events: List<Event>, threshold: Int = 3): Map<String, Int> =
+    events.filter { it.kind == Kind.TOOL }
+      .groupingBy { normalizeName(it.name) }.eachCount()
+      .filterValues { it >= threshold }
+
+  internal fun normalizeName(name: String): String =
+    name.replace(Regex("[\\(\\[][^)\\]]*[\\)\\]]"), "")
+      .replace(Regex("\\d+"), "")
+      .replace(Regex("\\s+"), " ")
+      .trim()
+      .trim('-', ':', ',')
+      .trim()
+
   fun render(events: List<Event>, startedAtMs: Long, labels: Labels): String {
     if (events.isEmpty()) return labels.empty
     return buildString {

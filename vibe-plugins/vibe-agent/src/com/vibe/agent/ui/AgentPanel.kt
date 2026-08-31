@@ -685,11 +685,17 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     userBubble(message.text.trim())
     val text = com.vibe.agent.trace.TurnTrace.render(events, turnStartedAtMs, traceLabels())
     val repeated = com.vibe.agent.trace.TurnTrace.repeated(events)
+    // Near-repeats are shown, never enforced: a semantic loop is real, but stopping a turn on a
+    // guess about somebody else's arguments is how a safety becomes a nuisance.
+    val near = com.vibe.agent.trace.TurnTrace.nearRepeats(events).filterKeys { key -> repeated[key] == null }
     SwingUtilities.invokeLater {
       val console = TerminalConsole(t("trace.title"))
       console.append(text)
       if (repeated.isNotEmpty()) {
         console.append("\n\n" + t("trace.repeated", "items" to repeated.entries.joinToString { "${it.key} ×${it.value}" }))
+      }
+      if (near.isNotEmpty()) {
+        console.append("\n\n" + t("trace.nearRepeated", "items" to near.entries.joinToString { "${it.key} ×${it.value}" }))
       }
       messages.add(console)
       revalidateScroll()
