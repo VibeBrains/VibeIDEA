@@ -60,6 +60,7 @@
 - [ ] Свой `README.md` (замена апстримного — identity форка) — Фаза 1.
 - [ ] Свой customization-модуль (ресурс `idea/VibeIdeaApplicationInfo.xml`, иконки, splash) — Фаза 1.
 - [ ] `VibeIdeaProperties : IdeaCommunityProperties` + свой installers-таргет — Фаза 1.
+  - Раскладка `intellij.vibe.agent` тянет модуль `intellij.libraries.zxing.core` (QR-код адреса превью): библиотека едет в дистрибутив только по просьбе раскладки — ни зависимость Bazel, ни `orderEntry` в `.iml` на состав dmg не влияют (разбор — [knowledge/build/threePackagingSystems.md](docs/vibe/knowledge/build/threePackagingSystems.md)).
 - [ ] Ревизия `bundledPluginModules` (вырезка ненужного — vendor AI, featuresTrainer и т.п.) — Фаза 1.
 - [ ] Бандл LSP4IJ + Phpactor + vtsls + DAP-адаптеры — Фаза 2.
 - [ ] Плагин агентской обвязки (ACP-клиент, `com.vibe.agent`) — Фаза 3.

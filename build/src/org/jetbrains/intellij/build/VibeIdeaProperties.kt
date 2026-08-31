@@ -30,7 +30,11 @@ open class VibeIdeaProperties(communityHomeDir: Path) : IdeaCommunityProperties(
 
     productLayout.pluginLayouts = productLayout.pluginLayouts + persistentListOf(
       PluginLayout.pluginAuto("intellij.vibe.lsp") {},
-      PluginLayout.pluginAuto("intellij.vibe.agent") {},
+      // The QR encoder rides INSIDE our plugin: the library module ships to the distribution only
+      // when somebody's layout asks for it, and the first real dmg proved that a dependency in
+      // BUILD.bazel (compilation) and in the .iml (project model) is not that somebody. Packaging is
+      // decided here, and nowhere else.
+      PluginLayout.pluginAuto("intellij.vibe.agent") { it.withModule("intellij.libraries.zxing.core") },
       PluginLayout.pluginAuto("intellij.vibe.theme") {},
       PluginLayout.pluginAuto("intellij.vibe.server") {},
     )
