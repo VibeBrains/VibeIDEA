@@ -25,21 +25,32 @@ class PlanStore(private val project: Project) {
   private val log = logger<PlanStore>()
   private val json = Json { ignoreUnknownKeys = true; prettyPrint = true }
 
+  /** Our own last written picture: what the merge treats as «mine» against a file that moved on. */
+  private var cached: Map<String, AgentPlan.Plan> = emptyMap()
+
   @Synchronized
   fun save(threadId: String, plan: AgentPlan.Plan) {
     val base = project.basePath ?: return
     runCatching {
-      val all = loadAll().toMutableMap()
       // A finished plan is not kept: the file would grow with the history of every chat, and a
       // finished plan answers no question anyone asks later.
-      if (plan.isEmpty || plan.isFinished) all.remove(threadId) else all[threadId] = plan
-      val trimmed = all.entries.sortedByDescending { it.value.updatedAtMs }.take(MAX_PLANS).associate { it.toPair() }
+      val own = if (plan.isEmpty || plan.isFinished) null else plan
+      // Re-read immediately before writing and merge: another window of the same project holds the
+      // same file, and writing our whole picture over it would erase its plans without a word.
+      val merged = PlanMerge.merge(onDisk = loadAll(), mine = cached, ownThread = threadId, ownPlan = own)
+      val trimmed = PlanMerge.trim(merged, threadId, MAX_PLANS)
+      cached = trimmed
       val file = Path.of(base, FILE)
       Files.createDirectories(file.parent)
-      Files.writeString(file, json.encodeToString(JsonObject.serializer(), buildJsonObject {
+      val text = json.encodeToString(JsonObject.serializer(), buildJsonObject {
         put("version", VERSION)
         put("plans", JsonObject(trimmed.mapValues { (_, value) -> AgentPlan.encode(value) }))
-      }))
+      })
+      // Written aside and moved into place: a crash in the middle of a direct write leaves a
+      // truncated file, and a truncated plans.json loses every plan rather than one.
+      val temp = file.resolveSibling(file.fileName.toString() + ".tmp")
+      Files.writeString(temp, text)
+      Files.move(temp, file, java.nio.file.StandardCopyOption.REPLACE_EXISTING)
     }.onFailure { log.warn("plans.json could not be written: ${it.message}") }
   }
 
