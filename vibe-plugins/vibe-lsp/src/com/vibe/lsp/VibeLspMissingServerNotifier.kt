@@ -38,6 +38,9 @@ class VibeLspMissingServerNotifier(private val project: Project) : FileEditorMan
         t("lsp.missing.body", "binary" to spec.binary, "command" to spec.installCommand),
         NotificationType.WARNING,
       )
+      .addAction(NotificationAction.createSimple(t("lsp.missing.install")) {
+        install(project, spec)
+      })
       .addAction(NotificationAction.createSimple(t("lsp.missing.copyCommand")) {
         CopyPasteManager.getInstance().setContents(StringSelection(spec.installCommand))
       })
@@ -45,6 +48,43 @@ class VibeLspMissingServerNotifier(private val project: Project) : FileEditorMan
         properties.setValue(KEY_MUTED, true)
       })
       .notify(project)
+  }
+
+  /**
+   * Runs the install command in a terminal of this project.
+   *
+   * In a terminal rather than silently in the background: the person clicked once and gets to see
+   * what is being run and what it says — an install that reports only «готово» is one nobody can
+   * debug when it is not.
+   */
+  private fun install(project: Project, spec: LspDoctor.ServerSpec) {
+    if (!ServerInstall.isOfferable(spec.installCommand)) return
+    com.intellij.openapi.application.ApplicationManager.getApplication().executeOnPooledThread {
+      val terminals = com.vibe.agent.terminal.AgentTerminalService(project.basePath)
+      val result = runCatching {
+        val shell = ServerInstall.shellCommand(spec.installCommand)
+        val id = terminals.create(shell.first(), shell.drop(1), emptyMap(), project.basePath, null)
+        val status = terminals.waitForExit(id)
+        val output = terminals.output(id)?.output.orEmpty()
+        terminals.release(id)
+        status?.exitCode to output
+      }.getOrElse { null to (it.message ?: "") }
+
+      val group = NotificationGroupManager.getInstance().getNotificationGroup(GROUP)
+      // Verified by looking for the binary, not by trusting the exit code: an installer can finish
+      // happily and leave nothing on PATH, and «поставил» that did not is the worst answer of all.
+      val found = ServerBinaries.find(spec.binary)
+      if (found != null) {
+        group.createNotification(t("lsp.install.done", "server" to spec.displayName, "path" to found),
+                                 NotificationType.INFORMATION).notify(project)
+      }
+      else {
+        group.createNotification(
+          t("lsp.install.failed", "server" to spec.displayName, "code" to (result.first ?: -1)),
+          ServerInstall.failureTail(result.second), NotificationType.WARNING,
+        ).notify(project)
+      }
+    }
   }
 
   private companion object {

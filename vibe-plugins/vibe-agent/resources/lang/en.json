@@ -1328,5 +1328,8 @@
   "pdf.scanned": "«{name}» ({pages} pages) is a scan: it has no text layer, so there is nothing to send. An empty attachment would look like a document the model read and found nothing in.",
   "pdf.trimmed": "«{name}»: {limit} characters were attached and {dropped} dropped — the answer will be about the beginning of the document, not all of it",
   "pdf.error.noTool": "PDF text is extracted by {tool} (poppler), and this machine has none: «brew install poppler» on macOS, the poppler-utils package on Linux. We do not ship a PDF library — that would be a whole stack for the sake of pulling out text.",
-  "pdf.error.timeout": "«{name}» did not parse within {seconds}s — the document looks too heavy"
+  "pdf.error.timeout": "«{name}» did not parse within {seconds}s — the document looks too heavy",
+  "lsp.missing.install": "Install",
+  "lsp.install.done": "{server}: installed, found at {path}",
+  "lsp.install.failed": "{server}: the install did not work (exit code {code}). The binary is not there — the tail of the output is below."
 }
