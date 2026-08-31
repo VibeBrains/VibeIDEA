@@ -24,9 +24,9 @@ class RetryPolicyTest {
   fun `a bad key is fatal and must not be retried`() {
     // Три попытки с неверным ключом лишь втрое удлиняют путь до честного сообщения.
     assertEquals(RetryPolicy.Kind.FATAL, RetryPolicy.classify(401))
-    assertEquals(RetryPolicy.Kind.FATAL, RetryPolicy.classify(403))
     assertEquals(RetryPolicy.Kind.FATAL, RetryPolicy.classify(400))
-    assertEquals(RetryPolicy.Kind.FATAL, RetryPolicy.classify(404))
+    // 403 и 404 раньше считались тем же самым — и это была ошибка: доступ, который отозвали,
+    // чинится другим провайдером, а ключ — нет. Разбор ниже.
   }
 
   @Test
@@ -84,5 +84,27 @@ class RetryPolicyTest {
   fun `the status is recovered from our own error text`() {
     assertEquals(429, RetryPolicy.statusFromMessage("HTTP 429: rate limit reached"))
     assertNull(RetryPolicy.statusFromMessage("connection reset"))
+  }
+
+  @Test
+  fun `отозванный доступ к модели — не то же, что плохой ключ`() {
+    // 401 неверен и у следующего провайдера; 402/403/404 — ровно то, что следующий провайдер чинит.
+    assertEquals(RetryPolicy.Kind.FATAL, RetryPolicy.classify(401))
+    assertEquals(RetryPolicy.Kind.UNAVAILABLE, RetryPolicy.classify(403))
+    assertEquals(RetryPolicy.Kind.UNAVAILABLE, RetryPolicy.classify(404))
+    assertEquals(RetryPolicy.Kind.UNAVAILABLE, RetryPolicy.classify(402))
+  }
+
+  @Test
+  fun `недоступную модель не ждут и не повторяют`() {
+    assertEquals(0L, RetryPolicy.delayMs(1, RetryPolicy.Kind.UNAVAILABLE, retryAfterSeconds = 30))
+    assertFalse(RetryPolicy.shouldRetry(RetryPolicy.Kind.UNAVAILABLE, attempt = 1))
+  }
+
+  @Test
+  fun `фолбэк при недоступной модели идёт сразу, а при плохом ключе не идёт вовсе`() {
+    assertTrue(FailoverPlan.shouldFailOver(RetryPolicy.Kind.UNAVAILABLE, retriesExhausted = false))
+    assertFalse(FailoverPlan.shouldFailOver(RetryPolicy.Kind.FATAL, retriesExhausted = true))
+    assertFalse(FailoverPlan.shouldFailOver(RetryPolicy.Kind.RATE_LIMIT, retriesExhausted = false))
   }
 }

@@ -1285,5 +1285,6 @@
   "autopilot.checkpoint": "the autopilot stopped at a checkpoint. Next item: «{step}». Items left — {remaining}. Continue?",
   "autopilot.planDone": "autopilot: the plan is complete",
   "autopilot.limit": "the autopilot stopped: {max} turns in a row without a person is the limit set in the settings",
-  "autopilot.unsafe": "the autopilot handed control back: the turn did not end normally, and it does not decide such things for you"
+  "autopilot.unsafe": "the autopilot handed control back: the turn did not end normally, and it does not decide such things for you",
+  "stall.warning": "{count} turns in a row with no file changes and no plan movement. The turns run and the money is spent while the work stands still — check whether the agent is going where you wanted."
 }

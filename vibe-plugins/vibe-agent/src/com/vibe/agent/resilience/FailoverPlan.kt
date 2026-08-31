@@ -38,6 +38,10 @@ object FailoverPlan {
     // A key is wrong here and will be wrong there: failing over hides the real message behind a
     // second, unrelated failure.
     RetryPolicy.Kind.FATAL -> false
+    // Access revoked, out of credit, no such model here: waiting cannot help, so we do not wait for
+    // the retries to be spent — we go now. This is the one kind where switching providers IS the
+    // fix rather than a way of hiding the message.
+    RetryPolicy.Kind.UNAVAILABLE -> true
     RetryPolicy.Kind.RATE_LIMIT -> retriesExhausted
     RetryPolicy.Kind.TRANSIENT -> retriesExhausted
   }

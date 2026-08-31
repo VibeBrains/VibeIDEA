@@ -19,6 +19,16 @@ object RetryPolicy {
     RATE_LIMIT,
     /** Its side broke, briefly: 5xx, a dropped connection, a read timeout. */
     TRANSIENT,
+    /**
+     * This provider will not serve this model — but another one might.
+     *
+     * Kept apart from FATAL because the two demand opposite answers. A bad key is wrong at the next
+     * provider too, so switching there would hide the real message behind an unrelated second
+     * failure. Access that has been revoked, run out or was never granted is exactly what another
+     * provider fixes — and it is the shape of an ordinary event: OpenAI announced the end of model
+     * access for Cursor on 12.11.2026, and every one of those users met this status at once.
+     */
+    UNAVAILABLE,
     /** Nothing about waiting will help: a bad key, a bad request, an unknown model. */
     FATAL,
   }
@@ -36,6 +46,9 @@ object RetryPolicy {
         statusCode in 500..599 -> Kind.TRANSIENT
         // 408 is the server saying it waited too long for us — the same class as a timeout.
         statusCode == 408 -> Kind.TRANSIENT
+        // 402 out of credit, 403 access revoked or never granted, 404 no such model here. Waiting
+        // changes none of them; another provider changes all three.
+        statusCode == 402 || statusCode == 403 || statusCode == 404 -> Kind.UNAVAILABLE
         else -> Kind.FATAL
       }
     }
@@ -59,14 +72,14 @@ object RetryPolicy {
    * doubling, deterministic because a backoff nobody can test is a backoff nobody trusts.
    */
   fun delayMs(attempt: Int, kind: Kind, retryAfterSeconds: Long? = null): Long {
-    if (kind == Kind.FATAL) return 0
+    if (kind == Kind.FATAL || kind == Kind.UNAVAILABLE) return 0
     retryAfterSeconds?.let { return (it * 1000).coerceIn(0, MAX_DELAY_MS) }
     val doubled = BASE_DELAY_MS shl (attempt - 1).coerceIn(0, 10)
     return doubled.coerceAtMost(MAX_DELAY_MS)
   }
 
   fun shouldRetry(kind: Kind, attempt: Int, maxAttempts: Int = MAX_ATTEMPTS): Boolean =
-    kind != Kind.FATAL && attempt < maxAttempts
+    kind != Kind.FATAL && kind != Kind.UNAVAILABLE && attempt < maxAttempts
 
   /** `Retry-After` is either seconds or an HTTP date; only the seconds form is worth honouring. */
   fun retryAfterSeconds(header: String?): Long? = header?.trim()?.toLongOrNull()?.coerceAtLeast(0)

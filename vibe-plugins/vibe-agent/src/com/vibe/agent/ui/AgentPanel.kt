@@ -226,6 +226,8 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
   @Volatile private var turnEndedBadly = false
   /** Turns the autopilot has taken since the person last spoke. */
   @Volatile private var autopilotTurns = 0
+  /** What the last few turns moved, for the stall detector. */
+  private val turnProgress = java.util.Collections.synchronizedList(ArrayList<com.vibe.agent.safety.StallDetector.Turn>())
 
   /** CAS-guarded: concurrent finishers (reader/exit/pooled threads) must not double-finish. */
   private val turnInFlight = java.util.concurrent.atomic.AtomicBoolean(false)
@@ -253,8 +255,10 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
 
   private val composer = ComposerPanel(project, this, object : ComposerPanel.Listener {
     override fun onSend(message: ComposedMessage): Boolean = run {
-      // The person spoke: the autopilot's stretch of unattended turns starts counting again.
+      // The person spoke: the autopilot's stretch of unattended turns starts counting again, and
+      // so does the stall history — a new instruction is movement by definition.
       autopilotTurns = 0
+      turnProgress.clear()
       dispatch(message)
     }
 
@@ -1716,6 +1720,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
       if (disposed) return@invokeLater
       composer.busy = false
       // Queued notes belong to the thread whose turn just ended, not to whichever tab is open now.
+      val stalled = noteProgressAndWarn(endedThreadId ?: currentThreadId)
       val queued = composer.queue.drain()
       if (queued != null) {
         // A note the person left while the turn ran outranks the autopilot: they have said
@@ -1724,8 +1729,38 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
         if (!startTurn(queued, endedThreadId ?: currentThreadId)) composer.restoreDraft(queued)
         return@invokeLater
       }
-      maybeAutopilot(endedThreadId ?: currentThreadId)
+      maybeAutopilot(endedThreadId ?: currentThreadId, stalled)
     }
+  }
+
+  /**
+   * Says when turns keep happening and nothing moves.
+   *
+   * The loud failures have their own safeties; this is the quiet one — prose produced, tokens
+   * spent, not one file changed and not one tick of the plan. Said once when the threshold is
+   * crossed rather than on every turn afterwards: a warning repeated every turn is a warning people
+   * learn to scroll past.
+   */
+  private fun noteProgressAndWarn(threadId: String?): Boolean {
+    val plan = threadId?.let { id -> runCatching { com.vibe.agent.plans.PlanStore.getInstance(project).load(id) }.getOrNull() }
+    val turn = com.vibe.agent.safety.StallDetector.Turn(
+      changedFiles = if (changedPaths.isNotEmpty()) changedPaths.size else if (turnHadMutatingTool) 1 else 0,
+      planDone = plan?.done ?: 0,
+      planTotal = plan?.total ?: 0,
+    )
+    val history: List<com.vibe.agent.safety.StallDetector.Turn>
+    synchronized(turnProgress) {
+      turnProgress.add(turn)
+      val trimmed = com.vibe.agent.safety.StallDetector.trim(turnProgress.toList())
+      turnProgress.clear()
+      turnProgress.addAll(trimmed)
+      history = trimmed
+    }
+    val stalled = com.vibe.agent.safety.StallDetector.stalledTurns(history)
+    if (!com.vibe.agent.safety.StallDetector.isStalled(history)) return false
+    // Only on the turn that crosses the line: after that the person has been told.
+    if (stalled == com.vibe.agent.safety.StallDetector.DEFAULT_STALL_TURNS) systemLine(t("stall.warning", "count" to stalled))
+    return true
   }
 
   /**
@@ -1736,7 +1771,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
    * carry out the decision and always say out loud which one it was, because an agent that starts a
    * turn nobody asked for, silently, is indistinguishable from a bug.
    */
-  private fun maybeAutopilot(threadId: String?) {
+  private fun maybeAutopilot(threadId: String?, stalled: Boolean) {
     val id = threadId ?: return
     if (!VibeAgentSettings.autopilotEnabled || disposed) return
     val plan = runCatching { com.vibe.agent.plans.PlanStore.getInstance(project).load(id) }.getOrNull()
@@ -1746,7 +1781,9 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
       maxTurns = VibeAgentSettings.autopilotMaxTurns,
       checkpointEvery = VibeAgentSettings.autopilotCheckpointEvery,
       plan = plan,
-      lastTurnFailed = turnEndedBadly,
+      // A stall is exactly the situation the autopilot must not drive through: it would spend the
+      // whole turn budget on turns that already proved they move nothing.
+      lastTurnFailed = turnEndedBadly || stalled,
       breakerTripped = breakers.isBlocking(),
     )
     val remaining = com.vibe.agent.autopilot.AutopilotPolicy.remaining(plan)
