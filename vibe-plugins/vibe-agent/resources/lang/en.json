@@ -1324,7 +1324,6 @@
   "telegram.voice.heard": "heard: «{text}». Starting.",
   "composer.ref.document": "{path} — {pages} pages, {chars} characters of text",
   "pdf.error.missing": "there is no file «{name}»",
-  "pdf.error.encrypted": "«{name}» is encrypted — its text cannot be extracted",
   "pdf.error.unreadable": "«{name}» cannot be read: {reason}",
   "pdf.scanned": "«{name}» ({pages} pages) is a scan: it has no text layer, so there is nothing to send. An empty attachment would look like a document the model read and found nothing in.",
   "pdf.trimmed": "«{name}»: {limit} characters were attached and {dropped} dropped — the answer will be about the beginning of the document, not all of it",
