@@ -52,6 +52,20 @@ class PdfTextTest {
   }
 
   @Test
+  fun `страницы считаются по разделителям самого извлекателя`() {
+    assertEquals(0, PdfText.pages(""))
+    assertEquals(1, PdfText.pages("одна страница"))
+    assertEquals(2, PdfText.pages("первая\u000Cвторая"))
+    // Завершающий разделитель закрывает последнюю страницу, а не открывает новую.
+    assertEquals(2, PdfText.pages("первая\u000Cвторая\u000C"))
+  }
+
+  @Test
+  fun `разделитель страниц не остаётся в тексте`() {
+    assertEquals("первая\nвторая", PdfText.clean("первая\u000Cвторая"))
+  }
+
+  @Test
   fun `нечитаемый файл возвращает названную ошибку, а не пустоту`() {
     val missing = java.io.File("/несуществующий/путь/файл.pdf")
     val result = PdfExtract.read(missing)

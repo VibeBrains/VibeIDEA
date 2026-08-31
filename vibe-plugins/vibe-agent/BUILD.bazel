@@ -37,8 +37,6 @@ jvm_library(
         "//platform/ui.jcef",
         "//libraries/jcef",
         "//libraries/zxing-core",
-        # PDFBox rides along with the platform's flexmark bundle — no new jar in the distribution.
-        "//libraries/flexmark",
         "//platform/credential-store",
         "//platform/platform-impl/codeinsight-inline:ide-codeinsight-inline",
         "//libraries/kotlinx/coroutines/core",

@@ -35,6 +35,7 @@
     <orderEntry type="module" module-name="intellij.platform.lang" />
     <orderEntry type="module" module-name="intellij.platform.ide.impl" />
     <orderEntry type="module" module-name="intellij.platform.util.text.matching" />
+    <orderEntry type="module" module-name="intellij.libraries.zxing.core" />
     <orderEntry type="library" scope="TEST" name="kotlin-test" level="project" />
     <orderEntry type="library" scope="TEST" name="kotlin-test-junit5" level="project" />
     <orderEntry type="module" module-name="intellij.libraries.junit5" scope="TEST" />

@@ -22,6 +22,22 @@ object PdfText {
   /** Below this per page the "text layer" is page numbers and headers — that is, a scan. */
   const val MIN_CHARS_PER_PAGE = 40
 
+  /** `pdftotext` separates pages with a form feed; that is where the page count comes from. */
+  const val PAGE_BREAK = '\u000C'
+
+  /**
+   * Pages, counted from the extractor's own separators.
+   *
+   * Counting them here rather than asking a second tool (`pdfinfo`) keeps the feature to ONE
+   * external binary: every additional required tool is another machine where the feature is absent.
+   */
+  fun pages(raw: String): Int {
+    if (raw.isEmpty()) return 0
+    val breaks = raw.count { it == PAGE_BREAK }
+    // A trailing form feed closes the last page rather than opening another one.
+    return if (raw.endsWith(PAGE_BREAK)) breaks else breaks + 1
+  }
+
   fun looksLikePdf(name: String, head: ByteArray): Boolean =
     name.substringAfterLast('.', "").lowercase() == "pdf" && head.size >= 4 && head.copyOfRange(0, 4).contentEquals(HEADER)
 
@@ -33,7 +49,7 @@ object PdfText {
    * the document fails on the phrases that happen to straddle a line break.
    */
   fun clean(raw: String): String {
-    val normalized = raw.replace("\r\n", "\n").replace(' ', ' ')
+    val normalized = raw.replace("\r\n", "\n").replace(' ', ' ').replace(PAGE_BREAK, '\n')
     val dehyphenated = Regex("(\\p{L})-\\n(\\p{L})").replace(normalized) { m -> m.groupValues[1] + m.groupValues[2] }
     return dehyphenated
       .lineSequence()
