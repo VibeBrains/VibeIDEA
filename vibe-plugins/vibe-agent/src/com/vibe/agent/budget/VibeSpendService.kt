@@ -37,10 +37,17 @@ class VibeSpendService {
   @Volatile private var lastSavedMs = 0L
 
   @Synchronized
-  fun record(role: String?, target: String, tokens: Long, costAmount: Double?, costCurrency: String?) {
+  fun record(
+    role: String?,
+    target: String,
+    tokens: Long,
+    costAmount: Double?,
+    costCurrency: String?,
+    files: Map<String, Long> = emptyMap(),
+  ) {
     if (tokens <= 0 && costAmount == null) return
     ensureLoaded()
-    store.add(SpendLedger.Entry(System.currentTimeMillis(), role, target, tokens, costAmount, costCurrency))
+    store.add(SpendLedger.Entry(System.currentTimeMillis(), role, target, tokens, costAmount, costCurrency, files))
     dirty = true
     // Debounced on purpose: an update arrives with every streamed chunk, and rewriting the whole
     // file each time would turn a convenience into a stream of disk writes. The file is a report,
@@ -83,6 +90,11 @@ class VibeSpendService {
           tokens = e["tokens"]?.jsonPrimitive?.longOrNull ?: 0,
           costAmount = e["cost"]?.jsonPrimitive?.doubleOrNull,
           costCurrency = e["currency"]?.jsonPrimitive?.contentOrNull,
+          // Absent in files written before per-file attribution existed: an old report stays
+          // readable, it simply answers one question fewer.
+          files = (e["files"] as? JsonObject)?.mapNotNull { (path, value) ->
+            value.jsonPrimitive.longOrNull?.let { path to it }
+          }?.toMap().orEmpty(),
         ))
       }
     }.onFailure { log.warn("spend.json could not be read: ${it.message}") }
@@ -106,6 +118,9 @@ class VibeSpendService {
             put("tokens", entry.tokens)
             entry.costAmount?.let { put("cost", it) }
             entry.costCurrency?.let { put("currency", it) }
+            if (entry.files.isNotEmpty()) {
+              put("files", buildJsonObject { entry.files.forEach { (path, share) -> put(path, share) } })
+            }
           }
         }))
       }))

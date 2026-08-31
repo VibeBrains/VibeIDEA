@@ -22,6 +22,13 @@ object SpendLedger {
     val tokens: Long,
     val costAmount: Double? = null,
     val costCurrency: String? = null,
+    /**
+     * Estimated share of this entry's tokens per attached file — see [FileSpend].
+     *
+     * Empty for turns that attached nothing, which is most of them: the field exists to answer
+     * «какой файл дорогой», not to make every row heavier.
+     */
+    val files: Map<String, Long> = emptyMap(),
   )
 
   data class Line(val name: String, val tokens: Long, val cost: Double, val currency: String?, val runs: Int)

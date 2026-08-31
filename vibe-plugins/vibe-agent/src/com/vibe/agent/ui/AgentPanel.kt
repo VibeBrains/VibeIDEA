@@ -224,6 +224,8 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
   @Volatile private var turnHadMutatingTool = false
   /** Did the turn end in anything other than a normal finish? The autopilot refuses to resume such a turn. */
   @Volatile private var turnEndedBadly = false
+  /** What travelled in this turn's context, for the per-file spend estimate. */
+  @Volatile private var turnAttachments: List<com.vibe.agent.budget.FileSpend.Attachment> = emptyList()
   /** Outcomes of the recent tool calls, for the thrash and repeated-timeout breakers. */
   private val thrashHistory = ArrayList<com.vibe.agent.safety.ThrashDetector.Event>()
   /** Turns the autopilot has taken since the person last spoke. */
@@ -1676,6 +1678,11 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
         val loaded = ReadAction.nonBlocking(Callable { ContextSerializer.load(project, refs, VibeAgentSettings.maskSecretsInContext) })
           .expireWith(this).executeSynchronously()
         loaded.forEach { reportContextFindings(it.relPath, it.findings) }
+        // Remembered for the spend report: sizes as they actually travelled, after masking and
+        // compression, because that is what was paid for.
+        turnAttachments = loaded.mapNotNull { item ->
+          item.text?.length?.takeIf { it > 0 }?.let { com.vibe.agent.budget.FileSpend.Attachment(item.relPath, it) }
+        }
         val skills = resolveSkills(message.text)
         if (refs.isNotEmpty()) systemLine(t("chat.contextAttached", "items" to refs.joinToString { it.label }))
         // The wire text (with inlined context) becomes known only now — fill it into the stored record.
@@ -3112,7 +3119,9 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
       // under-counts is a ceiling that never trips.
       val estimated = com.vibe.agent.context.ContextBudget.estimateTokens(fullText)
       sessionTokens.addAndGet(estimated)
-      com.vibe.agent.budget.VibeSpendService.getInstance().record(currentRole, targetLabel(), estimated, null, null)
+      com.vibe.agent.budget.VibeSpendService.getInstance().record(
+        currentRole, targetLabel(), estimated, null, null,
+        com.vibe.agent.budget.FileSpend.attribute(estimated, turnAttachments))
       stretchTokens.addAndGet(estimated)
     }
     // currentAgentMessage is EDT-owned (appendAgentText also touches it on the EDT); read+clear it there.
@@ -3315,7 +3324,9 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     // difference goes negative and the day's spend silently shrinks.
     val delta = (used - lastAccountedUsed.getAndSet(used)).coerceAtLeast(0)
     com.vibe.agent.budget.VibeSpendService.getInstance()
-      .record(currentRole, targetLabel(), delta, amount, currency)
+      // The split between the turn's files is an estimate by size — a request is billed whole.
+      .record(currentRole, targetLabel(), delta, amount, currency,
+              com.vibe.agent.budget.FileSpend.attribute(delta, turnAttachments))
     stretchTokens.addAndGet(delta)
   }
 

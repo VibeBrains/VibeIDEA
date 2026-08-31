@@ -30,6 +30,17 @@ class VibeSpendReportAction : AnAction({ t("spend.action") }) {
       appendLine()
       appendLine(t("spend.byTarget"))
       SpendLedger.byTarget(week).forEach { appendLine("  " + line(it)) }
+      val files = FileSpend.top(week)
+      if (files.isNotEmpty()) {
+        appendLine()
+        appendLine(t("spend.byFile"))
+        files.forEach {
+          appendLine("  " + t("spend.fileLine", "path" to it.path, "tokens" to "%,d".format(it.tokens), "turns" to it.turns))
+        }
+        // Said in the report itself, not only in the docs: a number that looks measured and is
+        // apportioned will be quoted as measured the first time somebody screenshots it.
+        appendLine("  " + t("spend.fileNote"))
+      }
       appendLine()
       appendLine(t("spend.note"))
     }

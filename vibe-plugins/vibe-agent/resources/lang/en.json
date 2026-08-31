@@ -1341,5 +1341,8 @@
   "seed.merge.title": "{file}: pull what you need from the release into your file",
   "seed.merge.yoursEditable": "your file (edited here)",
   "thrash.timeout": "the same command has hung {count} times: «{call}». Waiting has been tried and the answer did not change — the turn is stopped.",
-  "thrash.failures": "{count} failures out of the last {window} calls: the turn is going nowhere while the money is spent — stopped."
+  "thrash.failures": "{count} failures out of the last {window} calls: the turn is going nowhere while the money is spent — stopped.",
+  "spend.byFile": "Files that travelled in the context (this week):",
+  "spend.fileLine": "{path} — {tokens} tokens, turns: {turns}",
+  "spend.fileNote": "an estimate: a request is billed as a whole, and a file’s share is apportioned by its size rather than measured"
 }
