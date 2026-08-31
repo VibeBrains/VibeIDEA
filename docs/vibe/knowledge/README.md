@@ -12,6 +12,12 @@
 | [swingChatLayout.md](ui/swingChatLayout.md) | [баг] BoxLayout-лента без maxHeight у строк растягивает сообщения на весь вьюпорт; пузырь в BorderLayout.CENTER — на всю ширину. ChatRow с maxHeight=preferred + якорь NORTH. Урок: UI не отдаётся без визуальной проверки. |
 | [focuslessListPopup.md](ui/focuslessListPopup.md) | [архитектура] Меню `@` под JTextArea без потери фокуса: `PopupChooserBuilder.setRequestFocus(false)` (паттерн FileTextFieldImpl); клавиши — ТОЛЬКО локальные шорткаты `registerCustomShortcutSet`: KeyListener/InputMap на JTextComponent не видят стрелки/Backspace/Esc — их раньше забирает IdeKeyEventDispatcher через keymap (`EditorBackSpace` и т.п. включены на любом текстовом поле); `showUnderneathOf` не флипает вверх — место считать самим; ACP-блоки контекста и режимы. |
 
+## design
+
+| Файл | О чём |
+|---|---|
+| [detectorSilence.md](design/detectorSilence.md) | [правило] Каталог из 81 детектора: каждое правило обязано иметь ветку «не знаю» и в ней молчать (нечитаемые стили, неразложенный элемент, крутилка, явный `inputmode`, отсутствующая рамка) — обвиняющий по догадке детектор выключают целиком. Плюс: класс правила (пол/вкус) решает каталог, а не само правило; русские регэкспы — данные, и живут в `DesignPhrases`. |
+
 ## architecture
 
 | Файл | О чём |
