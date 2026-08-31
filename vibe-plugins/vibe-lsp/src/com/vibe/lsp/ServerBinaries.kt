@@ -38,7 +38,34 @@ internal object ServerBinaries {
 
   fun vtslsCommand(): List<String> = listOf(resolve("vtsls"), "--stdio")
 
-  fun phpactorCommand(): List<String> = listOf(resolve("phpactor"), "language-server")
+  /**
+   * The Phpactor phar we ship, or null when running from sources without it.
+   *
+   * `PathManager.getPluginsPath()` rather than a path relative to the jar: the plugin is a jar
+   * inside the distribution, and asking the platform where plugins live is the only spelling that
+   * works both in the installer and in a dev run.
+   */
+  fun bundledPhpactor(): String? {
+    val path = java.nio.file.Path.of(
+      com.intellij.openapi.application.PathManager.getPluginsPath(), "vibe-lsp", "servers", "phpactor.phar")
+    return path.takeIf { Files.isRegularFile(it) }?.toString()
+  }
+
+  /**
+   * How to start Phpactor.
+   *
+   * The user's OWN installation wins over the bundled phar — always. A project pinned to another
+   * version must not break against ours, and the bundled copy ages with the IDE release while
+   * theirs ages with their decisions.
+   *
+   * The phar needs an interpreter: `php <phar> language-server`. A machine without PHP gets the
+   * bare name and an honest failure to start rather than a mysterious silence.
+   */
+  fun phpactorCommand(): List<String> {
+    find("phpactor")?.let { return listOf(it, "language-server") }
+    bundledPhpactor()?.let { phar -> return listOf(resolve("php"), phar, "language-server") }
+    return listOf("phpactor", "language-server")
+  }
 
   fun cssCommand(): List<String> = listOf(resolve("vscode-css-language-server"), "--stdio")
 

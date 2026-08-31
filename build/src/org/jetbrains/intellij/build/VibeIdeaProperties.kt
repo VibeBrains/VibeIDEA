@@ -41,13 +41,21 @@ open class VibeIdeaProperties(communityHomeDir: Path) : IdeaCommunityProperties(
   }
 
   /**
-   * LSP4IJ (EPL-2.0) is bundled from its pinned GitHub release artifact,
-   * prepared by `vibe-plugins/deps/download.sh` — never from JetBrains Marketplace.
+   * External artifacts bundled from pinned releases prepared by `vibe-plugins/deps/download.sh`:
+   * LSP4IJ (EPL-2.0, never from JetBrains Marketplace) and the Phpactor phar (MIT).
    */
   override suspend fun bundleExternalPlugins(context: BuildContext, targetDirectory: Path) {
     val lsp4ij = context.paths.communityHomeDir.resolve("vibe-plugins/deps/extracted/lsp4ij")
     check(Files.isDirectory(lsp4ij)) { "LSP4IJ plugin dir not found: $lsp4ij — run vibe-plugins/deps/download.sh first" }
     copyDir(lsp4ij, targetDirectory.resolve("plugins/lsp4ij"))
+
+    // Phpactor (MIT) as a single phar: PHP works out of the box for anyone who has PHP, which is
+    // everyone who writes PHP. It lands next to our language plugin, and the search order at
+    // runtime puts the user's own installation FIRST — a project pinned to another version must
+    // not break against ours.
+    val servers = context.paths.communityHomeDir.resolve("vibe-plugins/deps/extracted/servers")
+    check(Files.isDirectory(servers)) { "Bundled servers dir not found: $servers — run vibe-plugins/deps/download.sh first" }
+    copyDir(servers, targetDirectory.resolve("plugins/vibe-lsp/servers"))
   }
 
   override fun getBaseArtifactName(appInfo: ApplicationInfoProperties, buildNumber: String): String = "vibeIdea-$buildNumber"

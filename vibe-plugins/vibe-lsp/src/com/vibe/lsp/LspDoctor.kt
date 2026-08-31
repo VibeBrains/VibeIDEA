@@ -5,10 +5,12 @@ package com.vibe.lsp
  * Answers the one question the language support cannot answer by itself: is the server
  * that does the work actually here?
  *
- * We ship the CLIENT, not the servers: vtsls comes from npm and Phpactor from composer or
- * Homebrew, and bundling either would mean shipping a runtime and taking on its licence.
- * The price of that decision is that a fresh install looks broken — "go to definition" does
- * nothing at all — and silence is the worst possible answer, because it names neither the
+ * Phpactor we now SHIP: one 4.3 MB phar (MIT) that runs on the machine's PHP, so a fresh install
+ * has working PHP navigation for anyone who writes PHP. The npm servers stay outside — bundling
+ * them means bundling Node, which is a second runtime to keep patched.
+ *
+ * The price of what is still outside is that a fresh install looks broken — "go to definition"
+ * does nothing at all — and silence is the worst possible answer, because it names neither the
  * cause nor the fix.
  *
  * The check is a pure function of the resolver, so the report is testable without a machine
@@ -26,7 +28,10 @@ object LspDoctor {
     val extensions: Set<String>,
   )
 
-  data class Check(val spec: ServerSpec, val path: String?) {
+  /** Where the server came from — the person needs to know whose version is running. */
+  enum class Source { OWN, BUNDLED, ABSENT }
+
+  data class Check(val spec: ServerSpec, val path: String?, val source: Source = if (path != null) Source.OWN else Source.ABSENT) {
     val installed: Boolean get() = path != null
   }
 
@@ -103,8 +108,24 @@ object LspDoctor {
   val DEBUG_ADAPTERS: List<ServerSpec> = listOf(JS_DEBUG, PHP_DEBUG)
 
   /** [resolve] returns the executable path, or null when the binary is nowhere to be found. */
-  fun check(specs: List<ServerSpec> = ALL, resolve: (String) -> String? = ServerBinaries::find): List<Check> =
-    specs.map { Check(it, resolve(it.binary)) }
+  fun check(
+    specs: List<ServerSpec> = ALL,
+    resolve: (String) -> String? = ServerBinaries::find,
+    bundled: (ServerSpec) -> String? = ::bundledPath,
+  ): List<Check> = specs.map { spec ->
+    // The user's own installation first — always. It is theirs, it may be pinned by the project,
+    // and ours ages with the IDE release rather than with their decisions.
+    val own = resolve(spec.binary)
+    if (own != null) return@map Check(spec, own, Source.OWN)
+    val shipped = bundled(spec)
+    if (shipped != null) Check(spec, shipped, Source.BUNDLED) else Check(spec, null, Source.ABSENT)
+  }
+
+  /** What we ship ourselves. Only Phpactor today; the npm servers would drag Node along. */
+  fun bundledPath(spec: ServerSpec): String? = when (spec.id) {
+    PHPACTOR.id -> ServerBinaries.bundledPhpactor()
+    else -> null
+  }
 
   /** The server responsible for a file, or null when the file is none of our business. */
   fun serverFor(fileName: String, specs: List<ServerSpec> = ALL): ServerSpec? {

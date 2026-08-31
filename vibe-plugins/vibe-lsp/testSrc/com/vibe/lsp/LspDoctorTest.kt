@@ -67,4 +67,26 @@ class LspDoctorTest {
     assertFalse("json" in served)
     assertTrue("css" in served, "CSS в Community нет вовсе — вот его и закрываем")
   }
+
+  @Test
+  fun `свой сервер сильнее встроенного`() {
+    // Проект может быть прибит к другой версии, и наша копия стареет вместе с релизом IDE.
+    val own = LspDoctor.check(listOf(LspDoctor.PHPACTOR), resolve = { "/usr/local/bin/phpactor" }, bundled = { "/app/phpactor.phar" }).single()
+    assertEquals(LspDoctor.Source.OWN, own.source)
+    assertEquals("/usr/local/bin/phpactor", own.path)
+  }
+
+  @Test
+  fun `встроенный сервер считается установленным и называется встроенным`() {
+    val bundled = LspDoctor.check(listOf(LspDoctor.PHPACTOR), resolve = { null }, bundled = { "/app/phpactor.phar" }).single()
+    assertEquals(LspDoctor.Source.BUNDLED, bundled.source)
+    assertTrue(bundled.installed)
+  }
+
+  @Test
+  fun `без своего и без встроенного — честное отсутствие`() {
+    val absent = LspDoctor.check(listOf(LspDoctor.VTSLS), resolve = { null }, bundled = { null }).single()
+    assertEquals(LspDoctor.Source.ABSENT, absent.source)
+    assertFalse(absent.installed)
+  }
 }

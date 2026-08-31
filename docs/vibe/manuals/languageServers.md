@@ -12,7 +12,15 @@ npm install -g @vtsls/language-server
 
 Проверка: `vtsls --version`. VibeIDEA ищет `vtsls` в PATH и типовых местах (`~/.npm-global/bin`, `/opt/homebrew/bin`, `/usr/local/bin`, `~/.local/bin`).
 
-## PHP — Phpactor
+## PHP — Phpactor (в комплекте)
+
+**Ставить ничего не нужно**, если на машине есть PHP 8.1+: phar едет вместе с IDE и запускается на
+вашем интерпретаторе. Свой Phpactor, если он установлен, всегда сильнее встроенного — так проект,
+прибитый к другой версии, не ломается о нашу.
+
+Ниже — как поставить свой, если он нужен именно свой.
+
+## PHP — свой Phpactor
 
 Требуется PHP ≥ 8.1.
 

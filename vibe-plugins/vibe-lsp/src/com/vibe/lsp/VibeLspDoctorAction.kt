@@ -18,11 +18,13 @@ class VibeLspDoctorAction : AnAction({ t("lsp.doctor.action") }) {
       appendLine(t("lsp.doctor.intro"))
       appendLine()
       for (check in checks) {
-        appendLine(
-          if (check.installed) t("lsp.doctor.installed", "server" to check.spec.displayName, "path" to check.path)
-          else t("lsp.doctor.missing", "server" to check.spec.displayName, "binary" to check.spec.binary)
-        )
+        appendLine(line(check))
         if (!check.installed) appendLine("    " + check.spec.installCommand)
+        // A bundled phar without an interpreter is a server that cannot start, and saying
+        // «встроен» while it silently fails would be the same silence we exist to remove.
+        if (check.source == LspDoctor.Source.BUNDLED && ServerBinaries.find("php") == null) {
+          appendLine("    " + t("lsp.doctor.needsPhp"))
+        }
       }
       appendLine()
       appendLine(t("lsp.doctor.debuggers"))
@@ -41,5 +43,12 @@ class VibeLspDoctorAction : AnAction({ t("lsp.doctor.action") }) {
       }
     }
     Messages.showInfoMessage(e.project, report, t("lsp.doctor.title"))
+  }
+
+  /** Says WHOSE server is running: the person's own, or the one we ship. */
+  private fun line(check: LspDoctor.Check): String = when (check.source) {
+    LspDoctor.Source.OWN -> t("lsp.doctor.installed", "server" to check.spec.displayName, "path" to check.path)
+    LspDoctor.Source.BUNDLED -> t("lsp.doctor.bundled", "server" to check.spec.displayName, "path" to check.path)
+    LspDoctor.Source.ABSENT -> t("lsp.doctor.missing", "server" to check.spec.displayName, "binary" to check.spec.binary)
   }
 }

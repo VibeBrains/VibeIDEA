@@ -26,6 +26,8 @@ class VibeLspMissingServerNotifier(private val project: Project) : FileEditorMan
   override fun fileOpened(source: FileEditorManager, file: VirtualFile) {
     val spec = LspDoctor.serverFor(file.name) ?: return
     if (ServerBinaries.find(spec.binary) != null) return
+    // Shipped with the IDE — nothing to install and nothing to say.
+    if (LspDoctor.bundledPath(spec) != null) return
 
     val properties = PropertiesComponent.getInstance(project)
     val shownKey = "$KEY_SHOWN_PREFIX${spec.id}"
