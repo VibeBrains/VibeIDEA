@@ -145,6 +145,7 @@ object VibeAgentSettings {
   private const val KEY_TELEGRAM_PROJECT = "vibe.agent.telegramProject"
   private const val KEY_TELEGRAM_PROXY = "vibe.agent.telegramProxy"
   private const val KEY_TELEGRAM_VOICE_LANG = "vibe.agent.telegramVoiceLanguage"
+  private const val KEY_TELEGRAM_VOICE_CLEANUP = "vibe.agent.telegramVoiceCleanup"
   private const val KEY_METRIC_DIRECTION = "vibe.agent.metricDirection"
   private const val KEY_FAILOVER = "vibe.agent.failoverChain"
   private const val KEY_AUTOPILOT = "vibe.agent.autopilot.enabled"
@@ -430,6 +431,14 @@ object VibeAgentSettings {
   var telegramVoiceLanguage: String
     get() = props.getValue(KEY_TELEGRAM_VOICE_LANG, DEFAULT_VOICE_LANGUAGE)
     set(value) = props.setValue(KEY_TELEGRAM_VOICE_LANG, value.trim(), DEFAULT_VOICE_LANGUAGE)
+
+  /**
+   * Run voice transcripts through a LOCAL model before using them. On by default because it only
+   * ever uses a local provider: nothing leaves the machine, and without one the step is skipped.
+   */
+  var telegramVoiceCleanup: Boolean
+    get() = props.getBoolean(KEY_TELEGRAM_VOICE_CLEANUP, true)
+    set(value) = props.setValue(KEY_TELEGRAM_VOICE_CLEANUP, value, true)
 
   var agentSilenceMinutes: Int
     get() = props.getInt(KEY_SILENCE_MINUTES, DEFAULT_SILENCE_MINUTES).coerceIn(0, MAX_SILENCE_MINUTES)

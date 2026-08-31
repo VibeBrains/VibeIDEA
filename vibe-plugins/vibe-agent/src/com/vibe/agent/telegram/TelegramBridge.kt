@@ -163,8 +163,47 @@ class TelegramBridge {
       send(token, TelegramProtocol.sendMessage(chatId, t("telegram.voice.empty")))
       return
     }
-    send(token, TelegramProtocol.sendMessage(chatId, t("telegram.voice.heard", "text" to task.take(300))))
-    runTask(token, chatId, task)
+    // Cleanup is cosmetic and LOCAL-ONLY: a voice note is the most personal thing this bridge
+    // carries, and sending it to somebody's cloud to fix commas is a decision nobody asked us to
+    // make. No local model — the raw text goes to work as it is.
+    val polished = if (VibeAgentSettings.telegramVoiceCleanup) cleanUp(task) else task
+    send(token, TelegramProtocol.sendMessage(chatId, t("telegram.voice.heard", "text" to polished.take(300))))
+    // The raw text is shown next to it when they differ: recognition is not perfect, cleanup is not
+    // perfect either, and the person must be able to see what was actually heard.
+    if (polished != task) {
+      send(token, TelegramProtocol.sendMessage(chatId, t("telegram.voice.rawBelow", "text" to task.take(300))))
+    }
+    runTask(token, chatId, polished)
+  }
+
+  /**
+   * Raw dictation through a LOCAL model, and only if the machine has one.
+   *
+   * Every failure path returns the original: no local provider, a refusal, a timeout, a model that
+   * decided to answer instead of cleaning. The task is what the person said — the commas are a
+   * bonus, and a bonus is never worth a changed meaning.
+   */
+  private fun cleanUp(raw: String): String {
+    val base = targetProject()?.basePath
+    val local = com.vibe.agent.providers.ProvidersService.load(base) { }
+      .asSequence()
+      .mapNotNull { entry ->
+        val model = entry.models.firstOrNull { it.active } ?: return@mapNotNull null
+        val resolved = com.vibe.agent.providers.ProvidersService.resolve(entry, base) { } ?: return@mapNotNull null
+        if (!resolved.isLocal) null else resolved to model
+      }
+      .firstOrNull() ?: return raw
+
+    val answer = StringBuilder()
+    val ok = runCatching {
+      com.vibe.agent.providers.LlmClient().chat(
+        provider = local.first,
+        model = local.second,
+        messages = listOf(com.vibe.agent.providers.ChatMessage("user", VoiceCleanup.prompt(raw))),
+      ) { delta -> answer.append(delta) }
+      true
+    }.getOrDefault(false)
+    return if (ok) VoiceCleanup.accept(raw, answer.toString()) else raw
   }
 
   /** Downloads the note and runs the transcriber over it; the temporary directory is always removed. */

@@ -1344,5 +1344,6 @@
   "thrash.failures": "{count} failures out of the last {window} calls: the turn is going nowhere while the money is spent — stopped.",
   "spend.byFile": "Files that travelled in the context (this week):",
   "spend.fileLine": "{path} — {tokens} tokens, turns: {turns}",
-  "spend.fileNote": "an estimate: a request is billed as a whole, and a file’s share is apportioned by its size rather than measured"
+  "spend.fileNote": "an estimate: a request is billed as a whole, and a file’s share is apportioned by its size rather than measured",
+  "telegram.voice.rawBelow": "heard verbatim: «{text}»"
 }
