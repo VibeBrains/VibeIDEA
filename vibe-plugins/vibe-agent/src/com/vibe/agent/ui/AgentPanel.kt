@@ -266,6 +266,9 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
       autopilotTurns = 0
       turnProgress.clear()
       stretchTokens.set(0)
+      // The person intervened: failures from before their message say nothing about what happens
+      // next, and a breaker that trips on somebody else's history is a breaker people switch off.
+      synchronized(thrashHistory) { thrashHistory.clear() }
       dispatch(message)
     }
 
@@ -1631,6 +1634,9 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
   private fun startTurn(message: ComposedMessage, threadId: String = currentThreadId): Boolean {
     if (disposed) return false
     turnEndedBadly = false
+    // Cleared at the START, not only filled on load: a turn without attachments would otherwise
+    // inherit the previous turn's files and quietly bill them again.
+    turnAttachments = emptyList()
     val t = target ?: run {
       systemLine(t("chat.noTargetHint", "path" to AcpConfig.configPath()))
       return false
