@@ -42,6 +42,10 @@ printf 'Phpactor %s (MIT), bundled from the project release; see phpactor-LICENS
   # серверам html/markdown, которых мы не подключаем (платформа обслуживает их сама). Проверено:
   # css, eslint и vtsls стартуют без неё. Верхнеуровневый TypeScript остаётся — на нём работает vtsls.
   rm -rf node_modules/vscode-langservers-extracted/node_modules/typescript
+  # Удалённый пакет оставляет за собой висячие симлинки в .bin (tsc, tsserver). Сборщик
+  # дистрибутива обходит дерево и проставляет время файлам — на висячей ссылке это падает
+  # (проверено сборкой 7). Мёртвая ссылка бесполезна и без сборщика: ведёт в никуда.
+  find node_modules -type l ! -exec test -e {} \; -print -delete
 )
 rm -rf extracted/servers/node && mkdir -p extracted/servers/node
 cp -R servers-npm/node_modules extracted/servers/node/node_modules
