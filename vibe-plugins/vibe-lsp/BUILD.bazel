@@ -20,6 +20,7 @@ jvm_library(
         # do not sort,
         "@lib//:kotlin-stdlib",
         "//platform/core-api:core",
+        "//platform/core-impl",
         "//platform/projectModel-api:projectModel",
         "//platform/util",
         "//platform/extensions",

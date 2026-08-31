@@ -47,12 +47,33 @@ internal object ServerBinaries {
    */
   fun bundledPhpactor(): String? = bundled("phpactor.phar")
 
-  /** A file inside the servers directory we ship, or null when running from sources without it. */
+  /**
+   * A file inside the servers directory we ship, or null when running from sources without it.
+   *
+   * Looked up through the PLUGIN's own path, not through `PathManager.getPluginsPath()`: the latter
+   * is the USER's plugin directory (`~/Library/Application Support/...`), while our files live
+   * inside the installed application. That mistake cost a whole build — LSP4IJ finally loaded, and
+   * then Phpactor failed to start with «Cannot run program "phpactor"», because the bundled phar was
+   * being looked for in a directory it could never be in.
+   *
+   * The plugin path is right in both worlds: installed, and run from sources.
+   */
   private fun bundled(vararg parts: String): String? {
-    val path = java.nio.file.Path.of(
-      com.intellij.openapi.application.PathManager.getPluginsPath(), "vibe-lsp", "servers", *parts)
+    val root = pluginDir() ?: return null
+    val path = parts.fold(root.resolve("servers")) { acc, part -> acc.resolve(part) }
     return path.takeIf { Files.isRegularFile(it) }?.toString()
   }
+
+  private fun pluginDir(): Path? {
+    val own = com.intellij.ide.plugins.PluginManagerCore.getPlugin(
+      com.intellij.openapi.extensions.PluginId.getId(PLUGIN_ID))?.pluginPath
+    if (own != null && Files.isDirectory(own)) return own
+    // A dev run may have no descriptor yet; the bundled directory is the honest second guess.
+    val bundledDir = com.intellij.openapi.application.PathManager.getBundledPluginsDir().resolve("vibe-lsp")
+    return bundledDir.takeIf { Files.isDirectory(it) }
+  }
+
+  private const val PLUGIN_ID = "com.vibe.lsp"
 
   /** Entry points of the Node servers we ship, by binary name. */
   private val BUNDLED_NODE_ENTRY = mapOf(
