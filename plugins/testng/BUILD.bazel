@@ -1,4 +1,5 @@
 load("@community//build:tests-options.bzl", "jps_test")
+load("@community//platform/build-scripts/bazel-rules:dev_dist_plugin.bzl", "dev_dist_plugin")
 load("@rules_jvm//:jvm.bzl", "jvm_library", "resourcegroup")
 
 jps_test(
@@ -81,6 +82,7 @@ jvm_library(
         "//jps/model-api:model",
         "//jps/model-serialization",
         "//platform/statistics",
+        "//java/java-backend:backend",
     ],
 )
 
@@ -150,6 +152,7 @@ jvm_library(
         "//jps/model-api:model_test_lib",
         "//jps/model-serialization:model-serialization_test_lib",
         "//platform/statistics:statistics_test_lib",
+        "//java/java-backend:backend_test_lib",
     ],
 )
 ### auto-generated section `build intellij.testng` end
@@ -159,10 +162,30 @@ exports_files(
     [
         "intellij.testng.iml",
         "resources/META-INF/plugin.xml",
+        "dev-dist.yaml",
     ],
     visibility = ["//visibility:public"],
 )
 ### auto-generated section `iml intellij.testng` end
+
+### auto-generated section `dev intellij.testng` start
+dev_dist_plugin(
+    content_modules = ["//plugins/testng_rt:testng-rt"],
+    descriptor = "resources/META-INF/plugin.xml",
+    descriptor_module = ":testng",
+    descriptors = {
+        "@community//libraries/testng:resources/intellij.libraries.testng.xml": "intellij.libraries.testng.xml",
+        "@community//plugins/testng/langInjection:resources/intellij.testng.langInjection.xml": "intellij.testng.langInjection.xml",
+    },
+    libraries = ["@lib//:test_n_g"],
+    main_jar_name = "testng-plugin.jar",
+    main_module = "intellij.testng",
+    prepacked_content_modules = ["//plugins/testng/langInjection:langInjection_content_module_jar"],
+    prepacked_jars = {
+        "//libraries/testng:testng_content_module_jar": "intellij.libraries.testng.jar",
+    },
+)
+### auto-generated section `dev intellij.testng` end
 
 ### auto-generated section `build intellij.testng.tests` start
 jvm_library(

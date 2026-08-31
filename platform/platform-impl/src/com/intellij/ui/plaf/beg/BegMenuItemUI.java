@@ -8,6 +8,7 @@ import com.intellij.openapi.actionSystem.impl.ActionMenuItem;
 import com.intellij.openapi.actionSystem.impl.Utils;
 import com.intellij.openapi.application.WriteIntentReadAction;
 import com.intellij.openapi.client.ClientSystemInfo;
+import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.keymap.MacKeymapUtil;
 import com.intellij.openapi.options.advanced.AdvancedSettings;
 import com.intellij.openapi.ui.JBPopupMenuDragSupportKt;
@@ -63,6 +64,7 @@ import java.util.function.Consumer;
  */
 @ApiStatus.Internal
 public final class BegMenuItemUI extends BasicMenuItemUI {
+  private static final @NotNull Logger LOG = Logger.getInstance(BegMenuItemUI.class);
   private static final String KEEP_MENU_OPEN_PROP = "BegMenuItemUI.keep-menu-open";
 
   private static final Rectangle ourEmptyRect = new Rectangle(0, 0, 0, 0);
@@ -570,9 +572,32 @@ public final class BegMenuItemUI extends BasicMenuItemUI {
   }
 
   private final class MyMouseInputHandler extends MouseInputHandler {
+    private boolean isRealClick = false;
+
+    @Override
+    public void mousePressed(MouseEvent e) {
+      if (!isRealClick) {
+        isRealClick = true;
+        LOG.debug("A MOUSE_PRESSED event is detected, treating future MOUSE_RELEASED events as real ones");
+      }
+      super.mousePressed(e);
+    }
+
     @Override
     public void mouseReleased(MouseEvent e){
+      if (!isRealClick) {
+        // Sometimes happens on Wayland. The menu may receive the released event from the same mouse press that invoked the context menu.
+        // This leads to an immediate click on the menu item that happens to be under the cursor.
+        // Normally there isn't one, but if the menu had to be repositioned because it's close to a screen edge, it can happen (IJPL-253484).
+        // We don't check for Wayland here because handling a MOUSE_RELEASED without a MOUSE_PRESSED one doesn't make sense in any case.
+        // The only exception is a single press-drag-release, but that's handled by MenuDragMouseListener below.
+        LOG.debug("Ignoring a MOUSE_RELEASED event because there was no MOUSE_PRESSED");
+        return;
+      }
       MenuSelectionManager manager=MenuSelectionManager.defaultManager();
+      if (LOG.isDebugEnabled()) {
+        LOG.debug("Handling a regular MOUSE_RELEASED event: " + e);
+      }
       if (handleReleaseOnMenuItem(e, manager)) return;
       manager.processMouseEvent(e);
     }
@@ -601,8 +626,11 @@ public final class BegMenuItemUI extends BasicMenuItemUI {
 
     @Override
     public void menuDragMouseReleased(MenuDragMouseEvent e) {
-      if (e.getButton() == MouseEvent.BUTTON2 && !triggerMenuActionsOnRmbRelease()) return;
+      if (e.getButton() != MouseEvent.BUTTON1 && !triggerMenuActionsOnRmbRelease()) return;
       MenuSelectionManager manager=e.getMenuSelectionManager();
+      if (LOG.isDebugEnabled()) {
+        LOG.debug("Handling a drag MOUSE_RELEASED event: " + e);
+      }
       if (handleReleaseOnMenuItem(e, manager)) return;
       manager.clearSelectedPath();
     }
@@ -619,6 +647,13 @@ public final class BegMenuItemUI extends BasicMenuItemUI {
         e.getButton() == MouseEvent.BUTTON1 ||
         (triggerMenuActionsOnRmbRelease() && isClickOrNoticeableDrag())
       ) {
+        if (LOG.isDebugEnabled()) {
+          LOG.debug(
+            "Clicking the menu item: " +
+            "button = " + e.getButton() + ", " +
+            "triggerMenuActionsOnRmbRelease = " + triggerMenuActionsOnRmbRelease()
+          );
+        }
         doClick(manager, e);
       }
       return true;

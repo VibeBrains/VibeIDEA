@@ -1,5 +1,6 @@
 package com.intellij.python.hatch.service
 
+import com.intellij.python.hatch.cli.DEFAULT_ENV_NAME
 import com.intellij.openapi.util.io.NioFiles
 import com.intellij.platform.eel.fs.EelFileSystemApi
 import com.intellij.platform.eel.fs.EelFileUtils
@@ -8,7 +9,6 @@ import com.intellij.platform.eel.provider.asNioPath
 import com.intellij.platform.eel.provider.getEelDescriptor
 import com.intellij.platform.eel.provider.toEelApi
 import com.intellij.python.community.execService.UploadConfig
-import com.intellij.python.community.execService.python.validatePythonAndGetInfo
 import com.intellij.python.hatch.EnvironmentCreationHatchError
 import com.intellij.python.hatch.FileSystemOperationHatchError
 import com.intellij.python.hatch.HatchProjectStructureService
@@ -18,8 +18,9 @@ import com.intellij.python.hatch.ProjectStructure
 import com.intellij.python.hatch.PythonVirtualEnvironment
 import com.intellij.python.hatch.cli.ENV_TYPE_VIRTUAL
 import com.intellij.python.hatch.cli.HatchCli
+import com.intellij.python.hatch.cli.HatchDetailedEnvironments
+import com.intellij.python.hatch.cli.HatchEnv
 import com.intellij.python.hatch.cli.HatchEnvironment
-import com.intellij.python.hatch.cli.HatchEnvironments
 import com.intellij.python.hatch.cli.new
 import com.intellij.python.hatch.runtime.HatchConstants
 import com.intellij.python.hatch.runtime.createHatchRuntime
@@ -32,11 +33,6 @@ import com.jetbrains.python.isSuccess
 import com.jetbrains.python.sdk.add.v2.FileSystem
 import com.jetbrains.python.sdk.add.v2.PathHolder
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.async
-import kotlinx.coroutines.awaitAll
-import kotlinx.coroutines.coroutineScope
-import kotlinx.coroutines.sync.Semaphore
-import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
 import java.io.IOException
 import java.nio.file.Path
@@ -83,16 +79,6 @@ internal class CliBasedHatchService<P : PathHolder> private constructor(
       ).getOr { return it }
       return Result.success(CliBasedHatchProjectStructureService(hatchService))
     }
-
-    private val concurrencyLimit = Semaphore(permits = 5)
-
-    private suspend fun <A, B> Iterable<A>.concurrentMap(f: suspend (A) -> B): List<B> = coroutineScope {
-      map {
-        async {
-          concurrencyLimit.withPermit { f(it) }
-        }
-      }.awaitAll()
-    }
   }
 
   override fun getWorkingDirectoryPath(): Path = workingDirectoryPath
@@ -102,6 +88,12 @@ internal class CliBasedHatchService<P : PathHolder> private constructor(
   override suspend fun syncDependencies(envName: String?): PyResult<String> {
     return withContext(Dispatchers.IO) {
       hatchCli().run(envName, "python", "--version")
+    }
+  }
+
+  override suspend fun removeVirtualEnvironment(envName: String?): PyResult<HatchEnv.RemoveResult> {
+    return withContext(Dispatchers.IO) {
+      hatchCli().env().remove(envName)
     }
   }
 
@@ -119,20 +111,46 @@ internal class CliBasedHatchService<P : PathHolder> private constructor(
     return isHatchManaged
   }
 
+  /**
+   * Every environment the project declares, with where each one lives.
+   *
+   * hatch is asked twice, whatever the project declares: once for the environments and once for a path. It used to be
+   * asked once *per environment* — `hatch env find <name>` for each — which a matrix turns into a process per generated
+   * combination, and a modest `[[tool.hatch.envs.test.matrix]]` generates dozens.
+   *
+   * The one path is enough because hatch keeps them together: `hatch env find` with no argument answers for the default
+   * environment, and every other declared environment is its sibling, named by the environment. The default is the one
+   * exception to that naming — its own directory carries the *project's* name — and asking for it by omission is what
+   * settles it without a second call.
+   *
+   * Environments hatch keeps for itself live elsewhere, under `.internal`, and would not be found this way. They never
+   * reach here: [HatchEnv.showWithDetails] drops them.
+   *
+   * Where the computed directory holds no interpreter the environment is simply not created yet, which is what the
+   * caller wants to know — and it is what [HatchEnv.find] would have reported too, since it computes a location rather
+   * than looking for one.
+   */
   override suspend fun findVirtualEnvironments(): PyResult<List<HatchVirtualEnvironment<P>>> {
     val hatchEnv = hatchCli().env()
-    val environments: HatchEnvironments = hatchEnv.show().getOr { return it }
-    val virtualEnvironments = environments.getAvailableVirtualHatchEnvironments()
+    val environments: HatchDetailedEnvironments = hatchEnv.showWithDetails().getOr { return it }
+    val virtualEnvironments = environments.toVirtualHatchEnvironments()
+    if (virtualEnvironments.isEmpty()) return Result.success(emptyList())
 
-    val available = virtualEnvironments.concurrentMap { env ->
-      val pythonHomePathOnTarget = hatchEnv.find(env.name).getOr { return@concurrentMap null } ?: return@concurrentMap null
-      val pythonHomePath = fileSystem.parsePath(pythonHomePathOnTarget).getOr { return@concurrentMap null }
-      val pythonVirtualEnvironment = resolvePythonVirtualEnvironment(fileSystem, pythonHomePath).getOr { return@concurrentMap null }
-      HatchVirtualEnvironment(
-        hatchEnvironment = env,
-        pythonVirtualEnvironment = pythonVirtualEnvironment
-      )
-    }.filterNotNull()
+    val defaultEnvPath = hatchEnv.find().getOr { return it }
+                         ?: return Result.success(emptyList())
+    // Kept as the target's own path string until the last moment: the environments live on whichever machine hatch ran
+    // on, and its separator is the one in the answer it gave.
+    val separatorAt = defaultEnvPath.lastIndexOfAny(charArrayOf('/', '\\'))
+    if (separatorAt <= 0) return Result.success(emptyList())
+    val envsRoot = defaultEnvPath.substring(0, separatorAt)
+    val separator = defaultEnvPath[separatorAt]
+
+    val available = virtualEnvironments.map { env ->
+      val homeOnTarget = if (env.name == DEFAULT_ENV_NAME) defaultEnvPath else "$envsRoot$separator${env.name}"
+      val pythonHomePath = fileSystem.parsePath(homeOnTarget).getOr { return it }
+      val pythonVirtualEnvironment = resolvePythonVirtualEnvironment(fileSystem, pythonHomePath).getOr { return it }
+      HatchVirtualEnvironment(hatchEnvironment = env, pythonVirtualEnvironment = pythonVirtualEnvironment)
+    }
 
     return Result.success(available)
   }
@@ -194,37 +212,38 @@ private fun detectLocalProjectStructure(workingDirectoryPath: Path): ProjectStru
   testRoot = workingDirectoryPath.resolve("tests").takeIf { it.isDirectory() },
 )
 
-private fun HatchEnvironments.getAvailableVirtualHatchEnvironments(): List<HatchEnvironment> {
-  val matricesFlatted = matrices.flatMap { matrixEnvironment ->
-    matrixEnvironment.envs.map { envName ->
-      with(matrixEnvironment.hatchEnvironment) {
-        HatchEnvironment(
-          name = envName,
-          type = type,
-          features = features,
-          dependencies = dependencies,
-          environmentVariables = environmentVariables,
-          scripts = scripts,
-          description = description,
-        )
-      }
+/**
+ * The virtual environments of a `hatch env show --json` response.
+ *
+ * The JSON response is the one this service can rely on. It names every matrix environment in full, such as
+ * `test.py3.11`, and it never shortens a value. The table response fits itself to the terminal width, so it can report
+ * a name as `integration-testing-environme…` and a type as `virtu…`. Both forms then fail: the type no longer equals
+ * [ENV_TYPE_VIRTUAL], and Hatch does not know the shortened name.
+ *
+ * Only the name, the type and the declared [HatchEnvironment.python] reach the caller. The other [HatchEnvironment]
+ * fields describe the table columns, and no caller reads them, so this leaves them at their defaults.
+ */
+private fun HatchDetailedEnvironments.toVirtualHatchEnvironments(): List<HatchEnvironment> =
+  filterValues { it.type == ENV_TYPE_VIRTUAL }
+    .map { (name, details) ->
+      HatchEnvironment(name = name, type = details.type, python = details.python, description = details.description ?: "")
     }
-  }
-  return (standalone + matricesFlatted).filter { it.type == ENV_TYPE_VIRTUAL }
-}
 
+/**
+ * Whether the environment at [pythonHomePath] is there, decided by looking rather than by running.
+ *
+ * An interpreter that exists and can be executed is an existing environment. It used to be started as well, to read a
+ * version nobody at this point had asked for — once per declared environment, on every listing. What the version is
+ * belongs to whoever wants it; [PythonVirtualEnvironment.Existing.pythonInfo] is left unset here.
+ */
 private suspend fun <P : PathHolder> resolvePythonVirtualEnvironment(
   fileSystem: FileSystem<P>,
   pythonHomePath: P,
 ): PyResult<PythonVirtualEnvironment<P>> {
-  val pythonInfo =
-    fileSystem.resolvePythonBinary(pythonHomePath)?.takeIf { fileSystem.validateExecutable(it).isSuccess }?.let { pythonBinaryPath ->
-      fileSystem.getBinaryToExec(pythonBinaryPath).validatePythonAndGetInfo().getOr { return it }
-    }
-
-  val pythonVirtualEnvironment = when {
-    pythonInfo == null -> PythonVirtualEnvironment.NotExisting(pythonHomePath)
-    else -> PythonVirtualEnvironment.Existing(pythonHomePath, pythonInfo)
+  val binary = fileSystem.resolvePythonBinary(pythonHomePath)?.takeIf { fileSystem.validateExecutable(it).isSuccess }
+  val pythonVirtualEnvironment = when (binary) {
+    null -> PythonVirtualEnvironment.NotExisting(pythonHomePath)
+    else -> PythonVirtualEnvironment.Existing(pythonHomePath)
   }
   return Result.success(pythonVirtualEnvironment)
 }

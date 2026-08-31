@@ -104,7 +104,6 @@ import com.intellij.util.TimeoutUtil;
 import com.intellij.util.concurrency.AppExecutorUtil;
 import com.intellij.util.concurrency.AppScheduledExecutorService;
 import com.intellij.util.concurrency.ThreadingAssertions;
-import com.intellij.util.concurrency.annotations.RequiresBackgroundThread;
 import com.intellij.util.concurrency.annotations.RequiresBlockingContext;
 import com.intellij.util.concurrency.annotations.RequiresEdt;
 import com.intellij.util.containers.ContainerUtil;
@@ -170,7 +169,6 @@ import java.util.stream.Stream;
 
 import static com.intellij.openapi.util.text.StringUtil.splitByLines;
 import static com.intellij.testFramework.UsefulTestCase.assertSameLines;
-import static com.intellij.util.containers.ContainerUtil.all;
 import static com.intellij.util.containers.ContainerUtil.sorted;
 import static java.util.Objects.requireNonNull;
 import static org.junit.Assert.assertArrayEquals;
@@ -669,28 +667,20 @@ public final class PlatformTestUtil {
     }
     Runnable launcher = () -> application.invokeLater(() -> canary.set(true), ModalityState.any());
     ThreadingSupport lock = application.getThreadingSupport();
-    if (lock != null) {
-      lock.runWhenWriteActionIsCompleted(() -> {
-        launcher.run();
-        return Unit.INSTANCE;
-      });
-    } else {
+    lock.runWhenWriteActionIsCompleted(() -> {
       launcher.run();
-    }
+      return Unit.INSTANCE;
+    });
   }
 
   private static String getLockDump() {
     ThreadingSupport lock = ApplicationManager.getApplication().getThreadingSupport();
-    if (lock != null) {
-      return "Threading support dump: " +
-      "raAllowed=" + lock.isReadAccessAllowed() +
-      ", waAllowed=" + lock.isWriteAccessAllowed() +
-      ", waPending=" + lock.isWriteActionPending() +
-      ", waInProgress=" + lock.isWriteActionInProgress() +
-      ", writeActionFollowups=" + lock.writeActionFollowupsSize();
-    } else {
-      return "Threading support not found";
-    }
+    return "Threading support dump: " +
+           "raAllowed=" + lock.isReadAccessAllowed() +
+           ", waAllowed=" + lock.isWriteAccessAllowed() +
+           ", waPending=" + lock.isWriteActionPending() +
+           ", waInProgress=" + lock.isWriteActionInProgress() +
+           ", writeActionFollowups=" + lock.writeActionFollowupsSize();
   }
 
   @TestOnly
@@ -1581,6 +1571,39 @@ public final class PlatformTestUtil {
       }
       return null;
     });
+  }
+
+  /**
+   * Wait and dispatch events during timeout, like {@link #waitWithEventsDispatching(Supplier, BooleanSupplier, int, Runnable)}.
+   * Unlike that method, this method does not fail the test when the timeout runs out.
+   * It runs {@code onTimeout} instead, then returns {@code false}.
+   *
+   * @return {@code true} if {@code condition} became true before the timeout ran out.
+   */
+  public static boolean tryWaitWithEventsDispatching(@NotNull BooleanSupplier condition,
+                                                      int timeoutInSeconds,
+                                                      @NotNull Runnable onTimeout) {
+    var deadlineNs = System.nanoTime() + Duration.ofSeconds(timeoutInSeconds).toNanos();
+    Boolean conditionMetBeforeTimeout = ((CoreProgressManager)ProgressManager.getInstance()).suppressAllDeprioritizationsDuringLongTestsExecutionIn(() -> {
+      while (true) {
+        try {
+          if (condition.getAsBoolean()) {
+            return true;
+          }
+          if (System.nanoTime() >= deadlineNs) {
+            onTimeout.run();
+            return false;
+          }
+          dispatchAllEventsInIdeEventQueue(deadlineNs);
+          //noinspection BusyWait
+          Thread.sleep(10);
+        }
+        catch (InterruptedException e) {
+          throw new RuntimeException(e);
+        }
+      }
+    });
+    return conditionMetBeforeTimeout;
   }
 
   public static PsiElement findElementBySignature(@NotNull String signature, @NotNull String fileRelativePath, @NotNull Project project) {

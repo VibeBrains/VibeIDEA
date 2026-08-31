@@ -212,7 +212,13 @@ public final class FileBasedIndexImpl extends FileBasedIndexEx {
 
   private final AtomicInteger myLocalModCount = new AtomicInteger();
   private final IntSet myStaleIds = new IntOpenHashSet();
-  private final DirtyFiles myDirtyFiles = new DirtyFiles(); // project dirty files from last session and new orphan files not in collectors
+  /// This [DirtyFiles] container tracks 'leftover' dirty `fileId`:
+  /// - the project dirty files left unprocessed from the last session (temporary: until they're scanned and re-inserted
+  ///   into the indexing pipeline)
+  /// - orphan (no owning project among opened projects)
+  /// - rejected by the indexing (e.g., because of errors)
+  /// I.e., those are the `fileId` that are not (yet) in any specific phase of the indexing pipeline.
+  private final DirtyFiles myDirtyFiles = new DirtyFiles();
   private final ConcurrentMap<Project, Ref<Long>> myLastSeenIndexesInOrphanQueue = new ConcurrentHashMap<>();
 
 
@@ -540,7 +546,7 @@ public final class FileBasedIndexImpl extends FileBasedIndexEx {
       }
     }
 
-    return initIndexStorage(extension, version, state, versionRegistrationStatusSink, dirtyFiles);
+    return initIndexStorage(extension, version, diff instanceof IndexVersion.IndexVersionDiff.InitialBuild, state, versionRegistrationStatusSink, dirtyFiles);
   }
 
   private static <K, V> void deleteIndexFiles(@NotNull FileBasedIndexExtension<K, V> extension) throws IOException {
@@ -561,6 +567,7 @@ public final class FileBasedIndexImpl extends FileBasedIndexEx {
 
   private static <K, V> IntSet initIndexStorage(@NotNull FileBasedIndexExtension<K, V> extension,
                                                 int version,
+                                                boolean isInitialBuild,
                                                 @NotNull IndexConfiguration state,
                                                 @NotNull IndexVersionRegistrationSink registrationStatusSink,
                                                 @NotNull IntSet dirtyFiles) throws Exception {
@@ -574,7 +581,7 @@ public final class FileBasedIndexImpl extends FileBasedIndexEx {
     for (int attempt = 0; attempt < attemptCount; attempt++) {
       try {
         layout = IndexStorageLayoutLocator.getLayout(extension);
-        index = createIndex(extension, layout);
+        index = createIndex(extension, layout, isInitialBuild);
 
         for (FileBasedIndexInfrastructureExtension infrastructureExtension : FileBasedIndexInfrastructureExtension.EP_NAME.getExtensionList()) {
           UpdatableIndex<K, V, FileContent, ?> intermediateIndex = infrastructureExtension.combineIndex(extension, index);
@@ -658,7 +665,8 @@ public final class FileBasedIndexImpl extends FileBasedIndexEx {
   }
 
   private static @NotNull <K, V> UpdatableIndex<K, V, FileContent, ?> createIndex(@NotNull FileBasedIndexExtension<K, V> extension,
-                                                                                  @NotNull VfsAwareIndexStorageLayout<K, V> layout)
+                                                                                  @NotNull VfsAwareIndexStorageLayout<K, V> layout,
+                                                                                  boolean isInitialBuild)
     throws StorageException, IOException {
     //noinspection removal
     if (FileBasedIndexExtension.USE_VFS_FOR_FILENAME_INDEX && extension.getName() == FilenameIndex.NAME) {
@@ -672,7 +680,7 @@ public final class FileBasedIndexImpl extends FileBasedIndexEx {
     }
     else if (extension instanceof CustomImplementationFileBasedIndexExtension) {
       @SuppressWarnings("unchecked") UpdatableIndex<K, V, FileContent, ?> index =
-        ((CustomImplementationFileBasedIndexExtension<K, V>)extension).createIndexImplementation(extension, layout);
+        ((CustomImplementationFileBasedIndexExtension<K, V>)extension).createIndexImplementation(extension, layout, isInitialBuild);
       return index;
     }
     else {
@@ -2078,7 +2086,8 @@ public final class FileBasedIndexImpl extends FileBasedIndexEx {
     }
     IndexingStamp.flushCache(fileId);
 
-    myFilesToUpdateCollector.scheduleForUpdate(FileIndexingRequest.updateRequest(file), containingProjects, dirtyQueueProjects);
+    myFilesToUpdateCollector.scheduleForUpdate(FileIndexingRequest.updateRequest(file), containingProjects,
+                                               ContainerUtil.union(dirtyQueueProjects, containingProjects));
   }
 
   public void doInvalidateIndicesForFile(int fileId,

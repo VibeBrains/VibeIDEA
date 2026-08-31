@@ -795,6 +795,7 @@
           Internal.UI.Animation
             AnimationPanelTestAction
             AnimatorTestAction
+            EditorSkeletonFadeInSheet
           Internal.UI.Focus
             FocusDebugger
             FocusTracer
@@ -2517,6 +2518,7 @@
   NewUiRunWidget
   SearchEverywhere
   SettingsEntryPoint
+  IdeUpdateToolbarWidget
 [group MarkFileAs]
   OverrideFileTypeAction
   ReverteOverrideFileTypeAction

@@ -228,18 +228,115 @@ function applyToolBlocks(text, tool) {
 }
 
 const editionBlockPattern = /<!--\s*IF_EDITION:([A-Z0-9_-]+)\s*-->([\s\S]*?)<!--\s*\/IF_EDITION:\1\s*-->/gi;
+const wholeLineEditionBlockPattern =
+  /^[ \t]*<!--\s*IF_EDITION:([A-Z0-9_-]+)\s*-->([^\n]*?)<!--\s*\/IF_EDITION:\1\s*-->[ \t]*\n/gim;
 const unresolvedToolDirectivePattern = /<!--\s*\/?IF_TOOL:[^>]+-->/i;
 const unresolvedEditionDirectivePattern = /<!--\s*\/?IF_EDITION:[^>]+-->/i;
 const unresolvedTemplateCommentPattern = /<!--\s*\/?TEMPLATE:COMMENT\s*-->/i;
 
-function applyEditionBlocks(text, edition) {
-  const normalizedEdition = (edition ?? "").toUpperCase();
-  return text.replace(editionBlockPattern, (match, blockEdition, content) => {
-    if (blockEdition.toUpperCase() === normalizedEdition) {
-      return content;
-    }
-    return "";
+/**
+ * Removes a line that holds one edition block for another edition, the newline included. The block
+ * replacement alone leaves an empty line there, and an empty line ends the Markdown list the bullet
+ * was in. Two lines never match: a line that pairs two editions, because the pair keeps one of the
+ * two, and a block that spans lines, which the caller must write in an edition-only partial.
+ */
+function dropWholeLineEditionBlocks(text, normalizedEdition) {
+  return text.replace(wholeLineEditionBlockPattern, (match, blockEdition) => {
+    return blockEdition.toUpperCase() === normalizedEdition ? match : "";
   });
+}
+
+export function applyEditionBlocks(text, edition) {
+  const normalizedEdition = (edition ?? "").toUpperCase();
+  return dropWholeLineEditionBlocks(text, normalizedEdition).replace(
+    editionBlockPattern,
+    (match, blockEdition, content) => {
+      if (blockEdition.toUpperCase() === normalizedEdition) {
+        return content;
+      }
+      return "";
+    },
+  );
+}
+
+const editionRootByEdition = new Map([
+  ["ULTIMATE", repoRoot],
+  ["COMMUNITY", join(repoRoot, "community")],
+]);
+
+/**
+ * Paths that `.gitignore` covers. A checkout has one only after the developer writes it, so the
+ * reference check must not ask for it.
+ */
+const perDeveloperReferencePaths = new Set([".ai/local.md", ".claude/local.md", ".claude/CLAUDE.md"]);
+
+const backtickedTokenPattern = /`([^`\n]+)`/g;
+
+/**
+ * Tells whether a backticked word names something the checkout must hold. A word qualifies when it
+ * has a slash, which separates a path and a Bazel label from a class name, a flag, and prose.
+ */
+function isReferenceCandidate(word) {
+  if (!word.includes("/")) {
+    return false;
+  }
+  // A URL, an external Bazel repository, a glob, and a placeholder all name nothing in this checkout.
+  return !/^(?:https?:|@)/.test(word) && !word.includes("*") && !word.includes("<") && !word.includes(">");
+}
+
+/**
+ * Maps a backticked word to the checkout path it must resolve to, relative to the edition root.
+ * A Bazel label maps to the `BUILD.bazel` file of its package. Returns undefined for a word that
+ * names nothing, such as `//:format.check` in the root package.
+ */
+function referencePathOf(word) {
+  if (word.startsWith("//")) {
+    const packagePath = word.slice(2).split(":")[0].replace(/\/\.\.\.$/, "").replace(/\/$/, "");
+    return packagePath === "" ? "BUILD.bazel" : `${packagePath}/BUILD.bazel`;
+  }
+  const path = word.replace(/^\.\//, "").replace(/^\//, "").replace(/\/$/, "");
+  return path === "" ? undefined : path;
+}
+
+/**
+ * Fails when a rendered guide names a path the edition that ships it does not have. The community
+ * guide is the usual victim: it drops `plugins/` trees the monorepo has, so an ultimate-only path
+ * copied into a shared source reads as a live instruction and points at nothing.
+ */
+export async function assertReferencesResolve(text, targetName, edition) {
+  const editionRoot = editionRootByEdition.get(normalizeEdition(edition));
+  if (editionRoot === undefined) {
+    throw new Error(`No edition root configured for edition "${edition}".`);
+  }
+
+  const candidates = new Set();
+  for (const [, token] of text.matchAll(backtickedTokenPattern)) {
+    for (const word of token.split(/\s+/)) {
+      if (isReferenceCandidate(word)) {
+        candidates.add(word);
+      }
+    }
+  }
+
+  const missing = [];
+  for (const word of candidates) {
+    const path = referencePathOf(word);
+    if (path === undefined || perDeveloperReferencePaths.has(path)) {
+      continue;
+    }
+    try {
+      await access(join(editionRoot, path));
+    } catch {
+      missing.push(word);
+    }
+  }
+
+  if (missing.length !== 0) {
+    throw new Error(
+      `${targetName} names ${missing.length} path(s) the ${normalizeEdition(edition)} checkout does not have: ` +
+      `${missing.sort().join(", ")}. Guard the line with IF_EDITION, or write the prefix as {{COMMUNITY_DIR}}.`,
+    );
+  }
 }
 
 function assertNoUnresolvedTemplateDirectives(text, targetName) {
@@ -280,6 +377,25 @@ export function resolveToolsDir(edition) {
   return toolsDir;
 }
 
+const communityDirByEdition = new Map([
+  ["ULTIMATE", "community/"],
+  ["COMMUNITY", ""],
+]);
+
+/**
+ * Resolves the `{{COMMUNITY_DIR}}` placeholder: the prefix that reaches the community sources from
+ * the workspace root the rendered guide lives in. It is `community/` in the monorepo and empty in
+ * the community repository. A path written once with this prefix cannot drift between the editions,
+ * which paired IF_EDITION blocks let it do.
+ */
+export function resolveCommunityDir(edition) {
+  const communityDir = communityDirByEdition.get(normalizeEdition(edition));
+  if (communityDir === undefined) {
+    throw new Error(`No community directory configured for edition "${edition}".`);
+  }
+  return communityDir;
+}
+
 async function detectEdition() {
   const envEdition = process.env["AI_GUIDE_EDITION"] ?? process.env["RENDER_EDITION"];
   if (envEdition) {
@@ -305,6 +421,8 @@ const claudeSkillsDir = join(repoRoot, ".claude", "skills");
 const junieSkillsDir = join(repoRoot, ".junie", "skills");
 const communityClaudeSkillsDir = join(repoRoot, "community", ".claude", "skills");
 const generatedSkillMarker = "<!-- Generated by community/.ai/render-guides.mjs";
+/** The hand-written catalogue of the skills a developer installs, beside the index of the skills the repository holds. */
+const OPTIONAL_SKILLS_FILE = "OPTIONAL.md";
 const skillIndexHeader =
   "<!-- Generated by community/.ai/render-guides.mjs; edit the SKILL.md files beside this index -->";
 const skillDescriptionMaxBytes = 160;
@@ -935,17 +1053,22 @@ function reportSkillDescriptionBudget({edition, descriptionBytes}) {
  * carries no signal about what the skill does. The index makes the descriptions readable in one file,
  * and the guides point at it (see the "Skills" section in `community/.ai/guide.md`).
  */
-export function buildSkillIndex(skills) {
+export function buildSkillIndex(skills, hasOptionalCatalogue = false) {
   const rows = Array.from(skills.entries())
     .sort(([leftName], [rightName]) => leftName.localeCompare(rightName))
     .map(([name, {frontmatter}]) => {
       const description = extractSingleLineDescription(frontmatter) ?? "";
       return `| [${name}](${name}/SKILL.md) | ${description.split("|").join("\\|")} |`;
     });
+  const optionalNote = hasOptionalCatalogue
+    ? ["Some skills are not in this directory. [OPTIONAL.md](OPTIONAL.md) gives the install command for " +
+       "each one, and the way to hide a skill for yourself alone.\n"]
+    : [];
   return [
     `${skillIndexHeader}\n`,
     "# Skills\n",
     "One row per skill in this directory. `SKILL.md` holds the full instructions.\n",
+    ...optionalNote,
     "| skill | description |",
     "| --- | --- |",
     ...rows,
@@ -953,11 +1076,24 @@ export function buildSkillIndex(skills) {
   ].join("\n");
 }
 
+/**
+ * Writes the index, and points at the optional-skill catalogue when the directory has one.
+ *
+ * The pointer belongs here rather than in the guide. A guide line reaches each session, and the
+ * root `AGENTS.md` chain has little room left. An agent reads this index when it looks for a skill,
+ * which is the moment the catalogue matters.
+ */
 async function writeSkillIndex(dir, skills) {
   if (skills.size === 0) {
     return;
   }
-  await writeFile(join(dir, "INDEX.md"), buildSkillIndex(skills), "utf8");
+  let hasOptionalCatalogue = true;
+  try {
+    await access(join(dir, OPTIONAL_SKILLS_FILE));
+  } catch {
+    hasOptionalCatalogue = false;
+  }
+  await writeFile(join(dir, "INDEX.md"), buildSkillIndex(skills, hasOptionalCatalogue), "utf8");
 }
 
 /**
@@ -993,7 +1129,12 @@ async function renderGuideOutputsWithContext({basePartials, defaultEdition}) {
       throw new Error(`${target.name} rendered output still has {{TOOLS_DIR}} placeholder.`);
     }
 
-    const withToolBlocks = applyToolBlocks(withToolsDir, target.tool);
+    const withCommunityDir = replaceAll(withToolsDir, "{{COMMUNITY_DIR}}", resolveCommunityDir(edition));
+    if (withCommunityDir.includes("{{COMMUNITY_DIR}}")) {
+      throw new Error(`${target.name} rendered output still has {{COMMUNITY_DIR}} placeholder.`);
+    }
+
+    const withToolBlocks = applyToolBlocks(withCommunityDir, target.tool);
     const withEditionBlocks = applyEditionBlocks(withToolBlocks, edition);
     const withoutTemplateBlocks = stripTemplateBlocks(withEditionBlocks);
     assertNoUnresolvedTemplateDirectives(withoutTemplateBlocks, target.name);
@@ -1014,6 +1155,8 @@ async function renderGuideOutputsWithContext({basePartials, defaultEdition}) {
         finalText = target.generatedHeader + finalText;
       }
     }
+
+    await assertReferencesResolve(finalText, target.name, edition);
 
     renderedOutputs.set(target.output, normalize(finalText));
   }

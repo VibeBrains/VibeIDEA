@@ -103,6 +103,7 @@ data class XBreakpointDtoState(
   val isConditionEnabled: Boolean,
   val conditionExpression: XExpressionDto?,
   val enabled: Boolean,
+  val isTemporary: Boolean,
   val suspendPolicy: SuspendPolicy,
   val userDescription: String?,
   val group: String?,
@@ -118,7 +119,6 @@ data class XBreakpointDtoState(
 @ApiStatus.Internal
 @Serializable
 data class XLineBreakpointInfo(
-  val isTemporary: Boolean,
   val line: Int,
   val fileUrl: String,
   val placement: XLineBreakpointVerticalPlacement,

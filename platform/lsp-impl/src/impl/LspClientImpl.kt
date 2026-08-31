@@ -14,9 +14,9 @@ import com.intellij.openapi.vfs.VirtualFile
 import com.intellij.platform.lsp.api.Lsp4jServer
 import com.intellij.platform.lsp.api.LspClientDescriptor
 import com.intellij.platform.lsp.api.LspClientManagerListener
-import com.intellij.platform.lsp.api.LspIntegrationProvider
 import com.intellij.platform.lsp.api.LspCommunicationChannel
 import com.intellij.platform.lsp.api.LspCommunicationChannel.StdIO
+import com.intellij.platform.lsp.api.LspIntegrationProvider
 import com.intellij.platform.lsp.api.LspServerState
 import com.intellij.platform.lsp.impl.connector.Lsp4jServerConnector
 import com.intellij.platform.lsp.impl.connector.Lsp4jServerConnectorSocket
@@ -27,10 +27,12 @@ import com.intellij.platform.lsp.impl.features.LspFeaturesRefreshing
 import com.intellij.platform.lsp.impl.features.highlighting.DiagnosticAndQuickFixes
 import com.intellij.platform.lsp.impl.features.highlighting.LspDocumentLink
 import com.intellij.platform.lsp.impl.features.highlighting.LspHighlightingApplier
-import com.intellij.platform.lsp.impl.features.inlayCommon.LspInlayApplier
 import com.intellij.platform.lsp.impl.features.highlighting.LspSemanticToken
 import com.intellij.platform.lsp.impl.features.highlightingCommon.LspCachedHighlighting
 import com.intellij.platform.lsp.impl.features.highlightingCommon.LspHighlightingCacheRegistry
+import com.intellij.platform.lsp.impl.features.inlayCommon.LspInlayApplier
+import com.intellij.platform.lsp.impl.features.navigation.LspLibraryFiles
+import com.intellij.platform.lsp.impl.features.navigation.getFileUriForRequests
 import com.intellij.platform.lsp.impl.fileEvents.LspWatchedFiles
 import com.intellij.serviceContainer.AlreadyDisposedException
 import com.intellij.util.concurrency.annotations.RequiresBackgroundThread
@@ -91,6 +93,7 @@ class LspClientImpl internal constructor(
 
   internal val documentSyncManager = LspDocumentSyncManager(this)
   internal val watchedFiles = LspWatchedFiles(this)
+  internal val libraryFiles = LspLibraryFiles(this)
   private val unsupportedFilePaths: MutableSet<String> = Collections.synchronizedSet(HashSet())
   private val highlightingCacheRegistry = LspHighlightingCacheRegistry(this)
 
@@ -132,7 +135,7 @@ class LspClientImpl internal constructor(
     requestExecutor.sendRequestSync(timeoutMs, lsp4jSender)
 
   override fun getDocumentIdentifier(file: VirtualFile): TextDocumentIdentifier =
-    TextDocumentIdentifier(descriptor.getFileUri(file))
+    TextDocumentIdentifier(getFileUriForRequests(file))
 
   override fun getDocumentVersion(document: Document): Int {
     val file = FileDocumentManager.getInstance().getFile(document) ?: return -1
@@ -162,6 +165,11 @@ class LspClientImpl internal constructor(
   internal fun fileEdited(file: VirtualFile, e: DocumentEvent) {
     highlightingCacheRegistry.fileEdited(file, e)
     eventBroadcaster.fileEdited(this, file)
+    if (isFileOpened(file)) {
+      // Re-apply the cached highlightings with the edit-adjusted ranges. Without this, highlightings
+      // applied before the edit keep their pre-edit offsets until the next daemon pass.
+      LspHighlightingApplier.getInstance(project).scheduleHighlightingRefresh(file)
+    }
   }
 
   internal fun refreshSemanticTokens() {
@@ -180,6 +188,18 @@ class LspClientImpl internal constructor(
     forEachOpenedFile { file ->
       highlightingCacheRegistry.inlayHintsCache.invalidate(file)
       LspInlayApplier.getInstance(project).scheduleRefresh(file)
+    }
+  }
+
+  /**
+   * Handles a server-forced `workspace/diagnostic/refresh`: re-pulls diagnostics for every opened file even without
+   * a document edit. Invalidating the cache keeps the current diagnostics on screen (no flicker);
+   * [LspHighlightingApplier.scheduleHighlightingRefresh] kicks the re-pull and applies the fresh results once they land.
+   */
+  internal fun refreshDiagnostics() {
+    forEachOpenedFile { file ->
+      highlightingCacheRegistry.pullDiagnosticsCache.serverForcedRefresh(file)
+      LspHighlightingApplier.getInstance(project).scheduleHighlightingRefresh(file)
     }
   }
 
@@ -365,7 +385,14 @@ class LspClientImpl internal constructor(
 
   internal fun supportsGotoTypeDefinition(): Boolean = serverCapabilities?.typeDefinitionProvider?.let { it.left ?: true } == true
 
+  internal fun supportsGotoImplementation(file: VirtualFile): Boolean =
+    serverCapabilities?.implementationProvider?.let { it.left ?: true }
+    ?: hasDynamicCapabilityToHandleThisFile(file, LspDynamicCapabilities.implementation)
+
   internal fun supportsHover(): Boolean = serverCapabilities?.hoverProvider?.let { it.left ?: true } == true
+
+  internal fun supportsCommand(command: String): Boolean =
+    serverCapabilities?.executeCommandProvider?.commands?.contains(command) == true
 
   internal fun supportsFindReferences(file: VirtualFile): Boolean =
     serverCapabilities?.referencesProvider?.let { it.left ?: true }

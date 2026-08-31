@@ -34,7 +34,7 @@ annotation class ProductDslMarker
  * Represents an XML include directive that references a resource within a module.
  *
  * @param contentModuleName The JPS module name containing the resource (e.g., "intellij.platform.resources")
- * @param resourcePath The path to the resource within the module (e.g., "META-INF/PlatformLangPlugin.xml")
+ * @param resourcePath The path to the resource within the module (e.g., "idea/PlatformActions.xml")
  * @param optional If true, this include is always generated with xi:fallback and never inlined (safe for files that may not exist)
  */
 @Serializable
@@ -261,7 +261,7 @@ class ProductModulesContentSpecBuilder @PublishedApi internal constructor() {
 
   /**
    * Add an XML include (xi:include directive) by specifying module name and resource path.
-   * Example: deprecatedInclude("intellij.platform.resources", "META-INF/PlatformLangPlugin.xml")
+   * Example: deprecatedInclude("intellij.platform.resources", "idea/PlatformActions.xml")
    *
    * For optional includes that may not exist in all builds (always uses xi:fallback):
    * Example: deprecatedInclude("intellij.rider.languages", "intellij.rider.languages.xml", optional = true)
@@ -353,6 +353,30 @@ class ProductModulesContentSpecBuilder @PublishedApi internal constructor() {
    */
   fun requiredModuleForBackend(name: String) {
     module(name, requiredIfAvailable = "intellij.platform.backend")
+  }
+
+  /**
+   * Add a private module: a module registered in this spec's implicit namespace instead of the shared `jetbrains` one.
+   *
+   * Use it for library wrapper modules (`visibility="private"` descriptors) that only a closed set of consumers needs.
+   * Every owner declares its own copy, and the implicit namespace keeps those copies from clashing at runtime, so the
+   * module does not have to be added to a shared module set to be reachable.
+   *
+   * Note that a module set cannot express this - [ModuleSetBuilder] always emits `<content namespace="jetbrains">` -
+   * so a private module belongs in a product or plugin spec.
+   */
+  fun privateModule(name: String, allowedMissingPluginIds: List<String> = emptyList()) {
+    module(name, namespace = null, allowedMissingPluginIds = allowedMissingPluginIds)
+  }
+
+  /**
+   * Add a private module (see [privateModule]) with EMBEDDED loading.
+   *
+   * Needed when the consumer reaches the library from the main classloader - for example a plain module packed into the
+   * plugin jar, or code that resolves classes reflectively - rather than through its own declared dependency.
+   */
+  fun embeddedPrivateModule(name: String, allowedMissingPluginIds: List<String> = emptyList()) {
+    embeddedModule(name, namespace = null, allowedMissingPluginIds = allowedMissingPluginIds)
   }
 
   /**
@@ -536,7 +560,7 @@ class ProductModulesContentSpecBuilder @PublishedApi internal constructor() {
  * override fun getProductContentModules(): ProductModulesContentSpec {
  *   return productModules {
  *     // XML includes (optional)
- *     include("intellij.platform.resources", "META-INF/PlatformLangPlugin.xml")
+ *     include("intellij.platform.resources", "idea/PlatformActions.xml")
  *     include("intellij.gateway", "META-INF/Gateway.xml")
  *
  *     // Module sets

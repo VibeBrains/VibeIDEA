@@ -236,6 +236,33 @@ class PluginDependencyGraphTest {
   }
 
   @Test
+  fun `declaresAlias adds the hop from the alias node to the declaring plugin`() {
+    val graph = buildGraph(
+      TargetName("plugin.a") to pluginInfo(
+        pluginId = "com.a",
+        pluginDependencies = setOf(PluginId("alias.c")),
+      ),
+      TargetName("plugin.c") to pluginInfo(
+        pluginId = "com.c",
+        pluginAliases = listOf(PluginId("alias.c")),
+      ),
+    )
+
+    graph.query {
+      val pluginC = requireNotNull(plugin("plugin.c"))
+      val aliasNodes = mutableListOf<String>()
+      pluginC.declaresAlias { alias -> aliasNodes.add(alias.name().value) }
+      assertThat(aliasNodes).containsExactly("alias.c")
+
+      // the dependency of plugin.a lands on the alias node, so the reverse edge names plugin.c
+      val aliasNode = requireNotNull(plugin("alias.c"))
+      val declaringPlugins = mutableListOf<String>()
+      aliasNode.aliasDeclaredByPlugin { declaring -> declaringPlugins.add(declaring.name().value) }
+      assertThat(declaringPlugins).containsExactly("plugin.c")
+    }
+  }
+
+  @Test
   fun `pluginsById distinguishes alias nodes from placeholders`() {
     val builder = PluginGraphBuilder()
     val aliasId = PluginId("alias.c")
@@ -312,6 +339,42 @@ class PluginDependencyGraphTest {
         val backedBy = mutableListOf<String>()
         module.backedBy { target -> backedBy.add(target.name()) }
         assertThat(backedBy).containsExactly("plugin.b.module")
+      }
+    }
+  }
+
+  @Test
+  fun `contentModuleWithNamespace finds a namespaced copy and a private copy`() {
+    runBlocking(Dispatchers.Default) {
+      val shared = PluginModuleId("plugin.b.shared", PluginModuleId.DEFAULT_NAMESPACE)
+      val private = PluginModuleId("plugin.b.private", null)
+      val targetModule = TargetName("plugin.b")
+      val info = pluginInfo(
+        pluginId = "com.b",
+        contentModules = listOf(
+          ContentModuleInfo(moduleId = shared, loadingMode = ModuleLoadingRuleValue.REQUIRED),
+          ContentModuleInfo(moduleId = private, loadingMode = ModuleLoadingRuleValue.EMBEDDED),
+        ),
+        source = PluginSource.DISCOVERED,
+      )
+
+      val builder = PluginGraphBuilder()
+      builder.addTarget(targetModule)
+      builder.registerReferencedPlugins(object : PluginContentProvider {
+        override suspend fun getOrExtract(pluginModule: TargetName): PluginContentInfo? {
+          return if (pluginModule == targetModule) info else null
+        }
+      })
+
+      builder.build().query {
+        // the builder indexes this node under its own kind, so a lookup against the by-name index finds nothing
+        val sharedNode = requireNotNull(contentModuleWithNamespace(shared))
+        assertThat(sharedNode.moduleId()).isEqualTo(shared)
+
+        val privateNode = requireNotNull(contentModuleWithNamespace(private))
+        assertThat(privateNode.moduleId()).isEqualTo(private)
+
+        assertThat(contentModuleWithNamespace(PluginModuleId("plugin.b.absent", null))).isNull()
       }
     }
   }

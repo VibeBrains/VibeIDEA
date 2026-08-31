@@ -1,5 +1,6 @@
 load("@rules_jvm//:jvm.bzl", "jvm_library")
 load("//build:compiler-options.bzl", "create_kotlinc_options")
+load("//platform/build-scripts/bazel-rules:content_module_jar.bzl", "content_module_jar")
 
 ### auto-generated section `build intellij.java.analysis.impl` start
 create_kotlinc_options(
@@ -65,7 +66,6 @@ jvm_library(
         "//platform/util:util-ui",
         "//libraries/fastutil",
         "//platform/workspace/storage",
-        "//libraries/icu4j",
         "//platform/util/jdom",
         "//platform/workspace/jps",
         "//platform/backend/workspace",
@@ -85,6 +85,8 @@ jvm_library(
         "//platform/util-ex",
     ],
 )
+
+content_module_jar(module = ":analysis-impl")
 
 jvm_library(
     name = "analysis-impl_test_lib",
@@ -143,7 +145,6 @@ jvm_library(
         "//platform/util:util-ui_test_lib",
         "//libraries/fastutil:fastutil_test_lib",
         "//platform/workspace/storage:storage_test_lib",
-        "//libraries/icu4j:icu4j_test_lib",
         "//platform/util/jdom:jdom_test_lib",
         "//platform/workspace/jps:jps_test_lib",
         "//platform/backend/workspace:workspace_test_lib",

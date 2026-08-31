@@ -6,6 +6,7 @@
     <module name="intellij.libraries.kotlinx.collections.immutable"/>
     <module name="intellij.libraries.kotlinx.coroutines.core"/>
     <module name="intellij.libraries.kotlinx.serialization.core"/>
+    <module name="intellij.libraries.kotlinx.serialization.json"/>
     <module name="intellij.platform.analysis"/>
     <module name="intellij.platform.analysis.impl"/>
     <module name="intellij.platform.codeStyle"/>
@@ -43,6 +44,9 @@
     <registryKey key="diff.semantic.highlighting" defaultValue="false" description="Enables difference highlighting based on the semantics language"/>
     <registryKey key="diff.highlighting.level.visible" defaultValue="false"
                  description="Show the Highlighting Level option in the diff viewer settings menu"/>
+    <registryKey key="diff.frontend.debug.inlays" defaultValue="false"
+                 description="Show FrontendDiffExtension debug information in newly created diff editors"
+                 restartRequired="false"/>
 
     <editorActionHandler action="EditorEscape"
                          implementationClass="com.intellij.openapi.vcs.ex.LineStatusMakerEscEditorHandler"

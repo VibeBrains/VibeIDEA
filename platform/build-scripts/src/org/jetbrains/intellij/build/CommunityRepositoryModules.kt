@@ -18,12 +18,14 @@ import org.jetbrains.intellij.build.impl.PluginVersionEvaluatorResult
 import org.jetbrains.intellij.build.impl.ProjectLibraryData
 import org.jetbrains.intellij.build.impl.SUPPORTED_DISTRIBUTIONS
 import org.jetbrains.intellij.build.impl.SupportedDistribution
+import org.jetbrains.intellij.build.impl.osArchPluginVersion
 import org.jetbrains.intellij.build.impl.patchOsSpecificPluginXml
 import org.jetbrains.intellij.build.impl.projectStructureMapping.DistributionFileEntry
 import org.jetbrains.intellij.build.impl.projectStructureMapping.ProjectLibraryEntry
 import org.jetbrains.intellij.build.io.copyDir
 import org.jetbrains.intellij.build.io.copyFile
 import org.jetbrains.intellij.build.io.copyFileToDir
+import org.jetbrains.intellij.build.io.defaultLibrarySourcesNamesFilter
 import org.jetbrains.intellij.build.kotlin.CommunityKotlinPluginBuilder
 import org.jetbrains.intellij.build.python.PythonCommunityPluginModules
 import org.jetbrains.intellij.build.telemetry.TraceManager.spanBuilder
@@ -260,7 +262,6 @@ object CommunityRepositoryModules {
     },
     pluginAuto("intellij.java.jshell") { spec ->
       spec.withModule("intellij.java.jshell.protocol", "jshell-protocol.jar")
-      spec.withModuleLibrary("jshell-frontend", "intellij.java.jshell.execution", "jshell-frontend.jar")
     },
     pluginAuto(listOf("intellij.tipsOfTheDay.plugin")),
     *allJcefPlugins()
@@ -360,11 +361,8 @@ object CommunityRepositoryModules {
 
       patchOsSpecificPluginXml(spec, os, arch)
 
-      spec.withCustomVersion { _, ideBuildNumber, _ ->
-        // be careful, Marketplace expects linux/macos/windows for os and x86_64/x86/arm64/arm32 for arch
-        val pluginVersion = "$ideBuildNumber-${os.osId}-${arch.marketplaceName}"
-        PluginVersionEvaluatorResult(pluginVersion)
-      }
+      // be careful, Marketplace expects linux/macos/windows for os and x86_64/x86/arm64/arm32 for arch
+      spec.withCustomVersion(osArchPluginVersion(os = os, arch = arch))
 
       spec.withGeneratedResources { targetDir, context ->
         val communityRoot = context.paths.communityHomeDirRoot

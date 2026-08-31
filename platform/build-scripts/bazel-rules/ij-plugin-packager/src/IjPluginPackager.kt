@@ -1,6 +1,5 @@
 package com.intellij.tools.build.bazel.ijPluginPackager
 
-import com.intellij.openapi.util.JDOMUtil
 import com.intellij.platform.pluginSystem.parser.impl.elements.ContentModuleElement
 import com.intellij.platform.pluginSystem.parser.impl.elements.ModuleLoadingRuleValue
 import com.intellij.platform.pluginSystem.parser.impl.parseContentAndXIncludes
@@ -17,6 +16,7 @@ import java.io.Writer
 import java.nio.ByteBuffer
 import java.nio.file.Files
 import java.nio.file.Path
+import kotlin.io.path.readText
 
 /**
  * Builds a plugin distribution from JARs of its modules.
@@ -25,8 +25,18 @@ import java.nio.file.Path
  * a params file specified as the only `--flagfile=path` argument. There is no standalone mode: without `--persistent_worker` the process
  * reports an error and exits, so it cannot be run via `bazel run`.
  *
- * Arguments format: `output_directory [--plugin_content_yaml path] --descriptor_module module_name:path_to_jar
- * [--content_module module_name:path_to_jar]...`. All paths are relative to the base directory of the request.
+ * The first argument is the path to the output directory where the distribution should be generated.
+ * Other arguments are:
+ * * `--descriptor_module module_name:path_to_jar` (mandatory): specifies the name of a JPS module containing the plugin descriptor and path to its JAR file;
+ * * `--content_module module_name:path_to_jar` (multiple entries are allowed): includes a plugin content module to the plugin distribution;
+ * * `--packed_modules path`: enables generation of the `packed-modules.yaml` file, which names each jar in the distribution and the modules packed into it;
+ * * `--plugin_version version`: updates `<version>` tag in `plugin.xml` with the provided version;
+ * * `--since_build build`: updates `since-build` attribute in `<idea-version>` tag in `plugin.xml` with the provided value;
+ * * `--until_build build`: updates `until-build` attribute in `<idea-version>` tag in `plugin.xml` with the provided value;
+ * * `--build_number_file path`: provides a path to a file with a build number that will be used as a value for `--plugin_version`, `--since_build` and `--until_build` if the
+ *   corresponding arguments use `$build_number_from_file` placeholder.
+ *
+ * All paths are relative to the base directory of the request.
  */
 object IjPluginPackager {
   @JvmStatic
@@ -43,8 +53,12 @@ object IjPluginPackager {
     require(args.isNotEmpty()) { "Expected an output directory" }
 
     var descriptorModule: ModuleArgument? = null
-    var pluginContentYamlPath: Path? = null
+    var packedModulesPath: Path? = null
     val contentModuleArguments = HashMap<String, ModuleArgument>()
+    var pluginVersion: String? = null
+    var sinceBuild: String? = null
+    var untilBuild: String? = null
+    var buildNumberFile: Path? = null
     var index = 1
     while (index < args.size) {
       require(index + 1 < args.size) { "Expected a value after ${args[index]}" }
@@ -58,9 +72,25 @@ object IjPluginPackager {
           val oldValue = contentModuleArguments.put(module.name, module)
           require(oldValue == null) { "Two --content_module arguments for the same module: ${module.name}" }
         }
-        "--plugin_content_yaml" -> {
-          require(pluginContentYamlPath == null) { "--plugin_content_yaml must be specified only once" }
-          pluginContentYamlPath = baseDir.resolve(args[index + 1])
+        "--packed_modules" -> {
+          require(packedModulesPath == null) { "--packed_modules must be specified only once" }
+          packedModulesPath = baseDir.resolve(args[index + 1])
+        }
+        "--plugin_version" -> {
+          require(pluginVersion == null) { "--plugin_version must be specified only once" }
+          pluginVersion = args[index + 1]
+        }
+        "--since_build" -> {
+          require(sinceBuild == null) { "--since_build must be specified only once" }
+          sinceBuild = args[index + 1]
+        }
+        "--until_build" -> {
+          require(untilBuild == null) { "--until_build must be specified only once" }
+          untilBuild = args[index + 1]
+        }
+        "--build_number_file" -> {
+          require(buildNumberFile == null) { "--build_number_file must be specified only once" }
+          buildNumberFile = baseDir.resolve(args[index + 1])
         }
         else -> error("Unknown option: ${args[index]}")
       }
@@ -75,40 +105,51 @@ object IjPluginPackager {
     val originalPluginXmlContent = readEntryFromZip(descriptorJar, PLUGIN_DESCRIPTOR_ENTRY_NAME)
     requireNotNull(originalPluginXmlContent) { "$PLUGIN_DESCRIPTOR_ENTRY_NAME is not found in $descriptorJar" }
     val contentModules = parseContentAndXIncludes(originalPluginXmlContent, descriptorJar.toString()).contentModules
-    val pluginContentYamlWriter = pluginContentYamlPath?.let { PluginContentYamlWriter(it, outputDirectory) }
+    val packedModulesWriter = packedModulesPath?.let { PackedModulesWriter(it, outputDirectory) }
 
     val contentModuleDescriptors = packContentModulesAndReturnTheirDescriptors(
       contentModules = contentModules,
       contentModuleArguments = contentModuleArguments,
       libDirectory = libDirectory,
-      pluginContentYamlWriter = pluginContentYamlWriter,
+      packedModulesWriter = packedModulesWriter,
     )
+
+    val buildNumberFromFile = lazy {
+      requireNotNull(buildNumberFile) { "--build_number_file is not specified but it's used in other arguments" }
+      try {
+        buildNumberFile.readText()
+      }
+      catch (e: Exception) {
+        error("Failed to read build number from file $buildNumberFile: $e")
+      }
+    }
 
     val descriptorOutputJar = libDirectory.resolve(generateNameForPluginDescriptorJar(descriptorModuleArgument.name))
     PluginJarPackager(descriptorOutputJar).use {
+      val patchedPluginXmlContent = patchPluginDescriptor(
+        originalContent = originalPluginXmlContent,
+        pluginVersion = substituteBuildNumber(pluginVersion, buildNumberFromFile),
+        sinceBuild = substituteBuildNumber(sinceBuild, buildNumberFromFile),
+        untilBuild = substituteBuildNumber(untilBuild, buildNumberFromFile),
+        contentModuleDescriptors = contentModuleDescriptors
+      )
+      it.addFile(PLUGIN_DESCRIPTOR_ENTRY_NAME, patchedPluginXmlContent)
       it.addEntriesFromJar(descriptorJar) { filePath, dataFetcher ->
-        if (!isIncludedFromModuleOutput(filePath)) {
+        if (!isIncludedFromModuleOutput(filePath) || filePath == PLUGIN_DESCRIPTOR_ENTRY_NAME) {
           return@addEntriesFromJar null
         }
-        val data = dataFetcher()
-        if (filePath == PLUGIN_DESCRIPTOR_ENTRY_NAME) {
-          val pluginDescriptorRoot = JDOMUtil.load(data.toByteArray())
-          embedContentModules(pluginDescriptorRoot, contentModuleDescriptors)
-          val patchedData = JDOMUtil.write(pluginDescriptorRoot)
-          return@addEntriesFromJar ByteBuffer.wrap(patchedData.toByteArray())
-        }
-        data
+        dataFetcher()
       }
     }
-    pluginContentYamlWriter?.addModule(descriptorOutputJar, descriptorModuleArgument.name)
-    pluginContentYamlWriter?.write()
+    packedModulesWriter?.addModule(descriptorOutputJar, descriptorModuleArgument.name)
+    packedModulesWriter?.write()
   }
 
   private fun packContentModulesAndReturnTheirDescriptors(
     contentModules: List<ContentModuleElement>,
     contentModuleArguments: HashMap<String, ModuleArgument>,
     libDirectory: Path,
-    pluginContentYamlWriter: PluginContentYamlWriter?,
+    packedModulesWriter: PackedModulesWriter?,
   ): Map<String, ByteArray> {
     val contentModuleDescriptors = HashMap<String, ByteArray>()
     for (contentModule in contentModules) {
@@ -133,7 +174,7 @@ object IjPluginPackager {
           }
         }
       }
-      pluginContentYamlWriter?.addContentModule(outputJar, contentModule.name)
+      packedModulesWriter?.addContentModule(outputJar, contentModule.name)
     }
     return contentModuleDescriptors
   }
@@ -159,6 +200,9 @@ object IjPluginPackager {
   )
 }
 
+private fun substituteBuildNumber(string: String?, buildNumberFromFile: Lazy<String>): String? {
+  return if (string == $$"$build_number_from_file") buildNumberFromFile.value else string
+}
 
 internal object IjPluginPackagerExecutor : WorkRequestExecutor {
   override suspend fun execute(request: WorkRequest, writer: Writer, baseDir: Path, tracer: Tracer): Int {

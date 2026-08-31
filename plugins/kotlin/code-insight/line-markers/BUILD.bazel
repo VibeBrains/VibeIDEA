@@ -1,6 +1,7 @@
 load("@community//build:tests-options.bzl", "jps_test")
 load("@rules_jvm//:jvm.bzl", "jvm_library")
 load("//build:compiler-options.bzl", "create_kotlinc_options")
+load("//platform/build-scripts/bazel-rules:content_module_jar.bzl", "content_module_jar")
 
 ### auto-generated section `build intellij.kotlin.codeInsight.lineMarkers` start
 create_kotlinc_options(
@@ -39,7 +40,7 @@ jvm_library(
         "//platform/indexing-api:indexing",
         "//plugins/kotlin/base/util",
         "//plugins/kotlin/base/fir/project-structure",
-        "@lib//:kotlinc-kotlin-jps-common",
+        "//libraries/kotlinc/kotlin-jps-common:libraries-kotlinc-kotlin-jps-common",
         "//plugins/kotlin/base/psi",
         "//plugins/kotlin/base/platforms",
         "//platform/core-impl",
@@ -68,6 +69,8 @@ jvm_library(
     ],
 )
 
+content_module_jar(module = ":line-markers")
+
 jvm_library(
     name = "line-markers_test_lib",
     testonly = True,
@@ -91,6 +94,7 @@ jvm_library(
         "//platform/indexing-api:indexing_test_lib",
         "//plugins/kotlin/base/util:util_test_lib",
         "//plugins/kotlin/base/fir/project-structure:project-structure_test_lib",
+        "//libraries/kotlinc/kotlin-jps-common:libraries-kotlinc-kotlin-jps-common_test_lib",
         "//plugins/kotlin/base/psi:psi_test_lib",
         "//plugins/kotlin/base/platforms:platforms_test_lib",
         "//platform/core-impl:core-impl_test_lib",

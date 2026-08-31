@@ -10,6 +10,7 @@ import com.intellij.platform.pluginGraph.TargetName
 import com.intellij.platform.pluginSystem.parser.impl.elements.ModuleLoadingRuleValue
 import org.jetbrains.intellij.build.productLayout.model.ModuleSourceInfo
 import org.jetbrains.intellij.build.productLayout.stats.AnsiStyle
+import org.jetbrains.intellij.build.productLayout.traversal.ContentModuleCopyConflict
 
 /**
  * Error when content module IML dependencies on main plugin modules are not declared in XML.
@@ -121,6 +122,69 @@ data class DuplicatePluginContentModulesError(
     appendLine()
     appendLine("${s.gray}[Rule: $ruleName]${s.reset}")
     appendLine()
+  }
+}
+
+/**
+ * Error when a content module reaches two embedded copies of one content module name.
+ *
+ * One error covers one duplicated name in one product, so [suppressionKey] can grandfather that name.
+ */
+internal data class ContentModuleCopyConflictError(
+  override val context: String,
+  /** The content module name that two or more bundled plugins declare as embedded content. */
+  val duplicatedModule: ContentModuleName,
+  @JvmField val conflicts: List<ContentModuleCopyConflict>,
+  override val ruleName: String = "ContentModuleCopyConflictValidation",
+) : ValidationError {
+  override val category: ErrorCategory get() = ErrorCategory.CONTENT_MODULE_COPY_CONFLICT
+
+  override val suppressionKey: String get() = suppressionKeyFor(duplicatedModule)
+
+  override fun format(s: AnsiStyle): String = buildString {
+    appendLine("${s.red}${s.bold}Product '${context}' reaches two embedded copies of '${duplicatedModule.value}'${s.reset}")
+    appendLine()
+    appendLine("${s.yellow}Two bundled plugins declare this content module name as embedded content.${s.reset}")
+    appendLine("${s.yellow}Each copy joins the main classloader of its own plugin and holds its own classes.${s.reset}")
+    appendLine("${s.yellow}Each module below reaches both copies, so it loads the same class from two classloaders.${s.reset}")
+    appendLine()
+
+    for (conflict in conflicts.sortedBy { it.module.value }) {
+      appendLine("  ${s.red}*${s.reset} ${s.bold}${conflict.module.value}${s.reset} reaches:")
+      for (owner in conflict.owners) {
+        appendLine("      - copy of ${owner.plugin.value}, runtime ID ${owner.moduleId}")
+        appendLine("        ${s.gray}${owner.path.joinToString(separator = " -> ")}${s.reset}")
+      }
+    }
+
+    appendLine()
+    appendLine("${s.yellow}Why this matters:${s.reset} the same class arrives from two classloaders, which raises a LinkageError")
+    appendLine("and drops every feature that passes such a class across the boundary.")
+    appendLine()
+    appendLine("${s.blue}Fix:${s.reset}")
+    appendLine("1. Let the plugin that owns the API hold the one copy, and let each dependent plugin reuse it.")
+    appendLine("2. Or break the dependency path so no module reaches two copies.")
+    appendLine("3. Or, as a last resort, declare the module once as shared content of a module set.")
+    appendLine("   Read build/decisions/0005-a-library-copy-belongs-to-the-plugin-that-owns-its-api.md.")
+    appendLine()
+    appendLine("${s.blue}Or grandfather temporarily:${s.reset} add to contentModuleCopyConflicts in suppressions.json:")
+    appendLine("       ${s.gray}\"${duplicatedModule.value}\": { \"reason\": \"owners: ...\" }${s.reset}")
+    appendLine()
+    appendLine("${s.gray}[Rule: $ruleName]${s.reset}")
+    appendLine()
+  }
+
+  companion object {
+    /**
+     * The suppression key of one duplicated name.
+     *
+     * The spelling follows `suppressedErrors`, whose only producer is `"nonStandardRoot:$moduleName"`:
+     * a camelCase prefix, a colon, then the content module name.
+     * The camelCase prefix also keeps this key apart from the kebab-case ID that [errorId] builds.
+     */
+    fun suppressionKeyFor(duplicatedModule: ContentModuleName): String {
+      return "contentModuleCopyConflict:${duplicatedModule.value}"
+    }
   }
 }
 
@@ -589,5 +653,143 @@ data class DuplicatePluginDependencyDeclarationError(
     appendLine()
     appendLine("${s.gray}[Rule: $ruleName]${s.reset}")
     appendLine()
+  }
+}
+
+/**
+ * Error when two variants of one plugin are both candidates for one target platform.
+ *
+ * A plugin is declared once for each supported `(os, arch)`, and a distribution holds one of those variants. Every
+ * variant carries the same plugin directory, so a second candidate for one target has nothing of its own to write to.
+ * `org.jetbrains.intellij.build.dev.devModePluginCandidates` selects the variant of the target, and it fails on a pair.
+ *
+ * The producer of this error lives above this module, because a plugin variant and its bundling restrictions are
+ * build-script types. So the error carries the text of a restriction rather than the restriction itself.
+ */
+data class PluginVariantOverlapError(
+  override val context: String,
+  @JvmField val overlaps: List<PluginVariantOverlap>,
+  override val ruleName: String = "PluginVariantOverlapValidation",
+) : ValidationError {
+  override val category: ErrorCategory get() = ErrorCategory.PLUGIN_VARIANT_OVERLAP
+
+  /**
+   * @param mainModule the main module every variant of the pair declares
+   * @param targetPlatform the target both variants are candidates for, as `os arch`
+   * @param restrictions the bundling restrictions of each variant, in declaration order
+   */
+  data class PluginVariantOverlap(
+    @JvmField val mainModule: String,
+    @JvmField val targetPlatform: String,
+    @JvmField val restrictions: List<String>,
+  )
+
+  override fun format(s: AnsiStyle): String = buildString {
+    appendLine("${s.red}${s.bold}Product '$context' declares two variants of one plugin for one target platform${s.reset}")
+    appendLine()
+    appendLine("${s.yellow}A distribution holds one variant of a plugin, and every variant carries the same plugin")
+    appendLine("directory. So the second variant has no destination, and one overwrites the other.${s.reset}")
+    appendLine()
+
+    for ((mainModule, targetPlatform, restrictions) in overlaps.sortedWith(compareBy({ it.mainModule }, { it.targetPlatform }))) {
+      appendLine("  ${s.red}*${s.reset} ${s.bold}$mainModule${s.reset} on $targetPlatform")
+      for (restriction in restrictions) {
+        appendLine("      - [$restriction]")
+      }
+    }
+
+    appendLine()
+    appendLine("${s.yellow}Fix:${s.reset}")
+    appendLine("1. Narrow the restrictions of one variant, so that one candidate remains for each target platform.")
+    appendLine("2. Or delete the variant the product does not need.")
+    appendLine()
+    appendLine("${s.gray}[Rule: $ruleName]${s.reset}")
+    appendLine()
+  }
+}
+
+/**
+ * Error when one JPS module goes into the main jar directory of two plugins.
+ *
+ * A plugin that packs a module holds its own copy of the classes. The copies grow the distribution. A third plugin
+ * that depends on both plugins then loads one class from two classloaders, which raises a `LinkageError`.
+ *
+ * The subject is a static layout entry, which a plugin declares through `spec.withModule`. That mechanism is on the
+ * way out, so the rule is a ratchet on a dying mechanism. A content module that two plugins declare with no namespace
+ * is a different shape, and that shape is legal. Read
+ * `docs/IntelliJ-Platform/4_man/Plugin-Model/Including-content-module-in-multiple-plugins.md`, which is IJPL-A-1893.
+ *
+ * The producer of this error lives above this module, because a plugin layout is a build-script type. So the error
+ * carries plain names rather than the layout itself.
+ *
+ * One instance holds either the duplicated modules or the stale allowlist entries. Many products share one plugin
+ * layout registry, so neither report carries a product name.
+ */
+data class ModuleInMultiplePluginsError(
+  override val context: String,
+  @JvmField val duplicates: List<ModuleOwners> = emptyList(),
+  @JvmField val staleAllowlistEntries: List<String> = emptyList(),
+  override val ruleName: String = "ModuleInMultiplePluginsValidation",
+) : ValidationError {
+  override val category: ErrorCategory get() = ErrorCategory.MODULE_IN_MULTIPLE_PLUGINS
+
+  /**
+   * @param moduleName the JPS module that two or more plugins pack
+   * @param owners the main module of each plugin that packs it
+   */
+  data class ModuleOwners(
+    @JvmField val moduleName: String,
+    @JvmField val owners: List<String>,
+  )
+
+  override fun format(s: AnsiStyle): String = buildString {
+    if (duplicates.isEmpty()) {
+      appendLine("${s.red}${s.bold}The allowlist of modules in multiple plugins holds a stale entry${s.reset}")
+      appendLine()
+      for (moduleName in staleAllowlistEntries.sorted()) {
+        appendLine("  ${s.red}*${s.reset} ${s.bold}$moduleName${s.reset}")
+      }
+      appendLine()
+      appendLine("${s.blue}No plugin layout registry duplicates a name above.${s.reset}")
+      appendLine("${s.blue}Fix:${s.reset} remove the name from $ALLOWLIST_NAME in $ALLOWLIST_FILE.")
+      appendLine()
+      appendLine("${s.gray}[Rule: $ruleName]${s.reset}")
+      appendLine()
+      return@buildString
+    }
+
+    appendLine("${s.red}${s.bold}Two plugin layouts pack one module${s.reset}")
+    appendLine()
+    appendLine("${s.yellow}Each plugin holds its own copy of the classes, so the copies grow the distribution.${s.reset}")
+    appendLine("${s.yellow}A third plugin that depends on both plugins loads one class from two classloaders.${s.reset}")
+    appendLine("${s.yellow}Many products share one plugin layout registry, so the report names no product.${s.reset}")
+    appendLine()
+
+    for ((moduleName, owners) in duplicates.sortedBy { it.moduleName }) {
+      appendLine("  ${s.red}*${s.reset} ${s.bold}$moduleName${s.reset}")
+      for (owner in owners.sorted()) {
+        appendLine("      - $owner")
+      }
+    }
+
+    appendLine()
+    appendLine("${s.blue}Fix:${s.reset}")
+    appendLine("1. Move the module to the platform, so that every plugin reads the one copy.")
+    appendLine("2. Or extract a new plugin that holds the module, and let each plugin depend on it.")
+    appendLine("3. Or grandfather the name: add it to $ALLOWLIST_NAME in $ALLOWLIST_FILE.")
+    appendLine()
+    appendLine("${s.gray}[Rule: $ruleName]${s.reset}")
+    appendLine()
+  }
+
+  companion object {
+    /** The context of the duplicate report. Many products share one plugin layout registry, so it names no product. */
+    const val LAYOUT_REGISTRY_CONTEXT: String = "plugin-layouts"
+
+    /** The context of the stale report. The report reads every registry at once, so it names no product. */
+    const val ALLOWLIST_CONTEXT: String = "allowlist"
+
+    private const val ALLOWLIST_NAME = "KNOWN_MODULES_IN_MULTIPLE_PLUGINS"
+    private const val ALLOWLIST_FILE = "platform/buildScripts/src/productLayout/ultimateGenerator.kt"
   }
 }

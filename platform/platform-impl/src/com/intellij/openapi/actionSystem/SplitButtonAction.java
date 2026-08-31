@@ -17,6 +17,8 @@ import com.intellij.openapi.ui.JBPopupMenu;
 import com.intellij.openapi.util.IconLoader;
 import com.intellij.openapi.util.Key;
 import com.intellij.openapi.util.text.StringUtil;
+import com.intellij.ui.components.SplitButtonHalf;
+import com.intellij.ui.components.SplitButtonZones;
 import com.intellij.ui.scale.JBUIScale;
 import com.intellij.util.ObjectUtils;
 import com.intellij.util.containers.ContainerUtil;
@@ -24,7 +26,6 @@ import com.intellij.util.messages.SimpleMessageBusConnection;
 import com.intellij.util.ui.JBInsets;
 import com.intellij.util.ui.JBUI;
 import com.intellij.util.ui.StartupUiUtil;
-import org.jetbrains.annotations.ApiStatus;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
@@ -47,23 +48,6 @@ public class SplitButtonAction extends ActionGroupWrapper implements CustomCompo
   public SplitButtonAction(@NotNull ActionGroup actionGroup) {
     super(actionGroup);
     setPopup(true);
-  }
-
-  /**
-   * The half of {@code component} a press runs the main action from, or {@code null} when it is not a split button.
-   * <p>
-   * The two zones are the button's contract with whatever presses it — hit testing here, and anything driving the
-   * control from outside — so they are computed once rather than reproduced by each caller.
-   */
-  @ApiStatus.Internal
-  public static @Nullable Rectangle getActionZone(@NotNull Component component) {
-    return component instanceof SplitButton splitButton ? splitButton.actionZone() : null;
-  }
-
-  /** The chevron half of {@code component}, which opens the popup. See {@link #getActionZone}. */
-  @ApiStatus.Internal
-  public static @Nullable Rectangle getPopupZone(@NotNull Component component) {
-    return component instanceof SplitButton splitButton ? splitButton.popupZone() : null;
   }
 
   public @NotNull ActionGroup getActionGroup() {
@@ -123,7 +107,7 @@ public class SplitButtonAction extends ActionGroupWrapper implements CustomCompo
     return new SplitButton(this, presentation, place, getDelegate(), useDynamicSplitButton());
   }
 
-  private static final class SplitButton extends ActionButton {
+  private static final class SplitButton extends ActionButton implements SplitButtonZones {
     private enum MousePressType {
       Action, Popup, None
     }
@@ -231,6 +215,17 @@ public class SplitButtonAction extends ActionGroupWrapper implements CustomCompo
 
     private boolean isToggleActionPushed() {
       return selectedAction instanceof Toggleable && Toggleable.isSelected(myPresentation);
+    }
+
+    @Override
+    public @NotNull Rectangle splitButtonZone(@NotNull SplitButtonHalf half) {
+      return half == SplitButtonHalf.ACTION ? actionZone() : popupZone();
+    }
+
+    /** This button paints both halves and decides the pressed one from the point, so it owns both halves' listeners. */
+    @Override
+    public @NotNull Component splitButtonHalfComponent(@NotNull SplitButtonHalf half) {
+      return this;
     }
 
     /**

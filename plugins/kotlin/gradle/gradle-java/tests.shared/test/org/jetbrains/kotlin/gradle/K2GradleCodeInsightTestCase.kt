@@ -124,7 +124,7 @@ abstract class K2GradleCodeInsightTestCase : AbstractKotlinGradleCodeInsightBase
 
         @JvmStatic
         protected val WITH_CUSTOM_CONFIGURATIONS_AND_VERSION_CATALOGS_FIXTURE =
-            GradleTestFixtureBuilder.create("with-custom-configurations-and-version-catalogs") { gradleVersion ->
+            GradleTestFixtureBuilder.create("with-cstm-configs-and-ver-catalogs") { gradleVersion ->
                 assertThatVersionCatalogsAreSupported(gradleVersion)
                 withSettingsFile(gradleVersion, gradleDsl = GradleDsl.KOTLIN) {
                     setProjectName("with-custom-configurations-and-version-catalogs")
@@ -162,9 +162,9 @@ abstract class K2GradleCodeInsightTestCase : AbstractKotlinGradleCodeInsightBase
         maskExtensions<HighlightVisitor>(
             HighlightVisitor.EP_HIGHLIGHT_VISITOR,
             emptyList(),
-            fixture.projectDisposable,
+            codeInsightFixture.projectDisposable,
             false,
-            fixture.getProject()
+            codeInsightFixture.getProject()
         )
     }
 

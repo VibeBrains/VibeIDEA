@@ -1,16 +1,12 @@
 // Copyright 2000-2026 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package org.jetbrains.idea.maven.indices
 
-import com.intellij.idea.IJIgnore
 import com.intellij.maven.testFramework.fixtures.MavenIndicesTestFixture
 import com.intellij.maven.testFramework.fixtures.MavenVersionArguments
 import com.intellij.maven.testFramework.fixtures.assertUnorderedElementsAreEqual
 import com.intellij.maven.testFramework.fixtures.mavenImportingFixture
 import com.intellij.maven.testFramework.fixtures.testRootDisposable
-import com.intellij.openapi.application.EDT
-import com.intellij.openapi.application.writeIntentReadAction
 import com.intellij.testFramework.junit5.TestApplication
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runBlocking
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.BeforeEach
@@ -21,7 +17,6 @@ import org.junit.jupiter.params.provider.ArgumentsSource
 @TestApplication
 @ParameterizedClass
 @ArgumentsSource(MavenVersionArguments::class)
-@IJIgnore(issue = "IDEA-392698")
 class MavenArtifactSearcherTest(mavenVersion: String, modelVersion: String) {
 
   private val maven by mavenImportingFixture(
@@ -37,17 +32,13 @@ class MavenArtifactSearcherTest(mavenVersion: String, modelVersion: String) {
 
   @Throws(Exception::class)
   @BeforeEach
-  fun setUp() {
-    runBlocking(Dispatchers.EDT) {
-      writeIntentReadAction {
-        myIndicesFixture = MavenIndicesTestFixture(maven.dir, maven.project, maven.testRootDisposable)
-        myIndicesFixture.setUp()
-      }
-    }
+  fun setUp() = runBlocking {
+    myIndicesFixture = MavenIndicesTestFixture(maven.dir, maven.project, maven.testRootDisposable)
+    myIndicesFixture.setUp()
   }
 
   @AfterEach
-  fun tearDown() = runBlocking(Dispatchers.EDT) {
+  fun tearDown() = runBlocking {
     myIndicesFixture.tearDown()
   }
 

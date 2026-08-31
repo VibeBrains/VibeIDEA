@@ -24,6 +24,7 @@ import com.intellij.openapi.wm.ToolWindowManager
 import com.intellij.openapi.wm.ex.ToolWindowManagerListener
 import com.intellij.platform.buildView.BuildViewApi
 import com.intellij.platform.project.projectId
+import com.intellij.util.ConcurrencyUtil
 import fleet.rpc.client.durable
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -101,9 +102,10 @@ private class FrontendBuildViewManager(private val project: Project, private val
       LOG.info("Waiting for tool window registration")
       Disposer.newDisposable("FrontendBuildViewManager.waitForToolWindow").use { disposable ->
         suspendCancellableCoroutine { continuation ->
+          val resumeOnce = ConcurrencyUtil.once { continuation.resumeWith(Result.success(Unit)) }
           fun checkDone() {
             if (isToolWindowRegistered(toolWindowManager)) {
-              continuation.resumeWith(Result.success(Unit))
+              resumeOnce.run()
             }
           }
           val connection = project.messageBus.connect(disposable)

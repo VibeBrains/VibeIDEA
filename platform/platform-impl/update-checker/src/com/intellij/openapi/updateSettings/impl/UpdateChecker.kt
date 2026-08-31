@@ -10,6 +10,7 @@ import com.intellij.ide.plugins.PluginEnabler
 import com.intellij.ide.plugins.PluginManagementPolicy
 import com.intellij.ide.plugins.PluginManagerCore
 import com.intellij.ide.plugins.PluginStringSetFile
+import com.intellij.ide.plugins.PluginUtils
 import com.intellij.ide.plugins.marketplace.MarketplaceRequests
 import com.intellij.ide.plugins.marketplace.utils.MarketplaceCustomizationService
 import com.intellij.ide.plugins.newui.PluginUiModel
@@ -383,8 +384,9 @@ object UpdateChecker {
 
         val relevantUpdates = if (PluginUpdateSourceService.isPluginUpdateFilteredAgainstPluginUpdateSource()) {
           val backendUpdateSource = getMatchingPluginUpdateSource(backend)
-          val relevantPluginIds =
-            updates.getAllPluginIds().filter { pluginId -> hasMatchingPluginUpdateSource(pluginId, backendUpdateSource) }
+          val relevantPluginIds = updates.getAllPluginIds().filter { pluginId ->
+            hasMatchingPluginUpdateSource(pluginId, backendUpdateSource)
+          }
           updates.filterByPluginIds(relevantPluginIds)
         }
         else {
@@ -414,7 +416,10 @@ object UpdateChecker {
     return InternalPluginResults(updates, pluginModels.values, errors)
   }
 
-  private fun hasMatchingPluginUpdateSource(pluginId: PluginId, candidatePluginUpdateSource: PluginUpdateSourceId): Boolean {
+  private fun hasMatchingPluginUpdateSource(
+    pluginId: PluginId,
+    candidatePluginUpdateSource: PluginUpdateSourceId,
+  ): Boolean {
     val updateSourceFromSettings = PluginUpdateSourceService.getInstance().getPluginUpdateSourceId(pluginId)
     return when {
       updateSourceFromSettings == null -> false
@@ -428,7 +433,7 @@ object UpdateChecker {
 
     // installed plugins that could be updated (either downloaded or updateable bundled)
     UpdateCheckerPluginsFacade.getInstance().getInstalledPlugins()
-      .filter { !it.isBundled || it.allowBundledUpdate() }
+      .filter { PluginUtils.isUpdateable(it) }
       .associateByTo(updateable) { it.pluginId }
 
     // plugins installed in an instance from which the settings were imported
@@ -741,7 +746,10 @@ private suspend fun doUpdateAndShowResult(
     return null
   }
 
-  val apiVersion = (platformUpdates as? PlatformUpdates.Loaded)?.newBuild?.apiVersion
+  // "Remind Me Later" mutes the IDE announcement
+  val announcedUpdate = if (userInitiated || !IdeUpdateWidgetState.isRemindLaterActive()) platformUpdates as? PlatformUpdates.Loaded
+                        else null
+  val apiVersion = announcedUpdate?.newBuild?.apiVersion
   val updatesModel = PluginUpdateHandler.getInstance().loadAndStorePluginUpdates(apiVersion?.asString(), indicator = indicator)
   val updatesForPlugins = updatesModel.pluginUpdates
   val incompatiblePluginNames = updatesModel.incompatiblePluginNames
@@ -780,7 +788,7 @@ private suspend fun doUpdateAndShowResult(
 
   // TODO revise this
   val pluginAutoUpdateService = service<PluginAutoUpdateService>()
-  if (platformUpdates !is PlatformUpdates.Loaded) {
+  if (announcedUpdate == null) {
     pluginAutoUpdateService.onPluginUpdatesChecked(notIgnoredDownloaders)
   }
   else {
@@ -791,8 +799,8 @@ private suspend fun doUpdateAndShowResult(
   }
 
   if (!showResults) {
-    if (platformUpdates is PlatformUpdates.Loaded) {
-      UpdateSettingsEntryPointActionProvider.newPlatformUpdate(platformUpdates, updatesForPlugins, incompatiblePluginNames, notIgnoredDownloaders)
+    if (announcedUpdate != null) {
+      UpdateSettingsEntryPointActionProvider.newPlatformUpdate(announcedUpdate, updatesForPlugins, incompatiblePluginNames, notIgnoredDownloaders)
     }
     else {
       UpdateSettingsEntryPointActionProvider.newPluginUpdates(updatesForPlugins, customRepoPlugins)
@@ -803,10 +811,10 @@ private suspend fun doUpdateAndShowResult(
   return {
     val forceDialog = preferDialog || userInitiated && !notificationsEnabled()
 
-    if (platformUpdates is PlatformUpdates.Loaded) {
+    if (announcedUpdate != null) {
       showResults(
         project = project,
-        platformUpdates = platformUpdates,
+        platformUpdates = announcedUpdate,
         updatesForPlugins = notIgnoredDownloaders,
         incompatiblePluginNames = incompatiblePluginNames,
         showNotification = userInitiated || WelcomeFrame.getInstance() != null,
@@ -984,7 +992,8 @@ private fun showResults(
   else {
     UpdateSettingsEntryPointActionProvider.newPlatformUpdate(platformUpdates, updatesForPlugins.map { it.uiModel }, incompatiblePluginNames, updatesForPlugins)
 
-    if (showNotification) {
+    // Disable notification when IdeUpdateWidgetState
+    if (showNotification && !IdeUpdateWidgetState.isWidgetShown()) {
       IdeUpdateUsageTriggerCollector.NOTIFICATION_SHOWN.log(project)
       val message = IdeBundle.message(
         "updates.new.build.notification.title",

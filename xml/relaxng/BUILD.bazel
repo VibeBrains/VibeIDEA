@@ -1,5 +1,6 @@
 load("@community//build:tests-options.bzl", "jps_test")
 load("@rules_jvm//:jvm.bzl", "jvm_library")
+load("//platform/build-scripts/bazel-rules:content_module_jar.bzl", "content_module_jar")
 
 jps_test(
     name = "relaxng-tests_test",
@@ -65,6 +66,15 @@ jvm_library(
     ],
 )
 
+content_module_jar(
+    libraries = [
+        # do not sort,
+        "//xml/relaxng/lib:relaxng-rngom-20051226-patched",
+        "//xml/relaxng/lib:relaxng-trang-core",
+    ],
+    module = ":relaxng",
+)
+
 jvm_library(
     name = "relaxng_test_lib",
     testonly = True,
@@ -118,6 +128,7 @@ exports_files(
     [
         "intellij.relaxng.iml",
         "resources/intellij.relaxng.xml",
+        "module-content.yaml",
     ],
     visibility = ["//visibility:public"],
 )

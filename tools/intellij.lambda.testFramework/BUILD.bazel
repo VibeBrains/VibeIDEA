@@ -77,6 +77,7 @@ jvm_library(
         "//platform/util-ex",
         "//platform/remote-driver/client",
         "//platform/testFramework/teamCity",
+        "//plugins/performanceTesting/rdct",
     ],
 )
 
@@ -135,6 +136,7 @@ jvm_library(
         "//platform/util-ex:util-ex_test_lib",
         "//platform/remote-driver/client:client_test_lib",
         "//platform/testFramework/teamCity:teamCity_test_lib",
+        "//plugins/performanceTesting/rdct:rdct_test_lib",
     ],
 )
 ### auto-generated section `build intellij.lambda.testFramework` end

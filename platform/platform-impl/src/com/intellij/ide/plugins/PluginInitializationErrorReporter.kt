@@ -10,8 +10,6 @@ import com.intellij.notification.NotificationType
 import com.intellij.openapi.actionSystem.AnAction
 import com.intellij.openapi.components.service
 import com.intellij.openapi.components.serviceAsync
-import com.intellij.openapi.options.ShowSettingsUtil
-import com.intellij.openapi.project.Project
 import com.intellij.openapi.util.text.HtmlBuilder
 import com.intellij.openapi.util.text.HtmlChunk
 import com.intellij.platform.ide.productMode.IdeProductMode
@@ -68,8 +66,10 @@ internal class PluginInitializationErrorStartupReporter : AppLifecycleListener {
       actions += prepareDisableAction(pluginsToDisable)
     }
 
+    val notificationGroupManager = serviceAsync<NotificationGroupManager>()
+
     withContext(RawSwingDispatcher) {
-      serviceAsync<NotificationGroupManager>().getNotificationGroup("Plugin Error")
+      notificationGroupManager.getNotificationGroup("Plugin Error")
         .createNotification(title, content, NotificationType.ERROR)
         .addActions(actions)
         .notify(null)
@@ -110,14 +110,7 @@ internal class PluginInitializationErrorStartupReporter : AppLifecycleListener {
 
   internal fun prepareEditAction(): AnAction {
     return NotificationAction.createSimpleExpiring(CoreBundle.message("link.text.open.plugin.manager")) {
-      val configurable = PluginManagerConfigurable()
-      ShowSettingsUtil.getInstance().editConfigurable(
-        null as Project?,
-        configurable,
-        Runnable {
-          configurable.openInstalledTab("/invalid") // TODO: does nothing, does not set query
-        }
-      )
+      PluginManagerConfigurableUtils.showInstalledTabWithSearch(null, "/invalid")
     }
   }
 }

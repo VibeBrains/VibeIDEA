@@ -40,6 +40,9 @@ import org.jetbrains.intellij.build.buildSearchableOptions
 import org.jetbrains.intellij.build.classPath.PluginBuildResult
 import org.jetbrains.intellij.build.classPath.generateClassPathByLayoutReport
 import org.jetbrains.intellij.build.classPath.generateCoreClasspathFromPlugins
+import org.jetbrains.intellij.build.dev.AssembledPrepackedPluginContentJar
+import org.jetbrains.intellij.build.dev.PrepackedPluginContentJar
+import org.jetbrains.intellij.build.dev.PrepackedPluginContentKey
 import org.jetbrains.intellij.build.dev.collectLayoutsOfPluginsToScramble
 import org.jetbrains.intellij.build.executeStep
 import org.jetbrains.intellij.build.fus.createStatisticsRecorderBundledMetadataProviderTask
@@ -775,7 +778,7 @@ internal fun satisfiesBundlingRequirements(plugin: PluginLayout, osFamily: OsFam
     return false
   }
 
-  if (context.options.useReleaseCycleRelatedBundlingRestrictionsForContentReport) {
+  if (context.options.useReleaseCycleRelatedBundlingRestrictions) {
     val isNightly = context.isNightlyBuild
     val isEap = context.applicationInfo.isEAP
 
@@ -808,6 +811,8 @@ internal suspend fun layoutDistribution(
   searchableOptionSet: SearchableOptionSetDescriptor?,
   cachedDescriptorWriterProvider: ScopedCachedDescriptorContainer?,
   assetFilter: DistributionAssetFilter? = null,
+  prepackedPluginContent: Map<PrepackedPluginContentKey, PrepackedPluginContentJar> = emptyMap(),
+  prepackedPluginContentJars: MutableCollection<AssembledPrepackedPluginContentJar>? = null,
   context: BuildContext,
 ): Pair<List<DistributionFileEntry>, Path> {
   if (copyFiles) {
@@ -850,6 +855,8 @@ internal suspend fun layoutDistribution(
           dryRun = !copyFiles,
           descriptorCache = cachedDescriptorWriterProvider,
           assetFilter = assetFilter,
+          prepackedPluginContent = prepackedPluginContent,
+          prepackedPluginContentJars = prepackedPluginContentJars,
           context = context,
         )
       }

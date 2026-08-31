@@ -60,7 +60,13 @@ private val WARM_UP_FILE_TYPE_CACHE_OUTSIDE_NCS: Boolean = SystemProperties.getB
  */
 @ApiStatus.Internal
 class ChangedFilesCollector internal constructor(coroutineScope: CoroutineScope) : IndexedFilesListener() {
-  /** The projects for the file are taken from fileBasedIndex.indexableFilesFilterHolder */
+  /**
+   * This [DirtyFiles] container tracks the (VFS event -> [FileIndexingRequest]) phase of the pipeline: `fileId` is tracked
+   * here from the moment VFS reports it via listener, until the moment `fileId` is delivered into [FileBasedIndexImpl]
+   * -- i.e., converted to [FileIndexingRequest] and put into [FilesToUpdateCollector].
+   *
+   * The projects for the `fileId` are taken from [FileBasedIndexImpl.indexableFilesFilterHolder]
+   */
   val dirtyFiles: DirtyFiles = DirtyFiles()
 
   private val processedEventIndex = AtomicInteger()
@@ -76,7 +82,7 @@ class ChangedFilesCollector internal constructor(coroutineScope: CoroutineScope)
 
   override fun iterateIndexableFiles(file: VirtualFile, iterator: ContentIterator) {
     if (fileBasedIndex.belongsToIndexableFiles(file)) {
-      VfsUtilCore.visitChildrenRecursively(file, object : VirtualFileVisitor<Void?>() {
+      VfsUtilCore.visitChildrenRecursively(file, object : VirtualFileVisitor<Void?>(CHILDREN_MAY_BE_UNSORTED) {
         override fun visitFile(file: VirtualFile): Boolean {
           if (!fileBasedIndex.belongsToIndexableFiles(file)) {
             return false

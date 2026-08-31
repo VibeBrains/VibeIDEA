@@ -9,6 +9,7 @@ import kotlinx.collections.immutable.persistentMapOf
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.serialization.Serializable
 import org.jetbrains.annotations.ApiStatus.Internal
+import org.jetbrains.intellij.build.classPath.PluginBuildResult
 import org.jetbrains.intellij.build.impl.DistributionBuilderState
 import org.jetbrains.intellij.build.impl.plugins.PluginAutoPublishList
 import org.jetbrains.intellij.build.io.DEFAULT_TIMEOUT
@@ -53,7 +54,7 @@ interface BuildContext : CompilationContext {
    * Build number used for all plugins being built.
    *
    * The value is [buildNumber] having:
-   * * `SNAPSHOT` suffix replaced with `${DATE}` to match [com.intellij.util.text.SemVer];
+   * * `SNAPSHOT` suffix replaced with a fixed number to match [com.intellij.util.text.SemVer];
    * * `.0` appended if [BuildContext.isNightlyBuild] to match [com.intellij.util.text.SemVer].
    *
    * See also [org.jetbrains.intellij.build.impl.PluginLayout.PluginLayoutSpec.withCustomVersion].
@@ -157,6 +158,12 @@ interface BuildContext : CompilationContext {
    */
   @Internal
   suspend fun getEmbeddedFrontendProductContext(): BuildContext?
+
+  /**
+   * Returns descriptors of plugins that are not bundled with the IDE, but used from the frontend process started from the IDE.
+   */
+  @Internal
+  suspend fun getLayoutOfAdditionalFrontendOnlyPlugins(): List<PluginBuildResult>
 
   fun getContentModuleFilter(): ContentModuleFilter
 

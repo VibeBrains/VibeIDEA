@@ -698,7 +698,7 @@ class PyAttributeAndDescriptorTypeTest : PyCodeInsightTestCase() {
           bar = c.bar
       #   └ TYPE str
           baz = c.baz
-      #   └ TYPE Unknown
+      #   └ TYPE UnsafeUnion[int, str]
       """.trimIndent())
 
     @Test
@@ -716,6 +716,15 @@ class PyAttributeAndDescriptorTypeTest : PyCodeInsightTestCase() {
       def foo(obj: MyClass):
           expr = obj.attr
       #   └ TYPE Any
+      """.trimIndent())
+
+    @Test
+    fun `dunder getattr not called for access via class`() = test("""
+      class MyClass:
+          def __getattr__(self, item) -> int: ...
+
+      expr = MyClass.attr
+      #└ TYPE Unknown
       """.trimIndent())
 
     @Test
@@ -1608,7 +1617,7 @@ class PyAttributeAndDescriptorTypeTest : PyCodeInsightTestCase() {
           x = MyDescriptor[int]()
 
       expr = Foo().x
-      #└ TYPE Unknown
+      #└ TYPE UnsafeUnion[int, str | int]
       """.trimIndent())
 
     @Test
@@ -2068,5 +2077,31 @@ class PyAttributeAndDescriptorTypeTest : PyCodeInsightTestCase() {
 
           eggs = False
           spam = classmethod(spam)
+      """.trimIndent())
+
+  @Test
+  fun `__get__ not called when attribute value is a class`() = test("""
+      class Descriptor:
+          def __get__(self, instance, owner) -> int: ...
+
+      class C:
+          attr = Descriptor
+
+      expr = C().attr
+      #└ TYPE type[Descriptor]
+      """.trimIndent())
+
+  @Test
+  fun `metaclass __get__ called when attribute value is a class`() = test("""
+      class Meta(type):
+          def __get__(self, instance, owner) -> int: ...
+
+      class Descriptor(metaclass=Meta): ...
+
+      class C:
+          attr = Descriptor
+
+      expr = C().attr
+      #└ TYPE int
       """.trimIndent())
 }

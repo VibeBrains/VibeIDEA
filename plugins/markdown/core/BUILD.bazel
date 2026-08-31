@@ -1,4 +1,6 @@
+load("@community//platform/build-scripts/bazel-rules:dev_dist_plugin.bzl", "dev_dist_plugin")
 load("@rules_jvm//:jvm.bzl", "jvm_library")
+load("//platform/build-scripts/bazel-rules:content_module_jar.bzl", "content_module_jar")
 
 ### auto-generated section `build intellij.markdown` start
 jvm_library(
@@ -81,6 +83,8 @@ jvm_library(
         "//platform/usageView",
     ],
 )
+
+content_module_jar(module = ":markdown")
 
 jvm_library(
     name = "markdown_test_lib",
@@ -167,3 +171,26 @@ exports_files(
     visibility = ["//visibility:public"],
 )
 ### auto-generated section `iml intellij.markdown` end
+
+### auto-generated section `dev intellij.markdown` start
+dev_dist_plugin(
+    descriptor_module = ":markdown",
+    prepacked_content_modules = [
+        "//plugins/markdown/compose:compose-preview_content_module_jar",
+        "//plugins/markdown/core/backend:backend_content_module_jar",
+        "//plugins/markdown/core/frontend:frontend_content_module_jar",
+        "//plugins/markdown/fenceInjection:fenceInjection_content_module_jar",
+        "//plugins/markdown/frontmatter/toml:toml_content_module_jar",
+        "//plugins/markdown/frontmatter/yaml:yaml_content_module_jar",
+        "//plugins/markdown/frontmatter:frontmatter_content_module_jar",
+        "//plugins/markdown/images:images_content_module_jar",
+        "//plugins/markdown/java:java_content_module_jar",
+        "//plugins/markdown/jcef:jcef_content_module_jar",
+        "//plugins/markdown/model:model_content_module_jar",
+        "//plugins/markdown/projectView:projectView_content_module_jar",
+        "//plugins/markdown/spellchecker:spellchecker_content_module_jar",
+        "//plugins/markdown/textMate:textMate_content_module_jar",
+        "//plugins/markdown/xml:xml_content_module_jar",
+    ],
+)
+### auto-generated section `dev intellij.markdown` end

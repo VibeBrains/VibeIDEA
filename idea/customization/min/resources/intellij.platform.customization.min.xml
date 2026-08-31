@@ -1,9 +1,16 @@
-<!--suppress PluginXmlRegistrationCheck -->
+<!--suppress PluginXmlRegistrationCheck (product customization opts into platform impl classes by design) -->
 <!-- Used by IDEs built on top of IntelliJ Platform to customize the IDE;
      By using this customization, IDEs also get most of the behaviors of IntelliJ IDEA by default.
      Used only by IntelliJ IDEA and Android Studio.
      Other IDEs differ still! -->
 <idea-plugin>
+  <!-- region Generated dependencies - run `Generate Product Layouts` to regenerate -->
+  <dependencies>
+    <module name="intellij.platform.ide.core"/>
+    <module name="intellij.platform.ide.impl"/>
+    <module name="intellij.platform.lang.impl"/>
+  </dependencies>
+  <!-- endregion -->
   <extensions defaultExtensionNs="com.intellij">
     <projectViewPane implementation="com.intellij.ide.projectView.impl.ProjectViewPane"/>
 

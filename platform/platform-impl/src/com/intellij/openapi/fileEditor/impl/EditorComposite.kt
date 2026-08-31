@@ -29,6 +29,7 @@ import com.intellij.openapi.diagnostic.logger
 import com.intellij.openapi.editor.colors.EditorColors
 import com.intellij.openapi.editor.colors.EditorColorsManager
 import com.intellij.openapi.fileEditor.ClientFileEditorManager.Companion.assignClientId
+import com.intellij.openapi.fileEditor.CreatedFileEditorSink
 import com.intellij.openapi.fileEditor.FileEditor
 import com.intellij.openapi.fileEditor.FileEditorComposite
 import com.intellij.openapi.fileEditor.FileEditorManager
@@ -89,7 +90,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.coroutineScope
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.FlowCollector
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -128,6 +128,10 @@ private val LOG = logger<EditorComposite>()
 data class EditorCompositeModel internal constructor(
   @JvmField val fileEditorAndProviderList: List<FileEditorWithProvider>,
   @JvmField internal val state: FileEntry?,
+  /**
+   * Holds the editors until this composite adopts them, so that an open cancelled before that still releases them.
+   */
+  @JvmField internal val createdEditors: CreatedFileEditorSink? = null,
 ) {
   @Internal
   constructor(fileEditorAndProviderList: List<FileEditorWithProvider>)
@@ -286,6 +290,7 @@ open class EditorComposite internal constructor(
         compositePanel.removeAll()
         setFileEditors(fileEditors = emptyList(), selectedEditor = null)
       }
+      model.createdEditors?.claim()
       return
     }
 
@@ -320,20 +325,13 @@ open class EditorComposite internal constructor(
           )
         }
 
-        span("Artificially wait if the skeleton has been set recently to avoid flickering") {
-          compositePanel.skeleton?.let { editorSkeleton ->
-            val hasBeenShownFor = System.currentTimeMillis() - editorSkeleton.initialTime.get()
-            if (hasBeenShownFor < editorSkeleton.skeletonDelayMs) {
-              delay(editorSkeleton.skeletonDelayMs - hasBeenShownFor)
-            }
-          }
-        }
-
         applyFileEditorsInEdtWithSpans(
           states = states,
           fileEditorWithProviders = fileEditorWithProviders,
           selectedFileEditorProvider = selectedFileEditor,
         )
+        // from here on the editors are listed by this composite, so `dispose` is what releases them
+        model.createdEditors?.claim()
         afterFileOpen(this, model)
         shownDeferred.complete(Unit)
 
@@ -1062,8 +1060,6 @@ internal class EditorCompositePanel(@JvmField val composite: EditorComposite) : 
     private set
 
   private val skeletonScope = composite.coroutineScope.childScope("Editor Skeleton")
-  var skeleton: EditorSkeleton? = null
-    private set
 
   init {
     addFocusListener(object : FocusAdapter() {
@@ -1095,7 +1091,7 @@ internal class EditorCompositePanel(@JvmField val composite: EditorComposite) : 
     if (EditorSkeletonPolicy.shouldShowSkeleton(composite)) {
       val skeletonDelay = EditorSkeletonPolicy.getSkeletonDelayMs(composite)
       skeletonScope.launch(Dispatchers.UI) {
-        setNewSkeleton(EditorCompositeSkeletonFactory.getInstance(composite.project).createSkeleton(skeletonScope, skeletonDelay))
+        setNewSkeleton(EditorSkeleton(skeletonScope, composite.project, skeletonDelay))
       }
     }
     else {
@@ -1104,7 +1100,6 @@ internal class EditorCompositePanel(@JvmField val composite: EditorComposite) : 
   }
 
   private fun setNewSkeleton(skeleton: EditorSkeleton?) {
-    this.skeleton = skeleton
     if (skeleton == null) return
     if (components.isEmpty()) {
       add(skeleton, BorderLayout.CENTER)

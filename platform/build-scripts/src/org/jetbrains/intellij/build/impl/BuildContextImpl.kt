@@ -10,7 +10,6 @@ import com.intellij.platform.runtime.product.serialization.RawProductModules
 import com.intellij.platform.runtime.product.serialization.ResourceFileResolver
 import com.intellij.platform.runtime.repository.RuntimeModuleId
 import com.intellij.util.containers.with
-import com.intellij.util.text.SemVer
 import io.opentelemetry.api.common.AttributeKey
 import io.opentelemetry.api.common.Attributes
 import io.opentelemetry.api.trace.Span
@@ -41,10 +40,12 @@ import org.jetbrains.intellij.build.PLATFORM_LOADER_JAR
 import org.jetbrains.intellij.build.ProductProperties
 import org.jetbrains.intellij.build.ProprietaryBuildTools
 import org.jetbrains.intellij.build.WindowsDistributionCustomizer
+import org.jetbrains.intellij.build.classPath.PluginBuildResult
 import org.jetbrains.intellij.build.computeAppInfoXml
 import org.jetbrains.intellij.build.findProductModulesFile
 import org.jetbrains.intellij.build.impl.PlatformJarNames.PLATFORM_CORE_NIO_FS
 import org.jetbrains.intellij.build.impl.moduleRepository.MODULE_DESCRIPTORS_COMPACT_PATH
+import org.jetbrains.intellij.build.impl.moduleRepository.computeDescriptorsForAdditionalFrontendPlugins
 import org.jetbrains.intellij.build.impl.plugins.PluginAutoPublishList
 import org.jetbrains.intellij.build.io.runProcess
 import org.jetbrains.intellij.build.jarCache.JarCacheManager
@@ -59,18 +60,11 @@ import org.jetbrains.jps.model.module.JpsModule
 import java.io.InputStream
 import java.nio.file.Files
 import java.nio.file.Path
-import java.time.Instant
-import java.time.ZoneOffset
-import java.time.ZonedDateTime
-import java.time.format.DateTimeFormatter
 import java.util.concurrent.ConcurrentLinkedQueue
 import java.util.concurrent.atomic.AtomicReference
 import kotlin.io.path.inputStream
 import kotlin.io.path.pathString
 import kotlin.time.Duration
-
-@Suppress("SpellCheckingInspection")
-private val PLUGIN_DATE_FORMAT = DateTimeFormatter.ofPattern("yyyyMMdd")
 
 @OptIn(DelicateCoroutinesApi::class)
 suspend fun createBuildContext(
@@ -191,18 +185,7 @@ class BuildContextImpl internal constructor(
   }
 
   override val pluginBuildNumber: String by lazy {
-    var value = buildNumber
-    if (value.endsWith(SnapshotBuildNumber.SNAPSHOT_SUFFIX)) {
-      val buildDate = ZonedDateTime.ofInstant(Instant.ofEpochSecond(options.buildDateInSeconds), ZoneOffset.UTC)
-      value = value.replace(SnapshotBuildNumber.SNAPSHOT_SUFFIX, "." + PLUGIN_DATE_FORMAT.format(buildDate))
-    }
-    if (isNightly(value)) {
-      value = "$value.0"
-    }
-    check(SemVer.parseFromText(value) != null) {
-      "The plugin build number $value is expected to match the Semantic Versioning, see https://semver.org"
-    }
-    value
+    computePluginBuildNumber(buildNumber = buildNumber)
   }
 
   override fun reportDistributionBuildNumber() {
@@ -365,19 +348,20 @@ class BuildContextImpl internal constructor(
 
   override suspend fun getEmbeddedFrontendProductContext(): BuildContext? = embeddedFrontendProductContext.await()
 
+  private val layoutOfAdditionalFrontendOnlyPlugins = suspendingLazy("layout of additional frontend only plugins") {
+    computeDescriptorsForAdditionalFrontendPlugins(this@BuildContextImpl, distributionState().platformLayout)
+  }
+
+  override suspend fun getLayoutOfAdditionalFrontendOnlyPlugins(): List<PluginBuildResult> = layoutOfAdditionalFrontendOnlyPlugins.await()
+
   private val _contentModuleFilter by lazy { computeContentModuleFilter() }
 
-  private fun computeContentModuleFilter(): ContentModuleFilter {
-    if (productProperties.productMode == ProductMode.MONOLITH) {
-      if (productProperties.productLayout.skipUnresolvedContentModules) {
-        return SkipUnresolvedOptionalContentModuleFilter(outputProvider)
-      }
-      return IncludeAllContentModuleFilter
-    }
-
-    val bundledPluginModules = getBundledPluginModules()
-    return ContentModuleByProductModeFilter(project = project, bundledPluginModules = bundledPluginModules, productMode = productProperties.productMode)
-  }
+  private fun computeContentModuleFilter(): ContentModuleFilter = createContentModuleFilter(
+    project = project,
+    productProperties = productProperties,
+    outputProvider = outputProvider,
+    bundledPluginModules = { getBundledPluginModules() },
+  )
 
   override fun getContentModuleFilter(): ContentModuleFilter = _contentModuleFilter
 

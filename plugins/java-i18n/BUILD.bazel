@@ -1,4 +1,5 @@
 load("@community//build:tests-options.bzl", "jps_test")
+load("@community//platform/build-scripts/bazel-rules:dev_dist_plugin.bzl", "dev_dist_plugin")
 load("@rules_jvm//:jvm.bzl", "jvm_library")
 
 jps_test(
@@ -67,7 +68,6 @@ jvm_library(
         "//libraries/stream",
         "//platform/core-ui",
         "//platform/core-impl",
-        "//libraries/icu4j",
         "//libraries/fastutil",
         "//java/java-impl-refactorings:impl-refactorings",
         "//platform/util/jdom",
@@ -144,7 +144,6 @@ jvm_library(
         "//libraries/stream:stream_test_lib",
         "//platform/core-ui:core-ui_test_lib",
         "//platform/core-impl:core-impl_test_lib",
-        "//libraries/icu4j:icu4j_test_lib",
         "//libraries/fastutil:fastutil_test_lib",
         "//java/java-impl-refactorings:impl-refactorings_test_lib",
         "//platform/util/jdom:jdom_test_lib",
@@ -170,6 +169,14 @@ exports_files(
     visibility = ["//visibility:public"],
 )
 ### auto-generated section `iml intellij.java.i18n` end
+
+### auto-generated section `dev intellij.java.i18n` start
+dev_dist_plugin(
+    descriptor = "resources/META-INF/plugin.xml",
+    descriptor_module = ":java-i18n",
+    main_module = "intellij.java.i18n",
+)
+### auto-generated section `dev intellij.java.i18n` end
 
 ### auto-generated section `build intellij.java.i18n.tests` start
 jvm_library(
@@ -298,8 +305,6 @@ jvm_library(
         "//platform/core-ui:core-ui_test_lib",
         "//platform/core-impl",
         "//platform/core-impl:core-impl_test_lib",
-        "//libraries/icu4j",
-        "//libraries/icu4j:icu4j_test_lib",
         "//libraries/fastutil",
         "//libraries/fastutil:fastutil_test_lib",
         "//java/java-impl-refactorings:impl-refactorings",

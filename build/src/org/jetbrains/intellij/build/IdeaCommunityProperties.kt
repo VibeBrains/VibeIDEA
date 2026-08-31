@@ -59,6 +59,7 @@ open class IdeaCommunityProperties(private val communityHomeDir: Path) : JetBrai
     )
 
     productLayout.bundledPluginModules = IDEA_BUNDLED_PLUGINS + sequenceOf(
+      "intellij.idea.customization.plugin",
       "intellij.javaFX.community"
     )
 
@@ -212,9 +213,16 @@ fun intellijCommunityBaseFragment(platformPrefix: String? = null): ProductModule
   module("intellij.platform.ide.newUiOnboarding")
   module("intellij.platform.ide.newUsersOnboarding")
   module("intellij.ide.startup.importSettings")
+  // the sqlite JDBC driver `importSettings` needs; private, so plugins bundle their own copy of it
+  privateModule("intellij.libraries.sqlite")
+  // Load-bearing product defaults stay core-time.
+  // The com.intellij.idea.customization plugin holds only additive rows.
   module("intellij.platform.customization.min")
   module("intellij.idea.customization.base")
-  module("intellij.idea.customization.backend")
+  if (platformPrefix == "AndroidStudio") {
+    // Android Studio's bundled plugin set is managed externally, so this module stays in its core
+    module("intellij.idea.customization.backend")
+  }
 
   if (System.getProperty("idea.platform.prefix") == "AndroidStudio") {
     module("intellij.idea.android.customization")
@@ -223,7 +231,7 @@ fun intellijCommunityBaseFragment(platformPrefix: String? = null): ProductModule
   moduleSet(CommunityModuleSets.ideCommon())
   moduleSet(CommunityModuleSets.rdCommon())
 
-  deprecatedInclude("intellij.idea.community.customization", "META-INF/community-customization.xml")
+  embeddedModule("intellij.idea.community.ide.customization")
 
   module("intellij.platform.ide.nonModalWelcomeScreen")
   module("intellij.platform.ide.nonModalWelcomeScreen.frontend")

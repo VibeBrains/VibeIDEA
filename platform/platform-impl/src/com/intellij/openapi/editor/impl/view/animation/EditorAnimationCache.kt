@@ -140,7 +140,7 @@ internal class EditorAnimationCache private constructor(private val editor: Edit
   }
 
   private fun renderToImage(rectangle: Rectangle2D): BufferedImage {
-    val image = createEditorImage(editor, rectangle.width, rectangle.height, BufferedImage.TYPE_INT_ARGB)
+    val image = createEditorImage(editor, rectangle.width, rectangle.height)
     editor.isCurrentlyBuildingCache = true
     try {
       createImageGraphics(editor, image, rectangle).use { graphics ->

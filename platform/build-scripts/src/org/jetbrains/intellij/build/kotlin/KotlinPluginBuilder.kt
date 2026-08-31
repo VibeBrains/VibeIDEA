@@ -8,9 +8,11 @@ import io.opentelemetry.api.trace.Span
 import org.jetbrains.intellij.build.BuildOptions
 import org.jetbrains.intellij.build.ProductProperties
 import org.jetbrains.intellij.build.createBuildTasks
-import org.jetbrains.intellij.build.impl.BuildUtils.checkedReplace
+import org.jetbrains.intellij.build.BuildContext
+import org.jetbrains.intellij.build.impl.DataPluginVersionEvaluator
+import org.jetbrains.intellij.build.impl.DescriptorMarker
+import org.jetbrains.intellij.build.impl.DescriptorMarkerPatcher
 import org.jetbrains.intellij.build.impl.PluginLayout
-import org.jetbrains.intellij.build.impl.PluginVersionEvaluator
 import org.jetbrains.intellij.build.impl.PluginVersionEvaluatorResult
 import org.jetbrains.intellij.build.impl.consumeDataByPrefix
 import org.jetbrains.intellij.build.impl.createBuildContext
@@ -27,11 +29,6 @@ abstract class KotlinPluginBuilder(val kind : KotlinPluginKind = System.getPrope
     const val MAIN_FRONTEND_MODULE_NAME: String = "kotlin.frontend.split"
     private const val SERIALIZATION_COMPILER_PLUGIN_MODULE = "intellij.libraries.kotlinc.kotlinx.serialization.compiler.plugin"
 
-    private val KOTLIN_SCRIPTING_LIBRARIES = java.util.List.of(
-      "kotlinc.kotlin-script-runtime",
-      "kotlinc.kotlin-scripting-jvm"
-    )
-
     private val MODULES_SHARED_WITH_CLIENT = java.util.List.of(
       "intellij.kotlin.base.codeInsight.minimal",
       "intellij.kotlin.highlighting.minimal"
@@ -43,25 +40,29 @@ abstract class KotlinPluginBuilder(val kind : KotlinPluginKind = System.getPrope
       "intellij.libraries.kotlinc.analysis.api.k2",
       "intellij.libraries.kotlinc.analysis.api.platform.interface",
       "intellij.libraries.kotlinc.kotlin.compiler.fir",
+      "intellij.libraries.kotlinc.kotlin.jps.common",
+      "intellij.libraries.kotlinc.kotlin.script.runtime",
+      "intellij.libraries.kotlinc.kotlin.scripting.common",
+      "intellij.libraries.kotlinc.kotlin.scripting.compiler.impl",
+      "intellij.libraries.kotlinc.kotlin.scripting.dependencies",
+      "intellij.libraries.kotlinc.kotlin.scripting.jvm",
       "intellij.libraries.kotlinc.low.level.api.fir",
       "intellij.libraries.kotlinc.symbol.light.classes",
+      "intellij.libraries.kotlinc.scripting.compiler.plugin",
+      "intellij.libraries.kotlinc.assignment.compiler.plugin",
     )
 
     private val LIBRARIES_UNPACKED = java.util.List.of(
-      "kotlinc.kotlin-scripting-compiler-impl",
-      "kotlinc.kotlin-scripting-common",
-      "kotlinc.kotlin-scripting-dependencies",
       "kotlinc.kotlin-gradle-statistics",
       "kotlin-metadata",
       "kotlinc.kotlin-build-tools-api",
       "kotlinc.kotlin-build-tools-impl",
       "kotlinc.kotlin-build-tools-cri-impl",
-    ) + KOTLIN_SCRIPTING_LIBRARIES
+    )
 
     private val LIBRARIES = java.util.List.of(
       "kotlinc.kotlin-compiler-fe10",
       "kotlinc.kotlin-compiler-ir",
-      "kotlinc.kotlin-jps-common",
       "vavr",
       "javax-inject",
     )
@@ -70,8 +71,6 @@ abstract class KotlinPluginBuilder(val kind : KotlinPluginKind = System.getPrope
       "kotlinc.allopen-compiler-plugin",
       "kotlinc.noarg-compiler-plugin",
       "kotlinc.sam-with-receiver-compiler-plugin",
-      "kotlinc.assignment-compiler-plugin",
-      "kotlinc.scripting-compiler-plugin",
       "kotlinc.parcelize-compiler-plugin",
       "kotlinc.lombok-compiler-plugin",
       "kotlinc.compose-compiler-plugin",
@@ -94,33 +93,13 @@ abstract class KotlinPluginBuilder(val kind : KotlinPluginKind = System.getPrope
       spec.withProjectLibrary("kotlinc.kotlin-jps-plugin-classpath", "jps/kotlin-jps-plugin.jar")
       withKotlincInPluginDirectory(spec = spec)
 
-      spec.withCustomVersion(PluginVersionEvaluator { _, ideBuildVersion, _ ->
-        // in kt-branches we have own since and until versions
-        val sinceBuild = System.getProperty("kotlin.plugin.since")
-        val untilBuild = System.getProperty("kotlin.plugin.until")
-        val sinceUntil = if (sinceBuild != null && untilBuild != null) sinceBuild to untilBuild else null
-        if (ideBuildVersion.contains("IJ")) {
-          // TC configurations that are inherited from AbstractKotlinIdeArtifact.
-          // In this environment, ideBuildVersion equals to build number.
-          // The ideBuildVersion looks like XXX.YYYY.ZZ-IJ
-          val version = ideBuildVersion.replace("IJ", kind.toString())
-          Span.current().addEvent("Kotlin plugin IJ version: $version")
-          PluginVersionEvaluatorResult(pluginVersion = version, sinceUntil = sinceUntil)
-        }
-        else {
-          // IJ installer configurations.
-          PluginVersionEvaluatorResult(pluginVersion = "$ideBuildVersion-$kind", sinceUntil = sinceUntil)
-        }
-      })
+      spec.withCustomVersion(KotlinPluginVersion(kind))
 
       if (kind == KotlinPluginKind.AS) {
-        spec.withRawPluginXmlPatcher { text, _ ->
-          checkedReplace(
-            oldText = text,
-            regex = "<!-- IJ/AS-DEPENDENCY-PLACEHOLDER -->",
-            newText = """<plugin id="com.intellij.modules.androidstudio"/>""",
-          )
-        }
+        spec.withRawPluginXmlPatcher(DescriptorMarkerPatcher(listOf(DescriptorMarker(
+          literal = "<!-- IJ/AS-DEPENDENCY-PLACEHOLDER -->",
+          replacement = """<plugin id="com.intellij.modules.androidstudio"/>""",
+        ))))
       }
 
       addition?.invoke(spec)
@@ -227,3 +206,39 @@ private fun withKotlincInPluginDirectory(libName: String = "kotlin-dist", target
 }
 
 object CommunityKotlinPluginBuilder : KotlinPluginBuilder()
+
+/**
+ * The Kotlin plugin's version: the IDE build version, then the plugin kind.
+ *
+ * A class and not a lambda, so that the dev-distribution descriptor plan can state [versionSuffix] as data. [evaluate]
+ * keeps the two branches a released build needs. A `kotlin.plugin.since` and `kotlin.plugin.until` pair states a
+ * compatibility range of its own, and a build version that already holds `IJ` takes the kind spliced in rather than
+ * appended. A Bazel dev fragment sets no such property and stamps a build version of the `<baseline>.<date>.<counter>`
+ * shape, so neither branch runs there. `checkProducedPluginDescriptor` refuses a produced descriptor whose version or
+ * compatibility range is not the one the assembly computed, which is what makes a divergence loud.
+ */
+private class KotlinPluginVersion(private val kind: KotlinPluginBuilder.KotlinPluginKind) : DataPluginVersionEvaluator {
+  override val versionSuffix: String
+    get() = "-$kind"
+
+  override suspend fun evaluate(
+    pluginXmlSupplier: suspend () -> String,
+    ideBuildVersion: String,
+    context: BuildContext,
+  ): PluginVersionEvaluatorResult {
+    // in kt-branches we have own since and until versions
+    val sinceBuild = System.getProperty("kotlin.plugin.since")
+    val untilBuild = System.getProperty("kotlin.plugin.until")
+    val sinceUntil = if (sinceBuild != null && untilBuild != null) sinceBuild to untilBuild else null
+    if (ideBuildVersion.contains("IJ")) {
+      // TC configurations that are inherited from AbstractKotlinIdeArtifact.
+      // In this environment, ideBuildVersion equals to build number.
+      // The ideBuildVersion looks like XXX.YYYY.ZZ-IJ
+      val version = ideBuildVersion.replace("IJ", kind.toString())
+      Span.current().addEvent("Kotlin plugin IJ version: $version")
+      return PluginVersionEvaluatorResult(pluginVersion = version, sinceUntil = sinceUntil)
+    }
+    // IJ installer configurations.
+    return PluginVersionEvaluatorResult(pluginVersion = "$ideBuildVersion$versionSuffix", sinceUntil = sinceUntil)
+  }
+}

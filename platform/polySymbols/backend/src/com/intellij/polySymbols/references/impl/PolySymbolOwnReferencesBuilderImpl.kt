@@ -8,6 +8,7 @@ import com.intellij.polySymbols.PolySymbolNameSegment
 import com.intellij.polySymbols.PolySymbolNameSegment.MatchProblem
 import com.intellij.polySymbols.query.PolySymbolMatch
 import com.intellij.polySymbols.query.PolySymbolQueryExecutorFactory
+import com.intellij.polySymbols.references.PolySymbolOwnReferenceHost
 import com.intellij.polySymbols.references.PolySymbolOwnReferencesBuilder
 import com.intellij.polySymbols.references.PolySymbolReference
 import com.intellij.polySymbols.references.PolySymbolReferenceProblem
@@ -17,7 +18,7 @@ import com.intellij.polySymbols.utils.unwrapMatchedSymbols
 import com.intellij.psi.PsiElement
 import com.intellij.util.SmartList
 
-internal class PolySymbolOwnReferencesBuilderImpl(private val element: PsiElement) : PolySymbolOwnReferencesBuilder {
+internal class PolySymbolOwnReferencesBuilderImpl(private val element: PolySymbolOwnReferenceHost) : PolySymbolOwnReferencesBuilder {
 
   private val references = SmartList<PolySymbolReference>()
 
@@ -73,9 +74,9 @@ internal class PolySymbolOwnReferencesBuilderImpl(private val element: PsiElemen
     private val resolvedSymbols by lazy {
       val text = textRangeInElement.substring(psiElement.text)
       resolver().flatMap { symbol ->
-        assert(symbol.name == text) {
-          "Symbol name ${symbol.name} does not match text range contents $text: $symbol"
-        }
+        checkReferenceSymbolNameMatchesText(
+          "own reference resolver for ${psiElement.javaClass.name}", psiElement, textRangeInElement, symbol.name,
+        )
         // Filter out complex symbols in own references.
         // Overall, only simple symbol kind references are allowed on own references.
         symbol.unwrapMatchedSymbols()

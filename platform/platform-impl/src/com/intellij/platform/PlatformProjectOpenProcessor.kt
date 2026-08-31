@@ -1,4 +1,4 @@
-// Copyright 2000-2025 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
+// Copyright 2000-2026 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.intellij.platform
 
 import com.intellij.configurationStore.ProjectStorePathManager
@@ -10,6 +10,8 @@ import com.intellij.ide.impl.TrustedPaths
 import com.intellij.ide.impl.runUnderModalProgressIfIsEdt
 import com.intellij.ide.impl.toOpenProjectTask
 import com.intellij.ide.lightEdit.LightEditService
+import com.intellij.ide.lightEdit.isClaimedByWelcomeScreenProject
+import com.intellij.ide.trustedProjects.TrustedFiles
 import com.intellij.ide.util.PsiNavigationSupport
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.application.EDT
@@ -25,6 +27,7 @@ import com.intellij.openapi.fileEditor.FileEditorManager
 import com.intellij.openapi.fileEditor.OpenFileDescriptor
 import com.intellij.openapi.fileEditor.impl.FileEditorManagerImpl
 import com.intellij.openapi.module.Module
+import com.intellij.openapi.progress.runBlockingCancellable
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.project.ex.ProjectManagerEx
 import com.intellij.openapi.project.impl.checkTrustedState
@@ -44,6 +47,7 @@ import com.intellij.projectImport.ProjectOpenedCallback
 import com.intellij.util.SlowOperations
 import com.intellij.util.concurrency.annotations.RequiresEdt
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
 import org.jetbrains.annotations.ApiStatus.Internal
 import java.nio.file.Files
@@ -175,8 +179,9 @@ class PlatformProjectOpenProcessor : ProjectOpenProcessor(), CommandLineProjectO
       }
 
       var options = originalOptions
+      val claimedByWelcomeScreenProject = isClaimedByWelcomeScreenProject(file)
       val lightEditService = serviceOrNull<LightEditService>()
-      if (lightEditService != null && lightEditService.isForceOpenInLightEditMode()) {
+      if (!claimedByWelcomeScreenProject && lightEditService != null && lightEditService.isForceOpenInLightEditMode()) {
         LightEditService.getInstance().openFile(file, false)?.let {
           FUSProjectHotStartUpMeasurer.lightEditProjectFound()
           return it
@@ -193,7 +198,7 @@ class PlatformProjectOpenProcessor : ProjectOpenProcessor(), CommandLineProjectO
       // no reasonable directory -> create new temp one or use parent
       if (baseDirCandidate == null) {
         LOG.info("No project directory found")
-        if (lightEditService != null) {
+        if (!claimedByWelcomeScreenProject && lightEditService != null) {
           if (lightEditService.isLightEditEnabled() && !LightEditService.getInstance().isPreferProjectMode) {
             val lightEditProject = LightEditService.getInstance().openFile(file, true)
             if (lightEditProject != null) {
@@ -263,8 +268,9 @@ class PlatformProjectOpenProcessor : ProjectOpenProcessor(), CommandLineProjectO
       }
 
       var options = originalOptions
+      val claimedByWelcomeScreenProject = isClaimedByWelcomeScreenProject(file)
       val lightEditService = serviceOrNull<LightEditService>()
-      if (lightEditService != null && lightEditService.isForceOpenInLightEditMode()) {
+      if (!claimedByWelcomeScreenProject && lightEditService != null && lightEditService.isForceOpenInLightEditMode()) {
         LightEditService.getInstance().openFile(file, false)?.let {
           FUSProjectHotStartUpMeasurer.lightEditProjectFound()
           return it
@@ -281,7 +287,7 @@ class PlatformProjectOpenProcessor : ProjectOpenProcessor(), CommandLineProjectO
       // no reasonable directory -> create new temp one or use parent
       if (baseDirCandidate == null) {
         LOG.info("No project directory found")
-        if (lightEditService != null) {
+        if (!claimedByWelcomeScreenProject && lightEditService != null) {
           if (lightEditService.isLightEditEnabled() && !LightEditService.getInstance().isPreferProjectMode) {
             val lightEditProject = LightEditService.getInstance().openFile(file, true)
             if (lightEditProject != null) {
@@ -454,6 +460,7 @@ private fun openFileFromCommandLine(project: Project, file: Path, line: Int, col
         }
 
         val virtualFile = ProjectUtilCore.getFileAndRefresh(file) ?: return@Runnable
+        TrustedFiles.markExternallyOpened(virtualFile)
         val navigatable = if (line > 0) {
           OpenFileDescriptor(project, virtualFile, line - 1, column.coerceAtLeast(0))
         }

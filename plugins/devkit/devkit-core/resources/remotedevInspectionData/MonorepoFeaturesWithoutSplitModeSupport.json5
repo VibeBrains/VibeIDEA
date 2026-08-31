@@ -9,9 +9,9 @@
     "plugins/llm//*",
     "plugins/llm-experimental//*",
     "plugins/llm-installer//*",
-    "plugins/llm-sandbox//*",
     "community/python//*",
-    "language-server//*"
+    "language-server//*",
+    "draft//*"
   ],
 
   moduleNames: [

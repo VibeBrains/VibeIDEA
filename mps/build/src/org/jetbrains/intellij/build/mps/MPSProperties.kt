@@ -21,6 +21,7 @@ import org.jetbrains.intellij.build.impl.LibraryPackMode
 import org.jetbrains.intellij.build.impl.PlatformLayout
 import org.jetbrains.intellij.build.impl.PluginLayout
 import org.jetbrains.intellij.build.productLayout.CommunityModuleSets
+import org.jetbrains.intellij.build.productLayout.CommunityProductFragments
 import org.jetbrains.intellij.build.productLayout.ProductModulesContentSpec
 import org.jetbrains.intellij.build.productLayout.productModules
 import java.io.File
@@ -85,7 +86,7 @@ class MPSProperties : JetBrainsProductProperties() {
             "intellij.vcs.svn",
             "intellij.vcs.github",
             "intellij.vcs.git.commit.modal",
-            "intellij.ant",
+            //"intellij.ant",
             "intellij.sh.plugin",
             "intellij.markdown",
             "intellij.mermaid",
@@ -118,7 +119,7 @@ class MPSProperties : JetBrainsProductProperties() {
             layout.withModule("intellij.java.rt", "idea_rt.jar")
             layout.withProjectLibrary("Eclipse", "lib.jar", "withProjectLibrary")
             layout.withProjectLibrary("http-client", "lib.jar", "withProjectLibrary")
-            layout.withoutProjectLibrary("Ant")
+//            layout.withoutProjectLibrary("Ant")
             layout.withoutProjectLibrary("Gradle")
             layout.withProjectLibrary("maven-resolver-provider", LibraryPackMode.STANDALONE_MERGED)
         }
@@ -187,7 +188,7 @@ class MPSProperties : JetBrainsProductProperties() {
     override fun getProductContentDescriptor(): ProductModulesContentSpec = productModules {
         alias("com.intellij.modules.java-capable")
 
-        deprecatedInclude("intellij.platform.resources", "META-INF/PlatformLangPlugin.xml")
+        include(CommunityProductFragments.platformCoreFragment())
 
         moduleSet(CommunityModuleSets.ideCommon())
 
@@ -197,9 +198,13 @@ class MPSProperties : JetBrainsProductProperties() {
 
         module("intellij.platform.whatsNew")
         module("intellij.ide.startup.importSettings")
+        // the sqlite JDBC driver `importSettings` needs; private, so plugins bundle their own copy of it
+        privateModule("intellij.libraries.sqlite")
 
         module("intellij.platform.customization.min")
         module("intellij.idea.customization.base")
+
+        embeddedModule("intellij.idea.community.ide.customization")
 
       module("intellij.platform.ide.nonModalWelcomeScreen")
       module("intellij.platform.ide.nonModalWelcomeScreen.frontend")
@@ -235,14 +240,25 @@ class MPSProperties : JetBrainsProductProperties() {
             installerImagesPath = projectHome.resolve("build/resources")
         }
     }
-}
 
-private fun patchPluginXml(): (PluginLayout.PluginLayoutSpec) -> Unit = { spec ->
-  spec.withPluginXmlPatcher { text, _ ->
-    checkedReplace(
-      oldText = text,
-      regex = """<version>([^.]+)\.([^.]+)\.?(.*)</version>""",
-      newText = """<version>$1.100$2.$3-MPS</version>""",
-    )
-  }
+    private fun patchPluginXml(): (PluginLayout.PluginLayoutSpec) -> Unit = { spec ->
+      spec.withPluginXmlPatcher { text, _ ->
+        val newText = checkedReplace(
+          oldText = text,
+          regex = """<version>([^.]+)\.([^.]+)\.?(.*)</version>""",
+          newText = """<version>$1.100$2.$3-MPS</version>""",
+        )
+        
+        val regex = """(?m)(?s)(.*)<content namespace="jetbrains">(.+)</idea-plugin>([\n]*)"""
+        val patchedManifestContent = javaClass.classLoader.getResourceAsStream("java-impl.jar/META-INF/plugin.xml")?.use {
+          it.bufferedReader().readText()
+        } ?: throw IllegalStateException("Failed to resolve plugin xml")
+        val matchResult = Regex(regex).matchEntire(patchedManifestContent) ?: throw IllegalStateException("Failed to match regex")
+        checkedReplace(
+          oldText = newText,
+          regex = regex,
+          newText = """$1<content namespace="jetbrains">${matchResult.groups[2]?.value}</idea-plugin>$3""",
+        )
+      }
+    }
 }

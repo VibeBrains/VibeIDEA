@@ -1,5 +1,6 @@
 load("@rules_jvm//:jvm.bzl", "jvm_library")
 load("//build:compiler-options.bzl", "create_kotlinc_options")
+load("//platform/build-scripts/bazel-rules:content_module_jar.bzl", "content_module_jar")
 
 ### auto-generated section `build intellij.python.hatch` start
 create_kotlinc_options(
@@ -56,6 +57,8 @@ jvm_library(
         "//platform/util/jdom",
     ],
 )
+
+content_module_jar(module = ":hatch")
 
 jvm_library(
     name = "hatch_test_lib",

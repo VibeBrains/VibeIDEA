@@ -1,5 +1,6 @@
 load("@community//build:tests-options.bzl", "jps_test")
 load("@rules_jvm//:jvm.bzl", "jvm_library")
+load("//platform/build-scripts/bazel-rules:content_module_jar.bzl", "content_module_jar")
 
 jps_test(
     name = "coroutines-tests_test",
@@ -37,6 +38,8 @@ jvm_library(
     ],
 )
 
+content_module_jar(module = ":coroutines")
+
 jvm_library(
     name = "coroutines_test_lib",
     testonly = True,
@@ -62,6 +65,7 @@ exports_files(
     [
         "intellij.platform.util.coroutines.iml",
         "resources/intellij.platform.util.coroutines.xml",
+        "module-content.yaml",
     ],
     visibility = ["//visibility:public"],
 )

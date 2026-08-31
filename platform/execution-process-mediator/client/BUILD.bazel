@@ -1,5 +1,6 @@
 load("@community//build:tests-options.bzl", "jps_test")
 load("@rules_jvm//:jvm.bzl", "jvm_library")
+load("//platform/build-scripts/bazel-rules:content_module_jar.bzl", "content_module_jar")
 
 jps_test(
     name = "execution-process-mediator-client-tests_test",
@@ -45,6 +46,11 @@ jvm_library(
     ],
 )
 
+content_module_jar(
+    libraries = ["@lib//:execution-process-mediator-client-grpc-inprocess"],
+    module = ":client",
+)
+
 jvm_library(
     name = "client_test_lib",
     testonly = True,
@@ -84,6 +90,7 @@ exports_files(
     [
         "intellij.execution.process.mediator.client.iml",
         "resources/intellij.execution.process.mediator.client.xml",
+        "module-content.yaml",
     ],
     visibility = ["//visibility:public"],
 )

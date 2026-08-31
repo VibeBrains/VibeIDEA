@@ -17,6 +17,8 @@ Complete reference of validation errors, their causes, and fixes.
 | [Structural Violations](#structural-loading-violations) | Error | Yes* | Loading mode constraint violations |
 | [MissingContentModulePluginDep](#missing-content-module-plugin-dependency) | Error | No | Content module missing plugin dep |
 | [MissingTestPluginPluginDep](#missing-test-plugin-plugin-dependency) | Error | No | Test plugin missing plugin dep |
+| [MissingLibraryLicenseError](#missing-library-license) | Error | No | Library in a distribution has no license entry |
+| [ModuleInMultiplePluginsError](#module-in-multiple-plugins) | Error | No | Two plugin layouts pack one JPS module |
 | [DSL Constraint Errors](#dsl-constraint-errors) | Error | No | Invalid DSL usage |
 | [Suppressible Errors](#suppressible-errors) | Warning | Yes | Errors detected during generation |
 
@@ -31,7 +33,7 @@ File diff detected: community/platform/platform-resources/generated/META-INF/int
   Change type: MODIFY
 ```
 
-**Cause**: Running "Generate Product Layouts" detected changes that need to be applied.
+**Cause**: A generator run detected changes that need to be applied.
 
 **Fix**: The generator auto-applies diffs. Commit the changes or run the generator again.
 
@@ -343,7 +345,80 @@ Module intellij.platform.ide.impl has testing libraries in production scope:
 Run 'Generate Product Layouts' to fix automatically.
 ```
 
-**Auto-Fix**: Run "Generate Product Layouts" to move test libraries to TEST scope.
+**Auto-Fix**: Run `bazel run //platform/buildScripts:plugin-model-tool` to move test libraries to TEST scope. The "Generate Product Layouts" run configuration does the same.
+
+---
+
+## Missing Library License
+
+Emitted by `LibraryLicenseValidator` (ruleName `LibraryLicenseValidation`, category `MISSING_LIBRARY_LICENSE`).
+
+```
+Libraries without a license entry
+
+Every library that an installation packages needs a license entry.
+The entry gives the license name and the library origin for the legal report.
+
+  * some-library-1.2.3
+    Coordinates: com.example:some-library:1.2.3
+    Module: intellij.platform.ide.impl
+
+Fix:
+1. Add the license entry to CommunityLibraryLicenses.kt or UltimateLibraryLicenses.kt.
+2. Change the dependency scope to TEST if only tests use the library.
+3. Change the dependency scope to PROVIDED if only compilation uses the library.
+
+[Rule: LibraryLicenseValidation]
+```
+
+**Cause**: A third-party library reaches a distribution, and no `*LibraryLicenses.kt` file holds an entry for it.
+
+**Fixes**:
+1. **Add the license entry** to `CommunityLibraryLicenses.kt` or `UltimateLibraryLicenses.kt`
+2. **Change the dependency scope to TEST** when only tests use the library
+3. **Change the dependency scope to PROVIDED** when only compilation uses the library
+
+**Auto-Fix**: No. The error is a hard failure. No suppression and no allowlist exist.
+
+**Spec**: [validators/library-license.md](validators/library-license.md)
+
+---
+
+## Module In Multiple Plugins
+
+Emitted by `collectModulesInMultiplePlugins` (ruleName `ModuleInMultiplePluginsValidation`, category `MODULE_IN_MULTIPLE_PLUGINS`).
+
+```
+Two plugin layouts pack one module
+
+Each plugin holds its own copy of the classes, so the copies grow the distribution.
+A third plugin that depends on both plugins loads one class from two classloaders.
+Many products share one plugin layout registry, so the report names no product.
+
+  * intellij.javaee.jax.ws.utils
+      - intellij.javaee.jax.rs
+      - intellij.javaee.jax.ws
+
+Fix:
+1. Move the module to the platform, so that every plugin reads the one copy.
+2. Or extract a new plugin that holds the module, and let each plugin depend on it.
+3. Or grandfather the name: add it to KNOWN_MODULES_IN_MULTIPLE_PLUGINS in platform/buildScripts/src/productLayout/ultimateGenerator.kt.
+
+[Rule: ModuleInMultiplePluginsValidation]
+```
+
+**Cause**: Two plugin layouts pack one JPS module through `spec.withModule`, so each plugin holds a private copy of the classes.
+
+The rule reads the other direction too. An allowlist entry that no plugin layout registry duplicates any more is stale, and the report names that entry.
+
+**Fixes**:
+1. **Move the module to the platform**, so that every plugin reads the one copy
+2. **Extract a new plugin** that holds the module, and let each plugin depend on it
+3. **Grandfather the name** in `KNOWN_MODULES_IN_MULTIPLE_PLUGINS` in `platform/buildScripts/src/productLayout/ultimateGenerator.kt`
+
+**Auto-Fix**: No. The error is a hard failure. The allowlist is the whole suppression mechanism, and `suppressions.json` holds no entry for this rule.
+
+**Spec**: [validators/module-in-multiple-plugins.md](validators/module-in-multiple-plugins.md)
 
 ---
 
@@ -469,7 +544,7 @@ bazel run --ui_event_filters=-info --noshow_progress //platform/buildScripts:plu
    - Product missing set → add to product
    - Cross-plugin with non-critical loading → add to `knownPlugins`
    - Missing infrastructure → add to module set
-4. **Verify**: Run "Generate Product Layouts" again
+4. **Verify**: Run `bazel run //platform/buildScripts:plugin-model-tool` again, or the "Generate Product Layouts" run configuration
 
 ---
 

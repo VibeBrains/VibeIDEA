@@ -29,8 +29,10 @@ import com.intellij.openapi.application.ApplicationNamesInfo
 import com.intellij.openapi.components.service
 import com.intellij.openapi.components.serviceAsync
 import com.intellij.openapi.diagnostic.logger
+import com.intellij.openapi.diagnostic.rethrowControlFlowException
 import com.intellij.openapi.diagnostic.trace
 import com.intellij.openapi.fileEditor.FileDocumentManager
+import com.intellij.openapi.fileEditor.FileDocumentManager.ConflictResolution
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.startup.ProjectActivity
 import com.intellij.util.asDisposable
@@ -51,6 +53,10 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
@@ -195,6 +201,17 @@ open class McpServerService(val cs: CoroutineScope) {
   val isRunning: Boolean
     get() = server.value != null
 
+  /**
+   * Observable state for the global MCP SSE server: the resolved loopback port when the server is running,
+   * or `null` when it is stopped. Preferred over polling [isRunning] / [port] by lifecycle-aware components
+   * (see `McpWslForwarderService`).
+   */
+  @get:ApiStatus.Internal
+  val serverPortFlow: StateFlow<Int?> by lazy {
+    server.map { it?.engineConfig?.connectors?.firstOrNull()?.port }
+      .stateIn(cs, SharingStarted.Eagerly, server.value?.engineConfig?.connectors?.firstOrNull()?.port)
+  }
+
   // For tests
   val theOnlySession: McpSessionOptions?
     @ApiStatus.Internal
@@ -273,10 +290,13 @@ open class McpServerService(val cs: CoroutineScope) {
             }
           }
           catch (t: Throwable) {
+            rethrowControlFlowException(t)
             logger.error("Failed to gracefully shutdown authorized MCP server", t)
           }
-          privateServer.server = null
-          logger.trace { "Private MCP server stopped" }
+          finally {
+            privateServer.server = null
+            logger.trace { "Private MCP server stopped" }
+          }
         }
       }
       logger.trace { "Authorized MCP session stopped" }
@@ -490,7 +510,10 @@ open class McpServerService(val cs: CoroutineScope) {
         )
         // Process initial tools immediately to fix race condition
         sessionToolsManager.updateTools()
-        FileDocumentManager.getInstance().overrideConflictsSolverEnabled(false, sessionToolsManager.sessionScope.asDisposable())
+        FileDocumentManager.getInstance().overrideConflictResolution(
+          ConflictResolution.MERGE,
+          sessionToolsManager.sessionScope.asDisposable(),
+        )
 
         val session = sessionToolsManager.createAndInitializeSession(transport)
 

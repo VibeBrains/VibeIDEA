@@ -1,20 +1,33 @@
 // Copyright 2000-2026 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package org.intellij.plugins.markdown.editor.livepreview
 
-import com.intellij.markdown.frontend.editor.livepreview.MARKDOWN_LIVE_PREVIEW_REGION
+import com.intellij.codeInsight.documentation.render.DocRenderer
 import com.intellij.markdown.frontend.editor.livepreview.MarkdownLivePreviewReconciler
+import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.actionSystem.IdeActions
+import com.intellij.openapi.editor.CustomFoldRegion
 import com.intellij.openapi.editor.Editor
 import com.intellij.openapi.editor.EditorFactory
 import com.intellij.openapi.editor.EditorKind
 import com.intellij.openapi.editor.FoldRegion
+import com.intellij.openapi.editor.impl.EditorImpl
+import com.intellij.openapi.editor.impl.FoldingKeys
+import com.intellij.openapi.editor.markup.RangeHighlighter
 import com.intellij.openapi.util.Disposer
+import com.intellij.openapi.util.registry.Registry
+import com.intellij.openapi.vfs.VirtualFile
 import com.intellij.psi.PsiDocumentManager
+import com.intellij.testFramework.EditorTestUtil
 import com.intellij.testFramework.PlatformTestUtil
+import com.intellij.testFramework.PsiTestUtil
 import com.intellij.testFramework.fixtures.BasePlatformTestCase
+import com.intellij.testFramework.fixtures.EditorMouseFixture
 import org.intellij.plugins.markdown.settings.MarkdownSettings
+import java.awt.image.BufferedImage
+import java.io.ByteArrayOutputStream
+import javax.imageio.ImageIO
 
-class MarkdownLivePreviewFoldingTest: BasePlatformTestCase() {
+class MarkdownLivePreviewFoldingTest : BasePlatformTestCase() {
 
   private val settings get() = MarkdownSettings.getInstance(project)
 
@@ -28,6 +41,7 @@ class MarkdownLivePreviewFoldingTest: BasePlatformTestCase() {
   fun testMarkupIsHiddenWhileTheCaretIsElsewhere() {
     configure("Some **bold**, *italic* and `code` here<caret>")
     assertEquals("Some bold, italic and code here", visibleText())
+    assertTrue(concealedLivePreviewRegions(myFixture.editor).none { FoldingKeys.HIDE_PLACEHOLDER_BACKGROUND.isIn(it) })
   }
 
   fun testInlineLinkShowsOnlyItsTitle() {
@@ -38,6 +52,21 @@ class MarkdownLivePreviewFoldingTest: BasePlatformTestCase() {
   fun testAutolinksShowOnlyTheirTarget() {
     configure("See <https://example.org> or mail <team@example.org> here<caret>\n\ntail")
     assertEquals("See https://example.org or mail team@example.org here\n\ntail", visibleText())
+  }
+
+  fun testUnorderedListMarkersUseDepthPlaceholders() {
+    val content = """
+      |- one
+      |  * two
+      |    + three
+      |      - four
+      |
+      |tail
+    """.trimMargin()
+    configure("$content<caret>")
+    assertEquals("• one\n  ◦ two\n    ▪ three\n      • four\n\ntail", visibleText())
+    assertEquals(listOf("-" to "•", "*" to "◦", "+" to "▪", "-" to "•"), concealedWithPlaceholders())
+    assertTrue(concealedLivePreviewRegions(myFixture.editor).all { FoldingKeys.HIDE_PLACEHOLDER_BACKGROUND.isIn(it) })
   }
 
   fun testCaretOnTheElementRevealsItsMarkers() {
@@ -69,6 +98,48 @@ class MarkdownLivePreviewFoldingTest: BasePlatformTestCase() {
         assertEquals("Caret at $offset is outside the element, which must stay hidden", listOf("**", "**"), concealed())
       }
     }
+  }
+
+  fun testCaretOnEitherListMarkerBoundaryRevealsMarker() {
+    val content = "- item\n\ntail"
+    configure("$content<caret>")
+    assertEquals(listOf("-" to "•"), concealedWithPlaceholders())
+
+    moveCaretTo(0)
+    assertEmpty(concealed())
+    moveCaretTo(content.length)
+    assertEquals(listOf("-"), concealed())
+    moveCaretTo(2)
+    assertEmpty(concealed())
+  }
+
+  fun testIndentingMarkerReplacesItsStalePlaceholder() {
+    val content = "- parent\n- child\n\ntail"
+    configure("$content<caret>")
+    assertEquals(listOf("-" to "•", "-" to "•"), concealedWithPlaceholders())
+    val staleChildRegion = concealedLivePreviewRegions(myFixture.editor)[1]
+
+    val childText = content.indexOf("child")
+    select(childText + 1, childText + 2)
+    myFixture.performEditorAction(IdeActions.ACTION_EDITOR_INDENT_SELECTION)
+    myFixture.doHighlighting()
+    myFixture.editor.selectionModel.removeSelection()
+    moveCaretTo(myFixture.editor.document.textLength)
+
+    assertEquals(listOf("-" to "•", "-" to "◦"), concealedWithPlaceholders())
+    assertNotSame(staleChildRegion, concealedLivePreviewRegions(myFixture.editor)[1])
+  }
+
+  fun testListMarkerConcealmentDoesNotMoveItemText() {
+    val content = "- bullet\n1. ordered\n\ntail"
+    configure("$content<caret>")
+    val offsets = listOf(content.indexOf("bullet"), content.indexOf("ordered"))
+    val concealedPositions = offsets.map { myFixture.editor.offsetToXY(it) }
+
+    moveCaretTo(0)
+
+    assertEmpty(concealed())
+    assertEquals(concealedPositions, offsets.map { myFixture.editor.offsetToXY(it) })
   }
 
   fun testNestedElementRevealsItsAncestor() {
@@ -112,7 +183,306 @@ class MarkdownLivePreviewFoldingTest: BasePlatformTestCase() {
     val content = "Some **bold** and [docs](https://example.org)<caret>"
     configure(content)
     assertFalse(concealed().isEmpty())
-    assertEquals("Folding must not touch the document", content.removeSuffix("<caret>"), myFixture.editor.document.text)
+    myFixture.checkResult(content.removeSuffix("<caret>"))
+  }
+
+  fun testThematicBreaksUseEmptyFoldsAndOwnedRules() {
+    val content = "---\n***\n___\ntail"
+    configure("$content<caret>")
+
+    assertEquals(3, thematicBreakHighlighters().size)
+    assertEquals(listOf("---", "***", "___"), concealed())
+    myFixture.checkResult(content)
+  }
+
+  fun testThematicBreakRevealsAndRestores() {
+    val content = "---\ntail"
+    configure("$content<caret>")
+    val rule = thematicBreakHighlighters().single()
+
+    moveCaretTo(rule.startOffset)
+    assertEmpty(concealed())
+    assertEmpty(thematicBreakHighlighters())
+    myFixture.checkResult(content)
+    assertEmpty(imageRegions())
+
+    moveCaretTo(content.length)
+    assertEquals(listOf("---"), concealed())
+    assertEquals(1, thematicBreakHighlighters().size)
+  }
+
+  fun testThematicBreakDoesNotConcealInlineCodeOnThePreviousLine() {
+    val content = "`---`\n---\ntail"
+    configure("$content<caret>")
+
+    assertEquals(listOf("`---`", "---"), computeLivePreviewSpecs(myFixture.file).map {
+      content.substring(it.range.startOffset, it.range.endOffset)
+    })
+    assertEquals(1, thematicBreakHighlighters().size)
+    assertEquals(listOf("", "", ""), concealedLivePreviewRegions(myFixture.editor).map { it.placeholderText })
+    assertEquals("---\n\ntail", visibleText())
+    assertEquals(1, thematicBreakHighlighters().size)
+    assertEquals(listOf("`", "`", "---"), concealed())
+  }
+
+  fun testFrontMatterDelimitersAndThematicBreakUseRuleDecorations() {
+    val content = """
+      |---
+      |name: valid-skill
+      |description: Does useful work.
+      |---
+      |
+      |---
+      |tail
+    """.trimMargin()
+    configure("$content<caret>")
+
+    assertEquals(3, thematicBreakHighlighters().size)
+    assertEquals(listOf("---", "---", "---"), concealed())
+    myFixture.checkResult(content)
+
+    val bodyRule = thematicBreakHighlighters().last()
+    moveCaretTo(bodyRule.startOffset)
+    assertEquals(listOf("---", "---"), concealed())
+    assertEquals(2, thematicBreakHighlighters().size)
+
+    moveCaretTo(content.length)
+    assertEquals(listOf("---", "---", "---"), concealed())
+    assertEquals(3, thematicBreakHighlighters().size)
+  }
+
+  fun testStandaloneLocalImageRendersAndRevealsItsSource() {
+    addPng(120, 60)
+    val content = "![alt](image.png)\n\ntail"
+    configureProjectFile(content)
+
+    val region = waitForImageRenderer()
+    assertEquals("![alt](image.png)", content.substring(region.startOffset, region.endOffset))
+    assertTrue(region.renderer is DocRenderer)
+    myFixture.checkResult(content)
+
+    moveCaretTo(0)
+    assertEmpty(imageRegions())
+    myFixture.checkResult(content)
+
+    moveCaretTo(content.length)
+    waitForImageRenderer()
+  }
+
+  fun testImagesBetweenHeadersBothRender() {
+    addPng(120, 60)
+    val content = "# Markdown WYSIWYG Demo\n\n![logo](image.png)\n\n![logo](image.png)\n\n# Markdown WYSIWYG Demo"
+    configureProjectFile(content)
+
+    assertEquals(2, computeLivePreviewSpecs(myFixture.file).filterIsInstance<MarkdownLivePreviewSpec.Image>().size)
+    waitForImageRegions(2)
+  }
+
+  fun testAdjacentImagesBothRender() {
+    addPng(120, 60)
+    configureProjectFile("![logo](image.png)\n![logo](image.png)\n\ntail")
+
+    waitForImageRegions(2)
+  }
+
+  fun testMovingCaretBetweenImagesDoesNotUseDisposedFoldRegion() {
+    addPng(120, 60)
+    val first = "![first](image.png)"
+    val second = "![second](image.png)"
+    val content = "$first\n\n$second\n\ntail"
+    configureProjectFile(content)
+    waitForImageRegions(2)
+
+    moveCaretTo(first.length)
+    assertEquals(1, imageRegions().size)
+
+    moveCaretTo(content.indexOf(second) + second.length)
+    assertEquals(1, imageRegions().size)
+  }
+
+  fun testSelectionOverImageYieldsMarkdownSource() {
+    addPng(80, 40)
+    val imageSource = "![alt](image.png)"
+    val content = "$imageSource\n\ntail"
+    configureProjectFile(content)
+    waitForImageRenderer()
+
+    select(0, imageSource.length)
+
+    assertEmpty(imageRegions())
+    assertEquals(imageSource, myFixture.editor.selectionModel.selectedText)
+  }
+
+  fun testSvgImageUsesItsIntrinsicSize() {
+    addBinaryFile(
+      "docs/image.svg",
+      "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"90\" height=\"45\"><rect width=\"90\" height=\"45\"/></svg>".toByteArray(),
+    )
+    configureProjectFile("![alt](image.svg)\n\ntail")
+    assertTrue(waitForImageRenderer().renderer is DocRenderer)
+  }
+
+  fun testCachedAttachmentImageRendersFromProjectRoot() {
+    addBinaryFile(".attachments/image.png", pngBytes(70, 35))
+    configureProjectFile("![alt](/.attachments/image.png)\n\ntail")
+
+    assertTrue(waitForImageRenderer().renderer is DocRenderer)
+  }
+
+  fun testEncodedLocalImagePathUsesSharedResolver() {
+    addBinaryFile("docs/image with space.png", pngBytes(70, 35))
+    configureProjectFile("![alt](image%20with%20space.png)\n\ntail")
+
+    assertTrue(waitForImageRenderer().renderer is DocRenderer)
+  }
+
+  fun testSiblingPrefixPathOutsideProjectRestoresItsSource() {
+    val content = "![alt](../../../project-other/image.png)\n\ntail"
+    val source = myFixture.addFileToProject("project/docs/test.md", content).virtualFile
+    val siblingImage = myFixture.addFileToProject("../project-other/image.png", "").virtualFile
+    ApplicationManager.getApplication().runWriteAction { siblingImage.setBinaryContent(pngBytes(60, 30)) }
+    PsiTestUtil.addContentRoot(myFixture.module, source.parent!!.parent!!)
+    myFixture.configureFromExistingVirtualFile(source)
+    myFixture.editor.caretModel.moveToOffset(content.length)
+    myFixture.doHighlighting()
+
+    assertEquals(1, computeLivePreviewSpecs(myFixture.file).filterIsInstance<MarkdownLivePreviewSpec.Image>().size)
+    PlatformTestUtil.waitWithEventsDispatching("Sibling image fold was not removed", { imageRegions().isEmpty() }, 10)
+  }
+
+  fun testFileUriOutsideProjectRestoresItsSource() {
+    val image = myFixture.addFileToProject("project-other/outside.png", "").virtualFile
+    ApplicationManager.getApplication().runWriteAction { image.setBinaryContent(pngBytes(60, 30)) }
+    val source = myFixture.addFileToProject("project/docs/test.md", "![alt](<${image.url}>)\n\ntail").virtualFile
+    PsiTestUtil.addContentRoot(myFixture.module, source.parent!!.parent!!)
+    myFixture.configureFromExistingVirtualFile(source)
+    myFixture.editor.caretModel.moveToOffset(source.contentsToByteArray().size)
+    myFixture.doHighlighting()
+    PlatformTestUtil.waitWithEventsDispatching("Outside image fold was not removed", { imageRegions().isEmpty() }, 10)
+  }
+
+  fun testBrokenImageAndMissingImageStayRaw() {
+    addBinaryFile("docs/broken.png", "not an image".toByteArray())
+    configureProjectFile("![broken](broken.png)\n\n![missing](missing.png)\n\ntail")
+
+    waitForNoImageRegion()
+
+    myFixture.checkResult("![broken](broken.png)\n\n![missing](missing.png)\n\ntail")
+  }
+
+  fun testImageRefreshesAfterVfsChange() {
+    val image = addPng(100, 40)
+    configureProjectFile("![alt](image.png)\n\ntail")
+    val region = waitForImageRenderer()
+    assertTrue(region.renderer is DocRenderer)
+
+    ApplicationManager.getApplication().runWriteAction { image.setBinaryContent(pngBytes(100, 90)) }
+
+    PlatformTestUtil.dispatchAllInvocationEventsInIdeEventQueue()
+    assertSame(region, imageRegions().single())
+    assertTrue(imageRegions().single().renderer is DocRenderer)
+  }
+
+  fun testImageOverByteLimitIsRejectedAfterVfsRefresh() {
+    val image = addPng(2, 2)
+    configureProjectFile("![alt](image.png)\n\ntail")
+    waitForImageRenderer()
+    Registry.get("markdown.live.preview.image.max.bytes").setValue(1, testRootDisposable)
+
+    ApplicationManager.getApplication().runWriteAction { image.setBinaryContent(pngBytes(3, 3)) }
+
+    waitForNoImageRegion()
+  }
+
+  fun testImageOverPixelLimitIsRejectedAfterVfsRefresh() {
+    val image = addPng(2, 2)
+    configureProjectFile("![alt](image.png)\n\ntail")
+    waitForImageRenderer()
+    Registry.get("markdown.live.preview.image.max.pixels").setValue(1, testRootDisposable)
+
+    ApplicationManager.getApplication().runWriteAction { image.setBinaryContent(pngBytes(3, 3)) }
+
+    waitForNoImageRegion()
+  }
+
+  fun testResizingEditorDoesNotRecreateImageFold() {
+    addPng(100, 40)
+    configureProjectFile("![alt](image.png)\n\ntail")
+    val region = waitForImageRenderer()
+    val renderer = region.renderer
+
+    EditorTestUtil.setEditorVisibleSize(myFixture.editor, 40, 20)
+    EditorTestUtil.setEditorVisibleSize(myFixture.editor, 80, 20)
+    PlatformTestUtil.dispatchAllInvocationEventsInIdeEventQueue()
+
+    assertSame(region, imageRegions().single())
+    assertSame(renderer, imageRegions().single().renderer)
+  }
+
+  fun testClickingImagePreservesViewportPosition() {
+    addPng(240, 120)
+    val content = (1..4).joinToString("\n\n") { "![logo](image.png)" } + "\n\n- tail"
+    configureProjectFile(content)
+    waitForImageRegions(4)
+    val editor = myFixture.editor
+    EditorTestUtil.setEditorVisibleSize(editor, 80, 12)
+    val target = imageRegions().sortedBy { it.startOffset }[1]
+    val targetLine = editor.offsetToVisualPosition(target.startOffset).line
+    editor.scrollingModel.scrollVertically((editor.visualLineToY(targetLine) - editor.lineHeight).coerceAtLeast(0))
+    PlatformTestUtil.dispatchAllInvocationEventsInIdeEventQueue()
+    val verticalOffset = editor.scrollingModel.verticalScrollOffset
+
+    EditorMouseFixture(editor as EditorImpl).clickAt(targetLine, 1)
+    PlatformTestUtil.dispatchAllInvocationEventsInIdeEventQueue()
+
+    assertEquals(verticalOffset, editor.scrollingModel.verticalScrollOffset)
+  }
+
+  fun testMovingCaretAcrossSmallImageDoesNotJumpViewport() {
+    addPng(40, 20)
+    val image = "![logo](image.png)"
+    val content = (1..8).joinToString("\n") { "before$it" } + "\n\n$image\n\n" +
+                  (1..8).joinToString("\n") { "after$it" }
+    configureProjectFile(content)
+    val editor = myFixture.editor
+    waitForImageRenderer()
+    EditorTestUtil.setEditorVisibleSize(editor, 400, editor.lineHeight * 8)
+    PlatformTestUtil.dispatchAllInvocationEventsInIdeEventQueue()
+
+    val imageLine = editor.document.getLineNumber(content.indexOf(image))
+    editor.scrollingModel.scrollVertically(editor.visualLineToY(imageLine - 3))
+    moveCaretTo(editor.document.getLineStartOffset(imageLine - 1))
+    val verticalOffset = editor.scrollingModel.verticalScrollOffset
+
+    moveCaretDown()
+    moveCaretDown()
+
+    assertEquals(verticalOffset, editor.scrollingModel.verticalScrollOffset)
+  }
+
+  fun testMovingPastLargeImageUsesMinimumScroll() {
+    addPng(100, 1_000)
+    val image = "![logo](image.png)"
+    val content = (1..6).joinToString("\n") { "before$it" } + "\n\n$image\n\n" +
+                  (1..12).joinToString("\n") { "after$it" }
+    configureProjectFile(content)
+    val editor = myFixture.editor
+    waitForImageRenderer()
+    EditorTestUtil.setEditorVisibleSizeInPixels(editor, 300, editor.lineHeight * 5)
+    PlatformTestUtil.dispatchAllInvocationEventsInIdeEventQueue()
+
+    val imageLine = editor.document.getLineNumber(content.indexOf(image))
+    moveCaretTo(editor.document.getLineStartOffset(imageLine))
+    assertEmpty(imageRegions())
+    editor.scrollingModel.scrollVertically((editor.visualLineToY(imageLine) - editor.lineHeight * 2).coerceAtLeast(0))
+    PlatformTestUtil.dispatchAllInvocationEventsInIdeEventQueue()
+    val visibleArea = editor.scrollingModel.visibleArea
+
+    moveCaretDown()
+
+    val expected = expectedRelativeScroll(editor, visibleArea.y, visibleArea.height)
+    assertEquals(expected, editor.scrollingModel.verticalScrollOffset)
+    assertTrue(imageRegions().isNotEmpty())
   }
 
   fun testSelectingEverythingRevealsEverything() {
@@ -123,21 +493,13 @@ class MarkdownLivePreviewFoldingTest: BasePlatformTestCase() {
     assertEquals(content, myFixture.editor.selectionModel.selectedText)
   }
 
-  /**
-   * `BackspaceAction` looks for a collapsed region one character behind the caret and deletes the whole of
-   * it, and that lookup counts a region ending exactly there as a hit - so a caret one character past
-   * `**bold**` would take both asterisks out in a single keystroke. It never gets the chance: the action
-   * first moves the caret one column left, onto the element's end offset, and the reveal that runs
-   * synchronously in the caret listener removes the region before the action goes looking for it. This is
-   * what makes a dedicated backspace handler unnecessary, so the test is here to keep it that way.
-   */
   fun testBackspacePastAnElementDeletesOneCharacter() {
     val content = "**bold** x"
     configure(content)
     moveCaretTo(content.length - 1)
     assertEquals(listOf("**", "**"), concealed())
     myFixture.performEditorAction(IdeActions.ACTION_EDITOR_BACKSPACE)
-    assertEquals("**bold**x", myFixture.editor.document.text)
+    myFixture.checkResult("**bold**x")
   }
 
   fun testBackspaceInsideAnElementDeletesOneCharacter() {
@@ -145,7 +507,49 @@ class MarkdownLivePreviewFoldingTest: BasePlatformTestCase() {
     configure(content)
     moveCaretTo("**bold".length)
     myFixture.performEditorAction(IdeActions.ACTION_EDITOR_BACKSPACE)
-    assertEquals("**bol** x", myFixture.editor.document.text)
+    myFixture.checkResult("**bol** x")
+  }
+
+  fun testBackspaceAfterAutolinkDeletesOneCharacter() {
+    assertBackspaceAfterElement("<https://example.org>")
+  }
+
+  fun testBackspaceAfterEmphasisDeletesOneCharacter() {
+    assertBackspaceAfterElement("*italic*")
+  }
+
+  fun testBackspaceAfterStrongEmphasisDeletesOneCharacter() {
+    assertBackspaceAfterElement("**bold**")
+  }
+
+  fun testBackspaceAfterCodeSpanDeletesOneCharacter() {
+    assertBackspaceAfterElement("`code`")
+  }
+
+  fun testBackspaceAfterInlineLinkDeletesOneCharacter() {
+    assertBackspaceAfterElement("[link](https://example.org)")
+  }
+
+  fun testBackspaceAfterStrikethroughDeletesOneCharacter() {
+    assertBackspaceAfterElement("~~deleted~~")
+  }
+
+  fun testBackspaceAfterThematicBreakDeletesOneCharacter() {
+    assertBackspaceAfterElement("---")
+  }
+
+  fun testBackspaceAfterImageDoesNotDeleteTheImage() {
+    addPng(120, 60)
+    val image = "![logo](image.png)"
+    val content = "`KotlinClass`\n\n$image\n"
+    configureProjectFile("$content<caret>")
+    waitForImageRenderer()
+
+    myFixture.performEditorAction(IdeActions.ACTION_EDITOR_BACKSPACE)
+
+    myFixture.checkResult(content.dropLast(1))
+    assertEquals(content.length - 1, myFixture.editor.caretModel.offset)
+    assertEmpty(imageRegions())
   }
 
   fun testDeleteAfterAnElementDeletesOneCharacter() {
@@ -153,15 +557,19 @@ class MarkdownLivePreviewFoldingTest: BasePlatformTestCase() {
     configure(content)
     moveCaretTo(content.indexOf(" x"))
     myFixture.performEditorAction(IdeActions.ACTION_EDITOR_DELETE)
-    assertEquals("**bold**x", myFixture.editor.document.text)
+    myFixture.checkResult("**bold**x")
   }
 
-  fun testDisablingLivePreviewRemovesEveryRegion() {
+  fun testLivePreviewSettingReconcilesImmediately() {
     configure("Some **bold** text<caret>")
     assertFalse(concealed().isEmpty())
-    settings.enableLivePreview = false
-    moveCaretTo(0)
+    settings.update { it.enableLivePreview = false }
+    PlatformTestUtil.dispatchAllInvocationEventsInIdeEventQueue()
     assertEmpty(concealed())
+
+    settings.update { it.enableLivePreview = true }
+    PlatformTestUtil.dispatchAllInvocationEventsInIdeEventQueue()
+    assertEquals(listOf("**", "**"), concealed())
   }
 
   fun testDiffEditorHidesNothing() {
@@ -170,7 +578,7 @@ class MarkdownLivePreviewFoldingTest: BasePlatformTestCase() {
     val diffEditor = EditorFactory.getInstance().createEditor(document, project, myFixture.file.virtualFile, false, EditorKind.DIFF)
     try {
       val reconciler = MarkdownLivePreviewReconciler.getOrCreate(diffEditor)!!
-      reconciler.publishSpecs(MarkdownConcealSpecSet(document.modificationStamp, computeConcealElements(myFixture.file)))
+      reconciler.publishSpecs(MarkdownLivePreviewSpecSet(document.modificationStamp, computeLivePreviewSpecs(myFixture.file)))
       assertEmpty("A diff editor must show the raw source", concealed(diffEditor))
     }
     finally {
@@ -189,34 +597,98 @@ class MarkdownLivePreviewFoldingTest: BasePlatformTestCase() {
     assertEquals("With the caret past the end nothing is revealed", 40 * 2, concealed().size)
   }
 
-  /**
-   * Specs carry the document stamp they were computed from, and the reconciler declines them once the
-   * document has moved on. The pass records that same stamp rather than the current one, so declined specs
-   * do not look applied and the next pass recomputes them.
-   */
   fun testSpecsFromAnOlderDocumentAreDeclined() {
     myFixture.configureByText("test.md", "Some **bold** text")
     val editor = myFixture.editor
     PsiDocumentManager.getInstance(project).commitAllDocuments()
     val reconciler = MarkdownLivePreviewReconciler.getOrCreate(editor)!!
-    val elements = computeConcealElements(myFixture.file)
+    val elements = computeLivePreviewSpecs(myFixture.file)
 
-    reconciler.publishSpecs(MarkdownConcealSpecSet(editor.document.modificationStamp - 1, elements))
+    reconciler.publishSpecs(MarkdownLivePreviewSpecSet(editor.document.modificationStamp - 1, elements))
     assertEmpty("Specs computed from an older document must be declined", concealed())
 
-    reconciler.publishSpecs(MarkdownConcealSpecSet(editor.document.modificationStamp, elements))
+    reconciler.publishSpecs(MarkdownLivePreviewSpecSet(editor.document.modificationStamp, elements))
     assertEquals(listOf("**", "**"), concealed())
   }
 
-  /** Opens the file and lets the highlighting pass compute and publish the specs, as it does in an editor. */
+  private fun assertBackspaceAfterElement(element: String) {
+    val content = "$element\n"
+    configure("$content<caret>")
+
+    myFixture.performEditorAction(IdeActions.ACTION_EDITOR_BACKSPACE)
+
+    myFixture.checkResult(element)
+    assertEquals(element.length, myFixture.editor.caretModel.offset)
+  }
+
   private fun configure(content: String) {
     myFixture.configureByText("test.md", content)
     myFixture.doHighlighting()
   }
 
+  private fun configureProjectFile(content: String) {
+    myFixture.addFileToProject("docs/test.md", content)
+    myFixture.configureFromExistingVirtualFile(myFixture.findFileInTempDir("docs/test.md"))
+    myFixture.editor.caretModel.moveToOffset(content.length)
+    myFixture.doHighlighting()
+  }
+
+  private fun addPng(width: Int, height: Int): VirtualFile = addBinaryFile("docs/image.png", pngBytes(width, height))
+
+  private fun addBinaryFile(path: String, bytes: ByteArray): VirtualFile {
+    return myFixture.addFileToProject(path, "").virtualFile.also {
+      ApplicationManager.getApplication().runWriteAction { it.setBinaryContent(bytes) }
+    }
+  }
+
+  private fun pngBytes(width: Int, height: Int): ByteArray {
+    val output = ByteArrayOutputStream()
+    check(ImageIO.write(BufferedImage(width, height, BufferedImage.TYPE_INT_ARGB), "png", output))
+    return output.toByteArray()
+  }
+
+  private fun waitForImageRenderer(): CustomFoldRegion {
+    waitForImageRegions(1)
+    return imageRegions().single()
+  }
+
+  private fun waitForImageRegions(count: Int) {
+    PlatformTestUtil.waitWithEventsDispatching(
+      "Image renderer was not created",
+      { imageRegions().size == count && imageRegions().all { it.renderer is DocRenderer } },
+      10,
+    )
+  }
+
+  private fun waitForNoImageRegion() {
+    PlatformTestUtil.waitWithEventsDispatching(
+      "Image fold was not removed",
+      { imageRegions().isEmpty() },
+      10,
+    )
+  }
+
   private fun moveCaretTo(offset: Int) {
     myFixture.editor.caretModel.moveToOffset(offset)
     PlatformTestUtil.dispatchAllInvocationEventsInIdeEventQueue()
+  }
+
+  private fun moveCaretDown() {
+    myFixture.performEditorAction(IdeActions.ACTION_EDITOR_MOVE_CARET_DOWN)
+    PlatformTestUtil.dispatchAllInvocationEventsInIdeEventQueue()
+  }
+
+  private fun expectedRelativeScroll(editor: Editor, viewportY: Int, viewportHeight: Int): Int {
+    val caretY = editor.visualLineToY(editor.caretModel.visualPosition.line)
+    val lineHeight = editor.lineHeight
+    val scrollOffset = editor.settings.verticalScrollOffset * lineHeight
+    val topBound = caretY - scrollOffset
+    val bottomBound = caretY + scrollOffset + lineHeight
+    return when {
+      viewportY > topBound -> topBound
+      viewportY + viewportHeight < bottomBound -> bottomBound - viewportHeight
+      else -> viewportY
+    }.coerceAtLeast(0)
   }
 
   private fun select(start: Int, end: Int) {
@@ -230,7 +702,14 @@ class MarkdownLivePreviewFoldingTest: BasePlatformTestCase() {
     return concealedLivePreviewRegions(editor).map { text.subSequence(it.startOffset, it.endOffset).toString() }
   }
 
-  /** What the reader sees: the document with every concealed region left out. */
+  private fun concealedWithPlaceholders(editor: Editor = myFixture.editor): List<Pair<String, String>> {
+    val text = editor.document.charsSequence
+    return concealedLivePreviewRegions(editor).map {
+      text.subSequence(it.startOffset, it.endOffset).toString() to it.placeholderText
+    }
+  }
+
+  /** What the reader sees: every concealed range replaced by its fold placeholder. */
   private fun visibleText(): String {
     val editor = myFixture.editor
     val text = editor.document.charsSequence
@@ -238,6 +717,7 @@ class MarkdownLivePreviewFoldingTest: BasePlatformTestCase() {
     var offset = 0
     for (region in concealedLivePreviewRegions(editor)) {
       if (region.startOffset > offset) result.append(text, offset, region.startOffset)
+      result.append(region.placeholderText)
       offset = maxOf(offset, region.endOffset)
     }
     result.append(text, offset, text.length)
@@ -246,6 +726,16 @@ class MarkdownLivePreviewFoldingTest: BasePlatformTestCase() {
 
   private fun concealedLivePreviewRegions(editor: Editor): List<FoldRegion> =
     editor.foldingModel.allFoldRegions
-      .filter { it.isValid && it.getUserData(MARKDOWN_LIVE_PREVIEW_REGION) == true }
+      .filter { it.isValid && (it is CustomFoldRegion || it.shouldNeverExpand()) }
       .sortedWith(compareBy({ it.startOffset }, { it.endOffset }))
+
+  private fun thematicBreakHighlighters(): List<RangeHighlighter> =
+    myFixture.editor.markupModel.allHighlighters
+      .filter { it.isValid && it.customRenderer != null }
+      .sortedWith(compareBy({ it.startOffset }, { it.endOffset }))
+
+  private fun imageRegions(): List<CustomFoldRegion> =
+    myFixture.editor.foldingModel.allFoldRegions
+      .filterIsInstance<CustomFoldRegion>()
+      .filter { it.isValid }
 }

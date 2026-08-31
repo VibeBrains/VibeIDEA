@@ -49,7 +49,7 @@
     <orderEntry type="module" module-name="intellij.libraries.kotlinx.coroutines.core" />
     <orderEntry type="module" module-name="intellij.libraries.kotlinx.serialization.core" />
     <orderEntry type="module" module-name="intellij.libraries.kotlinx.serialization.json" />
-    <orderEntry type="library" name="kaml" level="project" />
+    <orderEntry type="module" module-name="intellij.libraries.kaml" />
     <orderEntry type="module" module-name="intellij.platform.buildScripts.downloader" />
     <orderEntry type="module" module-name="intellij.tools.reproducibleBuilds.diff" />
     <orderEntry type="module" module-name="intellij.platform.jps.build" />
@@ -64,7 +64,7 @@
     <orderEntry type="module" module-name="intellij.libraries.teamcity.service.messages" />
     <orderEntry type="module" module-name="intellij.platform.buildData" />
     <orderEntry type="module" module-name="intellij.platform.util.zip" />
-    <orderEntry type="module" module-name="intellij.platform.distributionContent.testFramework" />
+    <orderEntry type="module" module-name="intellij.platform.distributionContent" />
     <orderEntry type="module" module-name="intellij.platform.buildScripts.licenses" />
   </component>
 </module>

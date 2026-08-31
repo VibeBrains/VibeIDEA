@@ -25,7 +25,7 @@ jvm_library(
         "@lib//:grazie-core-ai-grazie-tasks-library-api-jvm",
         "@lib//:grazie-core-ai-grazie-gec-util",
         "@lib//:grazie-core-org-jetbrains-intellij-deps-languagetool-languagetool-core",
-        "@lib//:ai-grazie-rule-engine",
+        "//libraries/ai-grazie-rule-engine",
         "@lib//:grazie-core-ai-grazie-model-ner-jvm",
         "@lib//:grazie-core-cloud-jetbrains-sdk-ml-jbai-tree-api",
         "@lib//:grazie-core-cloud-jetbrains-sdk-ml-jbai-ner-api",
@@ -36,6 +36,7 @@ jvm_library(
         "//libraries/guava",
         "//libraries/jetbrains/annotations",
         "//libraries/commons/lang3",
+        "//libraries/jackson/dataformat-yaml:libraries-jackson-dataformat-yaml",
     ],
     deps = [
         # do not sort,
@@ -100,7 +101,7 @@ jvm_library(
         "//libraries/kotlinx/serialization/core",
         "//libraries/lucene.common",
         "//libraries/ai.grazie.spell.gec.engine.local",
-        "@lib//:ai-grazie-rule-engine",
+        "//libraries/ai-grazie-rule-engine",
         "@lib//:grazie-core-ai-grazie-model-ner-jvm",
         "@lib//:grazie-core-cloud-jetbrains-sdk-ml-jbai-tree-api",
         "@lib//:grazie-core-cloud-jetbrains-sdk-ml-jbai-ner-api",
@@ -120,6 +121,7 @@ jvm_library(
         "//platform/ide-core",
         "//platform/progress/shared:ide-progress",
         "//libraries/kotlin/logging",
+        "//platform/credential-store",
     ],
 )
 
@@ -140,7 +142,8 @@ jvm_library(
         "@lib//:grazie-core-ai-grazie-tasks-library-api-jvm",
         "@lib//:grazie-core-ai-grazie-gec-util",
         "@lib//:grazie-core-org-jetbrains-intellij-deps-languagetool-languagetool-core",
-        "@lib//:ai-grazie-rule-engine",
+        "//libraries/ai-grazie-rule-engine",
+        "//libraries/ai-grazie-rule-engine:ai-grazie-rule-engine_test_lib",
         "@lib//:grazie-core-ai-grazie-model-ner-jvm",
         "@lib//:grazie-core-cloud-jetbrains-sdk-ml-jbai-tree-api",
         "@lib//:grazie-core-cloud-jetbrains-sdk-ml-jbai-ner-api",
@@ -187,6 +190,7 @@ jvm_library(
         "//libraries/kotlinx/serialization/core:core_test_lib",
         "//libraries/lucene.common:lucene.common_test_lib",
         "//libraries/ai.grazie.spell.gec.engine.local:ai.grazie.spell.gec.engine.local_test_lib",
+        "//libraries/ai-grazie-rule-engine:ai-grazie-rule-engine_test_lib",
         "//libraries/kotlinx/html:html_test_lib",
         "//libraries/commons/lang3:lang3_test_lib",
         "//platform/util/coroutines:coroutines_test_lib",
@@ -204,6 +208,8 @@ jvm_library(
         "//platform/ide-core:ide-core_test_lib",
         "//platform/progress/shared:ide-progress_test_lib",
         "//libraries/kotlin/logging:logging_test_lib",
+        "//platform/credential-store:credential-store_test_lib",
+        "//libraries/jackson/dataformat-yaml:libraries-jackson-dataformat-yaml_test_lib",
     ],
 )
 ### auto-generated section `build intellij.grazie.core` end

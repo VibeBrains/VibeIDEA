@@ -220,31 +220,44 @@ class GitWorkingTreesService(private val project: Project, val coroutineScope: C
   class Result private constructor(
     val success: Boolean,
     val errorOutputAsHtmlString: @NlsSafe @NlsContexts.NotificationContent String,
+    val errorOutput: List<String> = emptyList(),
   ) {
     companion object {
       val SUCCESS = Result(true, "")
 
-      fun createFailure(@NlsContexts.NotificationContent errorOutputAsHtmlString: @NlsSafe String): Result {
-        return Result(false, errorOutputAsHtmlString)
+      fun createFailure(@NlsContexts.NotificationContent errorOutputAsHtmlString: @NlsSafe String,
+                        errorOutput: List<String> = emptyList()): Result {
+        return Result(false, errorOutputAsHtmlString, errorOutput)
       }
     }
   }
 
-  internal suspend fun createWorkingTree(request: GitWorktreeCreationRequest): Result {
-    return withBackgroundProgress(project, GitBundle.message("progress.title.creating.worktree"), cancellable = true) {
+  /**
+   * @param reportOwnProgress whether to open a new top-level background progress for this operation. Pass `false`
+   * when the caller already runs its own background progress (e.g. checking out a PR branch into a new worktree),
+   * so this step just runs as part of it instead of opening a second progress window.
+   */
+  internal suspend fun createWorkingTree(request: GitWorktreeCreationRequest, force: Boolean = false, reportOwnProgress: Boolean = true): Result {
+    val runCommand: suspend () -> Result = {
       val branch = request.branch
       val newBranchName = when (branch) {
         is WorktreeBranchSpec.CreateNewBranch -> branch.newBranchName
         // A remote branch is checked out into a new local branch tracking it.
         is WorktreeBranchSpec.CheckoutExisting -> (branch.sourceRef as? GitRemoteBranch)?.nameForRemoteOperations
       }
-      val commandResult = Git.getInstance().createWorkingTree(request.repository, request.workingTreePath, branch.sourceRef, newBranchName)
+      val commandResult = Git.getInstance().createWorkingTree(request.repository, request.workingTreePath, branch.sourceRef, newBranchName, force)
       if (commandResult.success()) {
         Result.SUCCESS
       }
       else {
-        Result.createFailure(commandResult.errorOutputAsHtmlString)
+        Result.createFailure(commandResult.errorOutputAsHtmlString, commandResult.errorOutput)
       }
+    }
+    if (!reportOwnProgress) {
+      return runCommand()
+    }
+    return withBackgroundProgress(project, GitBundle.message("progress.title.creating.worktree"), cancellable = true) {
+      runCommand()
     }
   }
 

@@ -45,17 +45,51 @@ def _normalize_project_relative_path(parts, context):
             result.append(part)
     return "/".join(result)
 
-def _resource_roots(iml_content, iml_rel_path, iml_dir_rel):
-    """The project-relative path of every resource root an .iml declares, split by scope.
+def _module_dir_relative_project_path(url, iml_rel_path, iml_dir_rel, root_type):
+    """A `file://$MODULE_DIR$/...` root URL as a project-relative path."""
+    prefix = "file://$MODULE_DIR$"
+    if not url.startswith(prefix):
+        fail("Unsupported %s root URL in %s (expected $MODULE_DIR$ path): %s" % (root_type, iml_rel_path, url))
 
-    Both scopes come out of one parse: this runs once per module in the repository, and a second `xml.parse` of the
+    root_rel = url[len(prefix):]
+    if root_rel.startswith("/"):
+        root_rel = root_rel[1:]
+    elif root_rel:
+        fail("Unsupported %s root URL in %s (expected $MODULE_DIR$ path): %s" % (root_type, iml_rel_path, url))
+
+    parts = iml_dir_rel.split("/") if iml_dir_rel else []
+    if root_rel:
+        parts += root_rel.split("/")
+    return _normalize_project_relative_path(parts, "The %s root '%s' in %s" % (root_type, url, iml_rel_path))
+
+def _iml_roots(iml_content, iml_rel_path, iml_dir_rel):
+    """The project-relative resource roots an .iml declares, split by scope, plus its first content root.
+
+    All of it comes out of one parse: this runs once per module in the repository, and a second `xml.parse` of the
     same .iml just to find the test roots would double the cost of the whole model read.
 
     A generated test plugin keeps its descriptor under a test root - `intellij.lambda.test.plugin` is a module with
     no production output at all, only `resources/META-INF/plugin.xml` marked `java-test-resource`.
+
+    The first content root is where a plugin's dev-distribution residue lives, and only the first: that is the rule the
+    converter reads it back with (`devDistResidueFile` in `ModuleDescriptor.kt`), and the rule a `module-content.yaml`
+    follows too.
     """
     doc = xml.parse(iml_content, strict = True)
     root = xml.get_document_element(doc)
+
+    first_content_root = None
+    for content in xml.find_elements_by_tag_name(root, "content"):
+        url = xml.get_attribute(content, "url")
+        if not url:
+            fail("A content root is missing the 'url' attribute in %s" % iml_rel_path)
+        first_content_root = _module_dir_relative_project_path(
+            url = url,
+            iml_rel_path = iml_rel_path,
+            iml_dir_rel = iml_dir_rel,
+            root_type = "content",
+        )
+        break
 
     production = []
     test = []
@@ -72,24 +106,13 @@ def _resource_roots(iml_content, iml_rel_path, iml_dir_rel):
         if not url:
             fail("A %s root is missing the 'url' attribute in %s" % (root_type, iml_rel_path))
 
-        prefix = "file://$MODULE_DIR$"
-        if not url.startswith(prefix):
-            fail("Unsupported %s root URL in %s (expected $MODULE_DIR$ path): %s" % (root_type, iml_rel_path, url))
-
-        resource_root_rel = url[len(prefix):]
-        if resource_root_rel.startswith("/"):
-            resource_root_rel = resource_root_rel[1:]
-        elif resource_root_rel:
-            fail("Unsupported %s root URL in %s (expected $MODULE_DIR$ path): %s" % (root_type, iml_rel_path, url))
-
-        parts = iml_dir_rel.split("/") if iml_dir_rel else []
-        if resource_root_rel:
-            parts += resource_root_rel.split("/")
-        target.append(_normalize_project_relative_path(
-            parts,
-            "The %s root '%s' in %s" % (root_type, url, iml_rel_path),
+        target.append(_module_dir_relative_project_path(
+            url = url,
+            iml_rel_path = iml_rel_path,
+            iml_dir_rel = iml_dir_rel,
+            root_type = root_type,
         ))
-    return struct(production = production, test = test)
+    return struct(production = production, test = test, first_content_root = first_content_root)
 
 def _find_plugin_xml_rel_path(ctx, project_root, resource_roots):
     for resource_root in resource_roots:
@@ -191,6 +214,53 @@ def _find_descriptor_rel_paths(project_root, module_name, resource_roots, extra_
             result.append(rel_path)
     return result
 
+_DEV_DIST_RESIDUE_FILE_NAME = "dev-dist.yaml"
+
+def _find_dev_dist_residue_rel_path(project_root, first_content_root):
+    """The `dev-dist.yaml` of the plugin this module is the main module of, or `None`.
+
+    The residue is what a plugin's dev-distribution leaves state beyond the derivation, and only the converter reads it -
+    but the hermetic `bazel-targets.json` run loads its project model from a tree materialized out of declared labels,
+    so a residue nobody names is a residue that run cannot see, and its `contentTarget` and `descriptorTargets` would
+    silently differ from the full-checkout run's. Naming it here is what puts it in that tree.
+
+    One probe for both leaves. The `content:` part states the members the derivation cannot reach and the `descriptor:`
+    part states what the descriptor convention does not give, so one file carries what two used to.
+
+    Existence only, deliberately: whether a residue changes a leaf depends on what is written in it, this side cannot
+    parse YAML, and it does not have to - `JpsModuleToBazelTargetsOnly` asserts that the two sides pick out the same set
+    of files, and the one converter then decides the rest. Probed rather than listed, for the reason
+    [_find_descriptor_rel_paths] gives.
+    """
+    if first_content_root == None:
+        return None
+    rel_path = _join_project_relative_path(first_content_root, _DEV_DIST_RESIDUE_FILE_NAME)
+    return rel_path if project_root.get_child(rel_path).exists else None
+
+_CONTENT_MODULE_RECIPE_FILE_NAME = "module-content.yaml"
+
+def _find_content_module_recipe_rel_path(project_root, first_content_root):
+    """The `module-content.yaml` of the `lib/` jar this module owns, or `None`.
+
+    The recipe is what says whether a platform content module owns a jar of its own, and only the converter reads it -
+    but for the same reason [_find_dev_dist_residue_rel_path] gives, a recipe nobody names is a recipe the hermetic
+    `bazel-targets.json` run cannot see, and its `contentModuleJarTarget` then silently differs from the full-checkout
+    run's. That is not a symmetric loss: a missing label makes a dev-distribution fragment repack a jar whose packing
+    target goes unbuilt, and the recipe's absence also stops the veto in `isPrepackedPluginContentModule` from firing,
+    so the fallback claims jars for modules that own none and the plan hands a jar to a target that is not in the tree.
+
+    Beside the module's *first content root*, which is where the content-report writer puts it and is not always the
+    directory holding the `.iml` - the same rule `ModuleDescriptor.contentModuleRecipeFile` follows.
+
+    Existence only, deliberately, exactly as for the residue: this side cannot parse YAML and does not have to -
+    `JpsModuleToBazelTargetsOnly` asserts that the two sides pick out the same set of files, and the one converter then
+    decides the rest.
+    """
+    if first_content_root == None:
+        return None
+    rel_path = _join_project_relative_path(first_content_root, _CONTENT_MODULE_RECIPE_FILE_NAME)
+    return rel_path if project_root.get_child(rel_path).exists else None
+
 def watch_project_model_files(ctx, project_root):
     idea_dir = project_root.get_child(".idea")
     modules_xml = idea_dir.get_child("modules.xml")
@@ -224,7 +294,7 @@ def read_project_model(ctx, project_root, extra_descriptor_rel_paths_by_module =
 
     Returns struct with:
       - modules: list of structs (module_name, iml_dir_rel, iml_content, iml_rel_path, plugin_xml_rel_path,
-        descriptor_rel_paths, test_plugin_modules)
+        descriptor_rel_paths, dev_dist_residue_rel_path, content_module_recipe_rel_path, test_plugin_modules)
       - library_xmls: list of structs (xml_content, xml_rel_path) from .idea/libraries/
     """
     idea_dir = project_root.get_child(".idea")
@@ -250,19 +320,19 @@ def read_project_model(ctx, project_root, extra_descriptor_rel_paths_by_module =
         else:
             iml_dir_rel = ""
 
-        resource_roots_by_scope = _resource_roots(
+        iml_roots = _iml_roots(
             iml_content = iml_content,
             iml_rel_path = rel_path,
             iml_dir_rel = iml_dir_rel,
         )
-        resource_roots = resource_roots_by_scope.production
+        resource_roots = iml_roots.production
 
         test_plugin_modules = None
         if collect_test_plugin_modules:
             test_plugin_modules = _find_test_plugin_modules(
                 ctx = ctx,
                 project_root = project_root,
-                test_resource_roots = resource_roots_by_scope.test,
+                test_resource_roots = iml_roots.test,
             )
 
         modules.append(struct(
@@ -276,6 +346,14 @@ def read_project_model(ctx, project_root, extra_descriptor_rel_paths_by_module =
                 module_name = module_name,
                 resource_roots = resource_roots,
                 extra_rel_paths = extra_descriptor_rel_paths_by_module.get(module_name, []),
+            ),
+            dev_dist_residue_rel_path = _find_dev_dist_residue_rel_path(
+                project_root = project_root,
+                first_content_root = iml_roots.first_content_root,
+            ),
+            content_module_recipe_rel_path = _find_content_module_recipe_rel_path(
+                project_root = project_root,
+                first_content_root = iml_roots.first_content_root,
             ),
             test_plugin_modules = test_plugin_modules,
         ))

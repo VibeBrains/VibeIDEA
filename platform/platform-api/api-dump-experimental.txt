@@ -21,7 +21,7 @@ f:com.intellij.execution.filters.HyperlinkInfoBaseKt
 *f:com.intellij.ide.RegionSettingsService
 - *sf:Companion:com.intellij.ide.RegionSettingsService$Companion
 - <init>(kotlinx.coroutines.CoroutineScope):V
-- f:getCurrenRegion(kotlin.coroutines.Continuation):java.lang.Object
+- f:getCurrentRegion(kotlin.coroutines.Continuation):java.lang.Object
 - f:getCurrentRegionBlocking():com.intellij.ide.Region
 - f:getCurrentRegionIfKnown():com.intellij.ide.Region
 *f:com.intellij.ide.RegionSettingsService$Companion
@@ -118,6 +118,16 @@ com.intellij.openapi.fileEditor.AsyncFileEditorProvider
 - com.intellij.openapi.fileEditor.FileEditorProvider
 - com.intellij.openapi.project.DumbAware
 - *:createFileEditor(com.intellij.openapi.project.Project,com.intellij.openapi.vfs.VirtualFile,com.intellij.openapi.editor.Document,kotlinx.coroutines.CoroutineScope,kotlin.coroutines.Continuation):java.lang.Object
+*f:com.intellij.openapi.fileEditor.CreatedFileEditorSink
+- kotlin.coroutines.AbstractCoroutineContextElement
+- sf:Key:com.intellij.openapi.fileEditor.CreatedFileEditorSink$Key
+- <init>():V
+- f:register(com.intellij.openapi.fileEditor.FileEditor):V
+*f:com.intellij.openapi.fileEditor.CreatedFileEditorSink$Key
+- kotlin.coroutines.CoroutineContext$Key
+f:com.intellij.openapi.fileEditor.CreatedFileEditorSinkKt
+- *sf:createdFileEditorSink(kotlin.coroutines.Continuation):java.lang.Object
+- *sf:registerCreatedFileEditor(com.intellij.openapi.fileEditor.FileEditor,kotlin.coroutines.Continuation):java.lang.Object
 f:com.intellij.openapi.observable.util.ListenerUiUtil
 - *sf:whenItemChangedFromUi(javax.swing.JComboBox,com.intellij.openapi.Disposable,kotlin.jvm.functions.Function1):V
 - *bs:whenItemChangedFromUi$default(javax.swing.JComboBox,com.intellij.openapi.Disposable,kotlin.jvm.functions.Function1,I,java.lang.Object):V
@@ -529,14 +539,14 @@ f:com.intellij.ui.dsl.builder.TextFieldWithBrowseButtonKt
 - f:getY():I
 - hashCode():I
 - f:setVisualPaddings(com.intellij.ui.dsl.gridLayout.UnscaledGaps):V
-*f:com.intellij.ui.dsl.gridLayout.GridLayout
+*c:com.intellij.ui.dsl.gridLayout.GridLayout
 - java.awt.LayoutManager2
 - <init>():V
 - addLayoutComponent(java.awt.Component,java.lang.Object):V
 - addLayoutComponent(java.lang.String,java.awt.Component):V
 - f:addLayoutSubGrid(com.intellij.ui.dsl.gridLayout.Constraints):com.intellij.ui.dsl.gridLayout.Grid
 - f:getConstraints(com.intellij.ui.dsl.gridLayout.Grid):com.intellij.ui.dsl.gridLayout.Constraints
-- f:getConstraints(javax.swing.JComponent):com.intellij.ui.dsl.gridLayout.Constraints
+- getConstraints(javax.swing.JComponent):com.intellij.ui.dsl.gridLayout.Constraints
 - getLayoutAlignmentX(java.awt.Container):F
 - getLayoutAlignmentY(java.awt.Container):F
 - f:getRootGrid():com.intellij.ui.dsl.gridLayout.Grid

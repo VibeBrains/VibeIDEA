@@ -38,6 +38,7 @@
 
     <extensionPoint name="externalFormatProcessor" interface="com.intellij.psi.codeStyle.ExternalFormatProcessor" dynamic="true"/>
     <extensionPoint name="formattingService" interface="com.intellij.formatting.service.FormattingService" dynamic="true"/>
+    <extensionPoint name="formattingServiceSuppressor" interface="com.intellij.formatting.service.FormattingServiceSuppressor" dynamic="true"/>
     <extensionPoint name="postQuickFixTaskService" interface="com.intellij.formatting.service.PostQuickFixTaskService" dynamic="true"/>
     <extensionPoint name="preFormatProcessor" interface="com.intellij.psi.impl.source.codeStyle.PreFormatProcessor" dynamic="true"/>
     <extensionPoint name="postFormatProcessor" interface="com.intellij.psi.impl.source.codeStyle.PostFormatProcessor" dynamic="true"/>
@@ -79,11 +80,8 @@
     <projectService serviceInterface="com.intellij.pom.PomModel"
                     serviceImplementation="com.intellij.psi.impl.source.PostprocessReformattingAspectImpl$LangPomModel" overrides="true"
                     preload="await"/>
-    <!--suppress PluginXmlRegistrationCheck -->
     <projectSettings service="com.intellij.psi.codeStyle.LegacyCodeStyleSettingsManager"/>
-    <!--suppress PluginXmlRegistrationCheck -->
     <applicationSettings service="com.intellij.psi.codeStyle.AppCodeStyleSettingsManager"/>
-    <!--suppress PluginXmlRegistrationCheck -->
     <projectSettings service="com.intellij.psi.codeStyle.ProjectCodeStyleSettingsManager"/>
     <formattingService implementation="com.intellij.formatting.service.ExternalFormatProcessorAdapter" order="first"/>
     <postFormatProcessor implementation="com.intellij.formatting.LineCommentAddSpacePostFormatProcessor"/>

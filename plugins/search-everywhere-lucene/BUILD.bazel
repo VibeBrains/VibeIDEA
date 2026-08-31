@@ -1,3 +1,4 @@
+load("@community//platform/build-scripts/bazel-rules:dev_dist_plugin.bzl", "dev_dist_plugin")
 load("@rules_jvm//:jvm.bzl", "jvm_library")
 
 ### auto-generated section `build intellij.searchEverywhereLucene.plugin` start
@@ -37,3 +38,17 @@ exports_files(
     visibility = ["//visibility:public"],
 )
 ### auto-generated section `iml intellij.searchEverywhereLucene.plugin` end
+
+### auto-generated section `dev intellij.searchEverywhereLucene.plugin` start
+dev_dist_plugin(
+    descriptor_module = ":searchEverywhereLucene-plugin",
+    prepacked_content_modules = [
+        "//plugins/search-everywhere-lucene/backend:backend_content_module_jar",
+        "//plugins/search-everywhere-lucene/frontend:frontend_content_module_jar",
+        "//plugins/search-everywhere-lucene/test-commands:searchEverywhereLucene-performanceTesting_content_module_jar",
+    ],
+    prepacked_jars = {
+        "//plugins/search-everywhere-lucene/common:common_content_module_jar": "intellij.searchEverywhereLucene.common.jar",
+    },
+)
+### auto-generated section `dev intellij.searchEverywhereLucene.plugin` end

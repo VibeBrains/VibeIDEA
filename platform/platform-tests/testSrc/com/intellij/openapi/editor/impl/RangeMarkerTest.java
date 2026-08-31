@@ -20,6 +20,7 @@ import com.intellij.openapi.editor.ex.DocumentEx;
 import com.intellij.openapi.editor.ex.MarkupModelEx;
 import com.intellij.openapi.editor.ex.RangeHighlighterEx;
 import com.intellij.openapi.editor.ex.RangeMarkerEx;
+import com.intellij.openapi.editor.impl.event.DocumentEventImpl;
 import com.intellij.openapi.editor.impl.marker.PMarker;
 import com.intellij.openapi.editor.impl.marker.SnapshotMarkerEngineImpl;
 import com.intellij.openapi.editor.markup.HighlighterTargetArea;
@@ -1278,6 +1279,27 @@ public class RangeMarkerTest extends LightPlatformTestCase {
     assertFalse(normal.isValid());
   }
 
+  public void testPersistentMarkerDoesUseSharedDiff() {
+    String oldText = "alpha\ntarget\nomega";
+    String newText = "prefix\nalpha\ntarget\nomega\nsuffix";
+    Document document = new DocumentImpl(oldText, true);
+    int markerStart = oldText.indexOf("target") + 1;
+    RangeMarker marker = document.createRangeMarker(markerStart, markerStart + 3, true);
+    AtomicReference<DocumentEventImpl> changeEvent = new AtomicReference<>();
+    document.addDocumentListener(new DocumentListener() {
+      @Override
+      public void documentChanged(@NotNull DocumentEvent event) {
+        changeEvent.set((DocumentEventImpl)event);
+      }
+    }, getTestRootDisposable());
+
+    replaceString(document, 0, oldText.length(), newText);
+
+    int expectedStart = newText.indexOf("target") + 1;
+    assertTrue(changeEvent.get().getLineDiff().isComputed());
+    assertValidMarker(marker, expectedStart, expectedStart + 3);
+  }
+
   public void testMoveTextRetargetsMarkers() {
     RangeMarkerEx marker1 = createMarker("01234567890", 1, 3);
     DocumentEx document = (DocumentEx)marker1.getDocument();
@@ -1336,7 +1358,7 @@ public class RangeMarkerTest extends LightPlatformTestCase {
     }
     markupModel.addRangeHighlighter(null, N / 2, N / 2 + 1, 0, HighlighterTargetArea.LINES_IN_RANGE);
 
-    Benchmark.newBenchmark(getTestName(false), () -> {
+    Benchmark.newBenchmark(classPlusTestName(), () -> {
       List<RangeHighlighterEx> list = new ArrayList<>();
       CommonProcessors.CollectProcessor<RangeHighlighterEx> coll = new CommonProcessors.CollectProcessor<>(list);
       for (int i=0; i<N-1;i++) {
@@ -1489,10 +1511,6 @@ public class RangeMarkerTest extends LightPlatformTestCase {
           System.err.println("Aha: " + offsets.size() + " " + e+"\n"+minOffsets);
         }
       }
-      catch (Throwable e) {
-        e.printStackTrace();
-        throw e;
-      }
     });
     if (minOffsets.get() != null) {
       System.err.println("Moves and offsets ("+minOffsets.get().size()+"): " + minOffsets);
@@ -1547,7 +1565,7 @@ public class RangeMarkerTest extends LightPlatformTestCase {
     for (RangeMarker rm : markers) {
       assertTrue(rm.isValid());
     }
-    Benchmark.newBenchmark(getTestName(false), ()->{
+    Benchmark.newBenchmark(classPlusTestName(), ()->{
       for (int i=0; i<1000; i++) {
         int length = 0;
         for (RangeMarker rm : markers) {
@@ -1570,7 +1588,7 @@ public class RangeMarkerTest extends LightPlatformTestCase {
       RangeMarker marker = doc.createRangeMarker(start, end);
       markers.add(marker);
     }
-    Benchmark.newBenchmark(getTestName(false), ()->{
+    Benchmark.newBenchmark(classPlusTestName(), ()->{
       insertString(doc, 0, " ");
       for (int i=0; i<1000; i++) {
         for (int j = 0; j < markers.size(); j++) {
@@ -1597,7 +1615,7 @@ public class RangeMarkerTest extends LightPlatformTestCase {
       markers.add(marker);
     }
     FileEditorManager.getInstance(getProject()); // warmup
-    Benchmark.newBenchmark(getTestName(false), ()->{
+    Benchmark.newBenchmark(classPlusTestName(), ()->{
       for (int i=0; i<15000; i++) {
         insertString(doc, 0, " ");
         deleteString(doc, 0, 1);
@@ -1613,7 +1631,7 @@ public class RangeMarkerTest extends LightPlatformTestCase {
     DocumentEx doc = new DocumentImpl(StringUtil.repeat("blah", 1000));
     int N = 1_000_000;
     List<RangeMarker> markers = new ArrayList<>(N);
-    Benchmark.newBenchmark(getTestName(false), ()->{
+    Benchmark.newBenchmark(classPlusTestName(), ()->{
       for (int i = 0; i < N; i++) {
         int start = i % doc.getTextLength();
         int end = start + 1;
@@ -1637,7 +1655,7 @@ public class RangeMarkerTest extends LightPlatformTestCase {
       RangeMarker marker = doc.createRangeMarker(start, end);
       markers.add(marker);
     }
-    Benchmark.newBenchmark(getTestName(false), ()->{
+    Benchmark.newBenchmark(classPlusTestName(), ()->{
       for (int it = 0; it < 2_000; it++) {
         for (int i = 1; i < doc.getTextLength() - 1; i++) {
           boolean result = doc.processRangeMarkersOverlappingWith(i, i + 1, _ -> false);
@@ -1646,6 +1664,12 @@ public class RangeMarkerTest extends LightPlatformTestCase {
       }
     }).start();
     assertNotEmpty(markers);
+  }
+
+  /// we run the tests here twice: as [RangeMarkerTest] and [com.intellij.openapi.editor.impl.marker.PRangeMarkerTest]
+  /// so we have to distinguish artifact names
+  private @NotNull String classPlusTestName() {
+    return this.getClass().getSimpleName()+"."+getTestName(false);
   }
 
   public void testRangeMarkerContinuesToReceiveEventsFromDocumentAfterItsBeingGcedAndRecreatedAgain() {

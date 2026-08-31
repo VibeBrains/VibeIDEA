@@ -7,6 +7,7 @@ import com.intellij.openapi.editor.ex.DocumentSnapshot
 import com.intellij.openapi.editor.ex.DocumentSputnik
 import com.intellij.openapi.editor.ex.DocumentSputniks
 import com.intellij.openapi.editor.ex.DocumentText
+import com.intellij.openapi.editor.ex.DocumentTextPatch
 import com.intellij.openapi.editor.impl.marker.PMarkerRoot
 import com.intellij.openapi.editor.impl.marker.PMarkerRootImpl
 import com.intellij.openapi.editor.impl.marker.SnapshotMarkerEngineImpl
@@ -47,29 +48,40 @@ internal class DocumentSnapshotImpl private constructor(
     return this
   }
 
+  internal fun copyWithMarkerRoot(root: PMarkerRoot): DocumentSnapshotImpl {
+    return DocumentSnapshotImpl(text, modState, sputniks).also {
+      it.markerRoot.set(root)
+    }
+  }
+
   override fun applyOp(op: DocumentOp): DocumentSnapshot {
     val newText = text.applyOp(op)
     val newModState = modState.applyOp(text, newText, op)
-    val canAffectSputniks = op is DocumentOp.SetSputnik
+    val canAffectSputniks = op is DocumentOp.SetSputnik || newText !== text
     if (newText === text && newModState === modState && !canAffectSputniks) {
       return this
     }
-    val oldSnapshot = this
     val newSnapshot = if (newText === text && newModState === modState) {
       this
-    } else {
-      DocumentSnapshotImpl(newText, newModState, sputniks)
-    }
-    val after = if (sputniks === DocumentSputniksImpl.EMPTY && !canAffectSputniks) {
-      newSnapshot
     }
     else {
-      sputniks.applyOp(oldSnapshot, newSnapshot, op) { newSputniks ->
+      DocumentSnapshotImpl(newText, newModState, sputniks)
+    }
+    val after = if (canAffectSputniks && (sputniks !== DocumentSputniksImpl.EMPTY || op is DocumentOp.SetSputnik)) {
+      sputniks.applyOp(this, newSnapshot, op) { newSputniks ->
         DocumentSnapshotImpl(newText, newModState, newSputniks)
       }
     }
+    else {
+      newSnapshot
+    }
     if (after !== this) {
-      SnapshotMarkerEngineImpl.applyEdit(this, after, op)
+      if (op is DocumentTextPatch) {
+        SnapshotMarkerEngineImpl.applyPatch(this, after, op)
+      }
+      else {
+        SnapshotMarkerEngineImpl.inherit(this, after)
+      }
     }
     return after
   }

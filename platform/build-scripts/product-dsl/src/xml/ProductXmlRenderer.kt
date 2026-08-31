@@ -4,6 +4,7 @@
 package org.jetbrains.intellij.build.productLayout.xml
 
 import com.intellij.openapi.util.JDOMUtil
+import com.intellij.platform.pluginSystem.parser.impl.LoadPathUtil
 import org.jdom.Element
 import org.jetbrains.intellij.build.ModuleOutputProvider
 import org.jetbrains.intellij.build.findFileInModuleLibraryDependencies
@@ -42,17 +43,6 @@ internal fun StringBuilder.appendOpeningTag(
   }
   else {
     append("<idea-plugin>\n")
-  }
-}
-
-/**
- * Checks if the spec includes a platform lang plugin that provides id/name.
- */
-internal fun ProductModulesContentSpec.includesPlatformLangPlugin(): Boolean {
-  return deprecatedXmlIncludes.any {
-    it.resourcePath == "META-INF/PlatformLangPlugin.xml" ||
-    it.resourcePath == "META-INF/JavaIdePlugin.xml" ||
-    it.resourcePath == "META-INF/pycharm-core.xml"
   }
 }
 
@@ -147,10 +137,5 @@ private class ModuleScopedXIncludeResolver(
   }
 }
 
-// mirrors org.jetbrains.intellij.build.impl.toLoadPath
-private fun hrefToLoadPath(href: String): String = when {
-  href.isEmpty() -> href
-  href[0] == '/' -> href.substring(1)
-  isModuleNameLikeFilename(href) -> href
-  else -> "META-INF/$href"
-}
+/** [LoadPathUtil.toLoadPath], which reads the first character, so an empty href answers itself. */
+private fun hrefToLoadPath(href: String): String = if (href.isEmpty()) href else LoadPathUtil.toLoadPath(href)

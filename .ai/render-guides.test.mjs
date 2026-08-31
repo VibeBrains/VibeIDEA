@@ -8,6 +8,8 @@ import {dirname, join} from 'node:path'
 import {fileURLToPath} from 'node:url'
 import {
   applyClaudePermissions,
+  applyEditionBlocks,
+  assertReferencesResolve,
   applyPartials,
   buildCodexRules,
   loadToolPermissions,
@@ -15,6 +17,7 @@ import {
   renderGuideOutputs,
   renderOpenCodeSkills,
   renderSkills,
+  resolveCommunityDir,
   resolveToolsDir,
   rewriteMarkdownLinks,
 } from './render-guides.mjs'
@@ -84,6 +87,78 @@ describe('render-guides skills', () => {
         `${output} should reference ${expectedToolsDir}/rg.cmd`,
       )
     }
+  })
+
+  it('resolves COMMUNITY_DIR per edition', () => {
+    equal(resolveCommunityDir('ULTIMATE'), 'community/')
+    equal(resolveCommunityDir('COMMUNITY'), '')
+    equal(resolveCommunityDir('ultimate'), 'community/')
+  })
+
+  it('renders COMMUNITY_DIR into each guide output', async () => {
+    const renderedOutputs = await renderGuideOutputs()
+
+    for (const [output, content] of renderedOutputs) {
+      ok(!content.includes('{{COMMUNITY_DIR}}'), `${output} should not keep the COMMUNITY_DIR placeholder`)
+      const expectedProductDsl =
+        output === 'community/AGENTS.md'
+          ? 'platform/build-scripts/product-dsl/'
+          : 'community/platform/build-scripts/product-dsl/'
+      ok(
+        content.includes(`(\`${expectedProductDsl}\`)`),
+        `${output} should reference ${expectedProductDsl}`,
+      )
+    }
+  })
+
+  it('accepts a guide whose paths the edition has', async () => {
+    await assertReferencesResolve('see `community/.ai/guide.md` and `//:format.check`', 'probe', 'ULTIMATE')
+    await assertReferencesResolve('see `.ai/guide.md` and `//:format.check`', 'probe', 'COMMUNITY')
+  })
+
+  it('rejects an ultimate-only path in a community guide', async () => {
+    await assertReferencesResolve('read `plugins/air/AGENTS.md`', 'probe', 'ULTIMATE')
+    await rejects(
+      () => assertReferencesResolve('read `plugins/air/AGENTS.md`', 'probe', 'COMMUNITY'),
+      /probe names 1 path\(s\) the COMMUNITY checkout does not have: plugins\/air\/AGENTS\.md/,
+    )
+  })
+
+  it('rejects a Bazel label whose package the edition has no BUILD file for', async () => {
+    await assertReferencesResolve('run `//platform/buildScripts:plugin-model-tool`', 'probe', 'ULTIMATE')
+    await rejects(
+      () => assertReferencesResolve('run `//platform/buildScripts:plugin-model-tool`', 'probe', 'COMMUNITY'),
+      /platform\/buildScripts:plugin-model-tool/,
+    )
+  })
+
+  it('skips a URL, a glob, a placeholder and a per-developer file', async () => {
+    const text = [
+      '`https://example.com/nope`',
+      '`@community//nope:nope`',
+      '`build/eap/*.py`',
+      '`<path-to-iml>/nope`',
+      '`.ai/local.md`',
+      '`.claude/CLAUDE.md`',
+    ].join(' ')
+
+    await assertReferencesResolve(text, 'probe', 'ULTIMATE')
+  })
+
+  it('drops a line that holds one edition block for another edition', () => {
+    const text = '- one\n<!-- IF_EDITION:ULTIMATE -->- two<!-- /IF_EDITION:ULTIMATE -->\n- three\n'
+
+    equal(applyEditionBlocks(text, 'COMMUNITY'), '- one\n- three\n')
+    equal(applyEditionBlocks(text, 'ULTIMATE'), '- one\n- two\n- three\n')
+  })
+
+  it('keeps a line that pairs both editions', () => {
+    const text =
+      '<!-- IF_EDITION:ULTIMATE -->- ultimate<!-- /IF_EDITION:ULTIMATE -->' +
+      '<!-- IF_EDITION:COMMUNITY -->- community<!-- /IF_EDITION:COMMUNITY -->\n- next\n'
+
+    equal(applyEditionBlocks(text, 'COMMUNITY'), '- community\n- next\n')
+    equal(applyEditionBlocks(text, 'ULTIMATE'), '- ultimate\n- next\n')
   })
 
   it('rewrites guide links from template-relative source paths', () => {
@@ -413,6 +488,31 @@ describe('render-guides skills', () => {
 
       ok(!existsSync(join(claudeDir, 'INDEX.md')), 'the index belongs beside canonical sources, not in generated trees')
       ok(!existsSync(join(junieDir, 'INDEX.md')), 'the index belongs beside canonical sources, not in generated trees')
+
+      const agentsIndexWithoutCatalogue = readFileSync(agentsIndexPath, 'utf8')
+      ok(
+        !agentsIndexWithoutCatalogue.includes('OPTIONAL.md'),
+        'the index points at the catalogue only when the directory has one',
+      )
+    } finally {
+      rmSync(rootDir, {recursive: true, force: true})
+    }
+  })
+
+  it('points at the optional-skill catalogue beside the index', async () => {
+    const {rootDir, communitySourceDir, agentsDir, claudeDir, junieDir, communityClaudeDir} = createFixture()
+
+    try {
+      writeSkill(join(communitySourceDir, 'testing'), 'testing', 'body')
+      writeFileSync(join(agentsDir, 'OPTIONAL.md'), '# Optional skills\n', 'utf8')
+
+      await renderSkills({communitySourceDir, agentsDir, claudeDir, junieDir, communityClaudeDir, edition: 'ULTIMATE'})
+
+      const agentsIndex = readFileSync(join(agentsDir, 'INDEX.md'), 'utf8')
+      ok(agentsIndex.includes('[OPTIONAL.md](OPTIONAL.md)'), 'the index should point at the catalogue beside it')
+
+      const communityIndex = readFileSync(join(communitySourceDir, 'INDEX.md'), 'utf8')
+      ok(!communityIndex.includes('OPTIONAL.md'), 'the community index has no catalogue beside it')
     } finally {
       rmSync(rootDir, {recursive: true, force: true})
     }

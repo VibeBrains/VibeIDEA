@@ -65,6 +65,7 @@
     <module name="intellij.platform.jps.build.javac.rt"/>
     <module name="intellij.platform.lang"/>
     <module name="intellij.platform.lang.core"/>
+    <module name="intellij.platform.lang.impl"/>
     <module name="intellij.platform.macro"/>
     <module name="intellij.platform.projectModel"/>
     <module name="intellij.platform.refactoring"/>
@@ -711,6 +712,7 @@
     <langCodeStyleSettingsProvider implementation="org.jetbrains.plugins.groovy.codeStyle.GroovyLanguageCodeStyleSettingsProvider"/>
     <codeStyleSettingsProvider implementation="org.jetbrains.plugins.groovy.codeStyle.GroovyGenerationSettingsProvider"/>
     <lang.lineWrapStrategy language="Groovy" implementationClass="org.jetbrains.plugins.groovy.formatter.GrLineWrapPositionStrategy"/>
+    <preFormatProcessor implementation="org.jetbrains.plugins.groovy.formatter.GroovySpockTablePreFormatProcessor"/>
 
 
 

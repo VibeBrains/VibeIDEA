@@ -1,5 +1,6 @@
 load("@rules_jvm//:jvm.bzl", "jvm_library")
 load("//build:compiler-options.bzl", "create_kotlinc_options")
+load("//platform/build-scripts/bazel-rules:content_module_jar.bzl", "content_module_jar")
 
 ### auto-generated section `build kotlin.scripting` start
 create_kotlinc_options(
@@ -29,9 +30,11 @@ jvm_library(
         "//platform/core-api:core",
         "@lib//:kotlin-stdlib",
         "//platform/util",
-        "@lib//:kotlinc-kotlin-scripting-common",
+        "//libraries/kotlinc/kotlin-scripting-common:libraries-kotlinc-kotlin-scripting-common",
     ],
 )
+
+content_module_jar(module = ":scripting")
 
 jvm_library(
     name = "scripting_test_lib",
@@ -48,6 +51,7 @@ jvm_library(
         ":scripting",
         "//platform/core-api:core_test_lib",
         "//platform/util:util_test_lib",
+        "//libraries/kotlinc/kotlin-scripting-common:libraries-kotlinc-kotlin-scripting-common_test_lib",
     ],
 )
 ### auto-generated section `build kotlin.scripting` end

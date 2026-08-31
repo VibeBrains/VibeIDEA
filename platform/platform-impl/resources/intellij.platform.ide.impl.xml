@@ -17,7 +17,6 @@
     <module name="intellij.libraries.hash4j"/>
     <module name="intellij.libraries.hdr.histogram"/>
     <module name="intellij.libraries.http.client"/>
-    <module name="intellij.libraries.icu4j"/>
     <module name="intellij.libraries.imgscalr"/>
     <module name="intellij.libraries.jackson3"/>
     <module name="intellij.libraries.jackson3.databind"/>
@@ -99,6 +98,15 @@
   </dependencies>
   <!-- endregion -->
   <extensionPoints>
+    <extensionPoint qualifiedName="com.intellij.marketplaceCustomization"
+                    interface="com.intellij.ide.plugins.marketplace.utils.MarketplaceCustomizationService"
+                    dynamic="true"/>
+    <extensionPoint qualifiedName="com.intellij.pluginManagementPolicy"
+                    interface="com.intellij.ide.plugins.PluginManagementPolicy"
+                    dynamic="true"/>
+    <extensionPoint qualifiedName="com.intellij.provisionedServiceRegistry"
+                    interface="com.intellij.platform.ide.provisioner.ProvisionedServiceRegistry"
+                    dynamic="true"/>
     <extensionPoint qualifiedName="com.intellij.editor.interLineBreakpointConfigurationProvider"
                     interface="com.intellij.openapi.editor.impl.InterLineBreakpointConfigurationProvider"
                     dynamic="true"/>
@@ -419,6 +427,11 @@
       description="Enable the universal file chooser dialog"
     />
     <registryKey
+      key="ide.update.toolbar.widget"
+      defaultValue="false"
+      description="Show an available IDE update as a main toolbar button instead of an item in the Settings menu"
+    />
+    <registryKey
       key="ide.hide.default.project.directory.for.isolated.workspace"
       defaultValue="true"
       description="Hide the 'Default project directory' setting for projects in an isolated environment (Docker containers/devcontainers, SSH, remote dev)"
@@ -591,8 +604,6 @@
                         serviceImplementation="com.intellij.ide.plugins.PluginManagerConfigurableServiceImpl"/>
     <applicationService serviceInterface="com.intellij.ide.plugins.UltimateDependencyChecker"
                         serviceImplementation="com.intellij.ide.plugins.UltimateDependencyCheckerImpl"/>
-    <applicationService serviceInterface="com.intellij.ide.plugins.PluginManagementPolicy"
-                        serviceImplementation="com.intellij.ide.plugins.DefaultPluginManagementPolicy"/>
     <applicationService serviceInterface="com.intellij.ui.dsl.listCellRenderer.UiDslRendererProvider" open="true"
                         serviceImplementation="com.intellij.ui.dsl.listCellRenderer.impl.DefaultUiDslRendererProvider"/>
     <applicationService serviceInterface="com.intellij.ui.dsl.builder.KotlinUiDslService"
@@ -1158,7 +1169,8 @@
     <iconLayerProvider implementation="com.intellij.ide.LockedIconLayerProvider"/>
     <fileEditorProvider implementation="com.intellij.openapi.wm.impl.tabInEditor.ToolWindowEditorTabFileEditorProvider" id="ToolWindowEditorTabFileEditor"/>
     <virtualFileSystem implementationClass="com.intellij.openapi.wm.impl.tabInEditor.ToolWindowEditorTabFileSystem" key="tool-window-editor-tab" physical="false"/>
-    <fileEditorProvider implementation="com.intellij.openapi.fileEditor.impl.text.LargeFileEditorProvider" id="LargeFileEditor"/>
+    <fileEditorProvider implementation="com.intellij.openapi.fileEditor.impl.text.LargeFileEditorProvider" id="LargeFileEditor"
+                        allowedInUntrustedFiles="true"/>
     <fileEditorProvider id="jcomponent-editor" implementation="com.intellij.openapi.fileEditor.impl.JComponentEditorProvider"/>
     <fileEditorProvider id="settingsWindow" implementation="com.intellij.openapi.options.newEditor.settings.SettingsFileEditorProvider"/>
     <editorTabTitleProvider implementation="com.intellij.openapi.options.newEditor.settings.SettingsFileEditorProvider"/>
@@ -1177,6 +1189,7 @@
       implementation="com.intellij.openapi.updateSettings.impl.pluginsAdvertisement.PluginAdvertiserEditorNotificationProvider"/>
     <editorNotificationProvider implementation="com.intellij.ide.CommandLineWaitingManager$MyNotification"/>
     <editorNotificationProvider implementation="com.intellij.ide.trustedProjects.impl.UntrustedProjectNotificationProvider"/>
+    <editorNotificationProvider implementation="com.intellij.ide.trustedProjects.impl.UntrustedFileNotificationProvider"/>
     <uiDataRule implementation="com.intellij.ide.impl.dataRules.BasicUiDataRule" id="BasicUiDataRule"/>
     <search.topHitProvider implementation="com.intellij.platform.DefaultPlatformTopHitProvider"/>
     <search.topHitProvider implementation="com.intellij.ide.ui.UISimpleSettingsProvider"/>
@@ -1331,7 +1344,7 @@
     <notificationGroup id="Settings Error" displayType="BALLOON" bundle="messages.IdeBundle" key="notification.group.settings.error"/>
     <notificationGroup id="Load Error" displayType="BALLOON" bundle="messages.IdeBundle" key="notification.group.load.error"/>
     <notificationGroup id="Heap Dump Analysis" displayType="STICKY_BALLOON" bundle="messages.DiagnosticBundle"
-                       key="notification.group.heap.dump.analysis"/>
+                       key="notification.group.heap.dump.analysis" notificationIds="memory.analysis.complete"/>
     <notificationGroup id="KeymapMissing" displayType="STICKY_BALLOON" bundle="messages.KeyMapBundle"
                        key="notification.group.keymap.missing"/>
     <notificationGroup id="ColorSchemeDeprecation" displayType="STICKY_BALLOON" bundle="messages.IdeBundle"
@@ -1527,6 +1540,7 @@
     <applicationService serviceImplementation="com.intellij.ide.browsers.WebBrowserManager" />
     <applicationService serviceImplementation="com.intellij.ide.impl.TrustedPaths" />
     <applicationService serviceImplementation="com.intellij.ide.impl.TrustedPathsSettings" />
+    <applicationService serviceImplementation="com.intellij.ide.trustedProjects.ExternallyOpenedFiles" />
     <applicationService serviceImplementation="com.intellij.openapi.keymap.impl.KeymapFlagsStorage" />
     <applicationService serviceImplementation="com.intellij.openapi.wm.impl.status.widget.StatusBarWidgetSettings" />
     <statusBarWidgetFactory id="VfsRefresh" implementation="com.intellij.openapi.wm.impl.status.VfsRefreshIndicatorWidgetFactory"
@@ -1589,6 +1603,8 @@
     <statistics.counterUsagesCollector implementationClass="com.intellij.execution.impl.EditorHyperlinkUsageCollector"/>
     <applicationService serviceInterface="com.intellij.openapi.updateSettings.impl.PluginUpdateSourceService"
                         serviceImplementation="com.intellij.openapi.updateSettings.impl.PluginUpdateSourceServiceImpl"/>
+    <applicationService serviceInterface="com.intellij.openapi.updateSettings.impl.PluginUpdateSourcePluginsProvider"
+                        serviceImplementation="com.intellij.openapi.updateSettings.impl.PluginUpdateSourcePluginsProviderImpl"/>
     <notificationGroup id="Plugin Update Sources Reset" displayType="BALLOON" bundle="messages.IdeBundle"
                        key="notification.plugin.update.sources.reset.action"/>
     <backgroundPostStartupActivity implementation="com.intellij.openapi.updateSettings.impl.PluginUpdateSourceInitializationActivity"/>
@@ -1630,6 +1646,7 @@
     <projectSettings service="com.intellij.configurationStore.ProjectIdManagerImpl"/>
     <applicationSettings service="com.intellij.ide.impl.TrustedPaths"/>
     <applicationSettings service="com.intellij.ide.impl.TrustedPathsSettings"/>
+    <applicationSettings service="com.intellij.ide.trustedProjects.ExternallyOpenedFiles"/>
     <applicationSettings service="com.intellij.codeInsight.hints.settings.ParameterNameHintsSettings"/>
     <applicationSettings service="com.intellij.ide.ui.experimental.toolbar.ExperimentalToolbarSettings"/>
     <projectSettings service="com.intellij.ide.util.ProjectPropertyService"/>
@@ -1857,6 +1874,8 @@
     <listener class="com.intellij.ide.actionsOnSave.impl.CurrentActionListener"
               topic="com.intellij.openapi.actionSystem.ex.AnActionListener"/>
     <listener class="com.intellij.ide.trustedProjects.impl.UntrustedProjectNotificationProvider$TrustedListener"
+              topic="com.intellij.ide.trustedProjects.TrustedProjectsListener" activeInHeadlessMode="false" activeInTestMode="false"/>
+    <listener class="com.intellij.ide.trustedProjects.impl.UntrustedFileNotificationProvider$TrustedListener"
               topic="com.intellij.ide.trustedProjects.TrustedProjectsListener" activeInHeadlessMode="false" activeInTestMode="false"/>
     <listener class="com.intellij.ide.ui.experimental.toolbar.ExperimentalToolbarSettings$ToolbarRegistryListener"
               topic="com.intellij.openapi.util.registry.RegistryValueListener"/>

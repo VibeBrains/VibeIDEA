@@ -56,6 +56,37 @@ class BazelGeneratorIntegrationTests {
 
   @Test fun ijPluginTarget() = doTest("ij-plugin-target")
 
+  /**
+   * A plugin content module whose jar merges its module libraries, and one whose recipe the model refuses.
+   *
+   * `intellij.libraries.example` declares four module libraries and its recipe records three, so
+   * `content_module_jar` names those three in `orderEntry` order and the plugin declares the module as prepacked
+   * instead of declaring its raw jar and its libraries. The fourth library is TEST-scope: this is the
+   * `intellij.libraries.coil` case in miniature.
+   *
+   * `intellij.libraries.refused` is the other side of the same comparison. Its recipe records the TEST-scope library,
+   * which the production-runtime walk cannot reach, so it keeps no packing target, stays a raw `content_modules`
+   * member, and the plugin keeps declaring its library. That is the scope filter shown as a refusal rather than as a
+   * silently smaller jar.
+   */
+  @Test fun prepackedContentModuleLibraries() = doTest("prepacked-content-module-libraries")
+
+  /**
+   * The three destinations a plugin can give one content module's jar, and what each one generates.
+   *
+   * `intellij.libraries.conventional` sits at `lib/modules/<module>.jar`, so the relation is a plain
+   * `prepacked_content_modules` label and the rule derives the destination from the module name.
+   * `intellij.libraries.embedded` sits at `lib/<module>.jar`, which the rule cannot derive, so the relation carries it
+   * in `prepacked_jars`.
+   *
+   * `intellij.libraries.conflicting` is the veto: this one report puts its jar at *both* destinations. One packed jar
+   * cannot satisfy both, and a relation is keyed by *(plugin, module)*, so there is no second relation to carry the
+   * second path. It stays a raw `content_modules` member and `JarPackager` keeps packing both jars. It keeps a
+   * `content_module_jar` target that nobody names, which is correct: the repo-global fold still agrees on the jar, and
+   * only this plugin's relation is impossible.
+   */
+  @Test fun prepackedContentModulePlacement() = doTest("prepacked-content-module-placement")
+
   private fun doTest(
     testName: String,
     runWithoutUltimateRoot: Boolean = true,

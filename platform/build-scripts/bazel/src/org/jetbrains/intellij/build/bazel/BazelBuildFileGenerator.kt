@@ -17,16 +17,19 @@ import org.jetbrains.jps.model.java.compiler.JpsCompilerExcludes
 import org.jetbrains.jps.model.module.JpsLibraryDependency
 import org.jetbrains.jps.model.module.JpsModule
 import org.jetbrains.jps.model.module.JpsModuleDependency
+import org.jetbrains.jps.model.module.JpsModuleReference
 import org.jetbrains.jps.model.module.JpsModuleSourceRootType
 import org.jetbrains.jps.model.serialization.JpsModelSerializationDataService
 import org.jetbrains.jps.util.JpsPathUtil
 import org.jetbrains.kotlin.cli.common.arguments.Argument
 import org.jetbrains.kotlin.cli.common.arguments.K2JVMCompilerArguments
 import org.jetbrains.kotlin.jps.model.JpsKotlinFacetModuleExtension
+import java.nio.file.Files
 import java.nio.file.Path
 import java.util.IdentityHashMap
 import java.util.TreeMap
 import java.util.TreeSet
+import java.util.concurrent.ConcurrentHashMap
 import java.util.logging.Level
 import java.util.logging.Logger
 import kotlin.io.path.exists
@@ -45,6 +48,15 @@ internal class ModuleList(
   @JvmField val community: List<ModuleDescriptor>,
   @JvmField val ultimate: List<ModuleDescriptor>,
   @JvmField val skipped: List<ModuleDescriptor>,
+  private val pluginContentCandidateOverrides: Map<String, Set<String>?>,
+  /**
+   * The generator that built this list, which the candidacy fold needs.
+   *
+   * Set at construction and used by a lazy only, so nothing reads it before the generator is whole. The fold used to
+   * take its facts out of the checked-in reports and needed nothing from here; it now derives them, which needs the
+   * dependency scopes and the library index this class holds - see [derivePluginContentCandidacy].
+   */
+  private val context: BazelBuildFileGenerator,
 ) {
   @JvmField val allModules = community + ultimate + skipped
   val skippedModules = skipped.map { it.module.name }
@@ -55,8 +67,56 @@ internal class ModuleList(
     return nameToDescriptor[name] ?: error("Unknown module name: $name")
   }
 
+  fun getModuleDescriptorOrNull(name: String): ModuleDescriptor? = nameToDescriptor[name]
+
   @JvmField val deps = IdentityHashMap<ModuleDescriptor, ModuleDeps>()
   @JvmField val testDeps = IdentityHashMap<ModuleDescriptor, ModuleDeps>()
+
+  /**
+   * Modules that own a content-module jar, i.e. that a product layout includes as a `<content>` module.
+   *
+   * Stands in for `layout.includedModules` where `JarPackager` consults it. Owning a jar is what a checked-in
+   * `module-content.yaml` records, and a module has one exactly when some product ships it as a content module.
+   */
+  val contentModuleNames: Set<String> by lazy {
+    allModules.mapNotNullTo(HashSet()) { if (it.contentModuleRecipeFile != null) it.module.name else null }
+  }
+
+  /**
+   * Modules that every plugin holding them derives as a plain `lib/modules/<module>.jar`, holding that module's
+   * production output and one agreed set of module libraries. The value is that library set.
+   *
+   * Folded once for the whole run over every plugin the model reaches, then corrected by what a community-only run
+   * cannot see; see [foldDerivedPluginContentCandidacy]. `foldPluginContentCandidacy` is the report-side twin of the
+   * same fold, and only the residue writer reads it. The per-module recipe still gets the final veto in
+   * [isPrepackedPluginContentModule]: a conflicting platform recipe, an excluded module, a descriptor that exists only
+   * in generated output, or a library set the JPS model does not derive keeps the module on the JarPackager path.
+   *
+   * [skipped] modules count like any other: a plugin states its content wherever its own target ends up, and leaving
+   * them out would make the fold depend on which modules this generator converts.
+   */
+  val pluginContentModuleJarCandidates: Map<String, Set<String>> by lazy {
+    foldDerivedPluginContentCandidacy(plugins = derivedPluginCandidacies.map { it.second }, overrides = pluginContentCandidateOverrides)
+  }
+
+  /**
+   * What every plugin's own model states about its members' jars, by plugin, derived once.
+   *
+   * Shared on purpose. The repo-global fold reads it, and so does the community-only fold that
+   * [communityOnlyCandidacyOverrideRows] needs, which is the same question asked over the community half alone. Deriving
+   * it twice would double the ~2 500 member descriptor reads and the ~515 closure walks the derivation costs, and the
+   * converter's wall clock is a gate.
+   */
+  val derivedPluginCandidacies: List<Pair<ModuleDescriptor, DerivedPluginCandidacy>> by lazy {
+    allModules.mapNotNull { module ->
+      if (isDevDistContentPlugin(module = module, context = context)) {
+        module to derivePluginContentCandidacy(module = module, moduleList = this, context = context)
+      }
+      else {
+        null
+      }
+    }
+  }
 }
 
 internal data class CustomModuleDescription(
@@ -114,6 +174,15 @@ internal class BazelBuildFileGenerator(
   val snapshotLibraryMode: SnapshotLibraryMode = SnapshotLibraryMode.WRITE_TO_REPO,
   private val kotlincDefaults: KotlincProjectDefaults,
 ) {
+  /**
+   * The root the checked-in project-relative paths of a report are resolved against.
+   *
+   * `ultimateRoot` in a monorepo checkout, and the community root in a community-only one, which is what `projectDir`
+   * already is in both. Exposed because `libraryJarTargets` and the descriptor report reader both need it.
+   */
+  val projectRoot: Path
+    get() = ultimateRoot ?: communityRoot
+
   @JvmField
   val javaExtensionService: JpsJavaExtensionService = JpsJavaExtensionService.getInstance()
   private val projectJavacSettings = javaExtensionService.getCompilerConfiguration(project)
@@ -126,6 +195,77 @@ internal class BazelBuildFileGenerator(
   }
 
   private val moduleToDescriptor = IdentityHashMap<JpsModule, ModuleDescriptor>()
+
+  /**
+   * The candidacy answers a run cannot fold for itself, by module name; see
+   * [PLUGIN_CONTENT_CANDIDATE_OVERRIDES_FILE_NAME].
+   *
+   * Only a community-only run needs them, and only for the handful of community modules whose deciding report is in
+   * ultimate. An ultimate run folds the same answer out of the reports it can see, so reading them unconditionally
+   * changes nothing there and keeps the two runs on one code path.
+   */
+  private val pluginContentCandidateOverrides: Map<String, Set<String>?> by lazy {
+    readPluginContentCandidateOverrides(
+      (ultimateRoot?.resolve("community") ?: communityRoot).resolve("build/$PLUGIN_CONTENT_CANDIDATE_OVERRIDES_FILE_NAME")
+    )
+  }
+
+  /**
+   * Module names a `content_module_jar` refusal was already reported for.
+   *
+   * [isPrepackedPluginContentModule] asks the same question once per plugin that ships the module, and one module is
+   * content of up to 45 of them, so a refusal without this prints 45 identical lines. Concurrent, because the cost is
+   * nil and a set that assumes one thread is a claim about generation this class should not make.
+   */
+  private val reportedContentModuleJarRefusals = ConcurrentHashMap.newKeySet<String>()
+
+  /** Says once why [moduleName]'s `lib/` jar stays with `JarPackager`. */
+  fun reportContentModuleJarRefusal(moduleName: String, reason: String) {
+    if (reportedContentModuleJarRefusals.add(moduleName)) {
+      println("WARN: $moduleName keeps being packed by JarPackager: $reason")
+    }
+  }
+
+  /**
+   * The layout variants a `dev_dist_plugin_descriptor` target exists for, by plugin main module.
+   *
+   * The population is a product question, and 490 of this project's modules are a plugin main module with a checked-in
+   * content report while 163 of them are bundled by `idea`. So the plan generator states the population, and this reads
+   * it - see `PLUGIN_DESCRIPTOR_POPULATION_FILE_NAME`. A plain text file for the reason
+   * `dev_dist_plugin_content_vetoes.txt` is one.
+   *
+   * A community-only checkout reads the same file and never matches a line naming a plugin it does not have, which is
+   * the verdict the community half of an ultimate checkout reaches too.
+   */
+  val pluginDescriptorPopulation: Map<String, List<String>> by lazy {
+    readPluginDescriptorPopulation(
+      (ultimateRoot?.resolve("community") ?: communityRoot).resolve("build/$PLUGIN_DESCRIPTOR_POPULATION_FILE_NAME")
+    )
+  }
+
+  /**
+   * The modules a `dev_dist_plugin` states content for; see [readPluginContentPopulation].
+   *
+   * The counterpart of [pluginDescriptorPopulation] for the content leaf, and the one signal for whether a plugin gets
+   * one. An absent file states no plugin at all, so a hermetic run has to be handed it -
+   * `@community//build:dev_dist_plugin_content_tables` is what names it.
+   */
+  val pluginContentPopulation: Set<String> by lazy {
+    readPluginContentPopulation(
+      (ultimateRoot?.resolve("community") ?: communityRoot).resolve("build/$PLUGIN_CONTENT_POPULATION_FILE_NAME")
+    )
+  }
+
+  /** Product/plugin layout transformations that make a raw module-output jar ineligible for direct handoff. */
+  val pluginContentModuleJarVetoes: Set<String> by lazy {
+    val file = (ultimateRoot?.resolve("community") ?: communityRoot).resolve("build/dev_dist_plugin_content_vetoes.txt")
+    if (Files.exists(file)) {
+      Files.readAllLines(file).asSequence().map(String::trim).filter { it.isNotEmpty() && !it.startsWith('#') }.toSet()
+    }
+    else {
+      emptySet()
+    }
+  }
 
   fun getKnownModuleDescriptorOrError(module: JpsModule): ModuleDescriptor {
     return moduleToDescriptor.get(module) ?: error("No descriptor for module ${module.name}")
@@ -362,7 +502,7 @@ internal class BazelBuildFileGenerator(
         if (isProvided) {
           providedLibraries.markAsProvided(communityLibrary, ultimateLibraries)
         }
-        return communityLibrary
+        return rememberJpsIdentity(communityLibrary)
       }
     }
 
@@ -370,7 +510,7 @@ internal class BazelBuildFileGenerator(
     if (isProvided) {
       providedLibraries.markAsProvided(internedLib, internedLib.target.container)
     }
-    return internedLib
+    return rememberJpsIdentity(internedLib)
   }
 
   fun addLocalLibrary(lib: LocalLibrary, isProvided: Boolean): LocalLibrary {
@@ -378,8 +518,67 @@ internal class BazelBuildFileGenerator(
     if (isProvided) {
       providedLibraries.markAsProvided(internedLib, internedLib.target.container)
     }
-    return internedLib
+    return rememberJpsIdentity(internedLib)
   }
+
+  /**
+   * The library a JPS name refers to, as the JPS model names it: a project library by its own name, a module library by
+   * its name plus its owning module.
+   *
+   * `mavenLibraries`/`localLibraries` are keyed by Bazel target name, which is derived through several naming rules and
+   * cannot be recomputed from a name alone. A content-module jar recipe records library *names*, so the mapping back has
+   * to be recorded while the libraries are being collected. Interning matters here: an ultimate module depending on a
+   * library that community already collected must resolve to the community instance, because that is the one whose
+   * `copy_file` targets exist.
+   */
+  private val libraryByJpsIdentity = HashMap<Pair<String, String?>, Library>()
+
+  private fun <T : Library> rememberJpsIdentity(lib: T): T {
+    libraryByJpsIdentity.putIfAbsent(lib.target.jpsName to lib.target.moduleLibraryModuleName, lib)
+    return lib
+  }
+
+  fun getLibraryByJpsIdentity(jpsName: String, moduleLibraryModuleName: String?): Library? {
+    return libraryByJpsIdentity[jpsName to moduleLibraryModuleName]
+  }
+
+  /**
+   * The `intellij.libraries.*` module that exports a project library, for every project library one of them exports.
+   *
+   * This is `PlatformLayout.libAsProductModule`, which the distribution builder fills from
+   * `PlatformModules.collectExportedLibrariesFromLibraryModules`: a wrapper module's whole purpose is to own a library
+   * and ship it in its own content-module jar, so every *other* module that declares the same library must not pack a
+   * second copy. Reproduced here rather than read from a recipe because the JPS model already holds it.
+   *
+   * Two details of the original are deliberate and reproduced as-is: the collection filters on `isExported` with no
+   * scope filter, the mirror image of the packing walk, which filters on scope with no `isExported`; and the claim is
+   * ignored for a wrapper module itself, or every wrapper would see its own library as taken and pack nothing.
+   *
+   * The original collects only the wrappers in one product's layout. This collects every wrapper in the project, which
+   * is the same set for a library whose wrapper ships wherever the library is used, and a wider one otherwise.
+   */
+  private val projectLibraryToLibraryModule: Map<String, String> by lazy {
+    val result = HashMap<String, String>()
+    for (module in project.modules) {
+      val moduleName = module.name
+      if (!moduleName.startsWith(LIB_MODULE_PREFIX)) {
+        continue
+      }
+
+      for (element in module.dependenciesList.dependencies) {
+        if (element !is JpsLibraryDependency || javaExtensionService.getDependencyExtension(element)?.isExported != true) {
+          continue
+        }
+        if (element.libraryReference.parentReference is JpsModuleReference) {
+          continue
+        }
+        result.putIfAbsent(element.library?.name ?: continue, moduleName)
+      }
+    }
+    result
+  }
+
+  fun getLibraryModuleExporting(jpsLibraryName: String): String? = projectLibraryToLibraryModule[jpsLibraryName]
 
   fun computeModuleList(m2Repo: Path): ModuleList {
     val community = ArrayList<ModuleDescriptor>()
@@ -412,7 +611,13 @@ internal class BazelBuildFileGenerator(
     ultimate.sortBy { it.module.name }
     skippedModules.sortBy { it.module.name }
 
-    val result = ModuleList(community = community, ultimate = ultimate, skipped = skippedModules)
+    val result = ModuleList(
+      community = community,
+      ultimate = ultimate,
+      skipped = skippedModules,
+      pluginContentCandidateOverrides = pluginContentCandidateOverrides,
+      context = this,
+    )
     for (module in (community + ultimate)) {
       val hasSources = module.sources.isNotEmpty()
       result.deps.put(module, generateDeps(m2Repo = m2Repo, module = module, hasSources = hasSources, isTest = false, context = this))
@@ -466,15 +671,57 @@ internal class BazelBuildFileGenerator(
           fileUpdater.removeSections("iml ")
           fileUpdater.removeSections("test")
           fileUpdater.removeSections("maven libs of ")
+          // One prefix for the merged `dev <module>` section and for the `dev content ` / `dev descriptor ` sections it
+          // replaced, so the first regeneration after the merge sweeps both of the old ones.
+          fileUpdater.removeSections("dev ")
           fileUpdater
         }
 
         val buildTargetsBazel = BuildFile()
-        val moduleBuildTargets = buildTargetsBazel.generateBuildTargets(module, list, skipGenerationOfPluginTargets)
+        val generatedTargets = buildTargetsBazel.generateBuildTargets(module, list, skipGenerationOfPluginTargets)
+
+        // A module whose compilation targets are hand-written packs no `lib/` jar, exactly as it did not when packing was
+        // an attribute of those targets: the attribute lived in this section, so a skipped section never carried it. The
+        // packing target is rendered from the same `BuildFile` and disappears with it; what has to disappear too is the
+        // label, or `bazel-targets.json` would name a target that is not in the tree and the plan generator would hand a
+        // fragment's jar over to nothing. `intellij.php.dev` is the one module this applies to - a hand-written
+        // `jvm_library` in the root `BUILD.bazel` whose sources and resources come from a community package.
+        val buildSectionName = "build ${module.module.name}"
+        val buildSectionSkipped = fileUpdater.isSectionSkipped(buildSectionName)
+        val moduleBuildTargets = if (buildSectionSkipped && generatedTargets.contentModuleJarTarget != null) {
+          generatedTargets.copy(contentModuleJarTarget = null)
+        }
+        else {
+          generatedTargets
+        }
 
         val imlTargetsBazel = BuildFile()
         imlTargetsBazel.exportFile(module.imlFile.relativeTo(module.bazelBuildFileDir).invariantSeparatorsPathString)
         exportDescriptorFiles(module = module, buildFile = imlTargetsBazel, alreadyExported = fileUpdater.handWrittenExportedFiles())
+        // The recipe the module's `content_module_jar` is generated from. Exported so that the hermetic
+        // `bazel-targets.json` run can be handed the very same file: it loads the JPS model from a tree materialized out
+        // of declared labels, and a recipe it cannot see is a `contentModuleJarTarget` the two producers silently
+        // disagree on, in both directions.
+        contentModuleRecipePackagePath(module)?.let { recipePath ->
+          if (!fileUpdater.handWrittenExportedFiles().contains(recipePath)) {
+            imlTargetsBazel.exportFile(recipePath)
+          }
+        }
+        // The residue both leaves read, exported for the reason the recipe is: it states the members the derivation
+        // cannot reach and the descriptor rows the convention does not give, so a residue the hermetic run cannot see is
+        // a `contentTarget` naming fewer members than the checked-in one and a `descriptorTargets` entry it cannot form.
+        devDistResiduePackagePath(module)?.let { residuePath ->
+          if (!fileUpdater.handWrittenExportedFiles().contains(residuePath)) {
+            imlTargetsBazel.exportFile(residuePath)
+          }
+        }
+
+        val devBazel = BuildFile()
+        devBazel.emitDevDistPlugin(
+          module = module,
+          content = moduleBuildTargets.pluginContent,
+          descriptors = moduleBuildTargets.pluginDescriptors,
+        )
 
         val testTargetsBazel = BuildFile()
         testTargetsBazel.generateTestTargets(module, list)
@@ -490,8 +737,7 @@ internal class BazelBuildFileGenerator(
           }
         }
 
-        val buildSectionName = "build ${module.module.name}"
-        if (!fileUpdater.isSectionSkipped(buildSectionName)) {
+        if (!buildSectionSkipped) {
           collectLoadStatements(buildTargetsBazel.loadStatements)
           fileUpdater.insertAutoGeneratedSection(
             sectionName = buildSectionName,
@@ -500,6 +746,15 @@ internal class BazelBuildFileGenerator(
         }
 
         fileUpdater.insertAutoGeneratedSection(sectionName = "iml ${module.module.name}", autoGeneratedContent = imlTargetsBazel.render())
+
+        // One section for the plugin's whole dev-distribution statement, and deliberately not `build`: both leaves are a
+        // function of the checked-in reports and of the plugin's own descriptor alone, and `bazel-targets.json` records
+        // both labels, so neither may disappear because a human took over the module's compilation targets.
+        collectLoadStatements(devBazel.loadStatements)
+        fileUpdater.insertAutoGeneratedSection(
+          sectionName = "dev ${module.module.name}",
+          autoGeneratedContent = devBazel.render(existingLoads = existingLoadSymbols),
+        )
 
         val testSectionName = "test ${module.module.name}"
         if (!fileUpdater.isSectionSkipped(testSectionName)) {
@@ -591,6 +846,46 @@ internal class BazelBuildFileGenerator(
     val testTargets: List<String>,
     val testJars: List<String>,
     val pluginDistributionTarget: PluginDistributionTarget?,
+    /** The label of this plugin's dev-distribution content target, for a module that is a plugin main module. */
+    val pluginContentTarget: String?,
+    /**
+     * What that target declares, for the caller that writes BUILD files - `null` exactly when [pluginContentTarget] is.
+     *
+     * Carried out instead of emitted in place because the target must not land in the `build` section: a module whose
+     * build section is hand-written (`### skip generation section`) would then have the label recorded in
+     * `bazel-targets.json` and no target in the tree, which is a `no such target` at analysis time for every fragment
+     * bundling that plugin.
+     */
+    val pluginContent: PluginContent?,
+    /**
+     * What this plugin's descriptor targets declare, one per layout variant, for the caller that writes BUILD files.
+     *
+     * Carried out instead of emitted in place for [pluginContent]'s reason. Empty for a module that is no plugin main
+     * module, and empty for a community plugin whose descriptor names something only the main repository can name - see
+     * [computePluginDescriptor].
+     */
+    val pluginDescriptors: List<PluginDescriptor>,
+    /** The label of each descriptor target, keyed by layout variant. Empty exactly when [pluginDescriptors] is. */
+    val pluginDescriptorTargets: Map<String, String>,
+    /**
+     * Prepack-eligible members of this plugin that only the other repository can name - see [PluginContentResult].
+     *
+     * Independent of [pluginContentTarget]: a community plugin whose only extra content is a prepack-eligible ultimate
+     * member gets no content target and still has to have that member packed.
+     */
+    val crossRepositoryPrepackedModules: List<String>,
+    /** Members only the other repository can name that no packing target serves - see [PluginContentResult]. */
+    val crossRepositoryRawModules: List<String>,
+    /** Library containers only the other repository can name - see [PluginContentResult]. */
+    val crossRepositoryLibraryContainers: List<String>,
+    /**
+     * The label of this module's packing target, or `null` when it packs no `lib/` jar.
+     *
+     * Emitted in the `build` section, where the attributes it replaces lived, rather than in a section of its own: a
+     * packing target is a function of the module's compilation target - it names it - so the two belong together, and
+     * `generateModuleBuildFiles` refuses to record this label for a module whose build section is hand-written.
+     */
+    val contentModuleJarTarget: String?,
   )
 
   internal data class PluginDistributionTarget(
@@ -675,6 +970,20 @@ internal class BazelBuildFileGenerator(
       resourceJarTargets.add(BazelLabel(label = codegenTargetName, module = null))
     }
 
+    // This module's `lib/<module>.jar` of the platform distribution, packed by a `content_module_jar` target of its own
+    // next to the library. The action declares the jars it merges and nothing else - no project model, no product
+    // layout - which is the point: an unrelated `.iml` edit cannot invalidate it, unlike the dev-distribution fragment
+    // that packs the same jar today.
+    val contentModuleJar = computeContentModuleJar(module = moduleDescriptor, moduleList = moduleList, context = this@BazelBuildFileGenerator)?.let { jar ->
+      fun labels(moduleNames: List<String>) = moduleNames.map { getBazelDependencyLabel(moduleList.getModuleDescriptor(it), moduleDescriptor) }
+      ContentModuleJarTarget(
+        modulesBefore = labels(jar.modulesBefore),
+        modulesAfter = labels(jar.modulesAfter),
+        libraryTargetLabels = jar.libraryTargetLabels,
+        rewriteBootClassPath = jar.rewriteBootClassPath,
+      )
+    }
+
     target("jvm_library") {
       option("name", moduleDescriptor.targetName)
       productionCompileTargets.add(moduleDescriptor.targetAsLabel)
@@ -738,6 +1047,10 @@ internal class BazelBuildFileGenerator(
 
       renderDeps(deps = deps, target = this, resourceDependencies = emptyList(), forTests = false)
     }
+
+    // Beside the library it names, in the same section: it is the same fact about the same module, and the attributes it
+    // replaces were written here.
+    contentModuleJar?.let { emitContentModuleJar(module = moduleDescriptor, jar = it) }
 
     target("jvm_library") {
       val testLibTargetName = "${moduleDescriptor.targetName}$TEST_LIB_NAME_SUFFIX"
@@ -845,8 +1158,33 @@ internal class BazelBuildFileGenerator(
       )
     }
 
+    // What this plugin contributes to a dev distribution: derived from the project model for every plugin the
+    // population names, and gated on nothing else, unlike `ij_plugin`, whose opt-in marker is about packaging.
+    val pluginContentResult = computeDerivedPluginContent(module = moduleDescriptor, moduleList = moduleList, context = this@BazelBuildFileGenerator)
+    val pluginContent = pluginContentResult.content
+
+    // What this plugin's descriptor patch declares. Gated on the same thing the content target is - the module is a
+    // plugin main module the dev distribution knows - plus a `META-INF/plugin.xml` its own Bazel package holds.
+    val pluginDescriptors = computePluginDescriptor(
+      module = moduleDescriptor,
+      moduleList = moduleList,
+      context = this@BazelBuildFileGenerator,
+    )
+
     return ModuleTargets(
       moduleDescriptor = moduleDescriptor,
+      pluginContent = pluginContent,
+      pluginDescriptors = pluginDescriptors,
+      pluginDescriptorTargets = pluginDescriptors.associate { descriptor ->
+        descriptor.variant to addPackagePrefix(
+          BazelLabel(pluginDescriptorTargetName(mainModule = descriptor.mainModule, variant = descriptor.variant), moduleDescriptor),
+        )
+      },
+      crossRepositoryPrepackedModules = pluginContentResult.crossRepositoryPrepackedModules,
+      crossRepositoryRawModules = pluginContentResult.crossRepositoryRawModules,
+      crossRepositoryLibraryContainers = pluginContentResult.crossRepositoryLibraryContainers,
+      pluginContentTarget = pluginContent?.let { addPackagePrefix(BazelLabel(pluginContentTargetName(moduleDescriptor), moduleDescriptor)) },
+      contentModuleJarTarget = contentModuleJar?.let { addPackagePrefix(BazelLabel(contentModuleJarTargetName(moduleDescriptor), moduleDescriptor)) },
       productionTargets = productionCompileTargets.map { addPackagePrefix(it) } + customModule?.additionalProductionTargets.orEmpty(),
       productionJars = productionCompileJars.map { getJarLocation(it) } + customModule?.additionalProductionJars.orEmpty(),
       testTargets = testCompileTargets.map { addPackagePrefix(it) },
@@ -1577,9 +1915,9 @@ private fun compileExcludeSortKey(pattern: String): String = pattern.lowercase()
  * `META-INF/plugin.xml`, and the fragments those `xi:include`.
  *
  * The whole tree, not the root and its `META-INF/`. A reference beginning with `/` is taken verbatim
- * (`org.jetbrains.intellij.build.impl.toLoadPath`), so a descriptor can name any path in the module - the platform's
- * own `META-INF/PlatformLangPlugin.xml` includes `/idea/PlatformActions.xml` - and a predicate that assumes two
- * directories leaves those unexported, which is an analysis error the moment the plan names one.
+ * (`LoadPathUtil.toLoadPath`), so a descriptor can name any path in the module,
+ * and a predicate that assumes two directories leaves those unexported, which is an analysis error
+ * the moment the plan names one.
  *
  * Deliberately a superset. An `exports_files` entry costs nothing - only what `build/dev_dist_plan.bzl` and the
  * convention probe name is materialized into the project model tree - and keeping the two rules independent is what
@@ -1598,9 +1936,17 @@ private fun exportDescriptorFiles(module: ModuleDescriptor, buildFile: BuildFile
       }
 
       val relative = file.relativeTo(module.bazelBuildFileDir).invariantSeparatorsPathString
-      // A resource root outside the module's own Bazel package - the `dotenv-ultimate` shape, where an ultimate
-      // module keeps its resources in the community tree. Another package owns the file and `../` is not a label,
-      // so those descriptors stay on the module-output read they use today.
+      // A resource root above the module's own Bazel package. `getModuleDescriptor` walks the package up until every
+      // content root is under it, so a `customModules` override is the one way to reach this: it names a package of
+      // its own, and `@community//build` is no ancestor of `community/jps/dependency-graph`. `../` is not a label, so
+      // such a descriptor stays on the module-output read it uses today.
+      //
+      // An ultimate module whose resources live in the community tree is not this case, and the entry this writes for
+      // it is inert. The walk drags the package up to the ultimate root, `community` is a `.bazelignore` entry of that
+      // root, and Bazel therefore leaves the subtree out of the main repository's execroot symlink farm:
+      // `//:community/<path>` analyses, and an action that declares it gets a symlink to nothing. The label an action
+      // can read is `@community//<package>:<path>`, which only the community package can export - see
+      // `containingBazelPackageLabel` in `devDistPluginDescriptorPlan.kt`.
       if (relative.startsWith("../")) {
         continue
       }

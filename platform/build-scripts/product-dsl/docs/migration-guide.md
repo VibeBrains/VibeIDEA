@@ -168,13 +168,13 @@ embeddedModule("fleet.andel", includeDependencies = true)
 
 Before committing changes:
 
-1. **Run Generate Product Layouts**
+1. **Run the generator**
    ```bash
-   # Via JetBrains MCP
-   execute_run_configuration(name="Generate Product Layouts")
-   
-   # Or directly
+   # Preferred
    bazel run //platform/buildScripts:plugin-model-tool
+   
+   # Or via JetBrains MCP
+   execute_run_configuration(name="Generate Product Layouts")
    ```
 
 2. **Check for duplicate content modules**
@@ -183,7 +183,7 @@ Before committing changes:
 
 3. **Verify tests pass**
    ```bash
-   ./tests.cmd -Dintellij.build.test.patterns=com.intellij.idea.ultimate.build.smokeTests.AllProductsPackagingTest
+   ./bazel.cmd test //build:all-products-packaging_test
    ```
 
 4. **Use MCP to analyze transitive dependencies**
@@ -251,7 +251,6 @@ override fun getProductContentDescriptor(): ProductModulesContentSpec = productM
   alias("com.intellij.codeServer")
   
   // Only XML includes - modules not available at runtime
-  deprecatedInclude("intellij.platform.resources", "META-INF/PlatformLangPlugin.xml")
   deprecatedInclude("intellij.platform.resources", "META-INF/ProjectModel.xml")
   // ... more deprecatedInclude calls
   
@@ -269,8 +268,8 @@ override fun getProductContentDescriptor(): ProductModulesContentSpec = productM
   // Use corePlatform for analysis tools (core platform without language editing)
   moduleSet(CommunityModuleSets.corePlatform())
   
-  // Keep deprecatedInclude only for modules NOT in corePlatform
-  deprecatedInclude("intellij.codeServer.core", "META-INF/codeserver-customization.xml")
+  // Product-specific customization lives in a dedicated embedded content module
+  embeddedModule("intellij.codeServer.ide.customization")
   
   // Product-specific modules
   embeddedModule("intellij.platform.codeStyle.impl")

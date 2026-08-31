@@ -38,6 +38,7 @@ import com.intellij.ide.plugins.PluginManagerCore
 import com.intellij.ide.startup.impl.StartupManagerImpl
 import com.intellij.ide.trustedProjects.TrustedProjects
 import com.intellij.ide.trustedProjects.TrustedProjectsDialog.confirmOpeningOrLinkingUntrustedProject
+import com.intellij.ide.welcomeScreen.WelcomeUtils
 import com.intellij.notification.Notification
 import com.intellij.notification.NotificationType
 import com.intellij.notification.NotificationsManager
@@ -97,8 +98,6 @@ import com.intellij.openapi.vfs.impl.ZipHandler
 import com.intellij.openapi.vfs.impl.jar.TimedZipHandler
 import com.intellij.openapi.wm.IdeFocusManager
 import com.intellij.openapi.wm.WindowManager
-import com.intellij.openapi.wm.ex.ProjectFrameCapabilitiesService
-import com.intellij.openapi.wm.ex.ProjectFrameCapability
 import com.intellij.openapi.wm.ex.WindowManagerEx
 import com.intellij.openapi.wm.ex.isBackgroundActivitiesSuppressed
 import com.intellij.openapi.wm.impl.welcomeScreen.WelcomeFrame
@@ -677,7 +676,7 @@ open class ProjectManagerImpl : ProjectManagerEx(), Disposable {
     }
 
     span("checkTrustedState") {
-      if (!checkTrustedState(projectIdentityFile)) {
+      if (!checkTrustedState(projectIdentityFile, options.projectName)) {
         LOG.info("Project is not trusted, aborting")
         if (options.showWelcomeScreen) {
           WelcomeFrame.showIfNoProjectOpened()
@@ -1119,8 +1118,7 @@ open class ProjectManagerImpl : ProjectManagerEx(), Disposable {
   }
 
   private suspend fun checkExistingProjectOnOpen(projectToClose: Project, options: OpenProjectTask, projectDir: Path): Boolean {
-    if (options.forceReuseFrame ||
-        ProjectFrameCapabilitiesService.getInstance().has(projectToClose, ProjectFrameCapability.WELCOME_EXPERIENCE)) {
+    if (options.forceReuseFrame || WelcomeUtils.noCheckOpenConfirmation(projectToClose)) {
       return !closeAndDisposeKeepingFrame(projectToClose)
     }
 
@@ -1571,13 +1569,15 @@ interface ProjectServiceContainerCustomizer {
 /**
  * Checks if the project path is trusted and shows the Trust Project dialog if needed.
  *
+ * @param projectName optional name to open the project with. If null, the project's store directory name is used.
  * @return true, if we should proceed with project opening, false if the process of project opening should be canceled.
  */
-internal suspend fun checkTrustedState(projectStoreBaseDir: Path): Boolean {
+internal suspend fun checkTrustedState(projectStoreBaseDir: Path, projectName: String? = null): Boolean {
+  val displayName = projectName ?: projectStoreBaseDir.fileName?.toString() ?: projectStoreBaseDir.toString()
   return confirmOpeningOrLinkingUntrustedProject(
     projectRoot = projectStoreBaseDir,
     project = null,
-    title = IdeBundle.message("untrusted.project.open.dialog.title", projectStoreBaseDir.fileName ?: projectStoreBaseDir.toString())
+    title = IdeBundle.message("untrusted.project.open.dialog.title", displayName)
   )
 }
 

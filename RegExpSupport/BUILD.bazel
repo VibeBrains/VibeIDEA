@@ -1,5 +1,6 @@
 load("@community//build:tests-options.bzl", "jps_test")
 load("@rules_jvm//:jvm.bzl", "jvm_library")
+load("//platform/build-scripts/bazel-rules:content_module_jar.bzl", "content_module_jar")
 
 jps_test(
     name = "regexp-tests_test",
@@ -53,6 +54,8 @@ jvm_library(
     ],
 )
 
+content_module_jar(module = ":regexp")
+
 jvm_library(
     name = "regexp_test_lib",
     testonly = True,
@@ -94,6 +97,7 @@ exports_files(
     [
         "intellij.regexp.iml",
         "resources/intellij.regexp.xml",
+        "module-content.yaml",
     ],
     visibility = ["//visibility:public"],
 )

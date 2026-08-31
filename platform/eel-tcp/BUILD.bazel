@@ -1,6 +1,14 @@
 load("@rules_jvm//:jvm.bzl", "jvm_library")
+load("//build:compiler-options.bzl", "create_kotlinc_options")
+load("//platform/build-scripts/bazel-rules:content_module_jar.bzl", "content_module_jar")
 
 ### auto-generated section `build intellij.platform.eel.tcp` start
+create_kotlinc_options(
+    name = "custom_eel-tcp",
+    warn = "error",
+    x_warning_level = ["DEPRECATION:warning"],
+)
+
 jvm_library(
     name = "eel-tcp",
     srcs = glob(
@@ -11,6 +19,7 @@ jvm_library(
         ],
         allow_empty = True,
     ),
+    kotlinc_opts = ":custom_eel-tcp",
     module_name = "intellij.platform.eel.tcp",
     resource_strip_prefix = "resources",
     resources = glob(
@@ -43,6 +52,8 @@ jvm_library(
     ],
 )
 
+content_module_jar(module = ":eel-tcp")
+
 jvm_library(
     name = "eel-tcp_test_lib",
     testonly = True,
@@ -50,6 +61,7 @@ jvm_library(
         [],
         allow_empty = True,
     ),
+    kotlinc_opts = ":custom_eel-tcp",
     module_name = "intellij.platform.eel.tcp",
     visibility = ["//visibility:public"],
     runtime_deps = [
@@ -84,6 +96,7 @@ exports_files(
     [
         "intellij.platform.eel.tcp.iml",
         "resources/intellij.platform.eel.tcp.xml",
+        "module-content.yaml",
     ],
     visibility = ["//visibility:public"],
 )

@@ -48,6 +48,7 @@ import org.jetbrains.intellij.build.classPath.PluginBuildDescriptor
 import org.jetbrains.intellij.build.executeStep
 import org.jetbrains.intellij.build.findFileInModuleSources
 import org.jetbrains.intellij.build.findProductModulesFile
+import org.jetbrains.intellij.build.getLibraryFileName
 import org.jetbrains.intellij.build.impl.moduleRepository.MODULE_DESCRIPTORS_COMPACT_PATH
 import org.jetbrains.intellij.build.impl.moduleRepository.MODULE_DESCRIPTORS_JAR_PATH
 import org.jetbrains.intellij.build.impl.moduleRepository.RUNTIME_REPOSITORY_MODULES_DIR_NAME
@@ -533,7 +534,7 @@ suspend fun buildDistributions(context: BuildContext): Unit = block("build distr
     if (context.productProperties.buildCrossPlatformDistribution) {
       if (distDirs.size == SUPPORTED_DISTRIBUTIONS.size) {
         context.executeStep(spanBuilder("build cross-platform distribution"), BuildOptions.CROSS_PLATFORM_DISTRIBUTION_STEP) {
-          buildCrossPlatformZip(distDirs, context)
+          buildCrossPlatformZip(distDirs, context, contentReport, distributionState.platformLayout)
         }
       }
       else {
@@ -774,7 +775,7 @@ private fun logFreeDiskSpace(phase: String, context: CompilationContext) {
   }
 }
 
-private suspend fun buildCrossPlatformZip(distResults: List<DistributionForOsTaskResult>, context: BuildContext): Path {
+private suspend fun buildCrossPlatformZip(distResults: List<DistributionForOsTaskResult>, context: BuildContext, contentReport: ContentReport, platformLayout: PlatformLayout): Path {
   val executableName = context.productProperties.baseFileName
   val executableName64 = context.add64IfNeeded(executableName)
 
@@ -819,12 +820,16 @@ private suspend fun buildCrossPlatformZip(distResults: List<DistributionForOsTas
     context,
   )
 
+  val (crossPlatformPluginsDir, crossPlatformBuiltPlugins) = buildCrossPlatformOnlyPlugins(context)
+
   val runtimeModuleRepositoryDirPath = if (context.generateRuntimeModuleRepository) {
     spanBuilder("generate runtime repository for cross-platform distribution").use {
       generateCrossPlatformRepository(
-        distAllPath = context.paths.distAllDir,
-        osSpecificDistPaths = distResults.filter { it.arch == JvmArchitecture.x64 && it.libc != LinuxLibcImpl.MUSL }.map { it.outDir },
+        contentReport = contentReport,
+        platformLayout = platformLayout,
         context = context,
+        crossPlatformPluginsDir = crossPlatformPluginsDir,
+        crossPlatformBuiltPlugins = crossPlatformBuiltPlugins,
       )
     }
   }
@@ -840,8 +845,6 @@ private suspend fun buildCrossPlatformZip(distResults: List<DistributionForOsTas
   runtimeModuleRepositoryDirPath?.listDirectoryEntries()?.forEach { file ->
     extraFiles.put("$RUNTIME_REPOSITORY_MODULES_DIR_NAME/${file.fileName}", file)
   }
-
-  val (crossPlatformPluginsDir, crossPlatformBuiltPlugins) = buildCrossPlatformOnlyPlugins(context)
 
   crossPlatformZip(
     distResults = distResults.filter { it.libc != LinuxLibcImpl.MUSL },
@@ -1002,13 +1005,14 @@ private suspend fun crossPlatformZip(
       }
     }
 
-  val executablePatterns = distPatterns + crossPlatformPluginPatterns
-
-  val entryCustomizer: (ZipArchiveEntry, Path, String) -> Unit = { entry, _, _ ->
-    // relativePath for plugins comes relative to "plugins" directory,
-    // so it's better to use full path relative to zip root
-    val relativePath = Path.of(entry.name)
-    if (executablePatterns.any { it.matches(relativePath) }) {
+  val entryCustomizer: (ZipArchiveEntry, Path, String) -> Unit = { entry, _, relativePathString ->
+    // distPatterns are authored flat relative to a per-OS dist root (e.g. "bin/fsnotifier"), matching the
+    // caller-supplied relative path, while bin content is written under a nested "bin/<os>/<arch>/" prefix in the zip.
+    // crossPlatformPluginPatterns are authored relative to the zip root ("plugins/<dir>/<pattern>"), so they must
+    // match the full entry name instead. Matching both families against the same path breaks one of them.
+    val relativePath = Path.of(relativePathString)
+    val entryPath = Path.of(entry.name)
+    if (distPatterns.any { it.matches(relativePath) } || crossPlatformPluginPatterns.any { it.matches(entryPath) }) {
       entry.unixMode = executableFileUnixMode
     }
   }

@@ -16,10 +16,12 @@ import org.jetbrains.intellij.build.PLATFORM_LOADER_JAR
 import org.jetbrains.intellij.build.PLUGIN_XML_RELATIVE_PATH
 import org.jetbrains.intellij.build.UTIL_8_JAR
 import org.jetbrains.intellij.build.UTIL_JAR
+import org.jetbrains.intellij.build.dev.AssembledPrepackedPluginContentJar
 import org.jetbrains.intellij.build.getUnprocessedPluginXmlContent
 import org.jetbrains.intellij.build.impl.DescriptorCacheContainer
 import org.jetbrains.intellij.build.impl.LIB_DIRECTORY
 import org.jetbrains.intellij.build.impl.ModuleIncludeReasons
+import org.jetbrains.intellij.build.impl.ModuleItem
 import org.jetbrains.intellij.build.impl.PRODUCT_DESCRIPTOR_META_PATH
 import org.jetbrains.intellij.build.impl.PlatformJarNames
 import org.jetbrains.intellij.build.impl.PlatformJarNames.PLATFORM_CORE_NIO_FS
@@ -96,6 +98,52 @@ fun generateClassPathByLayoutReport(libDir: Path, entries: List<DistributionFile
   return result
 }
 
+/**
+ * Which of [externallyPackedJars] belong on the core classpath, decided from the layout instead of from packed entries.
+ *
+ * A split dev-distribution fragment hands these jars to another producer, so it neither packs them nor resolves the
+ * modules in them - which is the point, since a resolved module output is what makes a source edit re-run the fragment.
+ * It still knows they exist, because the layout names them, and the core classpath has to stay complete: it is what
+ * `PreBuiltDevMain` starts the IDE with.
+ *
+ * The rule is [generateClassPathByLayoutReport]'s, read off the layout rather than off the entries it never produced.
+ * Every entry such a jar can hold - the module output, and the libraries merged into it - is a `ModuleOwnedFileEntry`
+ * owned by one of the jar's [ModuleItem]s (`JarPackager.packLibFilesIntoModuleJar`), and that function skips exactly
+ * the ones whose owner is included as [ModuleIncludeReasons.PRODUCT_MODULES]: a content module is loaded by the module
+ * system, not from the classpath. So a jar is on the classpath when some module in it is there for another reason -
+ * `intellij.libraries.asm` is an ordinary platform dependency as well as a content module, `intellij.charts` is not.
+ *
+ * A change to this has to be made in [generateClassPathByLayoutReport] too, and the composed distribution's
+ * `core-classpath.txt` is what proves the two agree.
+ */
+@ApiStatus.Internal
+fun contentModuleJarCoreClasspathEntries(
+  libDir: Path,
+  includedModules: Collection<ModuleItem>,
+  externallyPackedJars: Set<String>,
+  skipNioFs: Boolean,
+): Set<Path> {
+  if (externallyPackedJars.isEmpty()) {
+    return emptySet()
+  }
+
+  val result = LinkedHashSet<Path>()
+  for (item in includedModules) {
+    val jarName = item.relativeOutputFile
+    if (!externallyPackedJars.contains(jarName) || item.reason == ModuleIncludeReasons.PRODUCT_MODULES) {
+      continue
+    }
+    // The two module-name exclusions of `generateClassPathByLayoutReport`. Neither module owns a content-module jar
+    // today; they are here so that the two copies of the rule stay comparable line by line.
+    if (item.moduleName.startsWith("intellij.platform.unitTestMode") ||
+        (skipNioFs && item.moduleName == "intellij.platform.core.nio.fs")) {
+      continue
+    }
+    result.add(libDir.resolve(jarName))
+  }
+  return result
+}
+
 /** The `lib/` jars the core classpath lists before everything else, in this order. */
 private val CORE_CLASSPATH_LEADING_JARS: List<String> = listOf(PLATFORM_LOADER_JAR, UTIL_8_JAR, UTIL_JAR, PRODUCT_BACKEND_JAR)
 
@@ -143,6 +191,12 @@ internal suspend fun generateCoreClasspathFromPlugins(
         classPathResult.add(distributionEntry.path)
       }
     }
+    for (assembled in buildResult.prepackedContentJars) {
+      val jar = assembled.jar
+      if (jar.contentModule in classPathModules) {
+        classPathResult.add(buildResult.dir.resolve("lib").resolve(jar.relativeOutputFile))
+      }
+    }
   }
   return classPathResult
 }
@@ -184,6 +238,7 @@ data class PluginBuildResult(
   @JvmField val os: OsFamily?,
   @JvmField val arch: JvmArchitecture?,
   @JvmField val distribution: Collection<DistributionFileEntry>,
+  @JvmField val prepackedContentJars: List<AssembledPrepackedPluginContentJar> = emptyList(),
 )
 
 /**
@@ -246,7 +301,7 @@ suspend fun createCachedProductDescriptor(
       modules = platformLayout.includedModules.mapTo(LinkedHashSet()) { it.moduleName },
       descriptorCache = platformDescriptorCache,
     )),
-    context = context,
+    context = descriptorResolveContext(context),
   )
   for (content in mainPluginDescriptor.getChildren("content")) {
     for (moduleElement in content.getChildren("module")) {
@@ -262,6 +317,70 @@ suspend fun createCachedProductDescriptor(
   return mainPluginDescriptor
 }
 
+/**
+ * One plugin's classpath jars, with each handed-off jar back at the position the assembly would have given it.
+ *
+ * The position is the whole point, and [AssembledPrepackedPluginContentJar.assetOrdinal] states why: the sort that
+ * follows is stable and its last tiebreak is the file-name length, so appending the handed-off jars would let a jar's
+ * *producer* decide the classpath order.
+ *
+ * [distribution] enumerates the assembly's assets in creation order. It holds one or more entries per asset, so the
+ * count of distinct target files seen so far is the index of the next asset, and a jar recorded at ordinal `n` belongs
+ * immediately before the asset at index `n`. Two jars recorded at one ordinal keep the order the assembly recorded them
+ * in.
+ *
+ * Two shapes would make the count lag: an asset that produces no entry at all, and two assets whose `effectiveFile`
+ * is one file. No flag rules either out - a dev distribution is the unpacked one, so `buildJars` may point an asset at
+ * its cache entry - and nothing here detects them. Both would move a handed-off jar later and never earlier, and the
+ * whole-distribution comparison in `dev-dist.cmd snapshot diff` is what says neither happens.
+ *
+ * A jar in a subdirectory of `lib/` is never on the classpath. That is the same rule the `relativeOutputFile` test below
+ * applies to an assembled entry.
+ */
+@VisibleForTesting
+internal fun mergePrepackedIntoAssetOrder(
+  distribution: Collection<DistributionFileEntry>,
+  prepacked: List<AssembledPrepackedPluginContentJar>,
+  libDir: Path,
+): MutableList<Path> {
+  val files = ArrayList<Path>(distribution.size)
+  val uniqueGuard = HashSet<Path>()
+  val seenAssets = HashSet<Path>()
+
+  val ordered = prepacked.filter { !it.jar.relativeOutputFile.contains('/') }
+    .sortedBy(AssembledPrepackedPluginContentJar::assetOrdinal)
+  var next = 0
+  fun drainUpTo(assetIndex: Int) {
+    while (next < ordered.size && ordered[next].assetOrdinal <= assetIndex) {
+      val file = libDir.resolve(ordered[next].jar.relativeOutputFile)
+      if (uniqueGuard.add(file)) {
+        files.add(file)
+      }
+      next++
+    }
+  }
+
+  var assetIndex = 0
+  for (entry in distribution) {
+    val file = entry.path
+    if (seenAssets.add(file)) {
+      drainUpTo(assetIndex)
+      assetIndex++
+    }
+
+    val relativeOutputFile = entry.relativeOutputFile
+    if (relativeOutputFile != null && relativeOutputFile.contains('/')) {
+      continue
+    }
+    if (!uniqueGuard.add(file) || (entry is CustomAssetEntry && !file.toString().endsWith(".jar"))) {
+      continue
+    }
+    files.add(file)
+  }
+  drainUpTo(Int.MAX_VALUE)
+  return files
+}
+
 @Suppress("BlockingMethodInNonBlockingContext")
 internal suspend fun generatePluginClassPath(
   pluginEntries: List<PluginBuildResult>,
@@ -273,25 +392,15 @@ internal suspend fun generatePluginClassPath(
   val byteOut = ByteArrayOutputStream()
   val out = DataOutputStream(byteOut)
 
-  val uniqueGuard = HashSet<Path>()
   for (plugin in pluginEntries) {
     val pluginDir = plugin.dir
 
-    val files = ArrayList<Path>(plugin.distribution.size)
-    uniqueGuard.clear()
-    for (entry in plugin.distribution) {
-      val relativeOutputFile = entry.relativeOutputFile
-      if (relativeOutputFile != null && relativeOutputFile.contains('/')) {
-        continue
-      }
-
-      val file = entry.path
-      if (!uniqueGuard.add(file) || (entry is CustomAssetEntry && !file.toString().endsWith(".jar"))) {
-        continue
-      }
-
-      files.add(file)
-
+    val files = mergePrepackedIntoAssetOrder(
+      distribution = plugin.distribution,
+      prepacked = plugin.prepackedContentJars,
+      libDir = pluginDir.resolve(LIB_DIRECTORY),
+    )
+    for (file in files) {
       check(!file.startsWith(pluginDir) || pluginDir.relativize(file).nameCount == 2) {
         "plugin entry is not specified correctly: $file"
       }
@@ -319,7 +428,7 @@ internal suspend fun generatePluginClassPath(
           DescriptorSearchScope(pluginLayout.includedModules.mapTo(LinkedHashSet()) { it.moduleName }, pluginDescriptorContainer),
           DescriptorSearchScope(platformLayout.includedModules.mapTo(LinkedHashSet()) { it.moduleName }, platformDescriptorContainer),
         ),
-        context = context)
+        context = descriptorResolveContext(context))
 
       embedContentModules(
         rootElement = rootElement,

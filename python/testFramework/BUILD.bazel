@@ -1,6 +1,13 @@
 load("@rules_jvm//:jvm.bzl", "jvm_library", "jvm_provided_library")
+load("//build:compiler-options.bzl", "create_kotlinc_options")
 
 ### auto-generated section `build intellij.python.community.testFramework` start
+create_kotlinc_options(
+    name = "custom_testFramework",
+    warn = "error",
+    x_warning_level = ["DEPRECATION:warning"],
+)
+
 jvm_provided_library(
     name = "libraries_junit4_provided",
     lib = "//libraries/junit4",
@@ -16,6 +23,7 @@ jvm_library(
         ],
         allow_empty = True,
     ),
+    kotlinc_opts = ":custom_testFramework",
     module_name = "intellij.python.community.testFramework",
     resource_strip_prefix = "resources",
     resources = glob(
@@ -41,6 +49,8 @@ jvm_library(
         "//platform/ide-core",
         "//platform/util:util-ui",
         "//python:python-community-impl",
+        "//python/impl.helperLocator:community-helpersLocator",
+        "//platform/util/jdom",
         ":libraries_junit4_provided",
     ],
 )
@@ -52,6 +62,7 @@ jvm_library(
         [],
         allow_empty = True,
     ),
+    kotlinc_opts = ":custom_testFramework",
     module_name = "intellij.python.community.testFramework",
     visibility = ["//visibility:public"],
     runtime_deps = [
@@ -74,6 +85,8 @@ jvm_library(
         "//platform/ide-core:ide-core_test_lib",
         "//platform/util:util-ui_test_lib",
         "//python:python-community-impl_test_lib",
+        "//python/impl.helperLocator:community-helpersLocator_test_lib",
+        "//platform/util/jdom:jdom_test_lib",
         "//libraries/junit4",
         "//libraries/junit4:junit4_test_lib",
     ],
