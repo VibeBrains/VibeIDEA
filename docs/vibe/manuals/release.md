@@ -43,14 +43,28 @@ sh vibe-plugins/deps/download.sh      # LSP4IJ и языковые сервер�
 shasum -a 256 out/vibeidea/artifacts/vibeIdea-*-aarch64.dmg
 ```
 
-## 4. Тег и публикация
+## 4. Штамп: что именно проверено
 
 ```bash
-git tag -a vX.Y.Z -m "VibeIDEA X.Y.Z — короткая суть"
-git push origin main next vX.Y.Z
-gh release create vX.Y.Z --repo VibeBrains/VibeIDEA --title "VibeIDEA X.Y.Z" --notes-file <файл>
-gh release upload vX.Y.Z out/vibeidea/artifacts/vibeIdea-*-aarch64.dmg --repo VibeBrains/VibeIDEA
+./vibe-plugins/tools/releaseStamp.sh vX.Y.Z
 ```
+
+Штамп фиксирует версию, коммит, имя файла и его sha256 — и отказывается работать на грязном дереве.
+Между «собрал и проверил» и «выложил» проходит время, и в него помещается ещё одна сборка или
+правка; без штампа расхождение обнаруживает пользователь.
+
+## 5. Тег и публикация
+
+```bash
+git tag -a vX.Y.Z -m "VibeIDEA X.Y.Z — короткая суть"    # на ТОТ коммит, который заштампован
+git push origin main next vX.Y.Z
+./vibe-plugins/tools/releasePublish.sh <файл-заметок> --dry-run   # сверка без публикации
+./vibe-plugins/tools/releasePublish.sh <файл-заметок>             # создание релиза и загрузка
+```
+
+Фаза 2 сверяет sha256 файла, коммит `HEAD`, чистоту дерева и то, что тег указывает **на
+заштампованный коммит**. Любое расхождение — отказ: «наверное, тот же файл» и есть то
+предположение, ради проверки которого штамп существует.
 
 Загрузка 800 МБ идёт минуты; проверить, что файл на месте:
 
@@ -60,7 +74,7 @@ gh release view vX.Y.Z --repo VibeBrains/VibeIDEA --json assets --jq '.assets[] 
 
 `state: uploaded` — единственное подтверждение. «Команда не выдала ошибку» им не является.
 
-## 5. После публикации
+## 6. После публикации
 
 - QR в заметках открыть и убедиться, что картинка отдаётся: ссылка обязана быть **абсолютной**
   (`raw.githubusercontent.com`), относительные пути работают в README и не работают в теле релиза.
