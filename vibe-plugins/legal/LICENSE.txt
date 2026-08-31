@@ -1,0 +1,36 @@
+VibeIDEA
+
+Copyright 2026 VibeBrains and contributors.
+
+Licensed under the Apache License, Version 2.0 (the "License"); you may not use
+this software except in compliance with the License. You may obtain a copy of
+the License at:
+
+    https://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software distributed
+under the License is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR
+CONDITIONS OF ANY KIND, either express or implied. See the License for the
+specific language governing permissions and limitations under the License.
+
+--------------------------------------------------------------------------------
+WHAT THIS BUILD IS MADE OF
+
+VibeIDEA is a fork of the IntelliJ Platform / IntelliJ IDEA Community source code
+(https://github.com/JetBrains/intellij-community), which is licensed under the
+Apache License 2.0. VibeIDEA is NOT a JetBrains product and is not endorsed by
+JetBrains; JetBrains' own "Open-Source Build Terms", which cover the builds that
+JetBrains itself distributes under the names IntelliJ IDEA and PyCharm, do not
+apply to this build.
+
+This build bundles, among others:
+
+  * JetBrains Runtime — GPLv2 with the Classpath Exception;
+  * LSP4IJ — Eclipse Public License 2.0;
+  * Phpactor, vtsls, vscode-langservers-extracted — MIT.
+
+The complete list of third-party components with their licenses ships next to
+this file as license/third-party-libraries.html.
+
+TELEMETRY: this build sends no usage data to VibeBrains. Any statement about data
+collection found in JetBrains' documents describes JetBrains' builds, not this one.

@@ -79,6 +79,22 @@ open class VibeIdeaProperties(communityHomeDir: Path) : IdeaCommunityProperties(
     return listOf(lsp4ij)
   }
 
+  /**
+   * Our own LICENSE, over the one the platform copies.
+   *
+   * The file the upstream build ships is JetBrains' «Open-Source Build Terms»: it governs the
+   * builds JetBrains distributes under the names IntelliJ IDEA and PyCharm, and it describes their
+   * telemetry, their accounts and their obligations. Shipping it inside VibeIDEA would tell our
+   * users about a product they do not have. The SOURCES stay Apache 2.0 — that is what our file
+   * says, together with what this build is actually made of.
+   */
+  override suspend fun copyAdditionalFiles(targetDir: Path, context: BuildContext) {
+    super.copyAdditionalFiles(targetDir, context)
+    val ours = context.paths.communityHomeDir.resolve("vibe-plugins/legal/LICENSE.txt")
+    check(Files.isRegularFile(ours)) { "VibeIDEA LICENSE.txt not found: $ours" }
+    Files.copy(ours, targetDir.resolve("LICENSE.txt"), java.nio.file.StandardCopyOption.REPLACE_EXISTING)
+  }
+
   /** Files that are DATA rather than plugins: the language servers we ship next to our own plugin. */
   override suspend fun bundleExternalPlugins(context: BuildContext, targetDirectory: Path) {
     // Phpactor (MIT) as a single phar: PHP works out of the box for anyone who has PHP, which is

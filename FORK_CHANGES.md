@@ -63,6 +63,7 @@
   - Раскладка `intellij.vibe.agent` тянет модуль `intellij.libraries.zxing.core` (QR-код адреса превью): библиотека едет в дистрибутив только по просьбе раскладки — ни зависимость Bazel, ни `orderEntry` в `.iml` на состав dmg не влияют (разбор — [knowledge/build/threePackagingSystems.md](docs/vibe/knowledge/build/threePackagingSystems.md)).
   - LSP4IJ поставляется через `getAdditionalPluginPaths()`, а НЕ копированием каталога: платформа грузит встроенные плагины только по `plugins/plugin-classpath.txt`, и скопированный мимо индекса плагин не загружается вовсе (разбор — [knowledge/build/bundledPluginIndex.md](docs/vibe/knowledge/build/bundledPluginIndex.md)).
   - `build/BUILD.bazel`: в зависимости модуля сборки добавлен `//platform/build-scripts/licenses` — `VibeIdeaProperties` объявляет лицензии поставляемых языковых серверов, а тип `LibraryLicense` без этой зависимости недоступен. Одна строка в списке deps, конфликтов при мерже не создаёт.
+  - `README.md` заменён на наш: корневой README — лицо публичного репозитория, и апстримовский текст «IntelliJ Open Source Repository» на странице форка не отвечает на вопрос, куда человек попал. Оригинал сохранён рядом как `README.upstream.md` и на него стоит ссылка — инструкция по сборке платформы никуда не делась.
 - [ ] Ревизия `bundledPluginModules` (вырезка ненужного — vendor AI, featuresTrainer и т.п.) — Фаза 1.
 - [ ] Бандл LSP4IJ + Phpactor + vtsls + DAP-адаптеры — Фаза 2.
 - [ ] Плагин агентской обвязки (ACP-клиент, `com.vibe.agent`) — Фаза 3.
