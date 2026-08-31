@@ -272,17 +272,31 @@ class LlmClient(private val http: HttpClient = defaultClient(Duration.ofSeconds(
   }
 
   private fun openAiChat(provider: ResolvedProvider, model: ModelEntry, messages: List<ChatMessage>, onDelta: (String) -> Unit) {
-    val body = withExtras(buildJsonObject {
+    // The quirks catalogue rewrites what this particular model refuses to be asked, and does it
+    // BEFORE extraBody so a hand-written entry in providers.json always wins over our guess.
+    val asked = ModelQuirks.applyToMessages(model.id, messages)
+    val streaming = ModelQuirks.supportsStreaming(model.id)
+    val body = withExtras(ModelQuirks.applyToBody(model.id, buildJsonObject {
       put("model", model.id)
       put("stream", true)
       model.temperature?.let { put("temperature", it) }
       model.topP?.let { put("top_p", it) }
       model.maxOutputTokens?.let { put("max_tokens", it) }
-      put("messages", JsonArray(messages.map(LlmMessages::openAi)))
-    }.let { withReasoning(it, "openai", model) }, model.extraBody)
+      put("messages", JsonArray(asked.map(LlmMessages::openAi)))
+    }.let { withReasoning(it, "openai", model) }), model.extraBody)
+    if (ModelQuirks.quirksOf(model.id).isNotEmpty()) {
+      logger<LlmClient>().info("Model quirks applied for " + model.id + ": " + ModelQuirks.noteOf(model.id))
+    }
     val request = requestBuilder(provider, "chat/completions")
       .POST(HttpRequest.BodyPublishers.ofString(body.toString()))
       .build()
+    if (!streaming) {
+      // A model that refuses to stream answers in one piece. Delivering it as a single delta keeps
+      // the rest of the chat unaware: waiting silently is bad, but crashing on «stream unsupported»
+      // is worse, and that is what happened before the catalogue existed.
+      onDelta(sendWhole(request))
+      return
+    }
     streamSse(request) { data ->
       if (data == "[DONE]") return@streamSse
       val delta = json.parseToJsonElement(data).jsonObject["choices"]?.jsonArray?.firstOrNull()
@@ -375,6 +389,18 @@ class LlmClient(private val http: HttpClient = defaultClient(Duration.ofSeconds(
   private fun withExtras(body: JsonObject, extra: JsonObject?): JsonObject {
     if (extra == null || extra.isEmpty()) return body
     return JsonObject(body + extra)
+  }
+
+  /** One-shot request for a model that refuses to stream; the whole answer comes back as text. */
+  private fun sendWhole(request: HttpRequest): String {
+    val response = http.send(request, HttpResponse.BodyHandlers.ofString())
+    lastRetryAfter = response.headers().firstValue("retry-after").orElse(null)
+    if (cancelled()) throw java.io.InterruptedIOException(STOPPED_BY_USER)
+    if (response.statusCode() !in 200..299) {
+      throw RuntimeException("HTTP " + response.statusCode() + ": " + response.body().take(500))
+    }
+    return json.parseToJsonElement(response.body()).jsonObject["choices"]?.jsonArray?.firstOrNull()
+      ?.jsonObject?.get("message")?.jsonObject?.get("content")?.jsonPrimitive?.contentOrNull ?: ""
   }
 
   private fun streamSse(request: HttpRequest, onData: (String) -> Unit) {

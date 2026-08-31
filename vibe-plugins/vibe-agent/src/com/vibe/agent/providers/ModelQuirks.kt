@@ -1,0 +1,139 @@
+// Copyright 2026 VibeBrains. Use of this source code is governed by the Apache 2.0 license.
+package com.vibe.agent.providers
+
+import kotlinx.serialization.json.JsonObject
+
+/**
+ * What a particular model refuses to be asked, and how to ask it differently.
+ *
+ * Every vendor calls its protocol OpenAI-compatible, and every vendor is compatible up to a point.
+ * A reasoning model rejects `temperature`, renames `max_tokens`, drops the system role or refuses
+ * to stream at all — and the refusal arrives as HTTP 400 with a sentence about an unsupported
+ * parameter, which in the chat looks exactly like «модель сломалась».
+ *
+ * The catalogue is pure and matched by the model ID, because the ID is all we ever know before the
+ * first request. It is deliberately CONSERVATIVE: a quirk here removes or renames a field the user
+ * asked for, so a wrong guess is worse than no guess — a temperature silently dropped from a model
+ * that supported it changes answers nobody asked to change.
+ *
+ * Quirks are applied BEFORE `extraBody`, so a hand-written entry in `.vibe/providers.json` always
+ * wins over this catalogue: a vendor may fix its API tomorrow, and the person who noticed must not
+ * have to wait for us to notice too.
+ */
+object ModelQuirks {
+  enum class Quirk {
+    /** Sampling knobs are rejected: the model decides its own temperature. */
+    NO_SAMPLING,
+
+    /** `max_tokens` is called `max_completion_tokens` here. */
+    MAX_COMPLETION_TOKENS,
+
+    /** The system role is not accepted; the instruction has to travel as the first user message. */
+    NO_SYSTEM_ROLE,
+
+    /** Streaming is refused, so the answer arrives in one piece or not at all. */
+    NO_STREAMING,
+
+    /** Stop sequences are rejected. */
+    NO_STOP,
+  }
+
+  /**
+   * One catalogue line: which models, what they refuse, and a note for the IDE log.
+   *
+   * The note is English on purpose: it is written to the log, and the log is not interface — it is
+   * read by whoever is debugging, next to hundreds of other English lines.
+   */
+  data class Rule(val pattern: Regex, val quirks: Set<Quirk>, val note: String)
+
+  /**
+   * The catalogue.
+   *
+   * Patterns are anchored at the start of the ID after the optional `vendor/` prefix used by
+   * routers: `openai/o1-mini` is the same model as `o1-mini`, and a catalogue that missed one of
+   * the two spellings would be a catalogue that works only on the direct provider.
+   */
+  val RULES: List<Rule> = listOf(
+    Rule(
+      Regex("^o1-(preview|mini)"),
+      setOf(Quirk.NO_SAMPLING, Quirk.MAX_COMPLETION_TOKENS, Quirk.NO_SYSTEM_ROLE, Quirk.NO_STREAMING, Quirk.NO_STOP),
+      "o1-preview/o1-mini: no system role, no streaming, no sampling knobs",
+    ),
+    Rule(
+      Regex("^(o1|o3|o4)(-|$)"),
+      setOf(Quirk.NO_SAMPLING, Quirk.MAX_COMPLETION_TOKENS, Quirk.NO_STOP),
+      "o1/o3/o4 family: the model sets its own sampling, and the answer limit is named differently",
+    ),
+    Rule(
+      Regex("^gpt-5"),
+      setOf(Quirk.NO_SAMPLING, Quirk.MAX_COMPLETION_TOKENS),
+      "gpt-5: the model sets its own sampling, and the answer limit is named differently",
+    ),
+  )
+
+  /** Everything known about this model ID; an empty set for a model nobody complained about. */
+  fun quirksOf(modelId: String): Set<Quirk> {
+    val id = normalize(modelId)
+    if (id.isEmpty()) return emptySet()
+    return RULES.filter { it.pattern.containsMatchIn(id) }.flatMap { it.quirks }.toSet()
+  }
+
+  /** The human explanation, for the log line that says why the request was not sent as written. */
+  fun noteOf(modelId: String): String? {
+    val id = normalize(modelId)
+    return RULES.firstOrNull { it.pattern.containsMatchIn(id) }?.note
+  }
+
+  fun has(modelId: String, quirk: Quirk): Boolean = quirk in quirksOf(modelId)
+
+  fun supportsStreaming(modelId: String): Boolean = !has(modelId, Quirk.NO_STREAMING)
+
+  /**
+   * The request body, rewritten to what this model actually accepts.
+   *
+   * Renaming keeps the VALUE: the user asked for a limit, and dropping it because the field moved
+   * would replace their number with the provider's default without saying so.
+   */
+  fun applyToBody(modelId: String, body: JsonObject): JsonObject {
+    val quirks = quirksOf(modelId)
+    if (quirks.isEmpty()) return body
+    val fields = LinkedHashMap(body)
+    if (Quirk.NO_SAMPLING in quirks) {
+      fields.remove("temperature")
+      fields.remove("top_p")
+      fields.remove("top_k")
+    }
+    if (Quirk.NO_STOP in quirks) {
+      fields.remove("stop")
+    }
+    if (Quirk.MAX_COMPLETION_TOKENS in quirks) {
+      fields.remove("max_tokens")?.let { fields["max_completion_tokens"] = it }
+    }
+    if (Quirk.NO_STREAMING in quirks) {
+      fields.remove("stream")
+    }
+    return JsonObject(fields)
+  }
+
+  /**
+   * The messages, rewritten the same way.
+   *
+   * A model without a system role gets the instruction as the first user message rather than
+   * losing it: the system prompt is where the rules of the whole session live, and silently
+   * dropping it produces an agent that ignores the project — with nothing in the log to explain it.
+   */
+  fun applyToMessages(modelId: String, messages: List<ChatMessage>): List<ChatMessage> {
+    if (!has(modelId, Quirk.NO_SYSTEM_ROLE)) return messages
+    val system = messages.filter { it.role == "system" }
+    if (system.isEmpty()) return messages
+    val rest = messages.filterNot { it.role == "system" }
+    val folded = ChatMessage("user", system.joinToString("\n\n") { it.text })
+    return listOf(folded) + rest
+  }
+
+  /** `openai/o1-mini` and `o1-mini` are the same model; a router prefix must not hide a quirk. */
+  private fun normalize(modelId: String): String {
+    val trimmed = modelId.trim().lowercase()
+    return if ('/' in trimmed) trimmed.substringAfterLast('/') else trimmed
+  }
+}
