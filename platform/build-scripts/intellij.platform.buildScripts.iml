@@ -62,8 +62,8 @@
     <orderEntry type="module" module-name="intellij.libraries.jackson.databind" scope="RUNTIME" />
     <orderEntry type="module" module-name="intellij.libraries.jackson.dataformat.yaml" scope="RUNTIME" />
     <orderEntry type="module" module-name="intellij.libraries.jackson3.databind" />
-    <orderEntry type="library" name="json-schema-validator" level="project" />
-    <orderEntry type="library" name="kaml" level="project" />
+    <orderEntry type="module" module-name="intellij.libraries.jsonSchemaValidator" />
+    <orderEntry type="module" module-name="intellij.libraries.kaml" />
     <orderEntry type="module" module-name="intellij.libraries.kotlinx.serialization.json" />
     <orderEntry type="module" module-name="intellij.libraries.kotlinx.serialization.core" />
     <orderEntry type="module" module-name="intellij.platform.util.zip" />
@@ -430,5 +430,6 @@
     <orderEntry type="module" module-name="intellij.platform.buildScripts.api" exported="" />
     <orderEntry type="module" module-name="intellij.platform.buildScripts.productDsl" exported="" />
     <orderEntry type="module" module-name="intellij.platform.buildScripts.licenses" />
+    <orderEntry type="module" module-name="intellij.platform.distributionContent" />
   </component>
 </module>

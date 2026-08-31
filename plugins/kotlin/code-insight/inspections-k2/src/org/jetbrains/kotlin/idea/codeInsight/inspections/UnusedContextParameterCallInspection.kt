@@ -13,26 +13,21 @@ import org.jetbrains.kotlin.analysis.api.KaExperimentalApi
 import org.jetbrains.kotlin.analysis.api.KaSession
 import org.jetbrains.kotlin.analysis.api.components.resolveToCall
 import org.jetbrains.kotlin.analysis.api.resolution.resolveSymbol
-import org.jetbrains.kotlin.analysis.api.resolution.KaCallableMemberCall
-import org.jetbrains.kotlin.analysis.api.resolution.KaImplicitReceiverValue
-import org.jetbrains.kotlin.analysis.api.resolution.successfulCallOrNull
 import org.jetbrains.kotlin.analysis.api.resolution.successfulFunctionCallOrNull
 import org.jetbrains.kotlin.analysis.api.resolution.symbol
-import org.jetbrains.kotlin.analysis.api.symbols.KaContextParameterSymbol
 import org.jetbrains.kotlin.analysis.api.symbols.KaLocalVariableSymbol
 import org.jetbrains.kotlin.analysis.api.symbols.KaValueParameterSymbol
 import org.jetbrains.kotlin.analysis.api.symbols.symbol
 import org.jetbrains.kotlin.config.LanguageFeature
-import org.jetbrains.kotlin.idea.base.analysis.api.utils.unwrapSmartCasts
 import org.jetbrains.kotlin.idea.base.projectStructure.languageVersionSettings
 import org.jetbrains.kotlin.idea.base.psi.deleteValueArgument
 import org.jetbrains.kotlin.idea.base.resources.KotlinBundle
 import org.jetbrains.kotlin.idea.codeinsight.api.applicable.inspections.KotlinApplicableInspectionBase
 import org.jetbrains.kotlin.idea.codeinsight.api.applicable.inspections.KotlinModCommandQuickFix
+import org.jetbrains.kotlin.idea.codeinsight.intentions.contexts.ContextParameterUtils.consumedContextParameters
 import org.jetbrains.kotlin.idea.codeinsight.utils.StandardKotlinNames.contextCallableId
 import org.jetbrains.kotlin.idea.codeinsights.impl.base.applicators.ApplicabilityRanges
 import org.jetbrains.kotlin.idea.references.mainReference
-import org.jetbrains.kotlin.psi.KtExperimentalApi
 import org.jetbrains.kotlin.psi.KtBlockExpression
 import org.jetbrains.kotlin.psi.KtBreakExpression
 import org.jetbrains.kotlin.psi.KtCallExpression
@@ -108,16 +103,15 @@ internal class UnusedContextParameterCallInspection :
             isSideEffectFree(expression)
         }
         if (!allSideEffectFree) return null
-
-        val consumed = consumedContextParameters(lambda, contextParameters)
+        val body = lambda.bodyExpression ?: return null
+        val consumed = consumedContextParameters(body, contextParameters)
 
         val unusedArguments = contextParameters.indices
             .filter { contextParameters[it] !in consumed }
             .map { nonLambdaArguments[it] }
         if (unusedArguments.isEmpty()) return null
 
-        val body = lambda.bodyExpression
-        val jumpsTargetingLambda = body?.collectJumpsTargetingLambda(lambda).orEmpty()
+        val jumpsTargetingLambda = body.collectJumpsTargetingLambda(lambda)
 
         val pointerManager = SmartPointerManager.getInstance(element.project)
 
@@ -128,7 +122,7 @@ internal class UnusedContextParameterCallInspection :
         )
     }
 
-    @OptIn(KaExperimentalApi::class, KtExperimentalApi::class)
+    @OptIn(KaExperimentalApi::class)
     context(session: KaSession)
     private fun isSideEffectFree(expression: KtExpression): Boolean {
         return when (val unwrapped = KtPsiUtil.deparenthesize(expression)) {
@@ -144,31 +138,6 @@ internal class UnusedContextParameterCallInspection :
 
             else -> false
         }
-    }
-
-    context(session: KaSession)
-    fun consumedContextParameters(
-        lambda: KtLambdaExpression,
-        contextParameters: List<KaContextParameterSymbol>
-    ): Set<KaContextParameterSymbol> {
-        val bodyExpression = lambda.bodyExpression ?: return emptySet()
-        val allParameters = contextParameters.toSet()
-        val consumed = mutableSetOf<KaContextParameterSymbol>()
-
-        bodyExpression.forEachDescendantOfType<KtSimpleNameExpression> { node ->
-            if (consumed.size == allParameters.size) return@forEachDescendantOfType
-
-            val appliedSymbol = node.resolveToCall()?.successfulCallOrNull<KaCallableMemberCall<*, *>>()?.partiallyAppliedSymbol
-                ?: return@forEachDescendantOfType
-
-            appliedSymbol.contextArguments.forEach { arg ->
-                val symbol = (arg.unwrapSmartCasts() as? KaImplicitReceiverValue)?.symbol
-                if (symbol is KaContextParameterSymbol && symbol in allParameters) {
-                    consumed += symbol
-                }
-            }
-        }
-        return consumed
     }
 
     private fun KtBlockExpression.collectJumpsTargetingLambda(lambda: KtLambdaExpression): List<KtExpressionWithLabel> {

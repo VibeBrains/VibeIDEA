@@ -46,6 +46,39 @@ internal data class ModuleDescriptor(
   }
 
   val targetAsLabel = BazelLabel(targetName, this)
+
+  /**
+   * The `module-content.yaml` recipe beside this module's first content root - which is where the content-report
+   * writer puts it (`contentChecker.kt` resolves `module.contentRootsList.urls.first()`), and not always the directory
+   * holding the `.iml`. Existence and parse are cached separately because they answer different questions:
+   * `ModuleList.contentModuleNames` needs only existence, while a recipe that exists but holds several entries still
+   * parses to a `null` [contentModuleRecipe].
+   */
+  val contentModuleRecipeFile: Path? by lazy(LazyThreadSafetyMode.NONE) {
+    contentRoots.firstOrNull()?.resolve(CONTENT_MODULE_RECIPE_FILE_NAME)?.takeIf { it.isRegularFile() }
+  }
+
+  /**
+   * [contentModuleRecipeFile], parsed at most once per module. Cached here because the plugin-content pass asks per
+   * (plugin, member) relation, so an uncached read would re-parse the same file once per plugin shipping the module.
+   */
+  val contentModuleRecipe: RecipeEntry? by lazy(LazyThreadSafetyMode.NONE) { parseContentModuleRecipe(contentModuleRecipeFile) }
+
+  /**
+   * The dev-distribution residue of the plugin whose main module this is, if it has one; beside the first content root,
+   * the same rule [contentModuleRecipeFile] follows.
+   *
+   * Existence only, deliberately. `_find_dev_dist_residue_rel_path` in `@community//build:jps_model.bzl` probes for
+   * exactly this file, so that the hermetic `bazel-targets.json` run is handed the same residues the full-checkout run
+   * reads. That side cannot parse YAML and does not have to: both sides agree only on *which file is a plugin's
+   * residue*, which [JpsModuleToBazelTargetsOnly] asserts, and the one converter decides the rest.
+   */
+  val devDistResidueFile: Path? by lazy(LazyThreadSafetyMode.NONE) {
+    contentRoots.firstOrNull()?.resolve(DEV_DIST_RESIDUE_FILE_NAME)?.takeIf { it.isRegularFile() }
+  }
+
+  /** [devDistResidueFile], parsed at most once per module. */
+  val devDistResidue: DevDistResidueFile? by lazy(LazyThreadSafetyMode.NONE) { parseDevDistResidue(devDistResidueFile) }
 }
 
 internal data class ResourceDescriptor(

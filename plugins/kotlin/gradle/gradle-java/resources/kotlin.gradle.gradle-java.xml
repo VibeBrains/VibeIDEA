@@ -42,6 +42,7 @@
     <module name="intellij.libraries.kotlin.tooling.core"/>
     <module name="intellij.libraries.kotlinc.analysis.api"/>
     <module name="intellij.libraries.kotlinc.kotlin.compiler.common"/>
+    <module name="intellij.libraries.kotlinc.kotlin.jps.common"/>
     <module name="intellij.libraries.kotlinc.symbol.light.classes"/>
     <module name="intellij.libraries.kotlinx.coroutines.core"/>
     <module name="intellij.libraries.opentelemetry"/>
@@ -110,6 +111,7 @@
     <kotlinDslFrameworkSupport implementation="org.jetbrains.kotlin.idea.gradleJava.configuration.KotlinDslGradleKotlinJSBrowserFrameworkSupportProvider"/>
     <kotlinDslFrameworkSupport implementation="org.jetbrains.kotlin.idea.gradleJava.configuration.KotlinDslGradleKotlinJSNodeFrameworkSupportProvider"/>
 
+    <!--suppress PluginXmlReferencesModuleReachability (a dependency on intellij.gradle.java.groovy would exclude this module when the Groovy plugin is absent; the row is inert then) -->
     <pluginDescriptions implementation="org.jetbrains.kotlin.idea.gradleJava.configuration.KotlinGradlePluginDescription"/>
 
     <projectResolve implementation="org.jetbrains.kotlin.idea.gradleJava.configuration.PrepareKotlinIdeImportTaskResolver" order="first" />
@@ -221,6 +223,7 @@
   </extensions>
 
   <extensions defaultExtensionNs="org.jetbrains.plugins.gradle">
+    <!--suppress PluginXmlReferencesModuleReachability (a dependency on intellij.gradle.java.groovy would exclude this module when the Groovy plugin is absent; the row is inert then) -->
     <pluginDescriptions implementation="org.jetbrains.kotlin.idea.gradleJava.configuration.KotlinGradlePluginDescriptions"/>
   </extensions>
 

@@ -7,7 +7,6 @@ plugins {
   alias(libs.plugins.kotlin.multiplatform)
   id("fleet.project-module-conventions")
   id("fleet.toolchain-conventions")
-  alias(libs.plugins.dokka)
   // GRADLE_PLUGINS__MARKER_START
   id("fleet-module")
   // GRADLE_PLUGINS__MARKER_END
@@ -24,6 +23,7 @@ fleetModule {
 kotlin {
   // KOTLIN__MARKER_START
   compilerOptions.freeCompilerArgs = listOf(
+    "-opt-in=org.jetbrains.kotlin.config.MessageCollectorAccess",
     "-Xcontext-parameters",
     "-XXLanguage:+AllowEagerSupertypeAccessibilityChecks",
     "-progressive",

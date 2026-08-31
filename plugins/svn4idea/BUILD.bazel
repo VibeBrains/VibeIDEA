@@ -1,4 +1,5 @@
 load("@community//build:tests-options.bzl", "jps_test")
+load("@community//platform/build-scripts/bazel-rules:dev_dist_plugin.bzl", "dev_dist_plugin")
 load("@rules_jvm//:jvm.bzl", "jvm_library")
 
 ### auto-generated section `build intellij.vcs.svn` start
@@ -23,7 +24,7 @@ jvm_library(
     runtime_deps = [
         # do not sort,
         "@lib//:jaxb-runtime",
-        "@lib//:sqlite",
+        "//libraries/sqlite",
     ],
     deps = [
         # do not sort,
@@ -106,6 +107,7 @@ jvm_library(
         "//platform/lvcs-api:lvcs_test_lib",
         "//libraries/fastutil:fastutil_test_lib",
         "//platform/core-ui:core-ui_test_lib",
+        "//libraries/sqlite:sqlite_test_lib",
         "//platform/platform-util-io:ide-util-io_test_lib",
         "//platform/external-process-auth-helper:external-process-auth-helper_test_lib",
         "//platform/vcs-impl/shared:shared_test_lib",
@@ -124,6 +126,18 @@ exports_files(
     visibility = ["//visibility:public"],
 )
 ### auto-generated section `iml intellij.vcs.svn` end
+
+### auto-generated section `dev intellij.vcs.svn` start
+dev_dist_plugin(
+    content_modules = ["//libraries/sqlite"],
+    descriptor_module = ":vcs-svn",
+    libraries = [
+        "@lib//:jaxb-api",
+        "@lib//:jaxb-runtime",
+        "@lib//:libraries-sqlite-sqlite",
+    ],
+)
+### auto-generated section `dev intellij.vcs.svn` end
 
 ### auto-generated section `build intellij.vcs.svn.tests` start
 jvm_library(

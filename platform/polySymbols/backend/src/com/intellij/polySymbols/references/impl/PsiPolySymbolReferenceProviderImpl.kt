@@ -7,6 +7,8 @@ import com.intellij.model.psi.PsiSymbolReference
 import com.intellij.model.psi.PsiSymbolReferenceHints
 import com.intellij.model.psi.PsiSymbolReferenceProvider
 import com.intellij.model.search.SearchRequest
+import com.intellij.openapi.diagnostic.rethrowControlFlowException
+import com.intellij.openapi.diagnostic.thisLogger
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.util.TextRange
 import com.intellij.polySymbols.PolySymbol
@@ -72,7 +74,8 @@ class PsiPolySymbolReferenceProviderImpl : PsiSymbolReferenceProvider {
     targetSymbol: Symbol?,
   ): Pair<MultiMap<Int, PolySymbol>, List<PolySymbolReference>> {
     val publisher = application.messageBus.syncPublisher(PsiPolySymbolReferenceProviderListener.TOPIC)
-    publisher.beforeProvideReferences(element, targetSymbol)
+    val actions = mutableListOf<Runnable>()
+    publisher.beforeProvideReferences(element, targetSymbol, actions::add)
 
     try {
       val result = SmartList<PolySymbolReference>()
@@ -80,12 +83,27 @@ class PsiPolySymbolReferenceProviderImpl : PsiSymbolReferenceProvider {
       for (provider in getProviders(element)) {
         val showProblems = provider.shouldShowProblems(element)
         val offsetsFromProvider = provider.getOffsetsToReferencedSymbols(element)
+        offsetsFromProvider.forEach { (offset, symbol) ->
+          val expectedName = (symbol as? PolySymbolMatch)?.matchedName ?: symbol.name
+          checkReferenceSymbolNameMatchesText(
+            provider.javaClass.name, element, TextRange(offset, offset + expectedName.length), expectedName,
+          )
+        }
         result.addAll(createPolySymbolReferences(element, offsetsFromProvider, showProblems))
         offsets.putAllValues(offsetsFromProvider)
       }
       return Pair(offsets, result)
     }
     finally {
+      actions.reversed().forEach {
+        try {
+          it.run()
+        }
+        catch (e: Throwable) {
+          rethrowControlFlowException(e)
+          thisLogger().error(e)
+        }
+      }
       publisher.afterProvideReferences(element, targetSymbol)
     }
   }

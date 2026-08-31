@@ -1,5 +1,7 @@
 load("@community//build:tests-options.bzl", "jps_test")
+load("@community//platform/build-scripts/bazel-rules:dev_dist_plugin.bzl", "dev_dist_plugin")
 load("@rules_jvm//:jvm.bzl", "jvm_library", "jvm_provided_library", "resourcegroup")
+load("//platform/build-scripts/bazel-rules:content_module_jar.bzl", "content_module_jar")
 
 jps_test(
     name = "vcs-github-tests_test",
@@ -109,6 +111,8 @@ jvm_library(
         ":libraries_kotlinc_libraries-kotlinc-kotlinx-serialization-compiler-plugin_provided",
     ],
 )
+
+content_module_jar(module = ":vcs-github")
 
 jvm_library(
     name = "vcs-github_test_lib",
@@ -225,6 +229,19 @@ exports_files(
     visibility = ["//visibility:public"],
 )
 ### auto-generated section `iml intellij.vcs.github` end
+
+### auto-generated section `dev intellij.vcs.github` start
+dev_dist_plugin(
+    descriptor_module = ":vcs-github",
+    libraries = ["@lib//:vcs-github-apollographql-apollo-ast-jvm"],
+    prepacked_content_modules = [
+        "//plugins/github/github-git:vcs-github-git_content_module_jar",
+        "//plugins/github/github-json:vcs-github-json_content_module_jar",
+        "//plugins/github/github-tracker:vcs-github-tracker_content_module_jar",
+        "//plugins/github/ultimate-promo:ultimate-promo_content_module_jar",
+    ],
+)
+### auto-generated section `dev intellij.vcs.github` end
 
 ### auto-generated section `build intellij.vcs.github.tests` start
 jvm_library(

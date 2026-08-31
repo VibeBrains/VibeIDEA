@@ -117,6 +117,7 @@ exports_files(
     [
         "intellij.completionMlRanking.iml",
         "resources/META-INF/plugin.xml",
+        "dev-dist.yaml",
     ],
     visibility = ["//visibility:public"],
 )

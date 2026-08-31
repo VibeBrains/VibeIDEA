@@ -26,19 +26,19 @@
     <orderEntry type="library" scope="PROVIDED" name="kotlinc.noarg-compiler-plugin" level="project" />
     <orderEntry type="library" scope="PROVIDED" name="kotlinc.parcelize-compiler-plugin" level="project" />
     <orderEntry type="library" scope="PROVIDED" name="kotlinc.sam-with-receiver-compiler-plugin" level="project" />
-    <orderEntry type="library" scope="PROVIDED" name="kotlinc.assignment-compiler-plugin" level="project" />
-    <orderEntry type="library" scope="PROVIDED" name="kotlinc.scripting-compiler-plugin" level="project" />
+    <orderEntry type="module" module-name="intellij.libraries.kotlinc.assignment.compiler.plugin" scope="PROVIDED" />
+    <orderEntry type="module" module-name="intellij.libraries.kotlinc.scripting.compiler.plugin" scope="PROVIDED" />
     <orderEntry type="library" scope="PROVIDED" name="kotlinc.compose-compiler-plugin" level="project" />
     <orderEntry type="library" scope="PROVIDED" name="kotlinc.js-plain-objects-compiler-plugin" level="project" />
     <orderEntry type="library" scope="PROVIDED" name="kotlinc.kotlin-dataframe-compiler-plugin" level="project" />
-    <orderEntry type="library" scope="PROVIDED" name="kotlinc.kotlin-jps-common" level="project" />
+    <orderEntry type="module" module-name="intellij.libraries.kotlinc.kotlin.jps.common" />
     <orderEntry type="library" scope="PROVIDED" name="kotlinc.kotlin-objcexport-header-generator" level="project" />
     <orderEntry type="library" scope="PROVIDED" name="kotlinc.kotlin-swift-export" level="project" />
-    <orderEntry type="library" scope="PROVIDED" name="kotlinc.kotlin-scripting-common" level="project" />
-    <orderEntry type="library" scope="PROVIDED" name="kotlinc.kotlin-scripting-dependencies" level="project" />
-    <orderEntry type="library" scope="PROVIDED" name="kotlinc.kotlin-scripting-compiler-impl" level="project" />
-    <orderEntry type="library" scope="PROVIDED" name="kotlinc.kotlin-scripting-jvm" level="project" />
-    <orderEntry type="library" scope="PROVIDED" name="kotlinc.kotlin-script-runtime" level="project" />
+    <orderEntry type="module" module-name="intellij.libraries.kotlinc.kotlin.scripting.common" />
+    <orderEntry type="module" module-name="intellij.libraries.kotlinc.kotlin.scripting.dependencies" />
+    <orderEntry type="module" module-name="intellij.libraries.kotlinc.kotlin.scripting.compiler.impl" />
+    <orderEntry type="module" module-name="intellij.libraries.kotlinc.kotlin.scripting.jvm" />
+    <orderEntry type="module" module-name="intellij.libraries.kotlinc.kotlin.script.runtime" />
     <orderEntry type="library" scope="PROVIDED" name="kotlinc.kotlin-build-tools-api" level="project" />
     <orderEntry type="library" scope="PROVIDED" name="kotlinc.kotlin-build-tools-impl" level="project" />
     <orderEntry type="library" scope="PROVIDED" name="kotlinc.kotlin-build-tools-cri-impl" level="project" />

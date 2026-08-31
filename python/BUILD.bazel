@@ -1,6 +1,7 @@
 load("@community//build:tests-options.bzl", "jps_test")
 load("@rules_jvm//:jvm.bzl", "jvm_library", "resourcegroup")
 load("//build:compiler-options.bzl", "create_kotlinc_options")
+load("//platform/build-scripts/bazel-rules:content_module_jar.bzl", "content_module_jar")
 
 ### auto-generated section `build intellij.pycharm.community` start
 resourcegroup(
@@ -28,6 +29,7 @@ jvm_library(
         ["ide-common/resources/**/*"],
     ),
     visibility = ["//visibility:public"],
+    runtime_deps = ["//python/ide-common/ide-customization:pycharm-community-ide-customization"],
     deps = [
         # do not sort,
         "@lib//:kotlin-stdlib",
@@ -58,6 +60,7 @@ jvm_library(
         "//libraries/guava:guava_test_lib",
         "//platform/core-ui:core-ui_test_lib",
         "//platform/platform-util-io:ide-util-io_test_lib",
+        "//python/ide-common/ide-customization:pycharm-community-ide-customization_test_lib",
     ],
 )
 ### auto-generated section `build intellij.pycharm.community` end
@@ -67,7 +70,6 @@ exports_files(
     [
         "intellij.pycharm.community.iml",
         "ide-common/resources/META-INF/PyCharmCorePlugin.xml",
-        "ide-common/resources/META-INF/pycharm-core-customization.xml",
         "ide-common/resources/idea/PyCharmCoreApplicationInfo.xml",
         "resources/META-INF/pycharm-core.xml",
         "resources/ProductivityFeaturesRegistry.xml",
@@ -430,7 +432,7 @@ jvm_library(
         "//libraries/gson",
         "//platform/vcs-api:vcs",
         "//libraries/xstream",
-        "@lib//:libthrift",
+        "//libraries/libthrift",
         "@lib//:slf4j-api",
         "@lib//:slf4j-jdk14",
         "//libraries/netty/codec-http:libraries-netty-codec-http",
@@ -600,6 +602,7 @@ jvm_library(
         "//platform/vcs-api:vcs_test_lib",
         "//libraries/xstream:xstream_test_lib",
         "//python:python-helpers_test_lib",
+        "//libraries/libthrift:libthrift_test_lib",
         "//libraries/netty/codec-http:libraries-netty-codec-http_test_lib",
         "//libraries/jsoup:jsoup_test_lib",
         "//libraries/javax/annotation:annotation_test_lib",
@@ -844,7 +847,8 @@ jvm_library(
         "//libraries/xstream",
         "//libraries/xstream:xstream_test_lib",
         "//python:python-helpers_test_lib",
-        "@lib//:libthrift",
+        "//libraries/libthrift",
+        "//libraries/libthrift:libthrift_test_lib",
         "@lib//:slf4j-api",
         "@lib//:slf4j-jdk14",
         "//libraries/netty/codec-http:libraries-netty-codec-http",
@@ -1328,6 +1332,8 @@ jvm_library(
         "//python/python-core-impl:community-core-impl_test_lib",
         "//python/python-sdk/backend",
         "//python/python-sdk/backend:backend_test_lib",
+        "//python/python-sdk/common",
+        "//python/python-sdk/common:common_test_lib",
         "//libraries/gson",
         "//libraries/gson:gson_test_lib",
         "//tools/intellij.tools.ide.metrics.benchmark:ide-metrics-benchmark",
@@ -1416,6 +1422,8 @@ jvm_library(
         "//platform/todo/backend:backend_test_lib",
         "//platform/statistics",
         "//platform/statistics:statistics_test_lib",
+        "//platform/statistics/testFramework",
+        "//platform/statistics/testFramework:testFramework_test_lib",
         "//json/backend",
         "//json/backend:backend_test_lib",
         "//platform/progress/shared:ide-progress",
@@ -1601,6 +1609,8 @@ jvm_library(
         "//platform/ide-core",
     ],
 )
+
+content_module_jar(module = ":python-pydev")
 
 jvm_library(
     name = "python-pydev_test_lib",

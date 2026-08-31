@@ -27,6 +27,7 @@
 
   "allow": [
     ["./plugins/air/scripts/bt.cmd"],
+    ["./plugins/air/scripts/vm.cmd"],
     ["./platform/daemon/devex/latest-nighly-build-number.sh"],
     ["./tests.cmd"],
     ["./community/tests.cmd"],
@@ -45,6 +46,7 @@
     ["./bazel-build-all.cmd"],
     ["./build/jpsModelToBazel.cmd"],
     ["bun", "build/jps-module.mjs"],
+    ["bun", "community/.ai/skill-profile.mjs"],
     ["{{TOOLS_DIR}}/rg.cmd"],
     ["{{TOOLS_DIR}}/fd.cmd"],
     ["{{TOOLS_DIR}}/bun.cmd"],
@@ -100,6 +102,7 @@
     ["tr"],
     ["true"],
     ["uniq"],
+    ["uuidgen"],
     ["wait"],
     ["wc"],
     ["which"]

@@ -1,6 +1,7 @@
 load("@community//fleet/build:fleet.bzl", "fleet_wasmjs_module")
 load("@rules_jvm//:jvm.bzl", "jvm_library")
 load("//build:compiler-options.bzl", "create_kotlinc_options")
+load("//platform/build-scripts/bazel-rules:content_module_jar.bzl", "content_module_jar")
 
 fleet_wasmjs_module(
     name = "wasmjs_module",
@@ -64,6 +65,8 @@ jvm_library(
     ],
 )
 
+content_module_jar(module = ":rpc.server")
+
 jvm_library(
     name = "rpc.server_test_lib",
     testonly = True,
@@ -91,6 +94,7 @@ exports_files(
     [
         "fleet.rpc.server.iml",
         "resources/fleet.rpc.server.xml",
+        "module-content.yaml",
     ],
     visibility = ["//visibility:public"],
 )

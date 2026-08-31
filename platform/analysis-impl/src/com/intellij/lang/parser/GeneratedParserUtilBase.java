@@ -84,13 +84,13 @@ public class GeneratedParserUtilBase {
     boolean parse(PsiBuilder builder, int level);
   }
 
-  public static final Parser TOKEN_ADVANCER = (builder, level) -> {
+  public static final Parser TOKEN_ADVANCER = (PsiBuilder builder, @SuppressWarnings("unused") int level) -> {
     if (builder.eof()) return false;
     builder.advanceLexer();
     return true;
   };
 
-  public static final Parser TRUE_CONDITION = (builder, level) -> true;
+  public static final Parser TRUE_CONDITION = (@SuppressWarnings("unused") PsiBuilder builder, @SuppressWarnings("unused") int level) -> true;
 
   public interface Hook<T> {
 
@@ -100,19 +100,19 @@ public class GeneratedParserUtilBase {
   }
 
   public static final Hook<WhitespacesAndCommentsBinder> LEFT_BINDER =
-    (builder, marker, param) -> {
+    (@SuppressWarnings("unused") PsiBuilder builder, PsiBuilder.Marker marker, WhitespacesAndCommentsBinder param) -> {
       if (marker != null) marker.setCustomEdgeTokenBinders(param, null);
       return marker;
     };
 
   public static final Hook<WhitespacesAndCommentsBinder> RIGHT_BINDER =
-    (builder, marker, param) -> {
+    (@SuppressWarnings("unused") PsiBuilder builder, PsiBuilder.Marker marker, WhitespacesAndCommentsBinder param) -> {
       if (marker != null) marker.setCustomEdgeTokenBinders(null, param);
       return marker;
     };
 
   public static final Hook<WhitespacesAndCommentsBinder[]> WS_BINDERS =
-    (builder, marker, param) -> {
+    (@SuppressWarnings("unused") PsiBuilder builder, PsiBuilder.Marker marker, WhitespacesAndCommentsBinder[] param) -> {
       if (marker != null) marker.setCustomEdgeTokenBinders(param[0], param[1]);
       return marker;
     };
@@ -144,7 +144,7 @@ public class GeneratedParserUtilBase {
     return true;
   }
 
-  public static boolean invalid_left_marker_guard_(PsiBuilder builder, PsiBuilder.Marker marker, String funcName) {
+  public static boolean invalid_left_marker_guard_(PsiBuilder builder, PsiBuilder.Marker marker, @SuppressWarnings("unused") String funcName) {
     boolean goodMarker = marker != null;
     if (!goodMarker) return false;
     ErrorState state = ErrorState.get(builder);
@@ -424,7 +424,7 @@ public class GeneratedParserUtilBase {
   }
 
   public static boolean isWhitespaceOrComment(@NotNull PsiBuilder builder, @Nullable IElementType type) {
-    return builder.isWhitespaceOrComment(type);
+    return type != null && builder.isWhitespaceOrComment(type);
   }
 
   private static boolean wasAutoSkipped(@NotNull PsiBuilder builder, int steps) {
@@ -554,6 +554,7 @@ public class GeneratedParserUtilBase {
     }
     while (state.hooks != null && state.hooks.level >= state.level) {
       if (state.hooks.level == state.level) {
+        //noinspection unchecked
         marker = ((Hook<Object>)state.hooks.hook).run(builder, marker, state.hooks.param);
       }
       state.hooks = state.hooks.next;
@@ -1107,7 +1108,7 @@ public class GeneratedParserUtilBase {
     }
   }
 
-  private record Hooks<T>(Hook<T> hook, T param, int level, Hooks next) {
+  private record Hooks<T>(Hook<T> hook, T param, int level, Hooks<?> next) {
     static <E> Hooks<E> concat(Hook<E> hook, E param, int level, Hooks<?> hooks) {
       return new Hooks<>(hook, param, level, hooks);
     }
@@ -1220,6 +1221,10 @@ public class GeneratedParserUtilBase {
   }
 
 
+  /**
+   * @deprecated use {@link DummyBlockType.DummyBlock} instead.
+   */
+  @Deprecated(forRemoval = true)
   public static class DummyBlock extends DummyBlockType.DummyBlock{}
 
   private static class MyList<E> extends ArrayList<E> {

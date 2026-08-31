@@ -1,6 +1,7 @@
 load("@community//build:tests-options.bzl", "jps_test")
 load("@rules_jvm//:jvm.bzl", "jvm_library")
 load("//build:compiler-options.bzl", "create_kotlinc_options")
+load("//platform/build-scripts/bazel-rules:content_module_jar.bzl", "content_module_jar")
 
 jps_test(
     name = "python-community-services-shared-tests_test",
@@ -45,6 +46,8 @@ jvm_library(
     ],
 )
 
+content_module_jar(module = ":shared")
+
 jvm_library(
     name = "shared_test_lib",
     testonly = True,
@@ -87,6 +90,12 @@ exports_files(
 ### auto-generated section `iml intellij.python.community.services.shared` end
 
 ### auto-generated section `build intellij.python.community.services.shared.tests` start
+create_kotlinc_options(
+    name = "custom_python-community-services-shared-tests",
+    warn = "error",
+    x_warning_level = ["DEPRECATION:warning"],
+)
+
 jvm_library(
     name = "python-community-services-shared-tests",
     srcs = glob(
@@ -112,6 +121,7 @@ jvm_library(
         "//python/services/shared",
         "//python/services/shared:shared_test_lib",
     ],
+    kotlinc_opts = ":custom_python-community-services-shared-tests",
     resource_strip_prefix = "testResources",
     resources = glob(
         ["testResources/**/*"],

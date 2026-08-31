@@ -43,13 +43,10 @@ class ProductPluginInitContext(
   private val brokenPluginVersionsOverride: Map<PluginId, Set<String>>? = null,
 ) : PluginInitializationContext {
   override val essentialPlugins: Set<PluginId> by lazy {
-    buildSet {
-      add(CORE_ID)
-      addAll(ApplicationInfoImpl.getShadowInstance().getEssentialPluginIds())
-      if (AppMode.isRemoteDevHost() || PlatformUtils.isJetBrainsClient()) {
-        add(REMOTE_DEVELOPMENT_PLUGIN_ID)
-      }
-    }
+    computeEssentialPlugins(
+      declaredEssentialPlugins = ApplicationInfoImpl.getShadowInstance().getEssentialPluginIds(),
+      productModeId = currentProductModeId,
+    )
   }
 
   private val disabledPlugins: Set<PluginId> get() {
@@ -81,13 +78,7 @@ class ProductPluginInitContext(
     get() = !PlatformUtils.isIntelliJ()
 
   override val checkEssentialPlugins: Boolean
-    get() {
-      // system property is needed in Analyzer TODO ideally it should not exist
-      if (System.getProperty("disable.essential.plugins.check") == "true") {
-        return false
-      }
-      return !PluginManagerCore.isUnitTestMode
-    }
+    get() = !PluginManagerCore.isUnitTestMode
 
   override val explicitPluginSubsetToLoad: Set<PluginId>? by lazy {
     System.getProperty("idea.load.plugins.id")
@@ -216,11 +207,28 @@ class ProductPluginInitContext(
       val hasBackend get() = this == MONOLITH || this == BACKEND || this == LANGUAGE_SERVER
       val hasFrontend get() = this != BACKEND && this != LANGUAGE_SERVER
       val isLight get() = this == LIGHT || this == LIGHT_WITH_RD_CONNECTION
+      // required by any split-mode process; monolith and language server run without it
+      val requiresRemoteDevPlugin get() = this != MONOLITH && this != LANGUAGE_SERVER
+    }
+
+    private fun productModeById(productModeId: String): ProductModes =
+      ProductModes.entries.firstOrNull { it.id == productModeId } ?: error("Unknown productMode $productModeId")
+
+    @VisibleForTesting
+    fun computeEssentialPlugins(
+      declaredEssentialPlugins: List<PluginId>,
+      productModeId: String,
+    ): Set<PluginId> = buildSet {
+      add(CORE_ID)
+      addAll(declaredEssentialPlugins)
+      if (productModeById(productModeId).requiresRemoteDevPlugin) {
+        add(REMOTE_DEVELOPMENT_PLUGIN_ID)
+      }
     }
 
     @VisibleForTesting
     fun MutableMap<PluginModuleId, EnvironmentConfiguredModuleData>.configureProductModeModules(productModeId: String) {
-      val productMode = ProductModes.entries.firstOrNull { it.id == productModeId } ?: error("Unknown productMode $productModeId")
+      val productMode = productModeById(productModeId)
 
       fun setModuleAvailability(moduleId: PluginModuleId, isAvailable: Boolean) {
         val moduleData =
@@ -233,8 +241,9 @@ class ProductPluginInitContext(
       setModuleAvailability(FRONTEND_MODULE_ID, productMode.hasFrontend)
       setModuleAvailability(BACKEND_MODULE_ID, productMode.hasBackend)
 
+      val platformSplit = PluginModuleId("intellij.platform.split", PluginModuleId.JETBRAINS_NAMESPACE)
       val backendSplit = PluginModuleId("intellij.platform.backend.split", PluginModuleId.JETBRAINS_NAMESPACE)
-      setModuleAvailability(backendSplit, productMode == ProductModes.BACKEND || productMode == ProductModes.MONOLITH)
+      setModuleAvailability(backendSplit, productMode == ProductModes.BACKEND)
 
       val frontendSplitBase = PluginModuleId("intellij.platform.frontend.split.base", PluginModuleId.JETBRAINS_NAMESPACE)
       val frontendSplit = PluginModuleId("intellij.platform.frontend.split", PluginModuleId.JETBRAINS_NAMESPACE)
@@ -242,7 +251,6 @@ class ProductPluginInitContext(
         productMode.isLight -> {
           val rpc = PluginModuleId("intellij.platform.rpc", PluginModuleId.JETBRAINS_NAMESPACE)
           val platformSplitConnection = PluginModuleId("intellij.platform.split.connection", PluginModuleId.JETBRAINS_NAMESPACE)
-          val platformSplit = PluginModuleId("intellij.platform.split", PluginModuleId.JETBRAINS_NAMESPACE)
           val rdClient = PluginModuleId("intellij.rd.client", PluginModuleId.JETBRAINS_NAMESPACE)
           val cwmPluginCommon = PluginModuleId("intellij.cwm.plugin.common", PluginModuleId.JETBRAINS_NAMESPACE)
 
@@ -257,6 +265,7 @@ class ProductPluginInitContext(
           }
         }
         else -> {
+          setModuleAvailability(platformSplit, productMode == ProductModes.FRONTEND || productMode == ProductModes.BACKEND)
           setModuleAvailability(frontendSplitBase, productMode == ProductModes.FRONTEND)
           setModuleAvailability(frontendSplit, productMode == ProductModes.FRONTEND)
         }
@@ -508,8 +517,13 @@ private val RPC_MODULE_ID = PluginModuleId("intellij.platform.rpc", PluginModule
 private val contentModulesExtractedInCorePluginWhichCanBeUsedFromExternalPlugins = arrayOf(
   "intellij.platform.collaborationTools.auth",
   "intellij.platform.collaborationTools.auth.base",
+  "intellij.platform.debugger",
+  "intellij.platform.debugger.impl",
+  "intellij.platform.debugger.impl.shared",
+  "intellij.platform.debugger.impl.ui",
   "intellij.platform.tasks",
   "intellij.platform.tasks.impl",
+  "intellij.platform.remoteServers.impl",
   "intellij.platform.scriptDebugger.ui",
   "intellij.platform.scriptDebugger.backend",
   "intellij.platform.scriptDebugger.protocolReaderRuntime",

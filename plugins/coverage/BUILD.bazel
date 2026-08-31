@@ -1,4 +1,5 @@
 load("@community//build:tests-options.bzl", "jps_test")
+load("@community//platform/build-scripts/bazel-rules:dev_dist_plugin.bzl", "dev_dist_plugin")
 load("@rules_jvm//:jvm.bzl", "jvm_library")
 
 jps_test(
@@ -164,6 +165,33 @@ exports_files(
     visibility = ["//visibility:public"],
 )
 ### auto-generated section `iml intellij.java.coverage` end
+
+### auto-generated section `dev intellij.java.coverage` start
+dev_dist_plugin(
+    content_modules = ["//libraries/test-discovery"],
+    descriptor = "resources/META-INF/plugin.xml",
+    descriptor_module = ":coverage",
+    descriptors = {
+        "@community//libraries/test-discovery:resources/intellij.libraries.test.discovery.xml": "intellij.libraries.test.discovery.xml",
+        "@community//plugins/coverage/coverage_rt:resources/intellij.java.coverage.rt.xml": "intellij.java.coverage.rt.xml",
+        "@community//plugins/coverage/junit:resources/intellij.java.coverage.rt.junit.xml": "intellij.java.coverage.rt.junit.xml",
+        "@community//plugins/coverage/testng:resources/intellij.java.coverage.rt.testng.xml": "intellij.java.coverage.rt.testng.xml",
+    },
+    libraries = [
+        "@lib//:java-coverage-_ja_co_co",
+        "@lib//:java-coverage-coverage-report",
+        "@lib//:libraries-test-discovery-intellij-test-discovery",
+    ],
+    main_module = "intellij.java.coverage",
+    prepacked_content_modules = [
+        "//plugins/coverage/junit:junit_content_module_jar",
+        "//plugins/coverage/testng:testng_content_module_jar",
+    ],
+    prepacked_jars = {
+        "//plugins/coverage/coverage_rt:java-coverage-rt_content_module_jar": "intellij.java.coverage.rt.jar",
+    },
+)
+### auto-generated section `dev intellij.java.coverage` end
 
 ### auto-generated section `build intellij.java.coverage.tests` start
 jvm_library(

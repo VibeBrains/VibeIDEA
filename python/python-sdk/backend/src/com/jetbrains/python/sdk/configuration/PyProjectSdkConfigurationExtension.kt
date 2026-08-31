@@ -16,6 +16,7 @@ import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
 import org.jetbrains.annotations.ApiStatus
 import org.jetbrains.annotations.CheckReturnValue
+import org.jetbrains.annotations.VisibleForTesting
 
 suspend fun Module.findPythonVirtualEnvironments(): List<PythonBinary> {
   val venvsInModule = this.baseDir?.let {
@@ -38,7 +39,8 @@ suspend fun Module.findPythonVirtualEnvironments(): List<PythonBinary> {
 @ApiStatus.Internal
 interface PyProjectSdkConfigurationExtension {
   companion object {
-    private val EP_NAME: ExtensionPointName<PyProjectSdkConfigurationExtension> =
+    @VisibleForTesting
+    val EP_NAME: ExtensionPointName<PyProjectSdkConfigurationExtension> =
       ExtensionPointName.create("Pythonid.projectSdkConfigurationExtension")
     private val CONCURRENCY_LIMIT = Semaphore(permits = 5)
 
@@ -63,8 +65,33 @@ interface PyProjectSdkConfigurationExtension {
     fun createMap(): Map<ToolId, PyProjectSdkConfigurationExtension> = EP_NAME.extensionList.associateBy { it.toolId }
 
     /**
+     * The configurators for [module] as [PySdkConfiguratorsCache] last found them, probing only when it has no recent
+     * answer — **this is the entry point to use.** Every configurator may run its own tool to answer (see
+     * [checkEnvironmentAndPrepareSdkCreator]), and the same question is asked from several unrelated features, so a
+     * fresh probe per caller means running poetry, uv and the rest several times over for one project.
+     *
+     * Comes with the venvs the probe scanned, since a caller acting on an option usually needs those too.
+     *
+     * Use [findAllSortedForModule] instead only where the answer must be true *right now*: under the SDK-configuration
+     * lock, or straight after installing a tool — and in a test that changes the project on disk and asks again.
+     */
+    suspend fun findAllSortedForModuleCached(module: Module): ModuleConfigurators =
+      PySdkConfiguratorsCache.getInstance(module.project).get(module)
+
+    /**
+     * Drops what [findAllSortedForModuleCached] remembers about [module], for a caller that has just changed what a
+     * probe would find — installing one of the tools, which turns a "will install" option into a creatable one.
+     */
+    fun invalidateCachedForModule(module: Module) {
+      PySdkConfiguratorsCache.getInstance(module.project).invalidate(module)
+    }
+
+    /**
      * We return all configurators in a sorted order. The order is determined by extensions order, but existing environments have a
      * higher priority. That means we first have all existing envs, and only after SDK creators that extensions can manage.
+     *
+     * Probes every configurator on every call — see [findAllSortedForModuleCached] for the cached entry point, which is
+     * what most callers want.
      */
     suspend fun findAllSortedForModule(module: Module, venvsInModule: List<PythonBinary>): List<CreateSdkInfoWithTool> {
       return EP_NAME.extensionsIfPointIsRegistered

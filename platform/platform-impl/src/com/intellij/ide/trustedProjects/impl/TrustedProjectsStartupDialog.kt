@@ -86,6 +86,10 @@ class TrustedProjectStartupDialog private constructor(
   private var trustAction: Action? = null
 
   init {
+    // The dialog renders myTitle as content text (createCenterPanel), but the window itself must carry it too:
+    // an undecorated window shows no title bar, while accessibility and UI tests address a dialog by its title.
+    title = myTitle
+
     @OptIn(LowLevelLocalMachineAccess::class)
     if (OS.CURRENT == OS.macOS) {
       setInitialLocationCallback {
@@ -169,7 +173,7 @@ class TrustedProjectStartupDialog private constructor(
               component.isFocusable = true // Workaround for IJPL-184339
             }
           }
-          projectPath.parent?.let { projectParentPath ->
+          projectPath.parent?.takeIf { TrustedProjects.isProjectLocationOfferedForTrust(projectPath) }?.let { projectParentPath ->
             row {
               val parentDirName = NioFiles.getFileName(projectParentPath)
               val trimmedParentDirName = StringUtil.shortenTextWithEllipsis(parentDirName, 40, 0, true)

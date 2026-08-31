@@ -1,4 +1,5 @@
 load("@rules_jvm//:jvm.bzl", "jvm_library")
+load("//platform/build-scripts/bazel-rules:content_module_jar.bzl", "content_module_jar")
 
 ### auto-generated section `build intellij.platform.ide.core` start
 jvm_library(
@@ -47,6 +48,11 @@ jvm_library(
         "//platform/eel-nioFs",
         "//fleet/rhizomedb",
     ],
+)
+
+content_module_jar(
+    module = ":ide-core",
+    modules_after = ["//platform/settings"],
 )
 
 jvm_library(
@@ -98,6 +104,7 @@ exports_files(
         "resources/META-INF/intellij.moduleSets.core.platform.xml",
         "resources/META-INF/intellij.moduleSets.rpc.minimal.xml",
         "resources/intellij.platform.ide.core.xml",
+        "module-content.yaml",
     ],
     visibility = ["//visibility:public"],
 )

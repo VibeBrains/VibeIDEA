@@ -1,5 +1,4 @@
 load("@bazel_skylib//rules:native_binary.bzl", "native_binary")
-load("@community//build:tests-options.bzl", "jps_test")
 load("@rules_jvm//:jvm.bzl", "jvm_library")
 load("//plugins/ui.webview:webview_plugin_zip.bzl", "webview_plugin_zip")
 

@@ -109,7 +109,7 @@ internal class BackendXBreakpointApi : XBreakpointApi {
   }
 
   override suspend fun setTemporary(breakpointId: XBreakpointId, requestId: Long, isTemporary: Boolean) {
-    val breakpoint = breakpointId.findValue() as? XLineBreakpointImpl<*> ?: return
+    val breakpoint = breakpointId.findValue() ?: return
     breakpoint.setTemporary(requestId, isTemporary)
   }
 

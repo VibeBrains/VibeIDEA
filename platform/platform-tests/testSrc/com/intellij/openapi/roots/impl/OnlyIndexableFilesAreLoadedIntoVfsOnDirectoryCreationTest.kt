@@ -6,14 +6,21 @@ import com.intellij.ide.impl.ProjectUtil
 import com.intellij.internal.visitChildrenInVfsRecursively
 import com.intellij.openapi.Disposable
 import com.intellij.openapi.application.readAction
+import com.intellij.openapi.application.runWriteAction
+import com.intellij.openapi.application.writeAction
+import com.intellij.openapi.util.io.FileAttributes
 import com.intellij.openapi.vfs.AfterEventShouldBeFiredBeforeOtherListeners
 import com.intellij.openapi.vfs.AsyncFileListener
 import com.intellij.openapi.vfs.VfsUtil
 import com.intellij.openapi.vfs.VirtualFile
 import com.intellij.openapi.vfs.VirtualFileManager
 import com.intellij.openapi.vfs.newvfs.NewVirtualFile
+import com.intellij.openapi.vfs.newvfs.NewVirtualFileSystem
 import com.intellij.openapi.vfs.newvfs.events.ChildInfo
+import com.intellij.openapi.vfs.newvfs.events.VFileCopyEvent
 import com.intellij.openapi.vfs.newvfs.events.VFileCreateEvent
+import com.intellij.openapi.vfs.newvfs.persistent.PersistentFS
+import com.intellij.openapi.vfs.newvfs.persistent.PersistentFSImpl
 import com.intellij.platform.backend.workspace.toVirtualFileUrl
 import com.intellij.platform.backend.workspace.workspaceModel
 import com.intellij.platform.workspace.jps.entities.ContentRootEntity
@@ -25,6 +32,7 @@ import com.intellij.platform.workspace.storage.impl.url.toVirtualFileUrl
 import com.intellij.testFramework.IndexingTestUtil
 import com.intellij.testFramework.TestObservation
 import com.intellij.testFramework.VfsTestUtil
+import com.intellij.testFramework.junit5.RegistryKey
 import com.intellij.testFramework.junit5.TestApplication
 import com.intellij.testFramework.junit5.TestDisposable
 import com.intellij.testFramework.rules.TempDirectoryExtension
@@ -46,7 +54,13 @@ import org.junit.jupiter.api.Assertions
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.extension.RegisterExtension
+import java.io.ByteArrayInputStream
+import java.io.ByteArrayOutputStream
+import java.io.InputStream
+import java.io.OutputStream
 import java.nio.file.Path
+import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.CopyOnWriteArrayList
 import kotlin.io.path.invariantSeparatorsPathString
 import kotlin.io.path.pathString
 import kotlin.io.path.writeText
@@ -69,6 +83,8 @@ class OnlyIndexableFilesAreLoadedIntoVfsOnDirectoryCreationTest {
   }
 
   companion object {
+    private const val CHILDREN_PRELOADING_REGISTRY_KEY = "vfs.refresh.use.transient.files.for.children.preloading"
+
     private fun VFileCreateEvent.isUnder(path: String): Boolean = this.path == path || this.path.startsWith("$path/")
 
     /**
@@ -293,7 +309,75 @@ class OnlyIndexableFilesAreLoadedIntoVfsOnDirectoryCreationTest {
   }
 
   @Test
-  fun `test scanChildren keeps content root under nested excluded directory`(): Unit = runBlocking {
+  fun `test partial excluded subtree stays unloaded when directory is copied`(): Unit = runBlocking {
+    rootDir.newDirectoryPath(".idea")
+    rootDir.newDirectoryPath("source/excluded")
+    rootDir.newFileNio("source/excluded/skipped.txt").writeText("skipped")
+    rootDir.newFileNio("source/loaded.txt").writeText("loaded")
+
+    val copiedRoot = rootDir.rootPath.resolve("copied")
+    val excludedRoot = copiedRoot.resolve("excluded")
+    val options = OpenProjectTask { createModule = false }
+    ProjectUtil.openOrImportAsync(rootDir.rootPath, options)!!.useProjectAsync { project ->
+      TestObservation.awaitConfiguration(project)
+      val rootVirtualFile = findVirtualFile(rootDir.rootPath)
+      rootVirtualFile.children // load all children to trigger full sync later
+      val sourceVirtualFile = findVirtualFile(rootDir.rootPath.resolve("source"))
+      sourceVirtualFile.children
+
+      val urlManager = project.workspaceModel.getVirtualFileUrlManager()
+      project.workspaceModel.update("Add copied content root") {
+        it.addEntity(IndexingTestEntity(
+          listOf(copiedRoot.toVirtualFileUrl(urlManager)),
+          listOf(excludedRoot.toVirtualFileUrl(urlManager)),
+          NonPersistentEntitySource,
+        ))
+      }
+      IndexingTestUtil.waitUntilIndexesAreReady(project)
+
+      val copyResult = CompletableDeferred<Result<Unit>>()
+      VirtualFileManager.getInstance().addAsyncFileListenerBackgroundable({ events ->
+        val copyEvent = events.filterIsInstance<VFileCopyEvent>().singleOrNull {
+          it.newParent == rootVirtualFile && it.newChildName == "copied"
+        } ?: return@addAsyncFileListenerBackgroundable null
+
+        object : AsyncFileListener.ChangeApplier, AfterEventShouldBeFiredBeforeOtherListeners {
+          override fun afterVfsChange() {
+            copyResult.complete(runCatching {
+              val copiedDirectory = checkNotNull((rootVirtualFile as NewVirtualFile).findChildIfCached("copied")) as NewVirtualFile
+              check(copiedDirectory.allChildrenLoaded())
+              checkNotNull(copiedDirectory.findChildIfCached("loaded.txt"))
+
+              val excludedDirectory = checkNotNull(copiedDirectory.findChildIfCached("excluded")) as NewVirtualFile
+              check(!excludedDirectory.allChildrenLoaded())
+              check(excludedDirectory.findChildIfCached("skipped.txt") == null)
+
+              val excludedInfo = checkNotNull(copyEvent.children).single { it.name.toString() == "excluded" }
+              check(!excludedInfo.isAllChildren)
+            })
+          }
+        }
+      }, disposable)
+
+      val requestor = Any()
+      writeAction {
+        (PersistentFS.getInstance() as PersistentFSImpl).copyFile(requestor, sourceVirtualFile, rootVirtualFile, "copied")
+      }
+      copyResult.await().getOrThrow()
+    }
+  }
+
+  @Test
+  @RegistryKey(CHILDREN_PRELOADING_REGISTRY_KEY, "true")
+  fun `transient scanner keeps content root under nested excluded directory`() =
+    testScanChildrenKeepsContentRootUnderNestedExcludedDirectory()
+
+  @Test
+  @RegistryKey(CHILDREN_PRELOADING_REGISTRY_KEY, "false")
+  fun `NIO scanner keeps content root under nested excluded directory`() =
+    testScanChildrenKeepsContentRootUnderNestedExcludedDirectory()
+
+  private fun testScanChildrenKeepsContentRootUnderNestedExcludedDirectory(): Unit = runBlocking {
     rootDir.newDirectoryPath(".idea")
     val scanRoot = rootDir.rootPath.resolve("content")
     val options = OpenProjectTask { createModule = false }
@@ -331,10 +415,158 @@ class OnlyIndexableFilesAreLoadedIntoVfsOnDirectoryCreationTest {
     }
   }
 
+  @Test
+  @RegistryKey(CHILDREN_PRELOADING_REGISTRY_KEY, "true")
+  fun `new directory children are preloaded for a custom NewVirtualFileSystem`(): Unit = runBlocking {
+    rootDir.newDirectoryPath(".idea")
+    val options = OpenProjectTask { createModule = false }
+    val fileSystem = TestNewVirtualFileSystem()
+    var root: NewVirtualFile? = null
+    try {
+      ProjectUtil.openOrImportAsync(rootDir.rootPath, options)!!.useProjectAsync { project ->
+        TestObservation.awaitConfiguration(project)
+        root = fileSystem.root()
+        val customRoot = root!!
+        val urlManager = project.workspaceModel.getVirtualFileUrlManager()
+        project.workspaceModel.update("Add custom file system root") {
+          it.addEntity(IndexingTestEntity(listOf(customRoot.toVirtualFileUrl(urlManager)), emptyList(), NonPersistentEntitySource))
+        }
+        IndexingTestUtil.waitUntilIndexesAreReady(project)
+
+        assertThat(customRoot.children).isEmpty()
+
+        val newDirectoryPath = fileSystem.addDirectory(customRoot.path, "new-dir")
+        fileSystem.addFile(newDirectoryPath, "child.txt")
+
+        val refreshCompleted = CompletableDeferred<Unit>()
+        VirtualFileManager.getInstance().addAsyncFileListenerBackgroundable({ events ->
+          if (events.none { it is VFileCreateEvent && it.fileSystem === fileSystem }) {
+            null
+          }
+          else {
+            object : AsyncFileListener.ChangeApplier, AfterEventShouldBeFiredBeforeOtherListeners {
+              override fun afterVfsChange() {
+                refreshCompleted.complete(Unit)
+              }
+            }
+          }
+        }, disposable)
+        VfsUtil.markDirtyAndRefresh(false, true, false, customRoot)
+        refreshCompleted.await()
+
+        val newDirectory = checkNotNull(customRoot.findChildIfCached("new-dir"))
+        assertThat(newDirectory.findChildIfCached("child.txt")).isNotNull
+      }
+    }
+    finally {
+      root?.let { customRoot ->
+        runWriteAction {
+          if (customRoot.isValid) customRoot.delete(this@OnlyIndexableFilesAreLoadedIntoVfsOnDirectoryCreationTest)
+        }
+      }
+    }
+  }
+
   private fun childNames(children: Array<ChildInfo>?): List<String> = children?.map { it.name.toString() } ?: emptyList()
 
   private fun childInfo(children: Array<ChildInfo>?, name: String): ChildInfo =
     children?.singleOrNull { it.name.toString() == name } ?: error("$name wasn't loaded")
+
+  private class TestNewVirtualFileSystem : NewVirtualFileSystem() {
+    private val rootPath = "root-${System.nanoTime()}"
+    private val entries = ConcurrentHashMap<String, FileAttributes>()
+    private val children = ConcurrentHashMap<String, CopyOnWriteArrayList<String>>()
+    private val directoryAttributes = FileAttributes(true, false, false, false, 0, 0, true, FileAttributes.CaseSensitivity.SENSITIVE)
+    private val fileAttributes = FileAttributes(false, false, false, false, 0, 0, true, FileAttributes.CaseSensitivity.SENSITIVE)
+
+    init {
+      entries[rootPath] = directoryAttributes
+      children[rootPath] = CopyOnWriteArrayList()
+    }
+
+    fun root(): NewVirtualFile = checkNotNull(PersistentFS.getInstance().findRoot(rootPath, this))
+
+    fun addDirectory(parentPath: String, name: String): String {
+      val normalizedParentPath = normalizePath(parentPath)
+      val path = "$normalizedParentPath/$name"
+      entries[path] = directoryAttributes
+      children[path] = CopyOnWriteArrayList()
+      children.computeIfAbsent(normalizedParentPath) { CopyOnWriteArrayList() }.add(name)
+      return path
+    }
+
+    fun addFile(parentPath: String, name: String) {
+      val normalizedParentPath = normalizePath(parentPath)
+      val path = "$normalizedParentPath/$name"
+      entries[path] = fileAttributes
+      children.computeIfAbsent(normalizedParentPath) { CopyOnWriteArrayList() }.add(name)
+    }
+
+    override fun getProtocol(): String = "refresh-test-${rootPath.substringAfterLast('-')}"
+
+    override fun normalize(path: String): String = normalizePath(path)
+
+    override fun extractRootPath(normalizedPath: String): String = normalizedPath.substringBefore('/')
+
+    override fun findFileByPath(path: String): VirtualFile? = NewVirtualFileSystem.findFileByPath(this, path)
+
+    override fun findFileByPathIfCached(path: String): VirtualFile? = NewVirtualFileSystem.findFileByPathIfCached(this, path)
+
+    override fun getAttributes(file: VirtualFile): FileAttributes? = entries[normalizePath(file.path)]
+
+    override fun exists(file: VirtualFile): Boolean = entries.containsKey(normalizePath(file.path))
+
+    override fun list(file: VirtualFile): Array<String> = children[normalizePath(file.path)]?.toTypedArray() ?: emptyArray()
+
+    override fun isDirectory(file: VirtualFile): Boolean = entries[normalizePath(file.path)]?.isDirectory == true
+
+    override fun getTimeStamp(file: VirtualFile): Long = entries[normalizePath(file.path)]?.lastModified ?: 0
+
+    override fun setTimeStamp(file: VirtualFile, timeStamp: Long) = unsupported<Unit>()
+
+    override fun isWritable(file: VirtualFile): Boolean = entries[normalizePath(file.path)]?.isWritable == true
+
+    override fun setWritable(file: VirtualFile, writableFlag: Boolean) = unsupported<Unit>()
+
+    override fun getLength(file: VirtualFile): Long = entries[normalizePath(file.path)]?.length ?: 0
+
+    override fun contentsToByteArray(file: VirtualFile): ByteArray = ByteArray(0)
+
+    override fun getInputStream(file: VirtualFile): InputStream = ByteArrayInputStream(ByteArray(0))
+
+    override fun getOutputStream(file: VirtualFile,
+                                  requestor: Any?,
+                                  modStamp: Long,
+                                  timeStamp: Long): OutputStream = ByteArrayOutputStream()
+
+    override fun refresh(asynchronous: Boolean) = Unit
+
+    override fun refreshAndFindFileByPath(path: String): VirtualFile? = findFileByPath(path)
+
+    override fun createChildDirectory(requestor: Any?, parent: VirtualFile, name: String): VirtualFile = unsupported()
+
+    override fun createChildFile(requestor: Any?, parent: VirtualFile, name: String): VirtualFile = unsupported()
+
+    override fun deleteFile(requestor: Any?, file: VirtualFile) {
+      removePath(normalizePath(file.path))
+    }
+
+    override fun moveFile(requestor: Any?, file: VirtualFile, newParent: VirtualFile) = unsupported<Unit>()
+
+    override fun renameFile(requestor: Any?, file: VirtualFile, newName: String) = unsupported<Unit>()
+
+    override fun copyFile(requestor: Any?, file: VirtualFile, newParent: VirtualFile, copyName: String): VirtualFile = unsupported()
+
+    private fun removePath(path: String) {
+      val childNames = children.remove(path)
+      childNames?.forEach { removePath("$path/$it") }
+      entries.remove(path)
+    }
+
+    private fun normalizePath(path: String): String = path.replace("//", "/").trimEnd('/')
+
+    private fun <T> unsupported(): T = throw UnsupportedOperationException()
+  }
 
   private val pom = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n" +
                     "<project xmlns=\"http://maven.apache.org/POM/4.0.0\"\n" +

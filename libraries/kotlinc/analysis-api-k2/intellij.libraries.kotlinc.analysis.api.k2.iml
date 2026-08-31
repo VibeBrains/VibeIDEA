@@ -25,19 +25,19 @@
     <orderEntry type="sourceFolder" forTests="false" />
     <orderEntry type="module-library" exported="">
       <library name="kotlinc.analysis-api-k2" type="repository">
-        <properties include-transitive-deps="false" maven-id="org.jetbrains.kotlin:analysis-api-k2-for-ide:2.5.0-dev-4715">
+        <properties include-transitive-deps="false" maven-id="org.jetbrains.kotlin:analysis-api-k2-for-ide:2.5.0-dev-5674">
           <verification>
-            <artifact url="file://$MAVEN_REPOSITORY$/org/jetbrains/kotlin/analysis-api-k2-for-ide/2.5.0-dev-4715/analysis-api-k2-for-ide-2.5.0-dev-4715.jar">
-              <sha256sum>507d30d766f5c5215ed06ee139d7b7880d27805f3fba99649b73404e4e3e483c</sha256sum>
+            <artifact url="file://$MAVEN_REPOSITORY$/org/jetbrains/kotlin/analysis-api-k2-for-ide/2.5.0-dev-5674/analysis-api-k2-for-ide-2.5.0-dev-5674.jar">
+              <sha256sum>32e25b16bb9b5063494425a0567b20d2bcc2741a3c29b962a5e5f084a5a7ba66</sha256sum>
             </artifact>
           </verification>
         </properties>
         <CLASSES>
-          <root url="jar://$MAVEN_REPOSITORY$/org/jetbrains/kotlin/analysis-api-k2-for-ide/2.5.0-dev-4715/analysis-api-k2-for-ide-2.5.0-dev-4715.jar!/" />
+          <root url="jar://$MAVEN_REPOSITORY$/org/jetbrains/kotlin/analysis-api-k2-for-ide/2.5.0-dev-5674/analysis-api-k2-for-ide-2.5.0-dev-5674.jar!/" />
         </CLASSES>
         <JAVADOC />
         <SOURCES>
-          <root url="jar://$MAVEN_REPOSITORY$/org/jetbrains/kotlin/analysis-api-k2-for-ide/2.5.0-dev-4715/analysis-api-k2-for-ide-2.5.0-dev-4715-sources.jar!/" />
+          <root url="jar://$MAVEN_REPOSITORY$/org/jetbrains/kotlin/analysis-api-k2-for-ide/2.5.0-dev-5674/analysis-api-k2-for-ide-2.5.0-dev-5674-sources.jar!/" />
         </SOURCES>
       </library>
     </orderEntry>
@@ -49,5 +49,6 @@
     <orderEntry type="module" module-name="intellij.java.psi.impl" />
     <orderEntry type="module" module-name="intellij.java.frontback.psi.impl" />
     <orderEntry type="module" module-name="intellij.platform.backend" scope="RUNTIME" />
+    <orderEntry type="module" module-name="intellij.platform.ide.core" scope="RUNTIME" />
   </component>
 </module>

@@ -17,6 +17,11 @@
     <module name="intellij.libraries.kotlinc.analysis.api"/>
     <module name="intellij.libraries.kotlinc.analysis.api.platform.interface"/>
     <module name="intellij.libraries.kotlinc.kotlin.compiler.common"/>
+    <module name="intellij.libraries.kotlinc.kotlin.jps.common"/>
+    <module name="intellij.libraries.kotlinc.kotlin.script.runtime"/>
+    <module name="intellij.libraries.kotlinc.kotlin.scripting.common"/>
+    <module name="intellij.libraries.kotlinc.kotlin.scripting.compiler.impl"/>
+    <module name="intellij.libraries.kotlinc.kotlin.scripting.jvm"/>
     <module name="intellij.platform.core"/>
     <module name="intellij.platform.core.impl"/>
     <module name="intellij.platform.projectModel"/>

@@ -1,5 +1,6 @@
 load("@community//build:tests-options.bzl", "jps_test")
 load("@rules_jvm//:jvm.bzl", "jvm_library")
+load("//platform/build-scripts/bazel-rules:content_module_jar.bzl", "content_module_jar")
 
 jps_test(
     name = "externalSystem-tests_test",
@@ -55,7 +56,6 @@ jvm_library(
         "//platform/object-serializer",
         "//platform/platform-impl/concurrency",
         "//platform/object-serializer:objectSerializer-annotations",
-        "//platform/xdebugger-api:debugger",
         "//platform/statistics",
         "//platform/workspace/jps",
         "//platform/workspace/storage",
@@ -86,6 +86,8 @@ jvm_library(
         "//libraries/kotlinx/collections-immutable:libraries-kotlinx-collections-immutable",
     ],
 )
+
+content_module_jar(module = ":externalSystem-impl")
 
 jvm_library(
     name = "externalSystem-impl_test_lib",
@@ -120,7 +122,6 @@ jvm_library(
         "//platform/object-serializer:object-serializer_test_lib",
         "//platform/platform-impl/concurrency:concurrency_test_lib",
         "//platform/object-serializer:objectSerializer-annotations_test_lib",
-        "//platform/xdebugger-api:debugger_test_lib",
         "//platform/statistics:statistics_test_lib",
         "//platform/workspace/jps:jps_test_lib",
         "//platform/workspace/storage:storage_test_lib",
@@ -161,6 +162,7 @@ exports_files(
         "resources/META-INF/ExternalSystemExtensionPoints.xml",
         "resources/META-INF/ExternalSystemExtensions.xml",
         "resources/intellij.platform.externalSystem.impl.xml",
+        "module-content.yaml",
     ],
     visibility = ["//visibility:public"],
 )

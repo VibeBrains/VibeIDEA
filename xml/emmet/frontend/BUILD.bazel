@@ -1,4 +1,5 @@
 load("@rules_jvm//:jvm.bzl", "jvm_library", "jvm_provided_library")
+load("//platform/build-scripts/bazel-rules:content_module_jar.bzl", "content_module_jar")
 
 ### auto-generated section `build intellij.xml.emmet.frontend` start
 jvm_provided_library(
@@ -64,6 +65,7 @@ jvm_library(
     visibility = ["//visibility:public"],
     deps = [
         # do not sort,
+        "//xml/emmet/shared",
         "//fleet/rpc",
         "//platform/platform-impl:ide-impl",
         "@lib//:kotlin-stdlib-provided",
@@ -82,6 +84,8 @@ jvm_library(
     ],
 )
 
+content_module_jar(module = ":frontend")
+
 jvm_library(
     name = "frontend_test_lib",
     testonly = True,
@@ -94,6 +98,7 @@ jvm_library(
     runtime_deps = [
         # do not sort,
         ":frontend",
+        "//xml/emmet/shared:shared_test_lib",
         "//fleet/rpc:rpc_test_lib",
         "//platform/platform-impl:ide-impl_test_lib",
         "//platform/core-ui",
@@ -127,6 +132,7 @@ exports_files(
     [
         "intellij.xml.emmet.frontend.iml",
         "resources/intellij.xml.emmet.frontend.xml",
+        "module-content.yaml",
     ],
     visibility = ["//visibility:public"],
 )

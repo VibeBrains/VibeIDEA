@@ -31,10 +31,12 @@ import org.jetbrains.intellij.build.productLayout.stats.ProductGenerationResult
 import org.jetbrains.intellij.build.productLayout.stats.SuppressionConfigStats
 import org.jetbrains.intellij.build.productLayout.stats.TestPluginGenerationResult
 import org.jetbrains.intellij.build.productLayout.validator.ContentModuleBackingValidator
+import org.jetbrains.intellij.build.productLayout.validator.ContentModuleCopyConflictValidator
 import org.jetbrains.intellij.build.productLayout.validator.ContentModuleDependencyValidator
 import org.jetbrains.intellij.build.productLayout.validator.ContentModulePluginDependencyValidator
 import org.jetbrains.intellij.build.productLayout.validator.EmbeddedContentModuleDependencyValidator
 import org.jetbrains.intellij.build.productLayout.validator.ImplicitEmbeddedContentModuleValidator
+import org.jetbrains.intellij.build.productLayout.validator.LibraryLicenseValidator
 import org.jetbrains.intellij.build.productLayout.validator.LibraryModuleValidator
 import org.jetbrains.intellij.build.productLayout.validator.PluginContentDependencyValidator
 import org.jetbrains.intellij.build.productLayout.validator.PluginContentDuplicatesValidator
@@ -47,6 +49,8 @@ import org.jetbrains.intellij.build.productLayout.validator.SelfContainedModuleS
 import org.jetbrains.intellij.build.productLayout.validator.SuppressionConfigValidator
 import org.jetbrains.intellij.build.productLayout.validator.TestLibraryScopeValidator
 import org.jetbrains.intellij.build.productLayout.validator.TestPluginPluginDependencyValidator
+import org.jetbrains.intellij.build.productLayout.validator.UnusedEmbeddedLibraryModuleValidator
+import org.jetbrains.intellij.build.productLayout.validator.UnusedSharedLibraryModuleValidator
 import java.nio.file.Path
 
 /**
@@ -537,8 +541,12 @@ internal class GenerationPipeline(
           SelfContainedModuleSetValidator,
           ContentModuleBackingValidator,
           EmbeddedContentModuleDependencyValidator,
+          UnusedEmbeddedLibraryModuleValidator,
+          UnusedSharedLibraryModuleValidator,
+          LibraryLicenseValidator,
           ProductModuleSetValidator,
           PluginContentDuplicatesValidator,
+          ContentModuleCopyConflictValidator,
           PluginDescriptorIdConflictValidator,
           ContentModuleDependencyValidator,
           LibraryModuleValidator,

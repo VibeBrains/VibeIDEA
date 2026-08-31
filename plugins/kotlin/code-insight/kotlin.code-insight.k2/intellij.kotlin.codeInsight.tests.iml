@@ -28,11 +28,11 @@
     <orderEntry type="library" scope="TEST" name="kotlinc.kotlin-compiler-tests" level="project" />
     <orderEntry type="module" module-name="intellij.libraries.kotlinc.analysis.api" scope="TEST" />
     <orderEntry type="module" module-name="intellij.libraries.kotlinc.analysis.api.platform.interface" scope="TEST" />
-    <orderEntry type="library" scope="TEST" name="kotlinc.kotlin-script-runtime" level="project" />
-    <orderEntry type="library" scope="TEST" name="kotlinc.kotlin-scripting-common" level="project" />
-    <orderEntry type="library" scope="TEST" name="kotlinc.kotlin-scripting-jvm" level="project" />
-    <orderEntry type="library" scope="TEST" name="kotlinc.kotlin-scripting-compiler-impl" level="project" />
-    <orderEntry type="library" scope="TEST" name="kotlinc.kotlin-scripting-dependencies" level="project" />
+    <orderEntry type="module" module-name="intellij.libraries.kotlinc.kotlin.script.runtime" scope="TEST" />
+    <orderEntry type="module" module-name="intellij.libraries.kotlinc.kotlin.scripting.common" scope="TEST" />
+    <orderEntry type="module" module-name="intellij.libraries.kotlinc.kotlin.scripting.jvm" scope="TEST" />
+    <orderEntry type="module" module-name="intellij.libraries.kotlinc.kotlin.scripting.compiler.impl" scope="TEST" />
+    <orderEntry type="module" module-name="intellij.libraries.kotlinc.kotlin.scripting.dependencies" scope="TEST" />
     <orderEntry type="module" module-name="intellij.java.indexing" scope="TEST" />
     <orderEntry type="module" module-name="intellij.platform.analysis" scope="TEST" />
     <orderEntry type="module" module-name="intellij.platform.codeStyle" scope="TEST" />

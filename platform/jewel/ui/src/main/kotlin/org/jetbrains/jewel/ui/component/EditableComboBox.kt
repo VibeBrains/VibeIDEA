@@ -195,11 +195,7 @@ public fun EditableComboBox(
         val popupVisible by popupManager.isPopupVisible
         if (popupVisible) {
             PopupContainer(
-                onDismissRequest = {
-                    if (!chevronHovered && !textFieldHovered) {
-                        popupManager.setPopupVisible(false)
-                    }
-                },
+                onDismissRequest = { popupManager.setPopupVisible(false) },
                 modifier =
                     Modifier.testTag("Jewel.ComboBox.Popup")
                         .semantics { contentDescription = "Jewel.EditableComboBox.Popup" }
@@ -208,7 +204,9 @@ public fun EditableComboBox(
                         .then(popupModifier)
                         .onClick { popupManager.setPopupVisible(false) },
                 horizontalAlignment = Alignment.Start,
-                popupProperties = PopupProperties(focusable = false),
+                // See ComboBox: only the pointer path is suppressed while hovered; Escape stays enabled.
+                popupProperties =
+                    PopupProperties(focusable = false, dismissOnClickOutside = !chevronHovered && !textFieldHovered),
                 content = popupContent,
             )
         }
@@ -296,8 +294,8 @@ private fun TextField(
                 .focusRequester(textFieldFocusRequester)
                 .onPreviewKeyEvent {
                     if (it.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
-                    when {
-                        it.key == Key.DirectionDown -> {
+                    when (it.key) {
+                        Key.DirectionDown -> {
                             if (popupVisible) {
                                 onArrowDownPress()
                             } else {
@@ -305,18 +303,18 @@ private fun TextField(
                             }
                             true
                         }
-                        it.key == Key.DirectionUp -> {
+                        Key.DirectionUp -> {
                             if (popupVisible) {
                                 onArrowUpPress()
                             }
                             true
                         }
-                        it.key == Key.Enter -> {
+                        Key.Enter -> {
                             popupManager.setPopupVisible(false)
                             onEnterPress()
                             true
                         }
-                        it.key == Key.Escape && popupVisible -> {
+                        Key.Escape if popupVisible -> {
                             popupManager.setPopupVisible(false)
                             true
                         }

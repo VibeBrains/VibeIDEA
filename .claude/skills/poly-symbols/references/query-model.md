@@ -63,17 +63,101 @@ a non-empty set (throws otherwise) and add symbols via `add`/`addAll`/`+`/`addSy
 `contrib/Astro/src/org/jetbrains/astro/polySymbols/scope/AstroAvailableComponentsScope.kt` (Project,
 Unit key), `AstroNamespacedComponentsScope.kt` (PsiElement, Unit key, with `filterCodeCompletions`).
 
-**Caveat**: the DSL does not expose `PolySymbolScopeWithCache.partialMatchingSupport` — if a scope
-answers `getMatchingSymbols` via a direct name-indexed lookup instead of building the full symbol map
-first (e.g. GDScript's `GdPsiClassesPolySymbolScope`/`GdPsiResourceClassesPolySymbolScope`, see
-[case-studies.md](case-studies.md#gdscript)), keep it hand-written — converting would force every
-lookup through the full-cache path, a real perf regression for a project-wide index. Reach for
-hand-written `PolySymbolScopeWithCache` only for that case, or when you need custom `createPointer()`
-chaining through an owning symbol (rare).
+**The DSL exposes `PolySymbolScopeWithCache.partialMatchingSupport` too**, via two builder overloads:
+```kotlin
+fun partialMatchingSupport(cacheDependencies: Collection<Any>, getMatchingSymbols: (kind: PolySymbolKind, nameVariant: String) -> List<PolySymbol>)
+fun partialMatchingSupport(provider: () -> PolySymbolScopePartialMatchingSupport?)
+```
+The first is the common case: a fixed, *unconditionally* active fast path - a single name-match query
+goes straight to `getMatchingSymbols` (typically a direct index/point lookup) instead of forcing (or
+waiting on) the full symbol-set build first. GDScript's `gdPsiClassesPolySymbolScope`/
+`gdPsiResourceClassesPolySymbolScope`
+(`dotnet/Plugins/godot-support/gdscript/.../polySymbols/scope/GdPsiClassesPolySymbolScope.kt`/
+`GdPsiResourceClassesPolySymbolScope.kt`) both use this form - each backed by a project-wide
+index/lookup where a full walk is proportional to everything in the project, but a single point
+lookup is always cheap regardless of project size, so the fast path is worth providing
+unconditionally. The second is the general form, for a *conditional* activation strategy: `provider`
+is invoked fresh on every `getMatchingSymbols` call (matching the underlying property's own contract)
+and may return `null` to skip the partial path for that call and fall through to the DSL's normal,
+full-cache-backed matching. If the *decision itself* is non-trivial to compute (e.g. checking a stub
+count), cache that decision inside `provider` the same way a hand-written scope would (e.g. via
+`CachedValuesManager.getCachedValue(dataHolder) { ... }`) - the DSL does not do this for you, it just
+forwards the call through.
+
+A scope whose candidate set is bounded to one PSI element/file (the common case) should still default
+to the plain form of `polySymbolScopeCached(...)`, with **no** `partialMatchingSupport` at all: a full
+PSI/stub walk over an already-open file is normally *cheaper* than a project-wide index lookup for
+the same answer, and the DSL's caching means repeat queries (including code completion) reuse the
+walk for free - see GDScript's `gdPsiInnerClassesPolySymbolScope`
+(`dotnet/Plugins/godot-support/gdscript/.../polySymbols/scope/GdPsiInnerClassesPolySymbolScope.kt`)
+for the idiomatic shape (an iterative, stub-only walk of one file, cached by the DSL). Reach for
+`partialMatchingSupport` only when full enumeration is genuinely expensive - i.e. the scope's
+candidate set spans many files/the whole project (GDScript's `gdPsiClassesPolySymbolScope`/
+`GdClassNamingIndex`, deliberately project-wide, see [case-studies.md](case-studies.md#gdscript)) or a
+single file is large enough that walking it every time is wasteful, gated behind a real size check -
+the way CSS's `CssStylesheetClassesScope` does in
+`plugins/css/backend/src/com/intellij/polySymbols/css/classes/CssTagClassesScope.kt` (only turns on
+its index-backed partial matching, over `CssClassIndex`, when the containing file's stub tree exceeds
+500 stubbed symbols - "using indexes on small files can cause performance issues," per its own
+comment) and `CssCustomPropertiesScope`
+(`plugins/css/backend/src/com/intellij/polySymbols/css/CssSymbolQueryScopeContributor.kt`, gated on
+whether the file is indexed at all, no size threshold) do. Both predate this DSL addition and haven't
+been migrated onto it - the size/indexed-file gate maps onto the general `provider` overload above,
+but migrating a different plugin's hand-written scope onto a platform DSL feature is a separate,
+deliberate follow-up, not something to do silently as part of adding the feature.
+
+Reach for a hand-written `PolySymbolScopeWithCache` subclass (bypassing the DSL entirely) only when
+you need custom `createPointer()` chaining through an owning symbol (rare) - not for
+`partialMatchingSupport` itself anymore, now that the DSL covers both the unconditional and the
+conditional/gated case.
 
 `isExclusiveFor(kind)`: when a scope is exclusive for a kind, pattern-matching stops walking further
 down the scope stack for that kind once this scope has been consulted — use it when a scope is
 known to be a complete, self-contained answer (no outer scope could contribute more).
+
+**A symbol's own `kind` must always agree with the query kind that found it - never return a symbol
+whose `.kind` disagrees with the kind a scope is answering for.** `PolySymbolScopeWithCache` enforces
+this literally: both `initialize`'s `consumer` and `PartialMatchingSupport.getMatchingSymbols` throw
+`IllegalArgumentException` when a produced symbol's `.kind` isn't among what `provides(kind)` accepts.
+A hand-written raw `PolySymbolScope` has no such check, but the rule is still correct there too - skip
+it and any consumer reading `.kind` off the raw (non-unwrapped) resolved symbol silently sees the wrong
+kind. This bites whenever a scope's *query-routing* kind is answered by a real symbol whose *own* kind
+is genuinely different - e.g. GDScript's `gdPsiResourceClassesPolySymbolScope` answers
+`GdPolySymbolKind.RESOURCE_CLASS` queries (`extends "res://base.gd"`) with whatever the resource file
+actually declares, which always reports kind `CLASS` (`GdPsiClassSymbol` for a named file,
+`GdPsiResourceClassSymbol` for an anonymous one) - `RESOURCE_CLASS` is a routing-only kind that no
+symbol class ever reports as its own.
+
+Do **not** reach for a kind-overriding `PolySymbolDelegate` to fix this (there is no platform utility
+for that, and inventing a bespoke one is the wrong tool) - wrap the real symbol in a one-segment
+`PolySymbolMatch` reporting the routing kind instead:
+```kotlin
+PolySymbolMatch.create(
+  matchedName, routingKind,
+  PolySymbolNameSegment.create(0, matchedName.length, realSymbol.withName(matchedName)),
+)
+```
+`PolySymbolMatch` is already the platform's supported "reports kind X, composed of a real symbol
+underneath" mechanism, and - unlike a hypothetical kind-overriding delegate - it's exactly what
+`unwrapMatchedSymbols()` (used pervasively, including by own references' final name check - see the
+Hard Constraint note in [References — own references](#references--own-references-polysymbolownreferences))
+already knows how to peel back to the real symbol. The platform's own
+`ReferencingPolySymbol.create(kind, name, vararg kinds)`
+(`community/platform/polySymbols/src/com/intellij/polySymbols/utils/ReferencingPolySymbol.kt`) builds
+exactly this shape declaratively, but only for the case where the referencing and the real target
+share the *same name*: it works by *re-querying* other scopes for `kinds` via a `symbolReference(name)`
+pattern, using that one shared name (its own worked example: Angular Forms' `formControlName="x"`
+resolving as a `FormGroup`'s `"x"` key - see [case-studies.md](case-studies.md#angular)). When the
+queried name and the real target's own name differ too (GDScript's case: `"res://base.gd"` vs. the
+real class's `"Base"`) and the target is already known - found by a direct lookup, not a fresh
+by-name search - `ReferencingPolySymbol.create` doesn't apply; build the `PolySymbolMatch` by hand as
+above instead, `withName`-aliasing the real symbol *inside* the one nameSegment (not just on the outer
+match) so `unwrapMatchedSymbols()`'s eventual leaf still reports the queried name - the outer
+`PolySymbolMatch`'s own name is computed from the segment's range regardless, but the *leaf* the own-
+reference check inspects after unwrapping is the aliased real symbol, and that leaf's name is what
+must match. GDScript's `referencingResourceClassSymbol`
+(`dotnet/Plugins/godot-support/gdscript/.../polySymbols/scope/GdPsiResourceClassesPolySymbolScope.kt`)
+is the worked example of this hand-built variant.
 
 ## PolySymbolQueryScopeContributor — the registrar DSL
 
@@ -234,11 +318,15 @@ referenced by unrelated framework support.
 
 `PsiElement.getOwnReferences(): Collection<PsiSymbolReference>` is a default method on `PsiElement`
 itself (`community/platform/core-api/src/com/intellij/psi/PsiElement.java`, defaults to empty) — every
-PSI element already has it; there is no marker interface to implement. Override it directly and build
-the result with the `polySymbolOwnReferences` DSL:
+PSI element already has it and can override it directly. **Building the result via the
+`polySymbolOwnReferences` DSL, however, requires the host element's own type to implement
+`PolySymbolOwnReferenceHost`** (`community/platform/polySymbols/src/com/intellij/polySymbols/references/PolySymbolOwnReferenceHost.kt`),
+a marker interface extending `PsiElement`:
 
 ```kotlin
-fun polySymbolOwnReferences(element: PsiElement, configure: PolySymbolOwnReferencesBuilder.() -> Unit): List<PolySymbolReference>
+interface PolySymbolOwnReferenceHost : PsiElement
+
+fun polySymbolOwnReferences(element: PolySymbolOwnReferenceHost, configure: PolySymbolOwnReferencesBuilder.() -> Unit): List<PolySymbolReference>
 
 interface PolySymbolOwnReferencesBuilder {
   fun resolveFromNameMatchQuery(kind: PolySymbolKind, name: String)
@@ -249,14 +337,25 @@ interface PolySymbolOwnReferencesBuilder {
 }
 ```
 (`community/platform/polySymbols/backend/src/com/intellij/polySymbols/references/PolySymbolOwnReferences.kt`)
-`polySymbolOwnReferences(...)` returns the `List<PolySymbolReference>` directly — return it straight
-from your override:
+`polySymbolOwnReferences(element, ...)` won't compile against a plain `PsiElement`-typed host — make
+the PSI element's own interface extend `PolySymbolOwnReferenceHost`, then override `getOwnReferences()`
+on the impl class and return the DSL result straight from it:
 ```kotlin
-override fun getOwnReferences(): Collection<PsiSymbolReference> =
-  polySymbolOwnReferences(this) {
-    resolveFromNameMatchQuery(MY_KIND, text)   // or the raw reference(range, kind) { ... } form
-  }
+interface MyRefElement : PolySymbolOwnReferenceHost   // was `: PsiElement`
+
+abstract class MyRefElementImpl(node: ASTNode) : ASTWrapperPsiElement(node), MyRefElement {
+  override fun getOwnReferences(): Collection<PsiSymbolReference> =
+    polySymbolOwnReferences(this) {
+      resolveFromNameMatchQuery(MY_KIND, text)   // or the raw reference(range, kind) { ... } form
+    }
+}
 ```
+This isn't just a compile-time formality — see
+[the annotator-gating note below](#polysymbolhighlightingannotator-only-processes-marked-hosts) for why
+skipping the marker interface means the override is never actually reached by highlighting/diagnostics.
+GDScript's `GdRefElement` and Tscn's `TscnNamedElement` are the worked examples of adding this marker to
+an existing element interface.
+
 `resolveFromNameMatchQuery` is a convenience wrapper around
 `PolySymbolQueryExecutorFactory.create(element, true).nameMatchQuery(kind, name).run()`, optionally
 `.filter`ed; reach for the lower-level `reference(range, kind, resolver)` when the resolve logic is
@@ -268,9 +367,30 @@ query+filter, all inside one `reference(...)` call).
 `PsiSymbolReferenceServiceImpl.getReferences()`, own references — once non-empty — are used *instead
 of* external ones for resolve/search/rename, so a `PsiPolySymbolReferenceProvider` registered for a
 host that also overrides `getOwnReferences()` is dead code, not a supplement. (An older `iteration`
-of this API had you implement a now-deleted `PolySymbolOwnReferencesHost` interface instead of
-overriding `getOwnReferences()` directly — if you see that name in old code/docs, it's stale;
-the direct-override form above is current.)
+of this API had you implement a now-deleted `PolySymbolOwnReferencesHost` interface — plural
+"References" — instead of overriding `getOwnReferences()` directly; if you see that name in old
+code/docs, it's stale, the direct-override form above is current. Don't confuse it with the
+similarly-named but current `PolySymbolOwnReferenceHost` — singular "Reference" — described above,
+which is the marker interface the `polySymbolOwnReferences` DSL's `element` parameter requires.)
+
+### PolySymbolHighlightingAnnotator only processes marked hosts
+
+`PolySymbolHighlightingAnnotator.annotate()` gates its *entire* body — reference-problem annotation,
+own/external reference resolution for symbol-kind highlighting, **and** declaration highlighting via
+`PolySymbolDeclarationProvider.getAllDeclarations(element, -1)` — behind a single check:
+`element is PsiExternalReferenceHost || element is PolySymbolOwnReferenceHost`. Before this check was
+added (WEB-78948), the annotator ran that whole body — including a declaration-provider lookup and a
+reference-service call — unconditionally for *every* `PsiElement` in a file, which was a real
+performance regression on large files.
+
+Practical consequence: a PSI element that declares a `PolySymbol` (via `PolySymbolDeclaredInPsi`/a
+`PolySymbolDeclarationProvider`) or resolves one (via own or external references) must implement
+`PsiExternalReferenceHost` or `PolySymbolOwnReferenceHost` for this annotator to look at it at all.
+Implementing neither means silently getting no highlighting and no reference-problem diagnostics from
+`PolySymbolHighlightingAnnotator`, even if the declaration/reference wiring itself is otherwise
+correct — there's no separate opt-in, this `is` check is the only gate. See also
+[the `PolySymbolHighlightingCustomizer` section](#polysymbolhighlightingcustomizer) below for what the
+annotator does once it decides to process an element.
 
 **Hard constraint: the resolved symbol's `name` must equal the referencing element's text at the
 given range, exactly.** `PolySymbolOwnReference.resolveReference()`/`getProblems()` asserts
@@ -285,13 +405,22 @@ ways this can go wrong, and the one that actually works:
   `unwrapMatchedSymbols()` recurses *through* `PolySymbolMatch` wrapping down to the real, wrongly-named
   leaf symbol — the alias name never survives to the final filter.
 - **Right: a `PolySymbolDelegate<T>` that overrides `name`.** A delegate is not a `PolySymbolMatch`, so
-  `unwrapMatchedSymbols()` treats it as a leaf and its overridden name survives. GDScript's
-  `GdAliasedNameSymbol<T : PolySymbol>(delegate: T, name: String)` is a small, reusable
-  implementation of this (`dotnet/Plugins/godot-support/gdscript/.../polySymbols/psi/GdAliasedNameSymbol.kt`)
-  — apply the wrapping *in the query scope* that resolves the mismatched name (e.g.
-  `GdPsiResourceClassesPolySymbolScope.getMatchingSymbols`), not in the reference/own-reference call
-  site, so every consumer of that scope (own references, completion, etc.) sees a consistently-named
-  symbol. `PolySymbolDelegate.unwrapAllDelegates()` recovers the real symbol for production code that
+  `unwrapMatchedSymbols()` treats it as a leaf and its overridden name survives. The platform now has a
+  shared, reusable implementation of this: `PolySymbol.withName(name: String): PolySymbolDelegate<PolySymbol>`
+  (`community/platform/polySymbols/src/com/intellij/polySymbols/utils/PolySymbolUtils.kt`, backed by a
+  private `AliasedPolySymbol` delegate, `renameTarget = null`) — apply the wrapping *in the query scope*
+  that resolves the mismatched name (e.g. Angular's `Angular2BlockReferenceProvider.getReferencedSymbol`
+  aliasing a canonicalized, whitespace-collapsed block name like `else if` back onto whatever spacing
+  variant was actually typed; GDScript's `gdPsiResourceClassesPolySymbolScope`'s
+  `referencingResourceClassSymbol` helper does the same aliasing one layer deeper, *inside* a
+  `PolySymbolMatch` nameSegment, because that scope also has a **kind** mismatch to fix at the same
+  time - see the `PolySymbolScope` section's note on kind-consistency above), not in the
+  reference/own-reference call site, so every consumer of that
+  scope (own references, completion, etc.) sees a consistently-named symbol. (GDScript previously had
+  its own bespoke `GdAliasedNameSymbol` for this; it has been migrated onto the shared
+  `withName`/`AliasedPolySymbol` utility, so if you see `GdAliasedNameSymbol` referenced elsewhere,
+  that's stale.) `PolySymbolDelegate.unwrapAllDelegates()`
+  recovers the real symbol for production code that
   needs it (`GdSymbolResolverUtil.resolveSymbolReferences()` calls this centrally); test helpers that
   call the platform's raw `resolveSymbolReference()`/`multiResolveSymbolReference()` do **not** unwrap
   delegates automatically, so an assertion like `assertInstanceOf(resolved, RealSymbolClass::class.java)`
@@ -331,7 +460,11 @@ searcher; that workaround is no longer necessary — the searcher now checks own
 **This does not mean "full automatic highlighting with no extra work," though — two corrections to a
 common misreading:** (1) `PolySymbolHighlightingAnnotator` picks up highlighting from **either**
 own-references **or** EP-provided (`PsiExternalReferenceHost`) references — own-references is not
-the exclusive source, it's one of two equally-supported paths. (2) Neither path produces *any* actual
+the exclusive source, it's one of two equally-supported paths, and it's also the *only* condition the
+annotator checks before running at all (see
+[the annotator-gating note above](#polysymbolhighlightingannotator-only-processes-marked-hosts): no
+`PolySymbolOwnReferenceHost`/`PsiExternalReferenceHost` means the annotator skips the element
+entirely, not just the highlighting). (2) Neither path produces *any* actual
 color by itself. Confirmed by reading the annotator's attribute-lookup chain directly
 (`PolySymbolHighlightingAnnotator.highlightSymbols()`): for every resolved symbol it tries, in order,
 `PolySymbolHighlightingCustomizer.getSymbolTextAttributes(host, symbol, level)`, then

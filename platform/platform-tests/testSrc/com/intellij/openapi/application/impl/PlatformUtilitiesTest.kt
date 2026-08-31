@@ -40,7 +40,6 @@ import com.intellij.openapi.progress.util.ProgressIndicatorUtils
 import com.intellij.openapi.project.DumbAware
 import com.intellij.openapi.ui.DialogWrapper
 import com.intellij.openapi.util.Disposer
-import com.intellij.platform.locking.impl.getGlobalThreadingSupport
 import com.intellij.platform.util.progress.reportProgress
 import com.intellij.testFramework.LoggedErrorProcessor
 import com.intellij.testFramework.common.timeoutRunBlocking
@@ -57,7 +56,6 @@ import kotlinx.coroutines.GlobalScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.async
-import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.currentCoroutineContext
@@ -75,7 +73,6 @@ import org.junit.jupiter.api.Assertions
 import org.junit.jupiter.api.Assumptions
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
-import java.util.Collections
 import java.util.concurrent.Callable
 import java.util.concurrent.ConcurrentLinkedQueue
 import java.util.concurrent.atomic.AtomicBoolean
@@ -580,7 +577,7 @@ class PlatformUtilitiesTest {
 
   @Test
   fun `parallelization of write-intent lock removes write-intent access`(): Unit = timeoutRunBlocking(context = Dispatchers.EDT) {
-    val (lockContext, lockCleanup) = getGlobalThreadingSupport().parallelizeLock()
+    val (lockContext, lockCleanup) = application.threadingSupport.parallelizeLock(true)
     installThreadContext(lockContext).use {
       try {
         assertThat(application.isWriteIntentLockAcquired).isFalse

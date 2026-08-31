@@ -1,5 +1,6 @@
 load("@rules_jvm//:jvm.bzl", "jvm_library", "resourcegroup")
 load("//build:compiler-options.bzl", "create_kotlinc_options")
+load("//platform/build-scripts/bazel-rules:content_module_jar.bzl", "content_module_jar")
 
 ### auto-generated section `build intellij.kotlin.base.resources` start
 create_kotlinc_options(
@@ -44,8 +45,11 @@ jvm_library(
         "//platform/util:util-ui",
         "//platform/core-ui",
         "//java/java-frontback-psi-api:frontback-psi",
+        "//platform/lang-impl",
     ],
 )
+
+content_module_jar(module = ":kotlin-base-resources")
 
 jvm_library(
     name = "kotlin-base-resources_test_lib",
@@ -67,6 +71,7 @@ jvm_library(
         "//platform/util:util-ui_test_lib",
         "//platform/core-ui:core-ui_test_lib",
         "//java/java-frontback-psi-api:frontback-psi_test_lib",
+        "//platform/lang-impl:lang-impl_test_lib",
     ],
 )
 ### auto-generated section `build intellij.kotlin.base.resources` end

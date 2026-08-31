@@ -1,4 +1,5 @@
 load("@rules_jvm//:jvm.bzl", "jvm_library")
+load("//platform/build-scripts/bazel-rules:content_module_jar.bzl", "content_module_jar")
 
 ### auto-generated section `build intellij.gradle.java.groovy` start
 jvm_library(
@@ -62,9 +63,11 @@ jvm_library(
         "//platform/platform-util-io:ide-util-io",
         "//platform/ide-core",
         "//platform/testRunner",
-        "//plugins/gradle/java/properties",
+        "//plugins/gradle/properties",
     ],
 )
+
+content_module_jar(module = ":groovy")
 
 jvm_library(
     name = "groovy_test_lib",
@@ -120,7 +123,7 @@ jvm_library(
         "//platform/platform-util-io:ide-util-io_test_lib",
         "//platform/ide-core:ide-core_test_lib",
         "//platform/testRunner:testRunner_test_lib",
-        "//plugins/gradle/java/properties:properties_test_lib",
+        "//plugins/gradle/properties:properties_test_lib",
     ],
 )
 ### auto-generated section `build intellij.gradle.java.groovy` end

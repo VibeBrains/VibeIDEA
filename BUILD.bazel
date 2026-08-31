@@ -1,6 +1,5 @@
 load("@aspect_rules_lint//format:defs.bzl", "format_multirun")
 load("@community//build:tests-options.bzl", "jps_test")
-load("@rules_java//java:defs.bzl", "java_binary")
 load("@rules_jvm//:jvm.bzl", "jvm_library", "kt_javac_options")
 load("//build:compiler-options.bzl", "create_kotlinc_options")
 
@@ -63,6 +62,14 @@ exports_files(
     glob(["build.txt"]),
     visibility = ["//visibility:public"],
 )
+
+jps_test(
+    name = "main-tests_test",
+    timeout = "moderate",
+    tags = ["community-aggregator"],
+    runtime_deps = [":main-tests_test_lib"],
+)
+### skip generation section `test intellij.idea.community.main.tests`
 
 ### auto-generated section `build intellij.idea.community.main` start
 jvm_library(
@@ -891,6 +898,8 @@ jvm_library(
         "//plugins/ui-designer:java-guiForms-designer-tests_test_lib",
         "//plugins/java-i18n:java-i18n-tests",
         "//plugins/java-i18n:java-i18n-tests_test_lib",
+        "//plugins/jshell/console:java-jshell-console-tests",
+        "//plugins/jshell/console:java-jshell-console-tests_test_lib",
         "//plugins/jshell/protocol:java-jshell-protocol-tests",
         "//plugins/jshell/protocol:java-jshell-protocol-tests_test_lib",
         "//java/manifest:manifest-tests",
@@ -941,6 +950,8 @@ jvm_library(
         "//platform/build-scripts/product-dsl:buildScripts-productDsl-tests_test_lib",
         "//platform/collaboration-tools:collaborationTools-tests",
         "//platform/collaboration-tools:collaborationTools-tests_test_lib",
+        "//platform/compose/swing-ui:swing-tests",
+        "//platform/compose/swing-ui:swing-tests_test_lib",
         "//platform/compose:compose-tests",
         "//platform/compose:compose-tests_test_lib",
         "//plugins/coverage-common:coverage-tests",
@@ -1019,6 +1030,8 @@ jvm_library(
         "//platform/syntax/syntax-util:util-tests_test_lib",
         "//platform/testFramework/junit5.jimfs:junit5-jimfs-tests",
         "//platform/testFramework/junit5.jimfs:junit5-jimfs-tests_test_lib",
+        "//platform/testFramework/junit5/codeInsight:testFramework-junit5-codeInsight-tests",
+        "//platform/testFramework/junit5/codeInsight:testFramework-junit5-codeInsight-tests_test_lib",
         "//platform/testFramework/junit5/projectStructure:testFramework-junit5-projectStructure-tests",
         "//platform/testFramework/junit5/projectStructure:testFramework-junit5-projectStructure-tests_test_lib",
         "//platform/testFramework/junit5:junit5-tests",
@@ -1161,6 +1174,10 @@ jvm_library(
         "//plugins/mcp-server/mcpserver.terminal.frontend/tests:tests_test_lib",
         "//platform/testFramework/extensions:testExtensions",
         "//platform/testFramework/extensions:testExtensions_test_lib",
+        "//platform/editor-ui-api:editor-ui",
+        "//platform/editor-ui-api:editor-ui_test_lib",
+        "//platform/testFramework",
+        "//platform/testFramework:testFramework_test_lib",
     ],
 )
 ### auto-generated section `build intellij.idea.community.main.tests` end
@@ -1173,10 +1190,3 @@ exports_files(
     visibility = ["//visibility:public"],
 )
 ### auto-generated section `iml intellij.idea.community.main.tests` end
-
-### auto-generated section `test intellij.idea.community.main.tests` start
-jps_test(
-    name = "main-tests_test",
-    runtime_deps = [":main-tests_test_lib"],
-)
-### auto-generated section `test intellij.idea.community.main.tests` end

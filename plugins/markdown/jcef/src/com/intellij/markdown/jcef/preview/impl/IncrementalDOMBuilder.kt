@@ -4,11 +4,10 @@ package com.intellij.markdown.jcef.preview.impl
 import com.intellij.ide.trustedProjects.TrustedProjects.isProjectTrusted
 import com.intellij.openapi.diagnostic.thisLogger
 import com.intellij.openapi.progress.ProgressManager
-import com.intellij.openapi.util.SystemInfo
-import com.intellij.openapi.util.io.FileUtil
-import com.intellij.openapi.util.text.StringUtil
+import com.intellij.openapi.progress.runBlockingCancellable
 import com.intellij.openapi.vfs.VirtualFile
 import com.intellij.openapi.vfs.toNioPathOrNull
+import org.intellij.plugins.markdown.ui.preview.MarkdownImagePathResolver
 import org.intellij.plugins.markdown.ui.preview.PreviewStaticServer
 import org.intellij.plugins.markdown.ui.preview.ResourceProvider
 import org.intellij.plugins.markdown.ui.preview.html.PreviewEncodingUtil
@@ -22,8 +21,6 @@ import org.jsoup.nodes.TextNode
 import org.jsoup.parser.Parser
 import org.jsoup.parser.Tag
 import org.jsoup.parser.TagSet
-import java.net.URLDecoder
-import java.nio.charset.Charset
 
 @ApiStatus.Internal
 class IncrementalDOMBuilder(
@@ -108,6 +105,7 @@ class IncrementalDOMBuilder(
   }
 
   private fun preprocessNode(node: Node): Node {
+    stripReferrerPolicy(node)
     if (baseFile != null && projectRoot != null && shouldPreprocessImageNode(node)) {
       try {
         actuallyProcessImageNode(node, baseFile, projectRoot)
@@ -124,42 +122,36 @@ class IncrementalDOMBuilder(
     val fileSchemeResourceProcessor = fileSchemeResourceProcessor ?: return
     val projectPath = projectRoot.toNioPathOrNull() ?: return
 
-    var path = node.attr("src")
-    val hasFileHost = path.startsWith("file:/")
+    val originalPath = node.attr("src")
+    val hasFileHost = originalPath.startsWith("file:/")
     if (hasFileHost && !node.hasAttr("from-extension")) {
       return
     }
-    if (!hasFileHost) {
-      path = URLDecoder.decode(path, Charset.defaultCharset())
-      if (SystemInfo.isWindows) {
-        path = StringUtil.replace(path, "\\", "/")
-      }
-
-      if (!path.startsWith('/')) {
-        path = findRelativePath(baseFile, path) ?: return
-      }
-      else {
-        if (SystemInfo.isWindows) {
-          path = path.trimStart('/')
-        }
-        path = findRelativePath(projectRoot, path) ?: path
-      }
-      path = FileUtil.toSystemIndependentName(path)
-    }
-
-    if (!hasFileHost && !isProjectTrusted(projectPath) && !path.startsWith(projectPath.toString())) return
-
-    val processed = PreviewStaticServer.getStaticUrl(fileSchemeResourceProcessor, path)
-    node.attr("data-original-src", path)
-    node.attr("src", processed)
-  }
-
-  private fun findRelativePath(baseFile: VirtualFile, relPath: String): String? {
-    return baseFile.findFileByRelativePath(relPath)?.toNioPathOrNull()?.normalize()?.toString()
+    val allowOutsideProjectRoot = !hasFileHost && isProjectTrusted(projectPath)
+    val resolved = runBlockingCancellable {
+      MarkdownImagePathResolver.resolve(baseFile, projectRoot, originalPath, allowOutsideProjectRoot)
+    } as? MarkdownImagePathResolver.Resolution.Found ?: return
+    node.attr("data-original-src", if (hasFileHost) originalPath else resolved.url)
+    node.attr("src", PreviewStaticServer.getStaticUrl(fileSchemeResourceProcessor, resolved.url))
   }
 
   private fun shouldPreprocessImageNode(node: Node): Boolean {
     return node.nodeName() == "img" && !node.hasAttr(IntelliJImageGeneratingProvider.ignorePathProcessingAttributeName)
+  }
+
+  /**
+   * An element-level `referrerpolicy` overrides the page's `no-referrer`, which a document can use to send
+   * the page URL - and with it this preview's resource paths - to any host (IJPL-247809).
+   */
+  private fun stripReferrerPolicy(node: Node) {
+    if (node.hasAttr(REFERRER_POLICY_ATTRIBUTE)) {
+      node.removeAttr(REFERRER_POLICY_ATTRIBUTE)
+    }
+  }
+
+  /** A document's `<meta name="referrer">` would replace the page's policy, and renders nothing anyway. */
+  private fun shouldSkipNode(node: Node): Boolean {
+    return node.nodeName() == "meta" && node.attr("name").equals("referrer", ignoreCase = true)
   }
 
   private fun traverse(node: Node) {
@@ -169,6 +161,9 @@ class IncrementalDOMBuilder(
       is DataNode -> textElement { node.wholeData }
       is Comment -> Unit
       else -> {
+        if (shouldSkipNode(node)) {
+          return
+        }
         val preprocessed = preprocessNode(node)
         openTag(preprocessed)
         for (child in preprocessed.childNodes()) {
@@ -179,6 +174,8 @@ class IncrementalDOMBuilder(
     }
   }
 }
+
+private const val REFERRER_POLICY_ATTRIBUTE = "referrerpolicy"
 
 // https://jsoup.org/news/release-1.20.1
 private fun createSelfClosingSpanAwareParser(): Parser {

@@ -38,9 +38,11 @@ import org.junit.jupiter.api.Assertions
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.assertNotNull
 import org.junit.jupiter.params.ParameterizedTest
+import kotlin.test.ExperimentalKotlinTestApi
 import kotlin.test.assertTrue
 
 
+@OptIn(ExperimentalKotlinTestApi::class)
 @IJIgnore(issue = "KT-88180")
 @GradleProjectTestApplication
 @TestDataPath($$"$CONTENT_ROOT/testData")
@@ -96,11 +98,11 @@ internal class KotlinGradleDependenciesCompletionTest : AbstractKotlinGradleComp
         """.trimIndent()
       )
       runInEdtAndWait {
-        fixture.configureFromExistingVirtualFile(buildScriptFile)
-        fixture.completeBasic()
-        fixture.assertPreferredCompletionItems(0, "customSourceSetAnnotationProcessor", "customSourceSetApi")
-        fixture.finishLookup(Lookup.REPLACE_SELECT_CHAR)
-        fixture.checkResult(
+        codeInsightFixture.configureFromExistingVirtualFile(buildScriptFile)
+        codeInsightFixture.completeBasic()
+        codeInsightFixture.assertPreferredCompletionItems(0, "customSourceSetAnnotationProcessor", "customSourceSetApi")
+        codeInsightFixture.finishLookup(Lookup.REPLACE_SELECT_CHAR)
+        codeInsightFixture.checkResult(
           """
             val customSourceSet by sourceSets.registering {}
             dependencies {

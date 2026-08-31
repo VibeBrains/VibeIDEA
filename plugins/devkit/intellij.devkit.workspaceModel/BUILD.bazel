@@ -1,5 +1,6 @@
 load("@rules_jvm//:jvm.bzl", "jvm_library", "jvm_provided_library")
 load("//build:compiler-options.bzl", "create_kotlinc_options")
+load("//platform/build-scripts/bazel-rules:content_module_jar.bzl", "content_module_jar")
 
 ### auto-generated section `build intellij.devkit.workspaceModel` start
 create_kotlinc_options(
@@ -10,6 +11,11 @@ create_kotlinc_options(
         "org.jetbrains.kotlin.analysis.api.KaNonPublicApi",
         "org.jetbrains.kotlin.analysis.api.permissions.KaAllowProhibitedAnalyzeFromWriteAction",
     ],
+)
+
+jvm_provided_library(
+    name = "libraries_kotlinc_libraries-kotlinc-kotlin-jps-common_provided",
+    lib = "//libraries/kotlinc/kotlin-jps-common:libraries-kotlinc-kotlin-jps-common",
 )
 
 jvm_library(
@@ -36,9 +42,8 @@ jvm_library(
         "@lib//:kotlin-stdlib",
         "//plugins/kotlin/references",
         "//libraries/kotlinc/kotlin-compiler-common:libraries-kotlinc-kotlin-compiler-common",
-        "@lib//:kotlinc-kotlin-jps-common-provided",
         "//libraries/kotlinx/collections-immutable:libraries-kotlinx-collections-immutable",
-        "@lib//:workspace-model-codegen",
+        "//libraries/workspace-model-codegen",
         "//platform/code-style-api:codeStyle",
         "//platform/util/concurrency",
         "//platform/ide-core",
@@ -81,8 +86,11 @@ jvm_library(
         "//platform/code-style-impl:codeStyle-impl",
         "//platform/progress/shared:ide-progress",
         "//plugins/copyright",
+        ":libraries_kotlinc_libraries-kotlinc-kotlin-jps-common_provided",
     ],
 )
+
+content_module_jar(module = ":workspaceModel")
 
 jvm_library(
     name = "workspaceModel_test_lib",
@@ -101,8 +109,10 @@ jvm_library(
         "//libraries/kotlinc/analysis-api:libraries-kotlinc-analysis-api_test_lib",
         "//plugins/kotlin/references:references_test_lib",
         "//libraries/kotlinc/kotlin-compiler-common:libraries-kotlinc-kotlin-compiler-common_test_lib",
-        "@lib//:kotlinc-kotlin-jps-common-provided",
+        "//libraries/kotlinc/kotlin-jps-common:libraries-kotlinc-kotlin-jps-common",
+        "//libraries/kotlinc/kotlin-jps-common:libraries-kotlinc-kotlin-jps-common_test_lib",
         "//libraries/kotlinx/collections-immutable:libraries-kotlinx-collections-immutable_test_lib",
+        "//libraries/workspace-model-codegen:workspace-model-codegen_test_lib",
         "//platform/code-style-api:codeStyle_test_lib",
         "//platform/util/concurrency:concurrency_test_lib",
         "//platform/ide-core:ide-core_test_lib",

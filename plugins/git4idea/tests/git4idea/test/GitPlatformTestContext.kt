@@ -28,6 +28,8 @@ import com.intellij.testFramework.junit5.fixture.testFixture
 import com.intellij.testFramework.vcs.AbstractVcsTestCase
 import com.intellij.util.application
 import com.intellij.util.ui.UIUtil
+import com.intellij.vcs.log.VcsFullCommitDetails
+import com.intellij.vcs.log.util.VcsLogUtil
 import com.intellij.vcs.test.VcsPlatformTestContext
 import com.intellij.vcs.test.updateChangeListManager
 import git4idea.DialogManager
@@ -124,6 +126,9 @@ fun GitPlatformTestContext.updateUntrackedFiles(repo: GitRepository) {
   }
 }
 
+fun GitPlatformTestContext.readDetails(vararg hashes: String): List<VcsFullCommitDetails> =
+  VcsLogUtil.getDetails(logProvider, projectRoot, hashes.asList())
+
 fun GitPlatformTestContext.commit(changes: Collection<Change>, commitMessage: String = "comment") {
   val exceptions = tryCommit(changes, commitMessage)
   exceptions?.forEach { fail("Exception during executing the commit: " + it.message) }
@@ -137,6 +142,9 @@ fun GitPlatformTestContext.tryCommit(changes: Collection<Change>, commitMessage:
 
 fun GitPlatformTestContext.createFile(parent: VirtualFile, fileName: String, content: String = Math.random().toString()): VirtualFile =
   VcsTestUtil.createFile(project, parent, fileName, content)!!
+
+fun GitPlatformTestContext.createDir(parent: VirtualFile, dir: String): VirtualFile =
+  VcsTestUtil.findOrCreateDir(project, parent, dir)!!
 
 fun GitPlatformTestContext.assertNoChanges() {
   changeListManager.assertNoChanges()
@@ -169,7 +177,8 @@ fun GitPlatformTestContext.withPartialTracker(file: VirtualFile, newContent: Str
 
     lstm.requestTrackerFor(document, this)
     try {
-      val tracker = lstm.getLineStatusTracker(file) as PartialLocalLineStatusTracker
+      val lineStatusTracker = lstm.getLineStatusTracker(file)
+      val tracker = lineStatusTracker as PartialLocalLineStatusTracker
       lstm.waitUntilBaseContentsLoaded()
 
       task(document, tracker)

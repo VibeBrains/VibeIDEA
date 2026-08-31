@@ -1,5 +1,6 @@
 load("@community//build:tests-options.bzl", "jps_test")
 load("@rules_jvm//:jvm.bzl", "jvm_library", "kt_javac_options")
+load("//platform/build-scripts/bazel-rules:content_module_jar.bzl", "content_module_jar")
 
 # The `--add-opens` inventory a distribution's vmoptions are generated from, read off disk by
 # `getCommandLineArgumentsForOpenPackages` - so a dev assembly with no checkout has to declare it.
@@ -140,7 +141,6 @@ jvm_library(
         "//libraries/caffeine",
         "//libraries/classgraph",
         "//platform/util/zip",
-        "//libraries/icu4j",
         "//platform/util/xmlDom",
         "//platform/ide-core-impl",
         "//platform/ide-core/plugins",
@@ -205,6 +205,33 @@ jvm_library(
         "//fleet/rhizomedb",
         "@lib//:jetbrains-intellij-deps-java-atk-wrapper-linux",
         "//platform/eel-nioFs-impl",
+    ],
+)
+
+content_module_jar(
+    libraries = ["@lib//:diogen-analysis"],
+    module = ":ide-impl",
+    modules_after = [
+        # do not sort,
+        "//platform/platform-impl/recentProjects",
+        "//platform/platform-impl/rpc",
+        "//platform/platform-impl/ui",
+        "//platform/platform-util-io-impl:ide-util-io-impl",
+        "//platform/platform-util-netty:ide-util-netty",
+        "//platform/ijent",
+        "//platform/ijent/buildConstants",
+        "//platform/ijent/impl",
+        "//platform/jbr",
+        "//platform/object-serializer",
+        "//platform/pratt",
+        "//platform/platform-resources:resources",
+        "//platform/platform-resources-en:resources-en",
+        "//platform/syntax/syntax-tree:tree",
+    ],
+    modules_before = [
+        # do not sort,
+        "//platform/buildData",
+        "//platform/diagnostic/startUpPerformanceReporter",
     ],
 )
 
@@ -293,7 +320,6 @@ jvm_library(
         "//libraries/classgraph:classgraph_test_lib",
         "//libraries/protobuf:protobuf_test_lib",
         "//platform/util/zip:zip_test_lib",
-        "//libraries/icu4j:icu4j_test_lib",
         "//platform/util/xmlDom:xmlDom_test_lib",
         "//platform/ide-core-impl:ide-core-impl_test_lib",
         "//platform/ide-core/plugins:plugins_test_lib",
@@ -378,8 +404,12 @@ jvm_library(
 exports_files(
     [
         "intellij.platform.ide.impl.iml",
+        "resources/idea/ExecutionActions.xml",
+        "resources/idea/LangActions.xml",
+        "resources/idea/PlatformActions.xml",
         "resources/intellij.platform.ide.impl.actions.xml",
         "resources/intellij.platform.ide.impl.xml",
+        "module-content.yaml",
     ],
     visibility = ["//visibility:public"],
 )
@@ -484,6 +514,8 @@ jvm_library(
         "//platform/editor-ui-api:editor-ui_test_lib",
         "//platform/platform-api:ide",
         "//platform/platform-api:ide_test_lib",
+        "//platform/welcome-screen",
+        "//platform/welcome-screen:welcome-screen_test_lib",
         "//platform/welcome-screen-impl:welcomeScreen-impl",
         "//platform/welcome-screen-impl:welcomeScreen-impl_test_lib",
         "//libraries/oro-matcher",
@@ -600,8 +632,6 @@ jvm_library(
         "//libraries/classgraph:classgraph_test_lib",
         "//platform/util/zip",
         "//platform/util/zip:zip_test_lib",
-        "//libraries/icu4j",
-        "//libraries/icu4j:icu4j_test_lib",
         "//platform/util/xmlDom",
         "//platform/util/xmlDom:xmlDom_test_lib",
         "//platform/ide-core-impl",

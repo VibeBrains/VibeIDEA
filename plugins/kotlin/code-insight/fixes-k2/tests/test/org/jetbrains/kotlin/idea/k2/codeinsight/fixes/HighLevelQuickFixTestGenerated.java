@@ -3439,9 +3439,39 @@ public abstract class HighLevelQuickFixTestGenerated extends AbstractHighLevelQu
                 runTest("../../../idea/tests/testData/quickfix/contextParameter/addContext/annotationsKDoc.kt");
             }
 
+            @TestMetadata("applyAllLocalFunction.kt")
+            public void testApplyAllLocalFunction() throws Exception {
+                runTest("../../../idea/tests/testData/quickfix/contextParameter/addContext/applyAllLocalFunction.kt");
+            }
+
+            @TestMetadata("applyAllMultipleTypes.kt")
+            public void testApplyAllMultipleTypes() throws Exception {
+                runTest("../../../idea/tests/testData/quickfix/contextParameter/addContext/applyAllMultipleTypes.kt");
+            }
+
+            @TestMetadata("applyAllSameType.kt")
+            public void testApplyAllSameType() throws Exception {
+                runTest("../../../idea/tests/testData/quickfix/contextParameter/addContext/applyAllSameType.kt");
+            }
+
+            @TestMetadata("availableOnSecondCall.kt")
+            public void testAvailableOnSecondCall() throws Exception {
+                runTest("../../../idea/tests/testData/quickfix/contextParameter/addContext/availableOnSecondCall.kt");
+            }
+
             @TestMetadata("callWithArguments.kt")
             public void testCallWithArguments() throws Exception {
                 runTest("../../../idea/tests/testData/quickfix/contextParameter/addContext/callWithArguments.kt");
+            }
+
+            @TestMetadata("callableReference.kt")
+            public void testCallableReference() throws Exception {
+                runTest("../../../idea/tests/testData/quickfix/contextParameter/addContext/callableReference.kt");
+            }
+
+            @TestMetadata("callableReference2.kt")
+            public void testCallableReference2() throws Exception {
+                runTest("../../../idea/tests/testData/quickfix/contextParameter/addContext/callableReference2.kt");
             }
 
             @TestMetadata("expressionBody.kt")
@@ -3851,9 +3881,54 @@ public abstract class HighLevelQuickFixTestGenerated extends AbstractHighLevelQu
                 KotlinTestUtils.runTest(this::doTest, this, testDataFilePath);
             }
 
+            @TestMetadata("binary.kt")
+            public void testBinary() throws Exception {
+                runTest("../../../idea/tests/testData/quickfix/contextParameter/surroundWithContext/binary.kt");
+            }
+
             @TestMetadata("callWithArguments.kt")
             public void testCallWithArguments() throws Exception {
                 runTest("../../../idea/tests/testData/quickfix/contextParameter/surroundWithContext/callWithArguments.kt");
+            }
+
+            @TestMetadata("callableReferenceCallArgument.kt")
+            public void testCallableReferenceCallArgument() throws Exception {
+                runTest("../../../idea/tests/testData/quickfix/contextParameter/surroundWithContext/callableReferenceCallArgument.kt");
+            }
+
+            @TestMetadata("callableReferenceIf.kt")
+            public void testCallableReferenceIf() throws Exception {
+                runTest("../../../idea/tests/testData/quickfix/contextParameter/surroundWithContext/callableReferenceIf.kt");
+            }
+
+            @TestMetadata("callableReferenceLHS.kt")
+            public void testCallableReferenceLHS() throws Exception {
+                runTest("../../../idea/tests/testData/quickfix/contextParameter/surroundWithContext/callableReferenceLHS.kt");
+            }
+
+            @TestMetadata("callableReferenceNestedCallArgument.kt")
+            public void testCallableReferenceNestedCallArgument() throws Exception {
+                runTest("../../../idea/tests/testData/quickfix/contextParameter/surroundWithContext/callableReferenceNestedCallArgument.kt");
+            }
+
+            @TestMetadata("callableReferenceProperty.kt")
+            public void testCallableReferenceProperty() throws Exception {
+                runTest("../../../idea/tests/testData/quickfix/contextParameter/surroundWithContext/callableReferenceProperty.kt");
+            }
+
+            @TestMetadata("callableReferenceReturn.kt")
+            public void testCallableReferenceReturn() throws Exception {
+                runTest("../../../idea/tests/testData/quickfix/contextParameter/surroundWithContext/callableReferenceReturn.kt");
+            }
+
+            @TestMetadata("callableReferenceThrow.kt")
+            public void testCallableReferenceThrow() throws Exception {
+                runTest("../../../idea/tests/testData/quickfix/contextParameter/surroundWithContext/callableReferenceThrow.kt");
+            }
+
+            @TestMetadata("callableReferenceWhen.kt")
+            public void testCallableReferenceWhen() throws Exception {
+                runTest("../../../idea/tests/testData/quickfix/contextParameter/surroundWithContext/callableReferenceWhen.kt");
             }
 
             @TestMetadata("existingContext.kt")
@@ -3871,6 +3946,11 @@ public abstract class HighLevelQuickFixTestGenerated extends AbstractHighLevelQu
                 runTest("../../../idea/tests/testData/quickfix/contextParameter/surroundWithContext/functionWithNoSuitableType.kt");
             }
 
+            @TestMetadata("ifCall.kt")
+            public void testIfCall() throws Exception {
+                runTest("../../../idea/tests/testData/quickfix/contextParameter/surroundWithContext/ifCall.kt");
+            }
+
             @TestMetadata("initBlock.kt")
             public void testInitBlock() throws Exception {
                 runTest("../../../idea/tests/testData/quickfix/contextParameter/surroundWithContext/initBlock.kt");
@@ -3879,6 +3959,11 @@ public abstract class HighLevelQuickFixTestGenerated extends AbstractHighLevelQu
             @TestMetadata("lambda.kt")
             public void testLambda() throws Exception {
                 runTest("../../../idea/tests/testData/quickfix/contextParameter/surroundWithContext/lambda.kt");
+            }
+
+            @TestMetadata("lambda2.kt")
+            public void testLambda2() throws Exception {
+                runTest("../../../idea/tests/testData/quickfix/contextParameter/surroundWithContext/lambda2.kt");
             }
 
             @TestMetadata("localAndOuterCandidates.kt")
@@ -3904,6 +3989,21 @@ public abstract class HighLevelQuickFixTestGenerated extends AbstractHighLevelQu
             @TestMetadata("property.kt")
             public void testProperty() throws Exception {
                 runTest("../../../idea/tests/testData/quickfix/contextParameter/surroundWithContext/property.kt");
+            }
+
+            @TestMetadata("returnCall.kt")
+            public void testReturnCall() throws Exception {
+                runTest("../../../idea/tests/testData/quickfix/contextParameter/surroundWithContext/returnCall.kt");
+            }
+
+            @TestMetadata("throwCall.kt")
+            public void testThrowCall() throws Exception {
+                runTest("../../../idea/tests/testData/quickfix/contextParameter/surroundWithContext/throwCall.kt");
+            }
+
+            @TestMetadata("whenCall.kt")
+            public void testWhenCall() throws Exception {
+                runTest("../../../idea/tests/testData/quickfix/contextParameter/surroundWithContext/whenCall.kt");
             }
         }
 
@@ -9900,6 +10000,99 @@ public abstract class HighLevelQuickFixTestGenerated extends AbstractHighLevelQu
             public void testWithName() throws Exception {
                 runTest("../../../idea/tests/testData/quickfix/javaClassOnCompanion/replaceWithCompanionClassJava/withName.kt");
             }
+        }
+    }
+
+    @RunWith(JUnit3RunnerWithInners.class)
+    @TestMetadata("../../../idea/tests/testData/quickfix/jvmExposeBoxed")
+    public static class JvmExposeBoxed extends AbstractHighLevelQuickFixTest {
+        private void runTest(String testDataFilePath) throws Exception {
+            KotlinTestUtils.runTest(this::doTest, this, testDataFilePath);
+        }
+
+        @TestMetadata("canBeReplacedWithJvmName.kt")
+        public void testCanBeReplacedWithJvmName() throws Exception {
+            runTest("../../../idea/tests/testData/quickfix/jvmExposeBoxed/canBeReplacedWithJvmName.kt");
+        }
+
+        @TestMetadata("canBeReplacedWithJvmNameNotAvailable.kt")
+        public void testCanBeReplacedWithJvmNameNotAvailable() throws Exception {
+            runTest("../../../idea/tests/testData/quickfix/jvmExposeBoxed/canBeReplacedWithJvmNameNotAvailable.kt");
+        }
+
+        @TestMetadata("cannotBeTheSame.kt")
+        public void testCannotBeTheSame() throws Exception {
+            runTest("../../../idea/tests/testData/quickfix/jvmExposeBoxed/cannotBeTheSame.kt");
+        }
+
+        @TestMetadata("cannotBeTheSameAsJvmNameChange.kt")
+        public void testCannotBeTheSameAsJvmNameChange() throws Exception {
+            runTest("../../../idea/tests/testData/quickfix/jvmExposeBoxed/cannotBeTheSameAsJvmNameChange.kt");
+        }
+
+        @TestMetadata("cannotBeTheSameAsJvmNameRemove.kt")
+        public void testCannotBeTheSameAsJvmNameRemove() throws Exception {
+            runTest("../../../idea/tests/testData/quickfix/jvmExposeBoxed/cannotBeTheSameAsJvmNameRemove.kt");
+        }
+
+        @TestMetadata("cannotBeTheSameSpecialCharacters.kt")
+        public void testCannotBeTheSameSpecialCharacters() throws Exception {
+            runTest("../../../idea/tests/testData/quickfix/jvmExposeBoxed/cannotBeTheSameSpecialCharacters.kt");
+        }
+
+        @TestMetadata("cannotExposeLocals.kt")
+        public void testCannotExposeLocals() throws Exception {
+            runTest("../../../idea/tests/testData/quickfix/jvmExposeBoxed/cannotExposeLocals.kt");
+        }
+
+        @TestMetadata("cannotExposeOpenAbstract.kt")
+        public void testCannotExposeOpenAbstract() throws Exception {
+            runTest("../../../idea/tests/testData/quickfix/jvmExposeBoxed/cannotExposeOpenAbstract.kt");
+        }
+
+        @TestMetadata("cannotExposePrivate.kt")
+        public void testCannotExposePrivate() throws Exception {
+            runTest("../../../idea/tests/testData/quickfix/jvmExposeBoxed/cannotExposePrivate.kt");
+        }
+
+        @TestMetadata("cannotExposeReified.kt")
+        public void testCannotExposeReified() throws Exception {
+            runTest("../../../idea/tests/testData/quickfix/jvmExposeBoxed/cannotExposeReified.kt");
+        }
+
+        @TestMetadata("cannotExposeSuspend.kt")
+        public void testCannotExposeSuspend() throws Exception {
+            runTest("../../../idea/tests/testData/quickfix/jvmExposeBoxed/cannotExposeSuspend.kt");
+        }
+
+        @TestMetadata("cannotExposeSynthetic.kt")
+        public void testCannotExposeSynthetic() throws Exception {
+            runTest("../../../idea/tests/testData/quickfix/jvmExposeBoxed/cannotExposeSynthetic.kt");
+        }
+
+        @TestMetadata("inapplicableWithName.kt")
+        public void testInapplicableWithName() throws Exception {
+            runTest("../../../idea/tests/testData/quickfix/jvmExposeBoxed/inapplicableWithName.kt");
+        }
+
+        @TestMetadata("requiresNameAdd.kt")
+        public void testRequiresNameAdd() throws Exception {
+            runTest("../../../idea/tests/testData/quickfix/jvmExposeBoxed/requiresNameAdd.kt");
+        }
+
+        @TestMetadata("requiresNameAddSpecialCharacters.kt")
+        public void testRequiresNameAddSpecialCharacters() throws Exception {
+            runTest("../../../idea/tests/testData/quickfix/jvmExposeBoxed/requiresNameAddSpecialCharacters.kt");
+        }
+
+        @TestMetadata("requiresNameRemove.kt")
+        public void testRequiresNameRemove() throws Exception {
+            runTest("../../../idea/tests/testData/quickfix/jvmExposeBoxed/requiresNameRemove.kt");
+        }
+
+        @TestMetadata("uselessJvmExposeBoxed.kt")
+        public void testUselessJvmExposeBoxed() throws Exception {
+            runTest("../../../idea/tests/testData/quickfix/jvmExposeBoxed/uselessJvmExposeBoxed.kt");
         }
     }
 

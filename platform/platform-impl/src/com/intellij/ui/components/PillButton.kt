@@ -14,9 +14,13 @@ import java.awt.Dimension
 import java.awt.Graphics
 import java.awt.Graphics2D
 import java.awt.Rectangle
+import java.awt.event.ActionEvent
+import java.awt.event.ActionListener
 import java.awt.event.MouseAdapter
 import java.awt.event.MouseEvent
 import javax.swing.JComponent
+import javax.swing.SwingUtilities
+import kotlin.math.max
 
 private val TEXT_GAPS: UnscaledGaps = UnscaledGaps(top = 4, left = 16, bottom = 3, right = 16)
 private const val DEFAULT_FONT_SIZE: Int = 13
@@ -32,28 +36,22 @@ class PillButton(text: @NlsContexts.Button String? = null) : JComponent() {
     @JvmField
     val BLUE: ColorState = object : ColorState {
       override val foreground: Color
-        get() = JBColor.namedColor(
-          "PillButton.blueForeground",
-          JBColor.namedColor("ColorPalette.blue-100", 0x71A1FE, 0x71A1FE))
+        get() = JBColor.namedColor("PillButton.blueForeground", 0x2F5EB9, 0x71A1FE)
+
       override val background: Color
-        get() = JBColor.namedColor(
-          "PillButton.blueBackground")
+        get() = JBColor.namedColor("PillButton.blueBackground") // Default transparent
+
       override val borderColor: Color
-        get() = JBColor.namedColor(
-          "PillButton.blueBorderColor",
-          JBColor.namedColor("ColorPalette.blue-90", 0x538AF9, 0x538AF9))
+        get() = JBColor.namedColor("PillButton.blueBorderColor", 0x538AF9, 0x538AF9)
+
       override val hoverForeground: Color
-        get() = JBColor.namedColor(
-          "PillButton.blueHoverForeground",
-          JBColor.namedColor("ColorPalette.blue-100", 0x71A1FE, 0x71A1FE))
+        get() = JBColor.namedColor("PillButton.blueHoverForeground", 0x2F5EB9, 0x71A1FE)
+
       override val hoverBackground: Color
-        get() = JBColor.namedColor(
-          "PillButton.blueHoverBackground",
-          JBColor.namedColor("ColorPalette.blue-40", 0x233558, 0x233558))
+        get() = JBColor.namedColor("PillButton.blueHoverBackground", 0xE3EBFE, 0x233558)
+
       override val hoverBorderColor: Color
-        get() = JBColor.namedColor(
-          "PillButton.blueHoverBorderColor",
-          JBColor.namedColor("ColorPalette.blue-90", 0x538AF9, 0x538AF9))
+        get() = JBColor.namedColor("PillButton.blueHoverBorderColor", 0x538AF9, 0x538AF9)
     }
   }
 
@@ -75,7 +73,20 @@ class PillButton(text: @NlsContexts.Button String? = null) : JComponent() {
       }
     }
 
+  /**
+   * Texts the button reserves width for in addition to [text], so that switching between them doesn't change the width.
+   */
+  var prototypeTexts: List<@NlsContexts.Button String> = emptyList()
+    set(value) {
+      if (field != value) {
+        field = value
+        revalidate()
+        repaint()
+      }
+    }
+
   private var hovered = false
+  private var mouseDown = false
   private var colorState: ColorState = BLUE
 
   /**
@@ -108,7 +119,21 @@ class PillButton(text: @NlsContexts.Button String? = null) : JComponent() {
 
       override fun mouseExited(e: MouseEvent?) {
         hovered = false
+        mouseDown = false
         repaint()
+      }
+
+      override fun mousePressed(e: MouseEvent?) {
+        mouseDown = true
+      }
+
+      override fun mouseReleased(e: MouseEvent) {
+        if (mouseDown) {
+          mouseDown = false
+          if (isEnabled && SwingUtilities.isLeftMouseButton(e)) {
+            fireActionPerformed(ActionEvent(this@PillButton, ActionEvent.ACTION_PERFORMED, null, e.`when`, e.modifiersEx))
+          }
+        }
       }
     })
   }
@@ -125,6 +150,24 @@ class PillButton(text: @NlsContexts.Button String? = null) : JComponent() {
     if (!enabled) {
       // Disabled components don't receive mouseExited
       hovered = false
+      mouseDown = false
+    }
+  }
+
+  /**
+   * The listeners are notified on a left mouse click, the same way [javax.swing.AbstractButton] does it.
+   */
+  fun addActionListener(l: ActionListener) {
+    listenerList.add(ActionListener::class.java, l)
+  }
+
+  fun removeActionListener(l: ActionListener) {
+    listenerList.remove(ActionListener::class.java, l)
+  }
+
+  private fun fireActionPerformed(event: ActionEvent) {
+    for (listener in listenerList.getListeners(ActionListener::class.java)) {
+      listener.actionPerformed(event)
     }
   }
 
@@ -161,7 +204,8 @@ class PillButton(text: @NlsContexts.Button String? = null) : JComponent() {
 
       text?.let {
         val fontMetrics = getFontMetrics(font)
-        val offset = (rect.height - TEXT_GAPS.height - getFontMetrics(font).height) / 2
+        val offset = (rect.height - TEXT_GAPS.height - fontMetrics.height) / 2
+        val x = max(TEXT_GAPS.left, (rect.width - fontMetrics.stringWidth(it)) / 2)
 
         g2.color = when {
           !isEnabled -> DISABLED_FOREGROUND
@@ -169,7 +213,7 @@ class PillButton(text: @NlsContexts.Button String? = null) : JComponent() {
           else -> foreground
         }
         g2.font = font
-        g2.drawString(it, TEXT_GAPS.left, TEXT_GAPS.top + offset + fontMetrics.ascent)
+        g2.drawString(it, x, TEXT_GAPS.top + offset + fontMetrics.ascent)
       }
     }
     finally {
@@ -189,9 +233,8 @@ class PillButton(text: @NlsContexts.Button String? = null) : JComponent() {
   private fun getTextDimension(): Dimension {
     val font = font ?: return Dimension(0, JBUI.scale(DEFAULT_FONT_SIZE))
 
-    val text = text
     val fontMetrics = getFontMetrics(font)
-    val width = if (text == null) 0 else fontMetrics.stringWidth(text)
+    val width = (prototypeTexts + text).filterNotNull().maxOfOrNull(fontMetrics::stringWidth) ?: 0
 
     return Dimension(width, fontMetrics.height)
   }

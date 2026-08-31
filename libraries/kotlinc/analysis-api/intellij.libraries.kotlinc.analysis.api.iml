@@ -25,19 +25,19 @@
     <orderEntry type="sourceFolder" forTests="false" />
     <orderEntry type="module-library" exported="">
       <library name="kotlinc.analysis-api" type="repository">
-        <properties include-transitive-deps="false" maven-id="org.jetbrains.kotlin:analysis-api-for-ide:2.5.0-dev-4715">
+        <properties include-transitive-deps="false" maven-id="org.jetbrains.kotlin:analysis-api-for-ide:2.5.0-dev-5674">
           <verification>
-            <artifact url="file://$MAVEN_REPOSITORY$/org/jetbrains/kotlin/analysis-api-for-ide/2.5.0-dev-4715/analysis-api-for-ide-2.5.0-dev-4715.jar">
-              <sha256sum>0f358780378f3d1f5f0293ec0ed20caae1c72c2b15ec4b89ab9562b84a44c088</sha256sum>
+            <artifact url="file://$MAVEN_REPOSITORY$/org/jetbrains/kotlin/analysis-api-for-ide/2.5.0-dev-5674/analysis-api-for-ide-2.5.0-dev-5674.jar">
+              <sha256sum>b165cce08742a155243174a2098036b3fb867e161a3cb596dec831d77f7166e0</sha256sum>
             </artifact>
           </verification>
         </properties>
         <CLASSES>
-          <root url="jar://$MAVEN_REPOSITORY$/org/jetbrains/kotlin/analysis-api-for-ide/2.5.0-dev-4715/analysis-api-for-ide-2.5.0-dev-4715.jar!/" />
+          <root url="jar://$MAVEN_REPOSITORY$/org/jetbrains/kotlin/analysis-api-for-ide/2.5.0-dev-5674/analysis-api-for-ide-2.5.0-dev-5674.jar!/" />
         </CLASSES>
         <JAVADOC />
         <SOURCES>
-          <root url="jar://$MAVEN_REPOSITORY$/org/jetbrains/kotlin/analysis-api-for-ide/2.5.0-dev-4715/analysis-api-for-ide-2.5.0-dev-4715-sources.jar!/" />
+          <root url="jar://$MAVEN_REPOSITORY$/org/jetbrains/kotlin/analysis-api-for-ide/2.5.0-dev-5674/analysis-api-for-ide-2.5.0-dev-5674-sources.jar!/" />
         </SOURCES>
       </library>
     </orderEntry>

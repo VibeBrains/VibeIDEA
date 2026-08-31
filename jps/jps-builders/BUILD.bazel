@@ -1,5 +1,6 @@
 load("@community//build:tests-options.bzl", "jps_test")
 load("@rules_jvm//:jvm.bzl", "jvm_library")
+load("//platform/build-scripts/bazel-rules:content_module_jar.bzl", "content_module_jar")
 
 ### auto-generated section `build intellij.platform.jps.build` start
 jvm_library(
@@ -70,6 +71,16 @@ jvm_library(
     ],
 )
 
+content_module_jar(
+    libraries = [
+        # do not sort,
+        "@lib//:platform-jps-build-qdox-java-parser",
+        "@lib//:jps-javac-extension",
+        "@lib//:kotlin-metadata",
+    ],
+    module = ":build",
+)
+
 jvm_library(
     name = "build_test_lib",
     testonly = True,
@@ -130,6 +141,7 @@ exports_files(
     [
         "intellij.platform.jps.build.iml",
         "resources/intellij.platform.jps.build.xml",
+        "module-content.yaml",
     ],
     visibility = ["//visibility:public"],
 )

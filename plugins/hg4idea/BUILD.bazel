@@ -53,6 +53,7 @@ jvm_library(
         "//platform/lang-core",
         "//platform/util:util-ui",
         "//platform/util-ex",
+        "//platform/lvcs-impl",
     ],
 )
 
@@ -105,6 +106,7 @@ jvm_library(
         "//platform/lang-core:lang-core_test_lib",
         "//platform/util:util-ui_test_lib",
         "//platform/util-ex:util-ex_test_lib",
+        "//platform/lvcs-impl:lvcs-impl_test_lib",
     ],
 )
 ### auto-generated section `build intellij.vcs.hg` end

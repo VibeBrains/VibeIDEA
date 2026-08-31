@@ -1,6 +1,7 @@
 load("@community//build:tests-options.bzl", "jps_test")
 load("@rules_jvm//:jvm.bzl", "jvm_library")
 load("//build:compiler-options.bzl", "create_kotlinc_options")
+load("//platform/build-scripts/bazel-rules:content_module_jar.bzl", "content_module_jar")
 
 ### auto-generated section `build intellij.kotlin.projectStructure` start
 create_kotlinc_options(
@@ -52,12 +53,14 @@ jvm_library(
         "//plugins/kotlin/base/facet",
         "//libraries/kotlinc/analysis-api-impl-base:libraries-kotlinc-analysis-api-impl-base",
         "//plugins/kotlin/base/platforms",
-        "@lib//:kotlinc-kotlin-jps-common",
+        "//libraries/kotlinc/kotlin-jps-common:libraries-kotlinc-kotlin-jps-common",
         "//libraries/fastutil",
         "//java/openapi:java",
         "//plugins/kotlin/base/scripting/scripting.k2:kotlin-base-scripting",
     ],
 )
+
+content_module_jar(module = ":project-structure")
 
 jvm_library(
     name = "project-structure_test_lib",
@@ -90,6 +93,7 @@ jvm_library(
         "//plugins/kotlin/base/facet:facet_test_lib",
         "//libraries/kotlinc/analysis-api-impl-base:libraries-kotlinc-analysis-api-impl-base_test_lib",
         "//plugins/kotlin/base/platforms:platforms_test_lib",
+        "//libraries/kotlinc/kotlin-jps-common:libraries-kotlinc-kotlin-jps-common_test_lib",
         "//libraries/fastutil:fastutil_test_lib",
         "//java/openapi:java_test_lib",
         "//plugins/kotlin/base/scripting/scripting.k2:kotlin-base-scripting_test_lib",
@@ -228,7 +232,8 @@ jvm_library(
         "//plugins/groovy:groovy_test_lib",
         "//plugins/kotlin/base/platforms",
         "//plugins/kotlin/base/platforms:platforms_test_lib",
-        "@lib//:kotlinc-kotlin-jps-common",
+        "//libraries/kotlinc/kotlin-jps-common:libraries-kotlinc-kotlin-jps-common",
+        "//libraries/kotlinc/kotlin-jps-common:libraries-kotlinc-kotlin-jps-common_test_lib",
         "//libraries/fastutil",
         "//libraries/fastutil:fastutil_test_lib",
         "//java/openapi:java",

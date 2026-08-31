@@ -1,5 +1,6 @@
 load("@community//build:tests-options.bzl", "jps_test")
 load("@rules_jvm//:jvm.bzl", "jvm_library")
+load("//platform/build-scripts/bazel-rules:content_module_jar.bzl", "content_module_jar")
 
 jps_test(
     name = "execution-tests_test",
@@ -95,6 +96,11 @@ jvm_library(
     ],
 )
 
+content_module_jar(
+    module = ":execution-impl",
+    modules_after = ["//platform/wsl-impl"],
+)
+
 jvm_library(
     name = "execution-impl_test_lib",
     testonly = True,
@@ -181,6 +187,7 @@ exports_files(
         "intellij.platform.execution.impl.iml",
         "resources/intellij.platform.execution.impl.actions.xml",
         "resources/intellij.platform.execution.impl.xml",
+        "module-content.yaml",
     ],
     visibility = ["//visibility:public"],
 )
@@ -238,6 +245,10 @@ jvm_library(
         "//platform/execution-impl:execution-impl_test_lib",
         "//platform/execution",
         "//platform/execution:execution_test_lib",
+        "//platform/lang-api:lang",
+        "//platform/lang-api:lang_test_lib",
+        "//platform/editor-ui-api:editor-ui",
+        "//platform/editor-ui-api:editor-ui_test_lib",
         "//platform/util/concurrency",
         "//platform/util/concurrency:concurrency_test_lib",
         "@lib//:kotlin-stdlib",

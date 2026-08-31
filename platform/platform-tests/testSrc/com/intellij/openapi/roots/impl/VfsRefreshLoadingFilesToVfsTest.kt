@@ -6,10 +6,14 @@ import com.intellij.ide.impl.ProjectUtil
 import com.intellij.openapi.Disposable
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.roots.impl.OnlyIndexableFilesAreLoadedIntoVfsOnDirectoryCreationTest.Companion.collectFilesLoadedIntoVfsBeforeListenersRuns
+import com.intellij.openapi.vfs.AfterEventShouldBeFiredBeforeOtherListeners
+import com.intellij.openapi.vfs.AsyncFileListener
 import com.intellij.openapi.vfs.VfsUtil
 import com.intellij.openapi.vfs.VfsUtilCore
 import com.intellij.openapi.vfs.VirtualFile
+import com.intellij.openapi.vfs.VirtualFileManager
 import com.intellij.openapi.vfs.newvfs.NewVirtualFile
+import com.intellij.openapi.vfs.newvfs.RefreshQueue
 import com.intellij.platform.backend.workspace.workspaceModel
 import com.intellij.platform.workspace.jps.entities.ContentRootEntity
 import com.intellij.platform.workspace.jps.entities.ExcludeUrlEntity
@@ -19,6 +23,7 @@ import com.intellij.platform.workspace.jps.entities.ModuleSourceDependency
 import com.intellij.platform.workspace.storage.url.VirtualFileUrlManager
 import com.intellij.testFramework.IndexingTestUtil
 import com.intellij.testFramework.TestObservation
+import com.intellij.testFramework.common.timeoutRunBlocking
 import com.intellij.testFramework.VfsTestUtil
 import com.intellij.testFramework.junit5.RegistryKey
 import com.intellij.testFramework.junit5.TestApplication
@@ -26,9 +31,11 @@ import com.intellij.testFramework.junit5.TestDisposable
 import com.intellij.testFramework.rules.TempDirectoryExtension
 import com.intellij.testFramework.useProjectAsync
 import com.intellij.workspaceModel.ide.NonPersistentEntitySource
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.runBlocking
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.Timeout
 import org.junit.jupiter.api.extension.RegisterExtension
 import java.nio.file.Path
 import kotlin.io.path.Path
@@ -90,7 +97,16 @@ class VfsRefreshLoadingFilesToVfsTest {
   }
 
   @Test
-  fun `new dir under content root is loaded into vfs after refresh`(): Unit = runBlocking {
+  @RegistryKey(CHILDREN_PRELOADING_REGISTRY_KEY, "true")
+  fun `new dir under content root is preloaded by transient scanner`() =
+    testNewDirUnderContentRootIsLoadedIntoVfsAfterRefresh()
+
+  @Test
+  @RegistryKey(CHILDREN_PRELOADING_REGISTRY_KEY, "false")
+  fun `new dir under content root is preloaded by NIO scanner`() =
+    testNewDirUnderContentRootIsLoadedIntoVfsAfterRefresh()
+
+  private fun testNewDirUnderContentRootIsLoadedIntoVfsAfterRefresh(): Unit = runBlocking {
     stageFlatContentLayout()
 
     withOpenedProject { project, rootVirtualFile ->
@@ -104,6 +120,44 @@ class VfsRefreshLoadingFilesToVfsTest {
 
       val filesLoadedIntoVfs = collectFilesLoadedIntoVfsBeforeListenersRuns(rootVirtualFile, disposable)
       assertSubtreeLoadedIntoVfs(filesLoadedIntoVfs, rootVirtualFile, relativeRoot = Path("single/newpkg"), packagePrefix = "")
+    }
+  }
+
+  @Test
+  @Timeout(30)
+  fun `refresh session preloads children of a new directory`(): Unit = timeoutRunBlocking {
+    stageFlatContentLayout()
+
+    withOpenedProject { project, _ ->
+      val contentRoot = rootDir.rootPath.resolve("single")
+      addModuleWithContentRoot(project, contentRoot)
+
+      val parent = findVirtualFile(contentRoot)
+      parent.children
+      val newDirectory = contentRoot.resolve("newpkg")
+      newDirectory.createDirectories()
+      newDirectory.resolve("NewFile.java").writeText("class NewFile {}\n")
+      assertThat(parent.findChild("newpkg")).isNull()
+
+      val listenerResult = CompletableDeferred<Result<Unit>>()
+      VirtualFileManager.getInstance().addAsyncFileListener({
+        object : AsyncFileListener.ChangeApplier, AfterEventShouldBeFiredBeforeOtherListeners {
+          override fun afterVfsChange() {
+            listenerResult.complete(runCatching {
+              val newDirectoryVirtualFile = checkNotNull(parent.findChild("newpkg"))
+              assertThat(newDirectoryVirtualFile).isInstanceOf(NewVirtualFile::class.java)
+              assertThat((newDirectoryVirtualFile as NewVirtualFile).allChildrenLoaded()).isTrue()
+              assertThat(newDirectoryVirtualFile.findChildIfCached("NewFile.java")).isNotNull()
+              Unit
+            })
+          }
+        }
+      }, disposable)
+
+      RefreshQueue.getInstance().createSession(false, false, null).apply {
+        addNewChildren(parent, listOf("newpkg"))
+      }.launch()
+      listenerResult.await().getOrThrow()
     }
   }
 
@@ -233,6 +287,7 @@ class VfsRefreshLoadingFilesToVfsTest {
   )
 
   companion object {
+    private const val CHILDREN_PRELOADING_REGISTRY_KEY = "vfs.refresh.use.transient.files.for.children.preloading"
     private const val SUBDIR_COUNT = 10
     private const val FILES_PER_SUBDIR = 20
   }

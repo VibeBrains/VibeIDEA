@@ -102,20 +102,11 @@ f:com.intellij.ide.plugins.PluginNode
 - a:getPlugin():com.intellij.ide.plugins.IdeaPluginDescriptor
 - a:getShortMessage():java.lang.String
 - a:getShouldNotifyUser():Z
-*f:com.intellij.ide.settings.SettingsComponentDescriptor
-- com.intellij.openapi.extensions.PluginAware
-- *sf:Companion:com.intellij.ide.settings.SettingsComponentDescriptor$Companion
-- implementationClass:java.lang.String
-- <init>():V
-- f:getImplementationClass():java.lang.String
-- f:getPluginDescriptor():com.intellij.openapi.extensions.PluginDescriptor
-- f:setImplementationClass(java.lang.String):V
-- setPluginDescriptor(com.intellij.openapi.extensions.PluginDescriptor):V
-*f:com.intellij.ide.settings.SettingsComponentDescriptor$Companion
-- f:getAPPLICATION_EP_NAME():com.intellij.openapi.extensions.ExtensionPointName
-- f:getPROJECT_EP_NAME():com.intellij.openapi.extensions.ExtensionPointName
 f:com.intellij.ide.startup.StartupActionScriptManager
 - *s:addActionCommandsToBeginning(java.util.List):V
+*f:com.intellij.ide.trustedProjects.TrustedFiles
+- sf:INSTANCE:com.intellij.ide.trustedProjects.TrustedFiles
+- sf:isTrusted(com.intellij.openapi.vfs.VirtualFile,com.intellij.openapi.project.Project):Z
 *f:com.intellij.ide.ui.PopupLocationTracker
 - <init>():V
 - s:canRectangleBeUsed(java.awt.Component,java.awt.Rectangle,com.intellij.ide.ui.ScreenAreaConsumer):Z

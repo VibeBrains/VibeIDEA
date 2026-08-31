@@ -2891,6 +2891,44 @@ public abstract class HighLevelQuickFixMultiFileTestGenerated extends AbstractHi
     }
 
     @RunWith(JUnit3RunnerWithInners.class)
+    @TestMetadata("../../../idea/tests/testData/quickfix/contextParameter/addContextMultiFile")
+    public static class AddContextMultiFile extends AbstractHighLevelQuickFixMultiFileTest {
+        private void runTest(String testDataFilePath) throws Exception {
+            KotlinTestUtils.runTest(this::doTestWithExtraFile, this, testDataFilePath);
+        }
+
+        @TestMetadata("explicitMultipleContextTypesFromAnotherPackage.before.Main.kt")
+        public void testExplicitMultipleContextTypesFromAnotherPackage() throws Exception {
+            runTest("../../../idea/tests/testData/quickfix/contextParameter/addContextMultiFile/explicitMultipleContextTypesFromAnotherPackage.before.Main.kt");
+        }
+
+        @TestMetadata("explicitTypeAliasFromAnotherPackage.before.Main.kt")
+        public void testExplicitTypeAliasFromAnotherPackage() throws Exception {
+            runTest("../../../idea/tests/testData/quickfix/contextParameter/addContextMultiFile/explicitTypeAliasFromAnotherPackage.before.Main.kt");
+        }
+
+        @TestMetadata("explicitTypeFromAnotherPackage.before.Main.kt")
+        public void testExplicitTypeFromAnotherPackage() throws Exception {
+            runTest("../../../idea/tests/testData/quickfix/contextParameter/addContextMultiFile/explicitTypeFromAnotherPackage.before.Main.kt");
+        }
+
+        @TestMetadata("explicitTypeFromAnotherPackageNameClash.before.Main.kt")
+        public void testExplicitTypeFromAnotherPackageNameClash() throws Exception {
+            runTest("../../../idea/tests/testData/quickfix/contextParameter/addContextMultiFile/explicitTypeFromAnotherPackageNameClash.before.Main.kt");
+        }
+
+        @TestMetadata("typeAliasFromOtherPackage.before.Main.kt")
+        public void testTypeAliasFromOtherPackage() throws Exception {
+            runTest("../../../idea/tests/testData/quickfix/contextParameter/addContextMultiFile/typeAliasFromOtherPackage.before.Main.kt");
+        }
+
+        @TestMetadata("typeFromOtherPackage.before.Main.kt")
+        public void testTypeFromOtherPackage() throws Exception {
+            runTest("../../../idea/tests/testData/quickfix/contextParameter/addContextMultiFile/typeFromOtherPackage.before.Main.kt");
+        }
+    }
+
+    @RunWith(JUnit3RunnerWithInners.class)
     @TestMetadata("../../../idea/tests/testData/quickfix/convertToAnonymousObject")
     public static class ConvertToAnonymousObject extends AbstractHighLevelQuickFixMultiFileTest {
         private void runTest(String testDataFilePath) throws Exception {

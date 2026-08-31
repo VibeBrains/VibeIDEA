@@ -1,9 +1,9 @@
 package com.intellij.python.processOutput.frontend.ui.components
 
-import androidx.compose.runtime.snapshotFlow
 import com.intellij.openapi.application.EDT
 import com.intellij.python.processOutput.frontend.LoggedProcess
 import com.intellij.python.processOutput.frontend.ProcessOutputBundle.message
+import com.intellij.python.processOutput.frontend.ProcessOutputController
 import com.intellij.python.processOutput.frontend.ui.ProcessOutputUiContext
 import com.intellij.ui.AnimatedIcon
 import com.intellij.ui.ClientProperty
@@ -57,13 +57,13 @@ internal class ProcessTree(private val uiContext: ProcessOutputUiContext) {
     component.horizontalScrollBarPolicy = ScrollPaneConstants.HORIZONTAL_SCROLLBAR_NEVER
 
     uiContext.coroutineScope.launch(Dispatchers.EDT) {
-      uiContext.controller.processTreeUiState.treeRoot.collect { newNodes ->
+      uiContext.controller.treeSectionState.treeRoot.collect { newNodes ->
         synchronizeTree(newNodes, component)
       }
     }
 
     uiContext.coroutineScope.launch(Dispatchers.EDT) {
-      snapshotFlow { uiContext.controller.processTreeUiState.filters.active.toSet() }.collect {
+      uiContext.controller.treeSectionState.filters.active.collect {
         tree.repaint()
       }
     }
@@ -108,8 +108,13 @@ internal class ProcessTree(private val uiContext: ProcessOutputUiContext) {
     }
 
     uiContext.coroutineScope.launch(Dispatchers.EDT) {
-      uiContext.controller.processStatusUpdates.collect {
-        tree.repaint()
+      uiContext.controller.events.collect { event ->
+        when (event) {
+          is ProcessOutputController.Event.StatusUpdate -> {
+            tree.repaint()
+          }
+          ProcessOutputController.Event.OutputScrollDown -> {}
+        }
       }
     }
   }
@@ -135,7 +140,12 @@ internal class ProcessTree(private val uiContext: ProcessOutputUiContext) {
   }
 
   private fun synchronizeTree(newNodes: List<ProcessTreeNode>, scrollPane: JScrollPane) {
-    val selectedNodeId = (tree.selectionPath?.lastPathComponent as ProcessTreeNode?)?.id
+    // What to select once the new nodes are in: what the tree shows as selected, or — while it shows nothing, as on the
+    // build that fills a tool window opened by a caller that already chose a process — the controller's own choice.
+    // Read from the controller, because that choice can be made before this tree exists to hold it.
+    val treeSelectedNodeId = (tree.selectionPath?.lastPathComponent as ProcessTreeNode?)?.id
+    val selectedNodeId = treeSelectedNodeId
+                         ?: uiContext.controller.selectedProcess.value?.let { ProcessTreeNode.Id.Process(it.data.id) }
     val expandedNodeIds = tree.expandedPaths.mapNotNull { (it.lastPathComponent as? ProcessTreeNode)?.id }
     val scrollProgress = scrollPane.viewport.viewPosition.y
 
@@ -168,7 +178,11 @@ internal class ProcessTree(private val uiContext: ProcessOutputUiContext) {
       tree.expandPaths(nodesToExpand.map { TreePath(it.path) })
 
       if (nodeToSelect != null) {
-        tree.selectionPath = TreePath(nodeToSelect.path)
+        val path = TreePath(nodeToSelect.path)
+        tree.selectionPath = path
+        // A selection this build took from the controller has never been scrolled to. The collector that normally does
+        // that finds the tree already showing the right row and returns, so the scrolling is done here instead.
+        if (treeSelectedNodeId == null) tree.scrollPathToVisible(path)
       }
       else {
         uiContext.controller.selectProcess(null)

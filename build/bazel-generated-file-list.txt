@@ -221,6 +221,7 @@ build/tasks
 build/tests
 commandInterface
 community-resources
+community-resources/ide-customization
 fleet/andel
 fleet/bifurcan
 fleet/build/authentication
@@ -278,6 +279,7 @@ grid/types
 idea/customization/backend
 idea/customization/base
 idea/customization/min
+idea/customization/plugin
 images
 images/intellij.platform.images.copyright
 images/intellij.platform.images.xdebugger
@@ -371,7 +373,6 @@ json/backend/performanceTests
 json/backend/regexp
 json/backend/tests
 json/networknt.wrapper
-json/networknt.wrapper/libraries
 json/networknt.wrapper/tests
 json/structureView
 json/syntax
@@ -386,6 +387,8 @@ jvm/jvm-analysis-quickFix
 jvm/jvm-analysis-refactoring
 jvm/jvm-analysis-testFramework
 libraries/aalto-xml
+libraries/ai-grazie-rule-engine
+libraries/ai-grazie-semantic-engine
 libraries/ai.grazie.spell.gec.engine.local
 libraries/allure/java-commons
 libraries/androidx-collections
@@ -429,12 +432,15 @@ libraries/completion-ranking-typescript
 libraries/compose-foundation-desktop
 libraries/compose-foundation-desktop-junit
 libraries/compose-runtime-desktop
+libraries/compose-swing-ui
+libraries/cucumber-core1
 libraries/dokka
 libraries/download-pgp-verifier
 libraries/ec4j/core
 libraries/fastutil
 libraries/ffmpeg
 libraries/flexmark
+libraries/git-learning-project
 libraries/gradle
 libraries/groovy
 libraries/groovy/ant
@@ -451,7 +457,6 @@ libraries/hamcrest-more-matchers
 libraries/hash4j
 libraries/hdr-histogram
 libraries/http-client
-libraries/icu4j
 libraries/imgscalr
 libraries/ini4j
 libraries/io
@@ -471,6 +476,7 @@ libraries/jackson/jr-objects
 libraries/jackson/module-kotlin
 libraries/jackson/validator
 libraries/jackson3/databind
+libraries/jackson3/dataformat-toml
 libraries/jackson3/dataformat-yaml
 libraries/jackson3/jackson
 libraries/jackson3/jr-objects
@@ -497,6 +503,7 @@ libraries/jline
 libraries/jna
 libraries/joni
 libraries/jsch-agent-proxy
+libraries/json-schema-validator
 libraries/jsonpath
 libraries/jsoup
 libraries/jsp
@@ -516,6 +523,7 @@ libraries/junit6-launcher
 libraries/junit6-params
 libraries/jvm-native-trusted-roots
 libraries/jzlib
+libraries/kaml
 libraries/keychain
 libraries/kodein-di-jvm
 libraries/kotlin/gradle-plugin-idea
@@ -530,10 +538,18 @@ libraries/kotlinc/analysis-api
 libraries/kotlinc/analysis-api-impl-base
 libraries/kotlinc/analysis-api-k2
 libraries/kotlinc/analysis-api-platform-interface
+libraries/kotlinc/assignment-compiler-plugin
 libraries/kotlinc/kotlin-compiler-common
 libraries/kotlinc/kotlin-compiler-fir
+libraries/kotlinc/kotlin-jps-common
+libraries/kotlinc/kotlin-script-runtime
+libraries/kotlinc/kotlin-scripting-common
+libraries/kotlinc/kotlin-scripting-compiler-impl
+libraries/kotlinc/kotlin-scripting-dependencies
+libraries/kotlinc/kotlin-scripting-jvm
 libraries/kotlinc/kotlinx-serialization-compiler-plugin
 libraries/kotlinc/low-level-api-fir
+libraries/kotlinc/scripting-compiler-plugin
 libraries/kotlinc/symbol-light-classes
 libraries/kotlinx/bcv
 libraries/kotlinx/collections-immutable
@@ -561,6 +577,7 @@ libraries/ktor/server-content-negotiation
 libraries/ktor/server-sse
 libraries/ktor/utils
 libraries/kxml2
+libraries/libthrift
 libraries/log4j-to-slf4j
 libraries/lsp4j
 libraries/lsp4j/debug
@@ -602,6 +619,7 @@ libraries/opentelemetry-semconv
 libraries/opentest4j
 libraries/oro-matcher
 libraries/oshi-core
+libraries/package-search-api-client
 libraries/plexus-utils
 libraries/protobuf
 libraries/protobuf-kotlin
@@ -621,6 +639,8 @@ libraries/semver4j
 libraries/skiko
 libraries/snakeyaml
 libraries/snakeyaml-engine
+libraries/sqlite
+libraries/sqlite-native
 libraries/sshd-osgi
 libraries/sshj
 libraries/stream
@@ -633,6 +653,7 @@ libraries/testng
 libraries/tuweni/toml
 libraries/velocity
 libraries/winp
+libraries/workspace-model-codegen
 libraries/xerces
 libraries/xerial-snappy-java
 libraries/xml-rpc
@@ -697,6 +718,7 @@ platform/completion/frontend
 platform/compose
 platform/compose/compiler-plugin
 platform/compose/markdown
+platform/compose/swing-ui
 platform/configuration-store-impl
 platform/core-api
 platform/core-impl
@@ -1105,6 +1127,8 @@ plugins/compose/intellij.compose.ide.plugin.projectStructureTests
 plugins/compose/intellij.compose.ide.plugin.resources
 plugins/compose/intellij.compose.ide.plugin.resources.android
 plugins/compose/intellij.compose.ide.plugin.shared
+plugins/compose/intellij.compose.ide.plugin.shared.android
+plugins/compose/intellij.compose.ide.plugin.tests.main
 plugins/configuration-script
 plugins/copyright
 plugins/copyright/vcs
@@ -1177,7 +1201,6 @@ plugins/evaluation-plugin/languages/java
 plugins/evaluation-plugin/languages/kotlin
 plugins/evaluation-plugin/languages/python
 plugins/extended-toolwindows-ui
-plugins/extended-toolwindows-ui/backend
 plugins/extended-toolwindows-ui/frontend
 plugins/filePrediction
 plugins/filePrediction/java
@@ -1205,6 +1228,20 @@ plugins/gitlab/gitlab-yaml
 plugins/gradle
 plugins/gradle-maven
 plugins/gradle/backend
+plugins/gradle/codeInsight
+plugins/gradle/codeInsight/backend
+plugins/gradle/codeInsight/groovy
+plugins/gradle/codeInsight/groovy/backend
+plugins/gradle/codeInsight/groovy/backend/tests.integration
+plugins/gradle/codeInsight/kotlin
+plugins/gradle/codeInsight/kotlin/backend
+plugins/gradle/codeInsight/kotlin/backend/tests.integration
+plugins/gradle/codeInsight/properties
+plugins/gradle/codeInsight/properties/backend
+plugins/gradle/codeInsight/properties/backend/tests.integration
+plugins/gradle/codeInsight/toml
+plugins/gradle/codeInsight/toml/backend
+plugins/gradle/codeInsight/toml/backend/tests.integration
 plugins/gradle/completion
 plugins/gradle/completion/kotlin
 plugins/gradle/completion/kotlin/tests
@@ -1594,7 +1631,9 @@ plugins/performanceTesting/core
 plugins/performanceTesting/event-bus
 plugins/performanceTesting/freezes
 plugins/performanceTesting/frontend
+plugins/performanceTesting/frontend-base
 plugins/performanceTesting/problemsView
+plugins/performanceTesting/rdct
 plugins/performanceTesting/remote-driver
 plugins/performanceTesting/remote-driver.compose
 plugins/performanceTesting/remote-driver.jcef
@@ -1716,11 +1755,13 @@ python/build/build-debug-binaries
 python/common
 python/conda
 python/huggingFace
+python/ide-common/ide-customization
 python/ide/customization.backend
 python/ide/customization.shared
 python/ide/impl
 python/ide/impl/intellij.pycharm.community.ide.impl.promotion
 python/ide/implTraining/intellij.pycharm.community.ide.implTraining
+python/ide/newUiOnboarding
 python/impl.helperLocator
 python/installer
 python/intellij.python.community.communityOnly
@@ -1857,6 +1898,7 @@ xml/dom-tests
 xml/emmet
 xml/emmet/backend
 xml/emmet/frontend
+xml/emmet/shared
 xml/impl
 xml/langInjection
 xml/langInjection/xpath

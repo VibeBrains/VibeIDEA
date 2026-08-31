@@ -16,7 +16,6 @@ import org.jetbrains.intellij.build.UTIL_RT_JAR
 import org.jetbrains.intellij.build.classPath.getEmbeddedContentModulesOfPluginsWithUseIdeaClassloader
 import org.jetbrains.intellij.build.forEachConcurrent
 import org.jetbrains.intellij.build.impl.PlatformJarNames.TEST_FRAMEWORK_JAR
-import org.jetbrains.intellij.build.isModuleNameLikeFilename
 import org.jetbrains.intellij.build.productLayout.LIB_MODULE_PREFIX
 import org.jetbrains.intellij.build.productLayout.ProductModulesLayout
 import org.jetbrains.jps.model.java.JpsJavaExtensionService
@@ -241,14 +240,11 @@ internal suspend fun createPlatformLayout(projectLibrariesUsedByPlugins: Map<Str
   val libAsProductModule = collectExportedLibrariesFromLibraryModules(layout, context).keys
   layout.libAsProductModule = libAsProductModule
 
-  // sqlite - used by DB and "import settings" (temporarily)
-  layout.alwaysPackToPlugin(listOf("sqlite"))
   val violations = TreeMap<String, Set<String>>()
   for ((libName, dependentModules) in projectLibrariesUsedByPlugins) {
     if (layout.hasLibrary(libName) ||
         libAsProductModule.contains(libName) ||
-        layout.isProjectLibraryExcluded(libName) ||
-        layout.isLibraryAlwaysPackedIntoPlugin(libName)) {
+        layout.isProjectLibraryExcluded(libName)) {
       continue
     }
 
@@ -547,15 +543,6 @@ private suspend fun computeContentModulesPluginsWhichUseIdeaClassloader(context:
   }
 }
 
-// see isV2ModulePath
-internal fun toLoadPath(relativePath: String): String {
-  @Suppress("SpellCheckingInspection")
-  return when {
-    relativePath[0] == '/' -> relativePath.substring(1)
-    isModuleNameLikeFilename(relativePath) -> relativePath
-    else -> "META-INF/$relativePath"
-  }
-}
 
 internal object ModuleIncludeReasons {
   const val PRODUCT_MODULES: String = "productModule"

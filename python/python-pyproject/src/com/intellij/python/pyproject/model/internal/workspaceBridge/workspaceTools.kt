@@ -1,6 +1,9 @@
 package com.intellij.python.pyproject.model.internal.workspaceBridge
 
 import com.intellij.configurationStore.saveSettings
+import com.intellij.java.workspace.entities.JavaSourceRootPropertiesEntity
+import com.intellij.java.workspace.entities.javaSourceRoots
+import com.intellij.java.workspace.entities.modifyJavaSourceRootPropertiesEntity
 import com.intellij.openapi.diagnostic.debug
 import com.intellij.openapi.diagnostic.fileLogger
 import com.intellij.openapi.project.Project
@@ -11,6 +14,7 @@ import com.intellij.platform.workspace.jps.JpsImportedEntitySource
 import com.intellij.platform.workspace.jps.entities.ContentRootEntity
 import com.intellij.platform.workspace.jps.entities.DependencyScope
 import com.intellij.platform.workspace.jps.entities.ExcludeUrlEntity
+import com.intellij.platform.workspace.jps.entities.ExcludeUrlEntityBuilder
 import com.intellij.platform.workspace.jps.entities.ExternalSystemModuleOptionsEntity
 import com.intellij.platform.workspace.jps.entities.ModuleDependency
 import com.intellij.platform.workspace.jps.entities.ModuleEntity
@@ -18,11 +22,14 @@ import com.intellij.platform.workspace.jps.entities.ModuleId
 import com.intellij.platform.workspace.jps.entities.ModuleSourceDependency
 import com.intellij.platform.workspace.jps.entities.ModuleTypeId
 import com.intellij.platform.workspace.jps.entities.SourceRootEntity
+import com.intellij.platform.workspace.jps.entities.SourceRootEntityBuilder
 import com.intellij.platform.workspace.jps.entities.SourceRootTypeId
 import com.intellij.platform.workspace.jps.entities.exModuleOptions
 import com.intellij.platform.workspace.jps.entities.modifyContentRootEntity
+import com.intellij.platform.workspace.jps.entities.modifyExcludeUrlEntity
 import com.intellij.platform.workspace.jps.entities.modifyExternalSystemModuleOptionsEntity
 import com.intellij.platform.workspace.jps.entities.modifyModuleEntity
+import com.intellij.platform.workspace.jps.entities.modifySourceRootEntity
 import com.intellij.platform.workspace.jps.entities.sdkId
 import com.intellij.platform.workspace.storage.EntitySource
 import com.intellij.platform.workspace.storage.MutableEntityStorage
@@ -42,6 +49,7 @@ import com.intellij.python.pyproject.model.spi.PyProjectManager
 import com.intellij.python.pyproject.model.spi.PyProjectTomlProject
 import com.intellij.python.pyproject.model.spi.WorkspaceName
 import com.intellij.python.pyproject.model.spi.plus
+import com.intellij.python.pyproject.model.spi.resolveSrcRoots
 import com.intellij.python.pyproject.safeGet
 import com.intellij.workspaceModel.ide.legacyBridge.LegacyBridgeJpsEntitySourceFactory
 import com.intellij.workspaceModel.ide.toPath
@@ -75,7 +83,10 @@ internal suspend fun rebuildProjectModel(project: Project, files: FSWalkInfoWith
     val currentSnapshot = project.workspaceModel.currentSnapshot
 
     // All module names (Python and non-Python) — module names must be unique across the project.
-    val allModuleNames: Set<String> = currentSnapshot.entities<ModuleEntity>().map { it.name }.toSet()
+    // A stale registration does not reserve its name. `applyProjectModel` removes it (PY-91133).
+    val allModuleNames: Set<String> = currentSnapshot.entities<ModuleEntity>()
+      .filterNot { it.isStaleRegistration() }
+      .map { it.name }.toSet()
 
     // Existing Python module names keyed by their content root directory.
     val existingPythonNames: Map<Path, String> =
@@ -115,9 +126,14 @@ private fun applyProjectModel(
   val newEntries = entries - matched.keys
   val orphanModules = pyProjectTomlModules - matched.values.toSet()
 
+  // An entry took the name of a stale registration, because `rebuildProjectModel` freed that name.
+  // Remove the dead module first. If no entry took the name, keep the module and change nothing.
+  val entryNames = entries.map { it.name.name }.toSet()
+  val staleModules = allModules.filter { it.isStaleRegistration() && it.name in entryNames }
+
   logIfNeeded(projectStorage, "before apply")
 
-  for (module in orphanModules) {
+  for (module in orphanModules + staleModules) {
     deleteModule(module, projectStorage)
   }
   for ((entry, module) in matched) {
@@ -182,6 +198,16 @@ private fun matchEntriesToModules(
   return matched
 }
 
+/**
+ * This is a workaround for IJPL-254167.
+ *
+ * JPS makes such a module when `modules.xml` points to an `.iml` file that JPS cannot read.
+ * The module then has no type and no content root, so it adds nothing to the project model.
+ * It also held its own name, and the importer gave the new module the name `<name>@1` (PY-91133).
+ */
+private fun ModuleEntity.isStaleRegistration(): Boolean =
+  type == null && contentRoots.isEmpty() && !entitySource.isPythonEntity
+
 private fun deleteModule(
   module: ModuleEntity,
   projectStorage: MutableEntityStorage,
@@ -192,21 +218,18 @@ private fun deleteModule(
   // but only if the underlying directory still physically exists on disk.
   val otherContentRoots = projectStorage.entities<ContentRootEntity>().filter { it.module != module }.toList()
 
-  val sourcesByTarget = mutableMapOf<ContentRootEntity, MutableList<SourceRootEntity>>()
-  val excludesByTarget = mutableMapOf<ContentRootEntity, MutableList<ExcludeUrlEntity>>()
+  val sourcesByTarget = mutableMapOf<ContentRootEntity, MutableList<SourceRootEntityBuilder>>()
+  val excludesByTarget = mutableMapOf<ContentRootEntity, MutableList<ExcludeUrlEntityBuilder>>()
   for (cr in module.contentRoots) {
-    val crPath = cr.url.toPath()
-    val parent = otherContentRoots.filter { crPath.startsWith(it.url.toPath()) }.maxByOrNull { it.url.url.length } ?: continue
-    val existingSources = parent.sourceRoots.map { it.url }.toSet()
-    val existingExcludes = parent.excludedUrls.map { it.url }.toSet()
+    val parent = otherContentRoots.deepestContaining(cr.url.toPath()) ?: continue
     for (sr in cr.sourceRoots) {
-      if (sr.url !in existingSources && sr.url.toPath().exists()) {
-        sourcesByTarget.getOrPut(parent) { mutableListOf() }.add(sr)
+      if (sr.url.toPath().exists()) {
+        sourcesByTarget.getOrPut(parent) { mutableListOf() }.add(copyOfSourceRoot(sr, parent.entitySource))
       }
     }
     for (eu in cr.excludedUrls) {
-      if (eu.url !in existingExcludes && eu.url.toPath().exists()) {
-        excludesByTarget.getOrPut(parent) { mutableListOf() }.add(eu)
+      if (eu.url.toPath().exists()) {
+        excludesByTarget.getOrPut(parent) { mutableListOf() }.add(ExcludeUrlEntity(eu.url, parent.entitySource))
       }
     }
   }
@@ -273,9 +296,7 @@ private fun updateModule(
 
       if (existingContentRoot == null) {
         this.contentRoots = listOf(ContentRootEntity(entryRootUrl, emptyList(), entitySource) {
-          this.sourceRoots = desiredSourceRootUrls.map { url ->
-            SourceRootEntity(url, JAVA_SOURCE_ROOT_TYPE, entitySource)
-          }
+          this.sourceRoots = desiredSourceRootUrls.map { pyProjectSourceRoot(it, entitySource) }
         })
       }
       if (existingPyProjectToml == null) {
@@ -289,22 +310,12 @@ private fun updateModule(
     }
   }
 
-  existingContentRoot?.let {
-    it to it.sourceRoots.map { sr -> sr.url.url }.toSet()
-  }?.takeIf { (cr, existingUrls) ->
-    cr.entitySource != entitySource || desiredSourceRootUrls.any { it.url !in existingUrls }
-  }?.let { (cr, existingUrls) ->
-    projectStorage.modifyContentRootEntity(cr) {
-      this.entitySource = entitySource
-      val newSourceRoots = desiredSourceRootUrls.filter { d -> d.url !in existingUrls }
-        .map { url -> SourceRootEntity(url, JAVA_SOURCE_ROOT_TYPE, entitySource) }
-      this.sourceRoots = (sourceRoots.map { sr ->
-        if (sr.entitySource != entitySource) SourceRootEntity(sr.url, sr.rootTypeId, entitySource) else sr
-      } + newSourceRoots).distinctBy { it.url.url }
-      this.excludedUrls = excludedUrls.map { eu ->
-        if (eu.entitySource != entitySource) ExcludeUrlEntity(eu.url, entitySource) else eu
-      }
-    }
+  existingContentRoot?.let { cr ->
+    projectStorage.mergeRoots(
+      target = cr,
+      sourcesToAdd = desiredSourceRootUrls.map { pyProjectSourceRoot(it, entitySource) },
+      entitySource = entitySource,
+    )
   }
 
   existingPyProjectToml?.takeIf {
@@ -345,9 +356,7 @@ private fun addNewModule(
       dependencies += ModuleDependency(ModuleId(depName.name), true, DependencyScope.COMPILE, false)
     }
     contentRoots = listOf(ContentRootEntity(entryRootUrl, emptyList(), entitySource) {
-      sourceRoots = entry.sourceRoots.map { srcRoot ->
-        SourceRootEntity(srcRoot.toVirtualFileUrl(virtualFileUrlManager), JAVA_SOURCE_ROOT_TYPE, entitySource)
-      }
+      sourceRoots = entry.sourceRoots.map { pyProjectSourceRoot(it.toVirtualFileUrl(virtualFileUrlManager), entitySource) }
     })
     type = PYTHON_MODULE_TYPE_ID
     pyProjectTomlEntity = PyProjectTomlWorkspaceEntity(participatedTools, tomlDirUrl, entitySource)
@@ -390,13 +399,12 @@ private fun ensureNoSrcIntersectsWithOtherRoots(projectStorage: MutableEntitySto
   val allContentRoots = projectStorage.entities<ModuleEntity>().flatMap { it.contentRoots }.toList()
 
   val pathsToRemove = mutableMapOf<ContentRootEntity, MutableSet<Path>>()
-  val sourcesToAdd = mutableMapOf<ContentRootEntity, MutableList<SourceRootEntity>>()
-  val excludesToAdd = mutableMapOf<ContentRootEntity, MutableList<ExcludeUrlEntity>>()
+  val sourcesToAdd = mutableMapOf<ContentRootEntity, MutableList<SourceRootEntityBuilder>>()
+  val excludesToAdd = mutableMapOf<ContentRootEntity, MutableList<ExcludeUrlEntityBuilder>>()
 
   /** Find the innermost content root containing [path] that belongs to a different module than [cr]. */
   fun clashTarget(path: Path, cr: ContentRootEntity): ContentRootEntity? {
-    val innermost = allContentRoots.filter { path.startsWith(it.url.toPath()) }.maxByOrNull { it.url.url.length }
-    return innermost?.takeIf { it.module != cr.module }?.also {
+    return allContentRoots.deepestContaining(path)?.takeIf { it.module != cr.module }?.also {
       pathsToRemove.getOrPut(cr) { mutableSetOf() }.add(path)
     }
   }
@@ -404,11 +412,11 @@ private fun ensureNoSrcIntersectsWithOtherRoots(projectStorage: MutableEntitySto
   for (cr in allContentRoots) {
     for (sr in cr.sourceRoots) {
       val target = clashTarget(sr.url.toPath(), cr) ?: continue
-      if (target.sourceRoots.none { it.url == sr.url }) sourcesToAdd.getOrPut(target) { mutableListOf() }.add(sr)
+      sourcesToAdd.getOrPut(target) { mutableListOf() }.add(copyOfSourceRoot(sr, target.entitySource))
     }
     for (eu in cr.excludedUrls) {
       val target = clashTarget(eu.url.toPath(), cr) ?: continue
-      if (target.excludedUrls.none { it.url == eu.url }) excludesToAdd.getOrPut(target) { mutableListOf() }.add(eu)
+      excludesToAdd.getOrPut(target) { mutableListOf() }.add(ExcludeUrlEntity(eu.url, target.entitySource))
     }
   }
 
@@ -424,18 +432,85 @@ private fun ensureNoSrcIntersectsWithOtherRoots(projectStorage: MutableEntitySto
   }
 }
 
-/** Add collected source roots and excluded URLs to their target content roots in a single modification per target. */
+/** Add the collected roots to their target content roots, with one modification for each target. */
 private fun MutableEntityStorage.addRelocatedRoots(
-  sourcesByTarget: Map<ContentRootEntity, List<SourceRootEntity>>,
-  excludesByTarget: Map<ContentRootEntity, List<ExcludeUrlEntity>>,
+  sourcesByTarget: Map<ContentRootEntity, List<SourceRootEntityBuilder>>,
+  excludesByTarget: Map<ContentRootEntity, List<ExcludeUrlEntityBuilder>>,
 ) {
   for (target in (sourcesByTarget.keys + excludesByTarget.keys)) {
-    modifyContentRootEntity(target) {
-      sourcesByTarget[target]?.let { roots -> this.sourceRoots += roots.map { SourceRootEntity(it.url, it.rootTypeId, this.entitySource) } }
-      excludesByTarget[target]?.let { roots -> this.excludedUrls += roots.map { ExcludeUrlEntity(it.url, this.entitySource) } }
-    }
+    mergeRoots(target, sourcesByTarget[target] ?: emptyList(), excludesByTarget[target] ?: emptyList())
   }
 }
+
+/**
+ * Write [sourcesToAdd] and [excludesToAdd] to [target]. One directory gets one entity.
+ *
+ * The target keeps the entity that it holds for a url already. The function also drops a second entity for one
+ * directory that the target holds, so the sync converges. [entitySource] stamps the target and each root of it.
+ *
+ * The function makes no modification when nothing changes. A needless modification sends a change event and rewrites
+ * the `.iml` file.
+ */
+private fun MutableEntityStorage.mergeRoots(
+  target: ContentRootEntity,
+  sourcesToAdd: List<SourceRootEntityBuilder> = emptyList(),
+  excludesToAdd: List<ExcludeUrlEntityBuilder> = emptyList(),
+  entitySource: EntitySource = target.entitySource,
+) {
+  val sourceUrls = target.sourceRoots.map { it.url.url }
+  val excludeUrls = target.excludedUrls.map { it.url.url }
+  val newSources = sourcesToAdd.filter { it.url.url !in sourceUrls }
+  val newExcludes = excludesToAdd.filter { it.url.url !in excludeUrls }
+  val holdsDuplicate = sourceUrls.size != sourceUrls.toSet().size || excludeUrls.size != excludeUrls.toSet().size
+  val holdsOtherSource = target.entitySource != entitySource
+                         || target.sourceRoots.any { it.entitySource != entitySource }
+                         || target.excludedUrls.any { it.entitySource != entitySource }
+  if (newSources.isEmpty() && newExcludes.isEmpty() && !holdsDuplicate && !holdsOtherSource) return
+
+  // A modification keeps the properties of a root, which a new entity for the same url loses.
+  for (sourceRoot in target.sourceRoots.filter { it.entitySource != entitySource }) {
+    for (properties in sourceRoot.javaSourceRoots) {
+      modifyJavaSourceRootPropertiesEntity(properties) { this.entitySource = entitySource }
+    }
+    modifySourceRootEntity(sourceRoot) { this.entitySource = entitySource }
+  }
+  for (excludedUrl in target.excludedUrls.filter { it.entitySource != entitySource }) {
+    modifyExcludeUrlEntity(excludedUrl) { this.entitySource = entitySource }
+  }
+  modifyContentRootEntity(target) {
+    this.entitySource = entitySource
+    this.sourceRoots = (this.sourceRoots + newSources).distinctBy { it.url.url }
+    this.excludedUrls = (this.excludedUrls + newExcludes).distinctBy { it.url.url }
+  }
+}
+
+/**
+ * Make a source root that the IDE can compare with a root that the user marks.
+ *
+ * `ModifiableContentEntryBridge` compares a java source root by its properties. A root without a
+ * `JavaSourceRootPropertiesEntity` never matches, so the bridge writes a second entity for one directory. The `.iml`
+ * serializer gives that child to every java source root that it reads. This factory keeps a new root equal to the same
+ * root after a reload.
+ */
+private fun pyProjectSourceRoot(url: VirtualFileUrl, entitySource: EntitySource): SourceRootEntityBuilder =
+  SourceRootEntity(url, JAVA_SOURCE_ROOT_TYPE, entitySource) {
+    javaSourceRoots = listOf(JavaSourceRootPropertiesEntity(generated = false, packagePrefix = "", entitySource = entitySource))
+  }
+
+/**
+ * Copy [sourceRoot] for another content root, with [entitySource].
+ *
+ * A child entity cannot change its parent, so a root that moves needs a copy. The copy keeps the root type and the java
+ * source properties. A resource root and a custom properties root lose their properties, as they do in the old code.
+ */
+private fun copyOfSourceRoot(sourceRoot: SourceRootEntity, entitySource: EntitySource): SourceRootEntityBuilder =
+  SourceRootEntity(sourceRoot.url, sourceRoot.rootTypeId, entitySource) {
+    javaSourceRoots = sourceRoot.javaSourceRoots.map { JavaSourceRootPropertiesEntity(it.generated, it.packagePrefix, entitySource) }
+  }
+
+/** The content root that contains [path] and lies deepest. */
+private fun List<ContentRootEntity>.deepestContaining(path: Path): ContentRootEntity? =
+  filter { path.startsWith(it.url.toPath()) }.maxByOrNull { it.url.url.length }
 
 private suspend fun generatePyProjectTomlEntries(
   fsInfo: FSWalkInfoWithToml,
@@ -466,7 +541,9 @@ private suspend fun parseRawEntries(fsInfo: FSWalkInfoWithToml, pyProjectManager
     val participatedManagers = mutableSetOf<ToolId>()
     val root = tomlFile.parent
     val sourceRootsAndTools = pyProjectManagers.flatMap { tool -> tool.getSrcRoots(toml.toml, root).map { Pair(tool, it) } }.toSet()
-    val sourceRoots = sourceRootsAndTools.map { it.second }.toSet() + findSrc(root)
+    // `resolveSrcRoots` normalizes the path, the same way it does for a directory a build backend declares.
+    // `toVirtualFileUrl` only makes a path absolute, so a path that is not normal gives a second url for one directory.
+    val sourceRoots = sourceRootsAndTools.map { it.second }.toSet() + resolveSrcRoots(root, listOf("src"))
     participatedManagers.addAll(sourceRootsAndTools.map { it.first.id })
     if (participatedManagers.isEmpty()) {
       for (tool in pyProjectManagers) {
@@ -631,11 +708,6 @@ private sealed interface PyProjectTomlToolRelation {
 
 
 private val changeWorkspaceMutex = Mutex()
-
-private suspend fun findSrc(root: Directory): Set<Directory> = withContext(Dispatchers.IO) {
-  val src = root.resolve("src")
-  if (src.exists()) setOf(src) else emptySet()
-}
 
 private val PYTHON_MODULE_TYPE_ID: ModuleTypeId = ModuleTypeId(PYTHON_MODULE_ID)
 

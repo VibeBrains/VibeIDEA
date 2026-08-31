@@ -85,8 +85,8 @@ jvm_library(
         "//build/deps:dependencies",
         "//platform/util/jdom",
         "//libraries/jackson3/databind",
-        "@lib//:json-schema-validator",
-        "@lib//:kaml",
+        "//libraries/json-schema-validator",
+        "//libraries/kaml",
         "//libraries/kotlinx/serialization/json",
         "//libraries/kotlinx/serialization/core",
         "//platform/util/zip",
@@ -136,6 +136,7 @@ jvm_library(
         "//platform/build-scripts/api",
         "//platform/build-scripts/product-dsl",
         "//platform/build-scripts/licenses",
+        "//platform/distribution-content",
     ],
 )
 
@@ -193,6 +194,8 @@ jvm_library(
         "//libraries/jackson/databind:databind_test_lib",
         "//libraries/jackson/dataformat-yaml:libraries-jackson-dataformat-yaml_test_lib",
         "//libraries/jackson3/databind:databind_test_lib",
+        "//libraries/json-schema-validator:json-schema-validator_test_lib",
+        "//libraries/kaml:kaml_test_lib",
         "//libraries/kotlinx/serialization/json:json_test_lib",
         "//libraries/kotlinx/serialization/core:core_test_lib",
         "//platform/util/zip:zip_test_lib",
@@ -239,6 +242,7 @@ jvm_library(
         "//platform/build-scripts/api:api_test_lib",
         "//platform/build-scripts/product-dsl:product-dsl_test_lib",
         "//platform/build-scripts/licenses:licenses_test_lib",
+        "//platform/distribution-content:distribution-content_test_lib",
     ],
 )
 ### auto-generated section `build intellij.platform.buildScripts` end

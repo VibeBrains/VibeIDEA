@@ -10,8 +10,7 @@ import com.intellij.platform.buildScripts.licenses.SoftwareBillOfMaterials.Compa
 object CommunityLibraryLicenses {
   @Suppress("SpellCheckingInspection", "NonAsciiCharacters")
   val LICENSES_LIST: List<LibraryLicense> = listOf(
-    LibraryLicense("A fast Java JSON schema validator", libraryName = "json-schema-validator", url = "https://github.com/networknt/json-schema-validator")
-      .additionalLibraryNames("json-schema-validator-jetbrains")
+    LibraryLicense("A fast Java JSON schema validator", libraryName = "json-schema-validator-jetbrains", url = "https://github.com/networknt/json-schema-validator")
       .apache("https://github.com/networknt/json-schema-validator/blob/master/LICENSE"),
 
     LibraryLicense("aalto-xml", libraryName = "aalto-xml", url = "https://github.com/FasterXML/aalto-xml/")
@@ -205,6 +204,10 @@ object CommunityLibraryLicenses {
       .simplifiedBsd("https://github.com/cs-au-dk/dk.brics.automaton/blob/master/COPYING")
       .copyrightText("Copyright (c) 2001-2022 Anders Moeller"),
 
+    LibraryLicense("Awaitility", libraryName = "awaitility", url = "https://github.com/awaitility/awaitility")
+      .apache("https://github.com/awaitility/awaitility/blob/master/LICENSE")
+      .suppliedByPersons("Johan Haleby"),
+
     LibraryLicense("Bash-Preexec", version = "0.5.0", attachedTo = "intellij.terminal", url = "https://github.com/rcaloras/bash-preexec")
       .mit("https://github.com/rcaloras/bash-preexec/blob/master/LICENSE.md"),
 
@@ -247,6 +250,12 @@ object CommunityLibraryLicenses {
 
     LibraryLicense("classgraph", libraryName = "classgraph", url = "https://github.com/classgraph/classgraph")
       .license("codehaus", "https://github.com/codehaus/classworlds/blob/master/classworlds/LICENSE.txt"),
+
+    LibraryLicense("CLDR plural categories (derived data)", version = "48", attachedTo = "intellij.compose.ide.plugin.resources", url = "https://cldr.unicode.org/")
+      .license("Unicode", "https://www.unicode.org/license.txt"),
+
+    LibraryLicense("CLDR plural rules (derived data)", version = "48", attachedTo = "intellij.platform.util", url = "https://cldr.unicode.org/")
+      .license("Unicode", "https://www.unicode.org/license.txt"),
 
     LibraryLicense("Clikt", libraryName = "clikt", url = "https://github.com/ajalt/clikt")
       .apache("https://github.com/ajalt/clikt/blob/master/LICENSE.txt")
@@ -296,6 +305,10 @@ object CommunityLibraryLicenses {
     LibraryLicense("Compose Runtime Saveable Desktop", libraryName = "androidx.compose.runtime.saveable.desktop", url = "https://source.android.com/")
       .apache("https://cs.android.com/androidx/platform/frameworks/support/+/androidx-main:LICENSE.txt")
       .suppliedByOrganizations(Suppliers.GOOGLE),
+
+    LibraryLicense("Compose Swing UI", libraryName = "dev.matkov.compose.swing.swing-ui", url = "https://github.com/MatkovIvan/compose-swing-ui")
+      .apache("https://github.com/MatkovIvan/compose-swing-ui/blob/master/LICENSE")
+      .suppliedByPersons("Ivan Matkov"),
 
     // For ADB wireless QR Code generation
     LibraryLicense("Core barcode encoding/decoding library", url = "https://github.com/zxing/zxing/tree/master/core", libraryName = "zxing-core")
@@ -487,8 +500,8 @@ object CommunityLibraryLicenses {
       .apache("https://github.com/apache/httpcomponents-client/blob/master/LICENSE.txt")
       .suppliedByOrganizations(Suppliers.APACHE),
 
-    LibraryLicense("ICU4J", libraryName = "icu4j", url = "https://icu.unicode.org/")
-      .license("Unicode", "https://www.unicode.org/copyright.html"),
+    LibraryLicense("ICU4J MessagePattern (derived code)", version = "78.3", attachedTo = "intellij.java.i18n", url = "https://icu.unicode.org/")
+      .license("Unicode", "https://www.unicode.org/license.txt"),
 
     LibraryLicense("imgscalr", libraryName = "imgscalr", url = "https://github.com/thebuzzmedia/imgscalr")
       .apache("https://github.com/rkalla/imgscalr/blob/master/LICENSE"),
@@ -564,6 +577,7 @@ object CommunityLibraryLicenses {
       .suppliedByPersons("Tatu Saloranta", "Christopher Currie", "Paul Brown"),
 
     LibraryLicense("Jackson Dataformat TOML", libraryName = "jackson-dataformat-toml", url = "https://github.com/FasterXML/jackson-dataformats-text")
+      .additionalLibraryNames("jackson3-dataformat-toml")
       .apache("https://github.com/FasterXML/jackson-dataformats-text/blob/2.16/pom.xml")
       .suppliedByPersons("Tatu Saloranta", "Christopher Currie", "Paul Brown"),
 
@@ -1048,6 +1062,10 @@ object CommunityLibraryLicenses {
       .newBsd("https://github.com/mikaelgrev/miglayout/blob/master/src/site/resources/docs/license.txt")
       .suppliedByOrganizations("MiG InfoCom AB"),
 
+    LibraryLicense("Mockito Kotlin", libraryName = "mockito-kotlin", url = "https://github.com/mockito/mockito-kotlin")
+      .mit("https://github.com/mockito/mockito-kotlin/blob/main/LICENSE")
+      .suppliedByPersons("Niek Haarman"),
+
     LibraryLicense("MockK", libraryName = "io.mockk", url = "https://mockk.io")
       .apache("https://github.com/mockk/mockk/blob/master/LICENSE"),
 
@@ -1463,9 +1481,13 @@ object CommunityLibraryLicenses {
     jetbrainsLibrary("ai.grazie.emb"),
     jetbrainsLibrary("ai.grazie.nlp.detect"),
     jetbrainsLibrary("ai.grazie.nlp.encoder.bert.uncased"),
+    jetbrainsLibrary("ai.grazie.nlp.phonetics.jvm"),
+    jetbrainsLibrary("ai.grazie.nlp.similarity.jvm"),
     jetbrainsLibrary("ai.grazie.semantic.engine"),
     jetbrainsLibrary("ai.grazie.spell.gec.engine.local"),
     jetbrainsLibrary("ai.grazie.spell.hunspell.en"),
+    jetbrainsLibrary("ai.grazie.utils.common.jvm"),
+    jetbrainsLibrary("ai.grazie.utils.multiplatform.jvm"),
     jetbrainsLibrary("cloud-config-client"),
     jetbrainsLibrary("cloud.jetbrains.sdk.ml.jbai.ner.api"),
     jetbrainsLibrary("cloud.jetbrains.sdk.ml.jbai.tree.api"),

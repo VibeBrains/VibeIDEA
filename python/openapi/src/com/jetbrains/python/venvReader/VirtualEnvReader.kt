@@ -1,4 +1,4 @@
-// Copyright 2000-2025 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
+// Copyright 2000-2026 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.jetbrains.python.venvReader
 
 import com.intellij.execution.Platform
@@ -85,10 +85,8 @@ class VirtualEnvReader private constructor(
    */
   @RequiresBackgroundThread
   fun findVenvsInDir(root: Directory): List<PythonBinary> {
-
-    val candidates: ArrayList<Path> = arrayListOf()
     val children = try {
-      root.listDirectoryEntries().sortedBy { it.fileName.toString() }
+      root.listDirectoryEntries()
     }
     catch (_: NoSuchFileException) {
       return emptyList()
@@ -97,11 +95,13 @@ class VirtualEnvReader private constructor(
       return emptyList()
     }
 
-    for (dir in children) {
-      findPythonInPythonRoot(dir)?.let { candidates.add(it) }
-    }
-
-    return candidates
+    // This code sorts only the directories that hold a Python. The order is the same as a sort of all the children.
+    // The list is much smaller, and a child without a Python needs no string.
+    val pythonPattern = getLayout(forcedOs ?: root.osFamily)
+    return children
+      .mapNotNull { dir -> findPythonInPythonRoot(dir, pythonPattern)?.let { python -> dir.name to python } }
+      .sortedBy { it.first }
+      .map { it.second }
   }
 
   @RequiresBackgroundThread
@@ -142,8 +142,13 @@ class VirtualEnvReader private constructor(
    */
   @RequiresBackgroundThread
   fun findPythonInPythonRoot(pathOrDir: PythonHomePath): PythonBinary? {
-    val pythonPattern = getPythonBinaryPattern(pathOrDir.osFamily)
-    if (pathOrDir.isRegularFile() && pythonPattern.matches(pathOrDir.name)) {
+    val layout = getLayout(forcedOs ?: pathOrDir.osFamily)
+    return findPythonInPythonRoot(pathOrDir, layout)
+  }
+
+  @RequiresBackgroundThread
+  private fun findPythonInPythonRoot(pathOrDir: PythonHomePath, layout: PythonOsLayout): PythonBinary? {
+    if (layout.pyBinaryPattern.matches(pathOrDir.name) && pathOrDir.isRegularFile()) {
       return pathOrDir
     }
 
@@ -151,43 +156,33 @@ class VirtualEnvReader private constructor(
       return null
     }
 
-    val bin = pathOrDir.resolve("bin")
+    val bin = pathOrDir.resolve(layout.dirWithPython)
     if (bin.isDirectory()) {
-      findInterpreter(bin)?.let { return it }
+      findInterpreter(bin, layout.pyBinaryPattern)?.let { return it }
     }
 
-    val scripts = pathOrDir.resolve("Scripts")
-    if (scripts.isDirectory()) {
-      findInterpreter(scripts)?.let { return it }
-    }
-
-    return findInterpreter(pathOrDir)
+    return findInterpreter(pathOrDir, layout.pyBinaryPattern)
   }
 
   /**
    * [binaryOrDir] is either a venv root or a python binary
    */
   fun findPythonInPythonRootForTarget(binaryOrDir: FullPathOnTarget, platform: Platform): FullPathOnTarget {
-    val pythonPattern = getPythonBinaryPattern(platform)
+    val pythonPattern = getLayout(platform)
     val separator = platform.fileSeparator
     val binaryOrDirWithoutSeparatorSuffix = binaryOrDir.removeSuffix(separator.toString())
-    if (pythonPattern.matches(binaryOrDirWithoutSeparatorSuffix.substringAfterLast(separator))) {
+    if (pythonPattern.pyBinaryPattern.matches(binaryOrDirWithoutSeparatorSuffix.substringAfterLast(separator))) {
       return binaryOrDir
     }
-
-    return when (platform) {
-      Platform.WINDOWS -> "${binaryOrDirWithoutSeparatorSuffix}${separator}Scripts${separator}python.exe"
-      Platform.UNIX -> "${binaryOrDirWithoutSeparatorSuffix}${separator}bin${separator}python"
-    }
+    return arrayOf(binaryOrDirWithoutSeparatorSuffix,
+                   pythonPattern.dirWithPython,
+                   pythonPattern.defaultPyName).joinToString(separator.toString())
   }
 
   fun getVenvRoot(path: Path): Path? {
     val bin = path.parent
 
-    val binFolderName = when (forcedOs ?: path.osFamily) {
-      EelOsFamily.Posix -> "bin"
-      EelOsFamily.Windows -> "Scripts"
-    }
+    val binFolderName = getLayout(forcedOs ?: path.osFamily).dirWithPython
 
     if (bin == null || bin.fileName.pathString != binFolderName) {
       return null
@@ -203,10 +198,7 @@ class VirtualEnvReader private constructor(
     val separator = platform.fileSeparator
     val bin = path.substringBeforeLast(separator)
 
-    val binFolderName = when (platform) {
-      Platform.UNIX -> "bin"
-      Platform.WINDOWS -> "Scripts"
-    }
+    val binFolderName = getLayout(platform).dirWithPython
 
     if (bin.substringAfterLast(separator) != binFolderName) {
       return null
@@ -223,18 +215,16 @@ class VirtualEnvReader private constructor(
    * and Files.newDirectoryStream() order is undefined.
    */
   @RequiresBackgroundThread
-  private fun findInterpreter(dir: Path): PythonBinary? =
+  private fun findInterpreter(dir: Path, pythonPattern: Regex): PythonBinary? =
     try {
       Files.newDirectoryStream(dir).use { stream ->
-        val pythonPattern = getPythonBinaryPattern(forcedOs ?: dir.osFamily)
-        
+
         val candidates = stream.filter {
-          it.isRegularFile() && pythonPattern.matches(it.name)
+          pythonPattern.matches(it.name) && it.isRegularFile()
         }.toList()
-        
+
         candidates.minByOrNull { it.name.length }
       }
-
     }
     catch (_: NotDirectoryException) {
       return null
@@ -278,26 +268,25 @@ class VirtualEnvReader private constructor(
 
     const val PYENV_DEFAULT_DIR_NAME: String = ".pyenv"
 
-    private val POSIX_PYTHON_PATTERN = Regex("^(pypy|pythonw?)(\\d+(\\.\\d+)*)?t?$")
-    private val WIN_PYTHON_PATTERN = Regex("^(pypy|pythonw?)(\\d+(\\.\\d+)*)?t?(_d)?\\.exe$", RegexOption.IGNORE_CASE)
+    private val WIN_LAYOUT =
+      PythonOsLayout(Regex("^(pypy|pythonw?)(\\d+(\\.\\d+)*)?t?(_d)?\\.exe$", RegexOption.IGNORE_CASE), "Scripts", "python.exe")
+    private val POSIX_LAYOUT = PythonOsLayout(Regex("^(pypy|pythonw?)(\\d+(\\.\\d+)*)?t?$"), "bin", "python")
+
     private fun getLocalEelIfApp(): EelApi? = if (ApplicationManager.getApplication() != null) localEel else null
 
-    /**
-     * Returns a regex pattern that matches Python binary names.
-     * Matches: python, python3, python3.X, python3.X.Y, python3.X.Y.Z, etc., pypy, pypy3, pypy3.X, pypy3.X.Y, etc.
-     * (and .exe versions on Windows).
-     */
-    private fun getPythonBinaryPattern(osFamily: EelOsFamily): Regex {
-      return when (osFamily) {
-        EelOsFamily.Posix -> POSIX_PYTHON_PATTERN
-        EelOsFamily.Windows -> WIN_PYTHON_PATTERN
-      }
-    }
 
-    private fun getPythonBinaryPattern(platform: Platform): Regex = when (platform) {
-      Platform.UNIX -> POSIX_PYTHON_PATTERN
-      Platform.WINDOWS -> WIN_PYTHON_PATTERN
-    }
+    private fun getLayout(osFamily: EelOsFamily): PythonOsLayout =
+      when (osFamily) {
+        EelOsFamily.Posix -> POSIX_LAYOUT
+        EelOsFamily.Windows -> WIN_LAYOUT
+      }
+
+    private fun getLayout(platform: Platform): PythonOsLayout =
+      getLayout(
+        when (platform) {
+          Platform.UNIX -> EelOsFamily.Posix
+          Platform.WINDOWS -> EelOsFamily.Windows
+        })
   }
 }
 
@@ -306,3 +295,13 @@ class VirtualEnvReader private constructor(
  */
 @ApiStatus.Internal
 fun VirtualEnvReader(): VirtualEnvReader = Instance
+
+/**
+ * [pyBinaryPattern] Returns a regex pattern that matches Python binary names.
+ * Matches: python, python3, python3.X, python3.X.Y, python3.X.Y.Z, etc., pypy, pypy3, pypy3.X, pypy3.X.Y, etc.
+ * (and .exe versions on Windows).
+ *
+ * [dirWithPython] is `Scripts` for Windows, `bin` for POSIX.
+ * [defaultPyName] is a python name
+ */
+private data class PythonOsLayout(val pyBinaryPattern: Regex, val dirWithPython: String, val defaultPyName: String)

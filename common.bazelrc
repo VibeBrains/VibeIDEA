@@ -203,6 +203,16 @@ test --cache_test_results=auto
 # Limit concurrent local test actions on CI to avoid OOM from multiple heavy test JVMs.
 test:ci --local_test_jobs=1
 
+# Build only the test targets to skip compiling what no test needs on CI
+# Bazel ignores other targets specified on the command line, and builds only what is necessary to run the *_test and test_suite rules not filtered by their tags, timeout etc.
+test:ci --build_tests_only
+
+# Aliases for flags used by ij_plugin rule
+build --flag_alias=ide_build_number=@community//platform/build-scripts/bazel-rules/ij-ide-build-settings:ide_build_number
+build --flag_alias=ide_stability_level=@community//platform/build-scripts/bazel-rules/ij-ide-build-settings:ide_stability_level
+build --flag_alias=ij_plugin_version=@community//platform/build-scripts/bazel-rules/ij-ide-build-settings:ij_plugin_version
+build --flag_alias=ij_plugin_force_exact_build_compatibility=@community//platform/build-scripts/bazel-rules/ij-ide-build-settings:ij_plugin_force_exact_build_compatibility
+
 # A workaround for https://github.com/bazelbuild/rules_kotlin/issues/1352
 common --repo_env=ANDROID_HOME=
 
@@ -238,3 +248,47 @@ common --repo_env=COURSIER_OPTS=-Dcoursier.exception-retry-backoff-initial-delay
 common --http_timeout_scaling=2.0
 
 common --repo_env=BAZEL_MSVC_RUNTIME_VISUAL_STUDIO_EULA=1
+
+# `--worker_max_multiplex_instances` is how many WorkRequests a multiplex worker may be given *in parallel*, and its
+# fallback is far below `--jobs=HOST_CPUS*2`. Left unset, the packer would be a worker pool of a handful while 2 524
+# actions queue behind it - which is what the JVM worker this replaced was doing.
+common --worker_max_multiplex_instances=PackContentModuleJar=HOST_CPUS*2
+
+
+# Do not cache a packing action. Measured over all 2 524 jars on one laptop, warm tree, one genuine packer change per
+# row so that every row is a real cold pack and no row pays for an analysis-cache discard:
+#
+#   | what the action is allowed to do        | wall clock |
+#   | nothing cached, packs every jar         |     6.7 s  |
+#   | disk cache only                         |     9.3 s  |
+#   | disk cache and the remote cache         |    26.0 s  |
+#   | served from the disk cache, packs none  |     5.3 s  |
+#
+# The remote leg is 16.7 s of that, for an action that does about a millisecond of work: `--remote_cache_async=false`
+# (above) makes the lookup block a jobs slot, and the cache is a WAN host. This is why the scrubbing
+# route was not taken - making the key platform-independent would have turned those misses into *hits*, and the hit path
+# is a round trip plus the download of a 0.25-1 MB jar, which cannot beat merging one locally.
+#
+# The disk leg is the closer call, and it is a loss too: populating it costs 2.6 s and writes 3.3 GB into a 32 GB shared
+# cache on every cold pack, to save the 1.4 s that a hit is worth. It only ever wins on a fresh output base holding this
+# exact packer and these exact module jars, because every other case is already answered - for free - by Bazel's own
+# action cache, which `no-cache` does not touch: verified, the second identical build packs nothing. And 3.3 GB of jars
+# per cold pack evicts entries for actions that do pay a cache back, such as compilation.
+#
+# It also stops CI uploading those 3.3 GB per build for results nobody should take.
+#
+# Revisit if `--remote_download_outputs=minimal` is ever adopted (see the note above): with outputs
+# left remote, a hit costs no download and the arithmetic changes.
+common --modify_execution_info=PackContentModuleJar=+no-cache
+
+# C/C++ warnings are errors. Each external dependency disables exactly the diagnostics it emits.
+build --copt=-Werror
+build --per_file_copt=external/[+]http_archive[+]dmg_hfsplus/@-Wno-alloc-size,-Wno-sometimes-uninitialized,-Wno-uninitialized,-Wno-unused-but-set-variable,-Wno-unused-variable
+build --per_file_copt=external/[+]http_archive[+]msix_packaging/@-Wno-c++20-compat,-Wno-c++98-compat,-Wno-c++98-compat-extra-semi,-Wno-c++98-compat-local-type-template-args,-Wno-c++98-compat-pedantic,-Wno-cast-align,-Wno-cast-qual,-Wno-char-subscripts,-Wno-conditional-uninitialized,-Wno-deprecated-declarations,-Wno-exit-time-destructors,-Wno-extra-semi,-Wno-extra-semi-stmt,-Wno-global-constructors,-Wno-ignored-qualifiers,-Wno-implicit-int-conversion,-Wno-inconsistent-missing-destructor-override,-Wno-language-extension-token,-Wno-macro-redefined,-Wno-memset-transposed-args,-Wno-misleading-indentation,-Wno-missing-braces,-Wno-missing-field-initializers,-Wno-missing-prototypes,-Wno-missing-variable-declarations,-Wno-newline-eof,-Wno-non-virtual-dtor,-Wno-nonportable-system-include-path,-Wno-old-style-cast,-Wno-padded,-Wno-pessimizing-move,-Wno-pre-c++14-compat,-Wno-reorder-ctor,-Wno-reserved-macro-identifier,-Wno-self-move,-Wno-shadow,-Wno-shadow-header,-Wno-shadow-uncaptured-local,-Wno-sign-compare,-Wno-sign-conversion,-Wno-suggest-destructor-override,-Wno-suggest-override,-Wno-switch-default,-Wno-switch-enum,-Wno-tautological-value-range-compare,-Wno-thread-safety-analysis,-Wno-undef,-Wno-unique-object-duplication,-Wno-unreachable-code,-Wno-unreachable-code-break,-Wno-unsafe-buffer-usage,-Wno-unsafe-buffer-usage-in-libc-call,-Wno-unused-but-set-variable,-Wno-unused-function,-Wno-unused-parameter,-Wno-unused-template,-Wno-unused-variable,-Wno-zero-as-null-pointer-constant
+build --per_file_copt=external/jemalloc[+]/@-Wno-non-literal-null-conversion,-Wno-undef
+build --per_file_copt=external/libwebp[+]/@-Wno-bad-function-cast,-Wno-cast-align,-Wno-cast-qual,-Wno-conditional-uninitialized,-Wno-covered-switch-default,-Wno-disabled-macro-expansion,-Wno-double-promotion,-Wno-float-equal,-Wno-implicit-fallthrough,-Wno-implicit-int-conversion,-Wno-implicit-int-conversion-on-negation,-Wno-implicit-int-enum-cast,-Wno-implicit-int-float-conversion,-Wno-padded,-Wno-reserved-identifier,-Wno-sign-compare,-Wno-sign-conversion,-Wno-switch-default,-Wno-switch-enum,-Wno-undef,-Wno-unsafe-buffer-usage,-Wno-unused-macros
+build --per_file_copt=external/libx11[+]/@-Wno-constant-conversion,-Wno-logical-not-parentheses,-Wno-macro-redefined,-Wno-parentheses-equality,-Wno-unused-but-set-variable
+build --per_file_copt=external/libxcb[+]/@-Wno-alloc-size,-Wno-unused-but-set-variable
+build --per_file_copt=external/xz[+]/@-Wno-c++-keyword,-Wno-cast-function-type-strict,-Wno-cast-qual,-Wno-covered-switch-default,-Wno-declaration-after-statement,-Wno-disabled-macro-expansion,-Wno-extra-semi-stmt,-Wno-implicit-fallthrough,-Wno-implicit-int-conversion,-Wno-implicit-int-enum-cast,-Wno-implicit-void-ptr-cast,-Wno-microsoft-include,-Wno-missing-noreturn,-Wno-nonportable-system-include-path,-Wno-padded,-Wno-reserved-macro-identifier,-Wno-shadow-header,-Wno-shorten-64-to-32,-Wno-sign-conversion,-Wno-switch-default,-Wno-switch-enum,-Wno-unsafe-buffer-usage,-Wno-unused-function,-Wno-unused-parameter
+build --per_file_copt=external/zlib[+]/@-Wno-c++-keyword,-Wno-c++98-compat-pedantic,-Wno-cast-align,-Wno-cast-qual,-Wno-comma,-Wno-covered-switch-default,-Wno-extra-semi-stmt,-Wno-format-nonliteral,-Wno-implicit-fallthrough,-Wno-implicit-void-ptr-cast,-Wno-missing-format-attribute,-Wno-padded,-Wno-reserved-identifier,-Wno-reserved-macro-identifier,-Wno-shadow-header,-Wno-shorten-64-to-32,-Wno-sign-conversion,-Wno-switch-default,-Wno-switch-enum,-Wno-undef,-Wno-unsafe-buffer-usage
+build --per_file_copt=external/zstd[+]/@-Wno-bad-function-cast,-Wno-comma,-Wno-covered-switch-default,-Wno-disabled-macro-expansion,-Wno-documentation-unknown-command,-Wno-extra-semi-stmt,-Wno-format-signedness,-Wno-missing-variable-declarations,-Wno-nonportable-system-include-path,-Wno-nrvo,-Wno-padded,-Wno-pre-c11-compat,-Wno-reserved-identifier,-Wno-reserved-macro-identifier,-Wno-sign-conversion,-Wno-switch-default,-Wno-unreachable-code,-Wno-unreachable-code-return,-Wno-unsafe-buffer-usage,-Wno-unused-function,-Wno-unused-macros,-Wno-used-but-marked-unused

@@ -6,13 +6,16 @@ import com.intellij.openapi.projectRoots.Sdk
 import com.intellij.platform.eel.provider.localEel
 import com.intellij.python.hatch.HatchPyTool
 import com.intellij.python.hatch.HatchService
-import com.intellij.python.pytools.resolveExecutable
 import com.intellij.python.pyproject.PY_PROJECT_TOML
-import com.intellij.util.cancelOnDispose
+import com.intellij.python.pyproject.PyProjectToml
+import com.intellij.python.pytools.resolveExecutable
+import com.intellij.python.requirements.parser.PyRequirementParser
 import com.jetbrains.python.Result
 import com.jetbrains.python.errorProcessing.PyResult
 import com.jetbrains.python.hatch.sdk.createHatchServiceAsync
 import com.jetbrains.python.hatch.sdk.isHatch
+import com.jetbrains.python.packaging.common.PythonPackage
+import com.jetbrains.python.packaging.common.toPythonPackage
 import com.jetbrains.python.packaging.management.PythonManagerCliSpec
 import com.jetbrains.python.packaging.management.PythonPackageManager
 import com.jetbrains.python.packaging.management.PythonPackageManagerProvider
@@ -33,7 +36,7 @@ internal class HatchPackageManager(
   )
 
   private lateinit var hatchService: PyResult<HatchService<*>>
-  private val hatchServiceDeferred = hatchServiceDeferred.also { it.cancelOnDispose(this) }
+  private val hatchServiceDeferred = hatchServiceDeferred.cancelWithManager()
 
   private suspend fun <T> withHatch(action: suspend (HatchService<*>) -> PyResult<T>): PyResult<T> {
     if (!this::hatchService.isInitialized) {
@@ -54,6 +57,17 @@ internal class HatchPackageManager(
     get() = listOf(
       Path.of(PY_PROJECT_TOML),
     )
+
+  override suspend fun listDeclaredPackages(): PyResult<List<PythonPackage>>? {
+    val pyProjectFile = getRootDependenciesFile() ?: return null
+    val pyProject = PyProjectToml.parseCached(project, pyProjectFile.virtualFile)
+                    ?: return PyResult.success(emptyList())
+
+    val packages = pyProject.allDeclaredDeps
+      .mapNotNull { PyRequirementParser.fromLine(it, project) }
+      .map { it.toPythonPackage() }
+    return PyResult.success(packages)
+  }
 }
 
 internal class HatchPackageManagerProvider : PythonPackageManagerProvider {

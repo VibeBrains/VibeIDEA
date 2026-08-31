@@ -26,6 +26,7 @@ import com.intellij.openapi.fileEditor.FileEditor
 import com.intellij.openapi.fileEditor.FileEditorState
 import com.intellij.openapi.fileEditor.FileEditorStateLevel
 import com.intellij.openapi.fileEditor.TextEditor
+import com.intellij.openapi.fileEditor.createdFileEditorSink
 import com.intellij.openapi.fileEditor.impl.text.AsyncEditorLoader.Companion.isEditorLoaded
 import com.intellij.openapi.fileTypes.BinaryFileTypeDecompilers
 import com.intellij.openapi.project.Project
@@ -70,6 +71,8 @@ open class PsiAwareTextEditorProvider : TextEditorProvider(), AsyncFileEditorPro
       editorCoroutineScope = editorCoroutineScope,
     )
 
+    // if cancellation lands between the editor creation and the consumption of the result, coroutineScope discards the created editor
+    val createdEditors = createdFileEditorSink()
     return coroutineScope {
       val effectiveDocument = document!!
 
@@ -118,6 +121,7 @@ open class PsiAwareTextEditorProvider : TextEditorProvider(), AsyncFileEditorPro
           editor.gutterComponentEx.setInitialIconAreaWidth(EditorGutterLayout.getInitialGutterWidth())
           val component = createPsiAwareTextEditorComponent(file = file, editor = editor)
           val textEditor = PsiAwareTextEditorImpl(project = project, file = file, component = component, asyncLoader = asyncLoader)
+          createdEditors?.register(textEditor)
           asyncLoader.start(textEditor = textEditor, task = task)
           textEditor
         }

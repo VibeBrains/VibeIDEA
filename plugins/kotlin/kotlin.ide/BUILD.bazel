@@ -1,4 +1,5 @@
 load("@rules_jvm//:jvm.bzl", "jvm_library")
+load("//platform/build-scripts/bazel-rules:content_module_jar.bzl", "content_module_jar")
 
 ### auto-generated section `build intellij.kotlin.ide` start
 jvm_library(
@@ -53,14 +54,16 @@ jvm_library(
         "//platform/util:util-ui",
         "//plugins/kotlin/code-insight/impl-base:kotlin-codeInsight-shared",
         "//platform/diff-impl",
-        "@lib//:kotlinc-kotlin-scripting-common",
-        "@lib//:kotlinc-kotlin-scripting-compiler-impl",
+        "//libraries/kotlinc/kotlin-scripting-common:libraries-kotlinc-kotlin-scripting-common",
+        "//libraries/kotlinc/kotlin-scripting-compiler-impl:libraries-kotlinc-kotlin-scripting-compiler-impl",
         "//plugins/kotlin/base/scripting/scripting.shared",
         "//libraries/gson",
         "//platform/structure-view-impl:structureView",
         "//platform/statistics",
     ],
 )
+
+content_module_jar(module = ":kotlin.ide")
 
 jvm_library(
     name = "kotlin.ide_test_lib",
@@ -108,6 +111,8 @@ jvm_library(
         "//platform/util:util-ui_test_lib",
         "//plugins/kotlin/code-insight/impl-base:kotlin-codeInsight-shared_test_lib",
         "//platform/diff-impl:diff-impl_test_lib",
+        "//libraries/kotlinc/kotlin-scripting-common:libraries-kotlinc-kotlin-scripting-common_test_lib",
+        "//libraries/kotlinc/kotlin-scripting-compiler-impl:libraries-kotlinc-kotlin-scripting-compiler-impl_test_lib",
         "//plugins/kotlin/base/scripting/scripting.shared:scripting.shared_test_lib",
         "//libraries/gson:gson_test_lib",
         "//platform/structure-view-impl:structureView_test_lib",

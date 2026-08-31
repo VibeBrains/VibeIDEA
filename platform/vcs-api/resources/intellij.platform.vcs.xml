@@ -34,6 +34,18 @@
     <extensionPoint name="checkoutCompletedListener"
                     interface="com.intellij.openapi.vcs.checkout.CheckoutListener"
                     dynamic="true"/>
+
+    <extensionPoint name="changeListManagerStatusProvider"
+                    interface="com.intellij.openapi.vcs.changes.ChangeListManagerStatusProvider"
+                    dynamic="true"/>
+
+    <extensionPoint qualifiedName="com.intellij.vcs.envCustomizer"
+                    interface="com.intellij.openapi.vcs.VcsEnvCustomizer"
+                    dynamic="true"/>
+
+    <extensionPoint qualifiedName="com.intellij.vcs.codeVisionLanguageContext" beanClass="com.intellij.lang.LanguageExtensionPoint" dynamic="true">
+      <with attribute="implementationClass" implements="com.intellij.codeInsight.hints.VcsCodeVisionLanguageContext"/>
+    </extensionPoint>
   </extensionPoints>
   <extensions defaultExtensionNs="com.intellij">
     <projectSettings service="com.intellij.openapi.vcs.VcsSharedProjectSettings"/>

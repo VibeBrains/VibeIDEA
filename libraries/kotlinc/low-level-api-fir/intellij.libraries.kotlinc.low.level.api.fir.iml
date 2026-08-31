@@ -25,19 +25,19 @@
     <orderEntry type="sourceFolder" forTests="false" />
     <orderEntry type="module-library" exported="">
       <library name="kotlinc.low-level-api-fir" type="repository">
-        <properties include-transitive-deps="false" maven-id="org.jetbrains.kotlin:low-level-api-fir-for-ide:2.5.0-dev-4715">
+        <properties include-transitive-deps="false" maven-id="org.jetbrains.kotlin:low-level-api-fir-for-ide:2.5.0-dev-5674">
           <verification>
-            <artifact url="file://$MAVEN_REPOSITORY$/org/jetbrains/kotlin/low-level-api-fir-for-ide/2.5.0-dev-4715/low-level-api-fir-for-ide-2.5.0-dev-4715.jar">
-              <sha256sum>b5999425fcf70e938b01e421e9f337d98589feec46ddf30693030defcc8cac8b</sha256sum>
+            <artifact url="file://$MAVEN_REPOSITORY$/org/jetbrains/kotlin/low-level-api-fir-for-ide/2.5.0-dev-5674/low-level-api-fir-for-ide-2.5.0-dev-5674.jar">
+              <sha256sum>377e30d1b60e06ac5d93531b10c7bac574e10c4f352f43dc60eea11f748b0f1b</sha256sum>
             </artifact>
           </verification>
         </properties>
         <CLASSES>
-          <root url="jar://$MAVEN_REPOSITORY$/org/jetbrains/kotlin/low-level-api-fir-for-ide/2.5.0-dev-4715/low-level-api-fir-for-ide-2.5.0-dev-4715.jar!/" />
+          <root url="jar://$MAVEN_REPOSITORY$/org/jetbrains/kotlin/low-level-api-fir-for-ide/2.5.0-dev-5674/low-level-api-fir-for-ide-2.5.0-dev-5674.jar!/" />
         </CLASSES>
         <JAVADOC />
         <SOURCES>
-          <root url="jar://$MAVEN_REPOSITORY$/org/jetbrains/kotlin/low-level-api-fir-for-ide/2.5.0-dev-4715/low-level-api-fir-for-ide-2.5.0-dev-4715-sources.jar!/" />
+          <root url="jar://$MAVEN_REPOSITORY$/org/jetbrains/kotlin/low-level-api-fir-for-ide/2.5.0-dev-5674/low-level-api-fir-for-ide-2.5.0-dev-5674-sources.jar!/" />
         </SOURCES>
       </library>
     </orderEntry>
@@ -45,5 +45,10 @@
     <orderEntry type="module" module-name="intellij.libraries.kotlinc.kotlin.compiler.common" scope="RUNTIME" />
     <orderEntry type="module" module-name="intellij.libraries.kotlinc.analysis.api.platform.interface" scope="RUNTIME" />
     <orderEntry type="module" module-name="intellij.libraries.kotlinc.kotlin.compiler.fir" scope="RUNTIME" />
+    <orderEntry type="module" module-name="intellij.libraries.kotlinc.kotlin.scripting.common" scope="RUNTIME" />
+    <orderEntry type="module" module-name="intellij.libraries.kotlinc.assignment.compiler.plugin" scope="RUNTIME" />
+    <orderEntry type="module" module-name="intellij.libraries.kotlinc.kotlin.scripting.jvm" scope="RUNTIME" />
+    <orderEntry type="module" module-name="intellij.libraries.kotlinc.kotlin.scripting.compiler.impl" scope="RUNTIME" />
+    <orderEntry type="module" module-name="intellij.libraries.kotlinc.scripting.compiler.plugin" scope="RUNTIME" />
   </component>
 </module>

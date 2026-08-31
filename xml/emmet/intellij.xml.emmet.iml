@@ -28,7 +28,6 @@
       <sourceFolder url="file://$MODULE_DIR$/src" isTestSource="false" />
     </content>
     <orderEntry type="inheritedJdk" />
-    <orderEntry type="module" module-name="intellij.platform.kernel" />
     <orderEntry type="sourceFolder" forTests="false" />
     <orderEntry type="module" module-name="intellij.libraries.jetbrains.annotations" />
     <orderEntry type="module" module-name="intellij.platform.core" scope="PROVIDED" />
@@ -57,7 +56,5 @@
     <orderEntry type="module" module-name="intellij.platform.rpc.topics" scope="PROVIDED" />
     <orderEntry type="module" module-name="intellij.platform.project" scope="PROVIDED" />
     <orderEntry type="module" module-name="intellij.libraries.kotlinx.serialization.core" scope="PROVIDED" />
-    <orderEntry type="module" module-name="fleet.rpc" scope="PROVIDED" />
-    <orderEntry type="module" module-name="intellij.platform.rpc" />
   </component>
 </module>

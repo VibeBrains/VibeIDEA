@@ -1,6 +1,7 @@
 load("@community//build:tests-options.bzl", "jps_test")
 load("@rules_jvm//:jvm.bzl", "jvm_library")
 load("//build:compiler-options.bzl", "create_kotlinc_options")
+load("//platform/build-scripts/bazel-rules:content_module_jar.bzl", "content_module_jar")
 
 ### auto-generated section `build intellij.kotlin.base.scripting.scratch` start
 create_kotlinc_options(
@@ -63,13 +64,13 @@ jvm_library(
         "//plugins/kotlin/base/scripting/scripting.shared",
         "//platform/util/jdom",
         "//platform/statistics",
-        "@lib//:kotlinc-kotlin-scripting-compiler-impl",
-        "@lib//:kotlinc-kotlin-scripting-common",
+        "//libraries/kotlinc/kotlin-scripting-compiler-impl:libraries-kotlinc-kotlin-scripting-compiler-impl",
+        "//libraries/kotlinc/kotlin-scripting-common:libraries-kotlinc-kotlin-scripting-common",
         "//plugins/kotlin/base/scripting/scripting.scratch.definition",
         "//plugins/kotlin/code-insight/kotlin.code-insight.k2:kotlin-codeInsight",
         "//plugins/kotlin/code-insight/impl-base:kotlin-codeInsight-shared",
         "//libraries/kotlinc/analysis-api:libraries-kotlinc-analysis-api",
-        "@lib//:kotlinc-kotlin-scripting-jvm",
+        "//libraries/kotlinc/kotlin-scripting-jvm:libraries-kotlinc-kotlin-scripting-jvm",
         "//plugins/kotlin/refactorings/kotlin.refactorings.common:kotlin-refactorings-base",
         "//plugins/kotlin/base/statistics",
         "//platform/util/progress",
@@ -81,6 +82,8 @@ jvm_library(
         "//java/openapi:java",
     ],
 )
+
+content_module_jar(module = ":scripting.scratch")
 
 jvm_library(
     name = "scripting.scratch_test_lib",
@@ -129,10 +132,13 @@ jvm_library(
         "//plugins/kotlin/base/scripting/scripting.shared:scripting.shared_test_lib",
         "//platform/util/jdom:jdom_test_lib",
         "//platform/statistics:statistics_test_lib",
+        "//libraries/kotlinc/kotlin-scripting-compiler-impl:libraries-kotlinc-kotlin-scripting-compiler-impl_test_lib",
+        "//libraries/kotlinc/kotlin-scripting-common:libraries-kotlinc-kotlin-scripting-common_test_lib",
         "//plugins/kotlin/base/scripting/scripting.scratch.definition:scripting.scratch.definition_test_lib",
         "//plugins/kotlin/code-insight/kotlin.code-insight.k2:kotlin-codeInsight_test_lib",
         "//plugins/kotlin/code-insight/impl-base:kotlin-codeInsight-shared_test_lib",
         "//libraries/kotlinc/analysis-api:libraries-kotlinc-analysis-api_test_lib",
+        "//libraries/kotlinc/kotlin-scripting-jvm:libraries-kotlinc-kotlin-scripting-jvm_test_lib",
         "//plugins/kotlin/refactorings/kotlin.refactorings.common:kotlin-refactorings-base_test_lib",
         "//plugins/kotlin/base/statistics:statistics_test_lib",
         "//platform/util/progress:progress_test_lib",

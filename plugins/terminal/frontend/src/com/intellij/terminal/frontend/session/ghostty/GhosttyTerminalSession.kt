@@ -4,8 +4,9 @@ package com.intellij.terminal.frontend.session.ghostty
 import com.intellij.openapi.diagnostic.logger
 import com.intellij.openapi.project.Project
 import com.intellij.platform.eel.EelDescriptor
-import com.intellij.terminal.JBTerminalSystemSettingsProviderBase
+import com.intellij.platform.eel.provider.LocalEelDescriptor
 import com.intellij.platform.util.coroutines.childScope
+import com.intellij.terminal.JBTerminalSystemSettingsProviderBase
 import com.intellij.terminal.emulator.ScreenChange
 import com.intellij.terminal.emulator.TerminalCustomCommandListener
 import com.intellij.terminal.emulator.TerminalEmulator
@@ -33,16 +34,18 @@ import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import org.jetbrains.annotations.ApiStatus
+import org.jetbrains.annotations.VisibleForTesting
 import org.jetbrains.plugins.terminal.LocalTerminalTtyConnector
 import org.jetbrains.plugins.terminal.ShellStartupOptions
 import org.jetbrains.plugins.terminal.TerminalEmulatorType
 import org.jetbrains.plugins.terminal.TerminalUtil
+import org.jetbrains.plugins.terminal.block.ui.TerminalUiUtils
 import org.jetbrains.plugins.terminal.original
 import org.jetbrains.plugins.terminal.session.impl.TerminalBeepEvent
 import org.jetbrains.plugins.terminal.session.impl.TerminalClearBufferEvent
 import org.jetbrains.plugins.terminal.session.impl.TerminalCloseEvent
 import org.jetbrains.plugins.terminal.session.impl.TerminalCursorPositionChangedEvent
-import org.jetbrains.plugins.terminal.startup.TerminalProcessType
 import org.jetbrains.plugins.terminal.session.impl.TerminalInputEvent
 import org.jetbrains.plugins.terminal.session.impl.TerminalOutputEvent
 import org.jetbrains.plugins.terminal.session.impl.TerminalResizeEvent
@@ -52,6 +55,7 @@ import org.jetbrains.plugins.terminal.session.impl.TerminalStateChangedEvent
 import org.jetbrains.plugins.terminal.session.impl.TerminalWriteBytesEvent
 import org.jetbrains.plugins.terminal.session.impl.dto.KeyEventProcessingResultDto
 import org.jetbrains.plugins.terminal.session.impl.dto.TerminalStateDto
+import org.jetbrains.plugins.terminal.startup.TerminalProcessType
 import java.awt.event.KeyEvent
 import java.awt.event.MouseEvent
 import java.util.concurrent.locks.ReentrantLock
@@ -70,9 +74,7 @@ import kotlin.time.Duration.Companion.milliseconds
  *   [TerminalOutputEvent] model (content / cursor / state) by
  *   [TerminalEmulatorOutputProjector] and pushed to [getOutputFlow] on a fixed cadence
  *   ([OUTPUT_POLL_INTERVAL], like the JediTerm pipeline), so a burst of writes
- *   coalesces into one delta; the read loop forces an early projection only when
- *   unreported history nears eviction (see
- *   [TerminalEmulatorOutputProjector.isUnemittedHistoryEvictionImminent]);
+ *   coalesces into one delta;
  * - OSC 1341 shell-integration commands are received via
  *   [TerminalEmulator.customCommandListener], parsed by the shared
  *   [TerminalShellIntegrationController], and turned into
@@ -88,17 +90,21 @@ import kotlin.time.Duration.Companion.milliseconds
  * ### Known gaps vs. the JediTerm pipeline (this backend is experimental)
  * - **Partial state**: `isAutoNewLine` and `isAltSendsEscape` are absent from the
  *   emulator API, so they keep their defaults.
- * - **Scrollback overflow**: content updates are incremental (only the changed tail);
- *   a [com.intellij.terminal.emulator.HistoryMark] keeps the appended-line count exact
- *   even past the scrollback cap, so the tail is under-reported only in the extreme
- *   case where a single write scrolls past the entire retained scrollback (see
- *   [TerminalEmulatorOutputProjector.buildContentUpdate]).
+ * - **Scrollback overflow**: content updates are incremental (only the changed tail),
+ *   tracked exactly via a [com.intellij.terminal.emulator.HistoryMark] — except that a
+ *   burst fast enough to finalize more than the whole retained scrollback between two
+ *   projection ticks makes the old numbering unrecoverable, so the projector resets and reports
+ *   only the currently visible tail instead (see
+ *   [TerminalEmulatorOutputProjector.buildContentUpdate]) — already-shown history can be
+ *   dropped in that case.
  * - **Buffer switch mid-frame**: when one projection window contains both an
  *   alternate-screen switch and drawing, only the newly active buffer's frame is
  *   emitted — the old buffer's last pre-switch changes are not (the JediTerm pipeline
  *   flushes before switching; the emulator has no such hook).
  */
-internal class GhosttyTerminalSession(
+@ApiStatus.Internal
+@VisibleForTesting
+class GhosttyTerminalSession internal constructor(
   private val ttyConnector: TtyConnector,
   initialSize: TerminalSize,
   initialWorkingDirectory: String?,
@@ -107,7 +113,15 @@ internal class GhosttyTerminalSession(
   override val coroutineScope: CoroutineScope,
 ) : TerminalSession {
 
-  private val emulator: TerminalEmulator = createTerminalEmulator(initialSize)
+  private val emulator: TerminalEmulator = createTerminalEmulator(
+    initialSize,
+    // Ghostty's scrollback is measured in bytes, not characters.
+    // Taking into account that a single cell is ~9 bytes, then, to occupy `defaultMaxOutputLength` chars,
+    // we need `9 x defaultMaxOutputLength`, in the case of very dense output.
+    // Let's use 10 as a multiplier to have a bit more.
+    // But in the case of sparse output, such bytes budget may include even fewer characters.
+    maxScrollbackBytes = 10 * TerminalUiUtils.getDefaultMaxOutputLength(),
+  )
 
   // Projects emulator state into the output-event DTOs and owns the
   // incremental-emission bookkeeping. Created with the emulator; closed on teardown.
@@ -192,14 +206,35 @@ internal class GhosttyTerminalSession(
   @Volatile
   private var disposed: Boolean = false
 
-  private val localTtyConnector: LocalTerminalTtyConnector
-    get() = ttyConnector.original as LocalTerminalTtyConnector
+  private val localTtyConnector: LocalTerminalTtyConnector?
+    get() = ttyConnector.original as? LocalTerminalTtyConnector
 
   override val eelDescriptor: EelDescriptor
-    get() = localTtyConnector.eelDescriptor
+    /**
+     * Falls back to [LocalEelDescriptor] when [ttyConnector] isn't a [LocalTerminalTtyConnector].
+     * In production, [ttyConnector] is always a [LocalTerminalTtyConnector].
+     * The fallback is test-only, exercised by tests driving the session through a fake connector.
+     */
+    get() = localTtyConnector?.eelDescriptor ?: LocalEelDescriptor
+
+  private var missingLocalTtyConnectorLogged = false
 
   override val processId: Long
-    get() = localTtyConnector.shellEelProcess.eelProcess.pid.value
+    /**
+     * In production, [ttyConnector] is always a [LocalTerminalTtyConnector].
+     * Miss can happen only in tests where a fake connector is used, so `LOG.error` to fail the test.
+     */
+    get() {
+      val connector = localTtyConnector
+      if (connector == null) {
+        if (!missingLocalTtyConnectorLogged) {
+          missingLocalTtyConnectorLogged = true
+          LOG.error("Unable to find LocalTerminalTtyConnector in $ttyConnector")
+        }
+        return -1
+      }
+      return connector.shellEelProcess.eelProcess.pid.value
+    }
 
   /**
    * Invoked by the working-directory tracker; the new value is reported by the next
@@ -251,16 +286,7 @@ internal class GhosttyTerminalSession(
             if (disposed) break
             emulator.write(String(buffer, 0, count))
             changedSinceLastProjection = true
-            projector.noteOutputWritten()
             responses = takeResponsesLocked()
-            // Projection is normally the polling job's duty (below); step in only when
-            // so much history piled up unreported that further output would evict it
-            // unseen. Deferral is bypassed: painting a mid-block frame beats losing
-            // scrollback for good, and a program that scrolls this much inside one
-            // synchronized-output block is not composing a frame anyway.
-            if (projector.isUnemittedHistoryEvictionImminent()) {
-              projectAndEmitLocked(bypassSyncOutputDeferral = true)
-            }
           }
           flushResponses(responses)
         }
@@ -314,8 +340,11 @@ internal class GhosttyTerminalSession(
           // An idle tick (nothing changed, no force paint pending) costs one lock
           // acquisition and nothing else — no FFI reads.
           val forcePaint = consumeSyncOutputForcePaintLocked()
-          if (changedSinceLastProjection || forcePaint) {
-            projectAndEmitLocked(bypassSyncOutputDeferral = forcePaint)
+          if (changedSinceLastProjection || forcePaint || projector.isHistoryReplaced) {
+            val events = syncLocked(bypassSyncOutputDeferral = forcePaint)
+            if (events.isNotEmpty()) {
+              emitOutputBlocking(events)
+            }
           }
           responses = takeResponsesLocked()
         }
@@ -422,21 +451,6 @@ internal class GhosttyTerminalSession(
   }
 
   /**
-   * Must be called under [lock]. Projects the current emulator state into output
-   * events and emits them, blocking — still under the lock — until the collector
-   * takes them.
-   *
-   * Emitting under the lock is the backpressure, the same shape the JediTerm pipeline
-   * gets by emitting under its text-buffer lock: while a slow (or absent) collector
-   * keeps this blocked, the read loop cannot take the lock to feed the emulator more
-   * output, the PTY buffer fills, and the shell itself stops writing.
-   */
-  private fun projectAndEmitLocked(bypassSyncOutputDeferral: Boolean = false) {
-    val events = syncLocked(bypassSyncOutputDeferral)
-    if (events.isNotEmpty()) emitOutputBlocking(events)
-  }
-
-  /**
    * Emits [events] on [outputFlow], retrying with a short sleep until accepted and
    * bailing out only once torn down. Blocking rather than suspending is deliberate:
    * the projection sites hold [lock] — a plain lock, which a coroutine must not
@@ -489,7 +503,11 @@ internal class GhosttyTerminalSession(
 
     val change = emulator.takeChanges()
     val scrollbackRows = emulator.scrollbackRows
-    val contentChanged = change != ScreenChange.None || scrollbackRows != lastScrollbackRows
+    // isHistoryReplaced: the projector replaced the history with the screen alone and restores it on the
+    // first projection that finalizes nothing, so it has to run even when nothing changed.
+    val contentChanged = change != ScreenChange.None ||
+                         scrollbackRows != lastScrollbackRows ||
+                         projector.isHistoryReplaced
     lastScrollbackRows = scrollbackRows
 
     if (contentChanged) {
