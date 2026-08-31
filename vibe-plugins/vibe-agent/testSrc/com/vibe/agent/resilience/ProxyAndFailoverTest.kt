@@ -74,4 +74,16 @@ class FailoverPlanTest {
     assertTrue(FailoverPlan.shouldFailOver(RetryPolicy.Kind.RATE_LIMIT, retriesExhausted = true))
     assertTrue(FailoverPlan.shouldFailOver(RetryPolicy.Kind.TRANSIENT, retriesExhausted = true))
   }
+
+  @Test
+  fun `цепочка внутри одного вендора запасным планом не является`() {
+    val same = FailoverPlan.parseChain("openai/gpt-5, openai/gpt-5-mini")
+    val mixed = FailoverPlan.parseChain("openai/gpt-5, anthropic/claude-opus-5")
+    assertTrue(FailoverPlan.isSingleVendor(same))
+    assertFalse(FailoverPlan.isSingleVendor(mixed))
+    // Текущая цель тоже вендор: цепочка из одного ЧУЖОГО вендора планом остаётся.
+    assertFalse(FailoverPlan.isSingleVendor(FailoverPlan.parseChain("anthropic/claude-opus-5"), currentProviderId = "openai"))
+    assertTrue(FailoverPlan.isSingleVendor(FailoverPlan.parseChain("openai/gpt-5-mini"), currentProviderId = "OpenAI"))
+    assertFalse(FailoverPlan.isSingleVendor(emptyList()), "пустая цепочка — это отсутствие плана, а не одновендорность")
+  }
 }

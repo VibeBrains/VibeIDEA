@@ -149,6 +149,7 @@ object VibeAgentSettings {
   private const val KEY_AUTOPILOT = "vibe.agent.autopilot.enabled"
   private const val KEY_AUTOPILOT_MAX_TURNS = "vibe.agent.autopilot.maxTurns"
   private const val KEY_AUTOPILOT_CHECKPOINT = "vibe.agent.autopilot.checkpointEvery"
+  private const val KEY_AUTOPILOT_MAX_TOKENS = "vibe.agent.autopilot.maxTokens"
 
   /** Off by default: a ceiling nobody set must not become a wall in the middle of real work. */
   const val DEFAULT_ROLE_BUDGET_TOKENS = 0
@@ -163,6 +164,10 @@ object VibeAgentSettings {
   const val DEFAULT_AUTOPILOT_MAX_TURNS = 10
   const val MAX_AUTOPILOT_TURNS = 100
   const val DEFAULT_AUTOPILOT_CHECKPOINT = 3
+
+  /** Tokens one unattended stretch may spend; 0 turns the ceiling off. Turns are not money. */
+  const val DEFAULT_AUTOPILOT_MAX_TOKENS = 200_000
+  const val MAX_AUTOPILOT_MAX_TOKENS = 100_000_000
 
   /** Minutes of total silence before the turn is called hung; 0 turns the switch off. */
   const val DEFAULT_SILENCE_MINUTES = 5
@@ -407,6 +412,10 @@ object VibeAgentSettings {
   var autopilotCheckpointEvery: Int
     get() = props.getInt(KEY_AUTOPILOT_CHECKPOINT, DEFAULT_AUTOPILOT_CHECKPOINT).coerceIn(0, MAX_AUTOPILOT_TURNS)
     set(value) = props.setValue(KEY_AUTOPILOT_CHECKPOINT, value.coerceIn(0, MAX_AUTOPILOT_TURNS), DEFAULT_AUTOPILOT_CHECKPOINT)
+
+  var autopilotMaxTokens: Int
+    get() = props.getInt(KEY_AUTOPILOT_MAX_TOKENS, DEFAULT_AUTOPILOT_MAX_TOKENS).coerceIn(0, MAX_AUTOPILOT_MAX_TOKENS)
+    set(value) = props.setValue(KEY_AUTOPILOT_MAX_TOKENS, value.coerceIn(0, MAX_AUTOPILOT_MAX_TOKENS), DEFAULT_AUTOPILOT_MAX_TOKENS)
 
   var agentSilenceMinutes: Int
     get() = props.getInt(KEY_SILENCE_MINUTES, DEFAULT_SILENCE_MINUTES).coerceIn(0, MAX_SILENCE_MINUTES)

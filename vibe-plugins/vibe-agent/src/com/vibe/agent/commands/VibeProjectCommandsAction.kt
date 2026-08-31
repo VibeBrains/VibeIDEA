@@ -59,6 +59,18 @@ class VibeProjectCommandsAction : AnAction({ t("commands.action") }) {
                                  t("commands.title"))
       return
     }
+    // Names only — never values. The audit answers «что уехало вместе с командой», and a log that
+    // answered it by printing the token would be the leak it exists to investigate.
+    if (command.secretNames.isNotEmpty()) {
+      com.vibe.agent.audit.VibeAuditService.getInstance(project).get()?.append(
+        com.vibe.agent.audit.AuditEvent(
+          ts = System.currentTimeMillis(),
+          action = com.vibe.agent.audit.AuditEvent.Action.SECRET_USED,
+          ok = true,
+          meta = mapOf("names" to command.secretNames.joinToString(","), "consumer" to command.title),
+        )
+      )
+    }
     // Its own short-lived terminal service: the panel's one belongs to the agent's turn, and a
     // command started by a person must not disappear when that turn ends.
     com.vibe.agent.terminal.AgentTerminalService(project.basePath)

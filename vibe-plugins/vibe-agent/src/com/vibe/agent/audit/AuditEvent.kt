@@ -56,5 +56,15 @@ data class AuditEvent(
     const val CIRCUIT_BREAKER_RECOVERED = "circuit_breaker_recovered"
     const val CHECKPOINT = "checkpoint"
     const val TERMINAL = "terminal"
+
+    /**
+     * A secret was substituted into something that then ran.
+     *
+     * The NAME is recorded and never the value: when an incident is being unpicked, the first
+     * question is «какие токены уехали вместе с этой командой», and today the log shows the command
+     * and says nothing about what travelled with it. A log that answered by printing the token
+     * would be the leak it was meant to help investigate.
+     */
+    const val SECRET_USED = "secret_used"
   }
 }

@@ -55,6 +55,41 @@ class VibeDoctorAction : AnAction({ t("doctor.action") }) {
     ))
 
     val acp = base?.let { Files.exists(Path.of(it, ".vibe", "acp.json")) } ?: false
+    val today = java.time.LocalDate.now()
+    val notices = com.vibe.agent.providers.ModelSunset.notices(providers, today)
+    val retired = notices.count { it.state == com.vibe.agent.providers.ModelSunset.State.RETIRED }
+    val soon = notices.filter { it.state == com.vibe.agent.providers.ModelSunset.State.SOON }
+    lines.add(VibeDiagnosis.Line(
+      t("doctor.line.sunset"),
+      when {
+        soon.isNotEmpty() -> VibeDiagnosis.State.WARN
+        retired > 0 -> VibeDiagnosis.State.ABSENT
+        else -> VibeDiagnosis.State.OK
+      },
+      when {
+        soon.isNotEmpty() -> t("doctor.detail.sunsetSoon", "model" to (soon.first().providerId + "/" + soon.first().modelId),
+                               "days" to soon.first().daysLeft, "count" to soon.size)
+        retired > 0 -> t("doctor.detail.sunsetRetired", "count" to retired)
+        else -> t("doctor.detail.sunsetNone")
+      },
+    ))
+
+    val chain = com.vibe.agent.resilience.FailoverPlan.parseChain(com.vibe.agent.settings.VibeAgentSettings.failoverChain)
+    lines.add(VibeDiagnosis.Line(
+      t("doctor.line.failover"),
+      when {
+        chain.isEmpty() -> VibeDiagnosis.State.ABSENT
+        com.vibe.agent.resilience.FailoverPlan.isSingleVendor(chain) -> VibeDiagnosis.State.WARN
+        else -> VibeDiagnosis.State.OK
+      },
+      when {
+        chain.isEmpty() -> t("doctor.detail.failoverNone")
+        com.vibe.agent.resilience.FailoverPlan.isSingleVendor(chain) ->
+          t("doctor.detail.failoverOneVendor", "vendor" to chain.first().providerId)
+        else -> t("doctor.detail.failoverOk", "count" to chain.size)
+      },
+    ))
+
     lines.add(VibeDiagnosis.Line(t("doctor.line.acp"),
                                  if (acp) VibeDiagnosis.State.OK else VibeDiagnosis.State.WARN,
                                  if (acp) ".vibe/acp.json" else t("doctor.detail.acpDefault")))

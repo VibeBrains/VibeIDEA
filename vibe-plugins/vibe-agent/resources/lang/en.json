@@ -1286,5 +1286,15 @@
   "autopilot.planDone": "autopilot: the plan is complete",
   "autopilot.limit": "the autopilot stopped: {max} turns in a row without a person is the limit set in the settings",
   "autopilot.unsafe": "the autopilot handed control back: the turn did not end normally, and it does not decide such things for you",
-  "stall.warning": "{count} turns in a row with no file changes and no plan movement. The turns run and the money is spent while the work stands still — check whether the agent is going where you wanted."
+  "stall.warning": "{count} turns in a row with no file changes and no plan movement. The turns run and the money is spent while the work stands still — check whether the agent is going where you wanted.",
+  "doctor.line.sunset": "Model sunset dates",
+  "doctor.detail.sunsetNone": "no announced sunset dates",
+  "doctor.detail.sunsetSoon": "{model} goes away in {days} days ({count} approaching in total) — time to move the work to a spare target",
+  "doctor.detail.sunsetRetired": "models past their date: {count} — they stay in the file but are no longer offered",
+  "doctor.line.failover": "Failover chain",
+  "doctor.detail.failoverNone": "no chain set: a provider failure will stop the turn",
+  "doctor.detail.failoverOneVendor": "the whole chain leads to one vendor ({vendor}) — that is not a spare plan: a vendor takes its models away all at once",
+  "doctor.detail.failoverOk": "targets in the chain: {count}, more than one vendor",
+  "autopilot.maxTokens": "tokens per unattended stretch (0 — no ceiling)",
+  "autopilot.budget": "the autopilot stopped: {spent} tokens spent on this stretch, the ceiling is {max}. Turns are not money, and it is money that usually runs out first."
 }

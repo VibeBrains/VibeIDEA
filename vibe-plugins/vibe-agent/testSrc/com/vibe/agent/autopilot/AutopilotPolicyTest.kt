@@ -20,7 +20,9 @@ class AutopilotPolicyTest {
     failed: Boolean = false,
     breaker: Boolean = false,
     stopped: Boolean = false,
-  ) = AutopilotPolicy.State(enabled, done, maxTurns, checkpointEvery, plan, failed, breaker, stopped)
+    spentTokens: Long = 0,
+    maxTokens: Long = 0,
+  ) = AutopilotPolicy.State(enabled, done, maxTurns, checkpointEvery, plan, spentTokens, maxTokens, failed, breaker, stopped)
 
   @Test
   fun `выключенный автопилот не решает ничего`() {
@@ -78,5 +80,20 @@ class AutopilotPolicyTest {
     assertEquals(2, AutopilotPolicy.remaining(plan))
     assertNull(AutopilotPolicy.currentStep(null))
     assertEquals(0, AutopilotPolicy.remaining(null))
+  }
+
+  @Test
+  fun `потолок расхода на отрезок — не то же, что предел ходов`() {
+    // Один ход на большой модели дороже десяти на маленькой, поэтому деньги считаются отдельно.
+    assertEquals(AutopilotPolicy.Decision.STOP_BUDGET, AutopilotPolicy.decide(state(spentTokens = 200_000, maxTokens = 200_000)))
+    assertEquals(AutopilotPolicy.Decision.CONTINUE, AutopilotPolicy.decide(state(spentTokens = 199_999, maxTokens = 200_000)))
+    // Ноль — выключенный потолок, а не запрет тратить.
+    assertEquals(AutopilotPolicy.Decision.CONTINUE, AutopilotPolicy.decide(state(spentTokens = 10_000_000, maxTokens = 0)))
+  }
+
+  @Test
+  fun `предел ходов проверяется раньше денег — он дешевле и понятнее`() {
+    assertEquals(AutopilotPolicy.Decision.STOP_LIMIT,
+                 AutopilotPolicy.decide(state(done = 10, maxTurns = 10, spentTokens = 999_999, maxTokens = 1_000)))
   }
 }

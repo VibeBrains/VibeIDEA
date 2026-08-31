@@ -39,6 +39,13 @@ data class ModelEntry(
   /** Accepts images: null = unknown (attachments allowed), false = composer blocks image sends. */
   val vision: Boolean? = null,
   val note: String? = null,
+  /**
+   * The day access to this model ends, ISO (`2026-11-12`).
+   *
+   * Written down because such dates are ANNOUNCED in advance, and an announcement nobody recorded
+   * is an announcement that turns into a surprise on the day.
+   */
+  val sunsetDate: String? = null,
 )
 
 data class AuthSpec(val type: String = "bearer", val name: String? = null)
@@ -156,6 +163,7 @@ object ProvidersFile {
         fim = mo["fim"]?.jsonPrimitive?.booleanOrNull ?: false,
         vision = mo["vision"]?.jsonPrimitive?.booleanOrNull,
         note = mo["note"]?.jsonPrimitive?.contentOrNull,
+        sunsetDate = mo["sunsetDate"]?.jsonPrimitive?.contentOrNull,
       )
     } ?: emptyList()
     return ProviderEntry(

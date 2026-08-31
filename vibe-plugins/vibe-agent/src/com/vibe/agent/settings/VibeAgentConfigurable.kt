@@ -28,6 +28,7 @@ class VibeAgentConfigurable : Configurable, Configurable.NoScroll {
   private var autopilotEnabled: JBCheckBox? = null
   private var autopilotMaxTurns: JBIntSpinner? = null
   private var autopilotCheckpoint: JBIntSpinner? = null
+  private var autopilotTokens: JBIntSpinner? = null
   private var roleBudgetTokens: JBIntSpinner? = null
   private var councilField: com.intellij.ui.components.JBTextField? = null
   private var contextFilter: com.intellij.openapi.ui.ComboBox<String>? = null
@@ -110,6 +111,7 @@ class VibeAgentConfigurable : Configurable, Configurable.NoScroll {
     val autopilot = JBCheckBox(t("autopilot.enabled"), VibeAgentSettings.autopilotEnabled).also { autopilotEnabled = it }
     val autopilotTurns = JBIntSpinner(VibeAgentSettings.autopilotMaxTurns, 0, VibeAgentSettings.MAX_AUTOPILOT_TURNS).also { autopilotMaxTurns = it }
     val autopilotEvery = JBIntSpinner(VibeAgentSettings.autopilotCheckpointEvery, 0, VibeAgentSettings.MAX_AUTOPILOT_TURNS).also { autopilotCheckpoint = it }
+    val autopilotBudget = JBIntSpinner(VibeAgentSettings.autopilotMaxTokens, 0, VibeAgentSettings.MAX_AUTOPILOT_MAX_TOKENS).also { autopilotTokens = it }
     val rotation = JBIntSpinner(VibeAgentSettings.auditRotationMb, VibeAgentSettings.MIN_AUDIT_ROTATION_MB, VibeAgentSettings.MAX_AUDIT_ROTATION_MB).also { auditRotation = it }
     val vMode = ComboBox(VibeAgentSettings.VERIFY_MODES.toTypedArray()).apply { item = VibeAgentSettings.verifyMode }.also { verifyMode = it }
     val vCommand = JBTextField(VibeAgentSettings.verifyCommand, 28).also { verifyCommand = it }
@@ -156,6 +158,7 @@ class VibeAgentConfigurable : Configurable, Configurable.NoScroll {
       .addComponent(autopilot)
       .addLabeledComponent(t("autopilot.maxTurns"), autopilotTurns)
       .addLabeledComponent(t("autopilot.checkpointEvery"), autopilotEvery)
+      .addLabeledComponent(t("autopilot.maxTokens"), autopilotBudget)
       .addComponent(hint(t("autopilot.hint")))
       .addLabeledComponent(t("settings.agent.reasoning"), reasoning)
       .addComponent(hint(t("settings.agent.hint.reasoning")))
@@ -256,6 +259,7 @@ class VibeAgentConfigurable : Configurable, Configurable.NoScroll {
     autopilotEnabled?.isSelected != VibeAgentSettings.autopilotEnabled ||
     autopilotMaxTurns?.number != VibeAgentSettings.autopilotMaxTurns ||
     autopilotCheckpoint?.number != VibeAgentSettings.autopilotCheckpointEvery ||
+    autopilotTokens?.number != VibeAgentSettings.autopilotMaxTokens ||
     roleBudgetTokens?.number != VibeAgentSettings.roleBudgetTokens ||
     (councilField?.text?.trim() ?: VibeAgentSettings.councilAdvisers) != VibeAgentSettings.councilAdvisers ||
     (contextFilter?.selectedItem as? String ?: VibeAgentSettings.contextFilterMode) != VibeAgentSettings.contextFilterMode ||
@@ -305,6 +309,7 @@ class VibeAgentConfigurable : Configurable, Configurable.NoScroll {
     autopilotEnabled?.let { VibeAgentSettings.autopilotEnabled = it.isSelected }
     autopilotMaxTurns?.let { VibeAgentSettings.autopilotMaxTurns = it.number }
     autopilotCheckpoint?.let { VibeAgentSettings.autopilotCheckpointEvery = it.number }
+    autopilotTokens?.let { VibeAgentSettings.autopilotMaxTokens = it.number }
     roleBudgetTokens?.let { VibeAgentSettings.roleBudgetTokens = it.number }
     councilField?.let { VibeAgentSettings.councilAdvisers = it.text }
     (contextFilter?.selectedItem as? String)?.let { VibeAgentSettings.contextFilterMode = it }
@@ -363,6 +368,7 @@ class VibeAgentConfigurable : Configurable, Configurable.NoScroll {
     autopilotEnabled?.isSelected = VibeAgentSettings.autopilotEnabled
     autopilotMaxTurns?.number = VibeAgentSettings.autopilotMaxTurns
     autopilotCheckpoint?.number = VibeAgentSettings.autopilotCheckpointEvery
+    autopilotTokens?.number = VibeAgentSettings.autopilotMaxTokens
     roleBudgetTokens?.number = VibeAgentSettings.roleBudgetTokens
     councilField?.text = VibeAgentSettings.councilAdvisers
     contextFilter?.selectedItem = VibeAgentSettings.contextFilterMode

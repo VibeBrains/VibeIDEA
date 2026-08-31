@@ -228,6 +228,8 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
   @Volatile private var autopilotTurns = 0
   /** What the last few turns moved, for the stall detector. */
   private val turnProgress = java.util.Collections.synchronizedList(ArrayList<com.vibe.agent.safety.StallDetector.Turn>())
+  /** Tokens spent since the person last spoke — the autopilot's stretch is capped in money, not only in turns. */
+  private val stretchTokens = java.util.concurrent.atomic.AtomicLong(0)
 
   /** CAS-guarded: concurrent finishers (reader/exit/pooled threads) must not double-finish. */
   private val turnInFlight = java.util.concurrent.atomic.AtomicBoolean(false)
@@ -259,6 +261,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
       // so does the stall history — a new instruction is movement by definition.
       autopilotTurns = 0
       turnProgress.clear()
+      stretchTokens.set(0)
       dispatch(message)
     }
 
@@ -468,7 +471,10 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
       // a hand-declared one is visible by default (VibeIDE §7); explicit toggles win.
       p.models.filter { m ->
         val custom = staticModelIds[p.id]?.contains(m.id) == true
-        m.active && !ModelVisibility.isHidden(p.id, m.id, defaultHidden = !custom)
+        m.active && !ModelVisibility.isHidden(p.id, m.id, defaultHidden = !custom) &&
+        // A model whose access has ended stays in the file — so the person can see WHY it is gone —
+        // but offering it would only produce a 403 with the reason hidden in a stack trace.
+        !com.vibe.agent.providers.ModelSunset.isRetired(m, java.time.LocalDate.now())
       }
         .sortedWith(compareByDescending<ModelEntry> { it.default }.thenByDescending { it.pinned }.thenBy { it.name })
         .forEach { m -> add(ChatTarget.Model(p, m, static = staticModelIds[p.id]?.contains(m.id) == true)) }
@@ -1785,6 +1791,8 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
       // whole turn budget on turns that already proved they move nothing.
       lastTurnFailed = turnEndedBadly || stalled,
       breakerTripped = breakers.isBlocking(),
+      spentTokens = stretchTokens.get(),
+      maxTokens = VibeAgentSettings.autopilotMaxTokens.toLong(),
     )
     val remaining = com.vibe.agent.autopilot.AutopilotPolicy.remaining(plan)
     when (com.vibe.agent.autopilot.AutopilotPolicy.decide(state)) {
@@ -1808,6 +1816,10 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
       com.vibe.agent.autopilot.AutopilotPolicy.Decision.STOP_LIMIT -> {
         autopilotTurns = 0
         systemLine(t("autopilot.limit", "max" to VibeAgentSettings.autopilotMaxTurns))
+      }
+      com.vibe.agent.autopilot.AutopilotPolicy.Decision.STOP_BUDGET -> {
+        autopilotTurns = 0
+        systemLine(t("autopilot.budget", "spent" to stretchTokens.get(), "max" to VibeAgentSettings.autopilotMaxTokens))
       }
       com.vibe.agent.autopilot.AutopilotPolicy.Decision.STOP_UNSAFE -> {
         autopilotTurns = 0
@@ -2803,7 +2815,10 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
         val dormant = providers.filter { p ->
           p.id !in keylessProviders && p.models.isNotEmpty() && p.models.none { m ->
             val custom = staticModelIds[p.id]?.contains(m.id) == true
-            m.active && !ModelVisibility.isHidden(p.id, m.id, defaultHidden = !custom)
+            m.active && !ModelVisibility.isHidden(p.id, m.id, defaultHidden = !custom) &&
+        // A model whose access has ended stays in the file — so the person can see WHY it is gone —
+        // but offering it would only produce a 403 with the reason hidden in a stack trace.
+        !com.vibe.agent.providers.ModelSunset.isRetired(m, java.time.LocalDate.now())
           }
         }
         if (dormant.isNotEmpty()) {
@@ -3057,6 +3072,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
       val estimated = com.vibe.agent.context.ContextBudget.estimateTokens(fullText)
       sessionTokens.addAndGet(estimated)
       com.vibe.agent.budget.VibeSpendService.getInstance().record(currentRole, targetLabel(), estimated, null, null)
+      stretchTokens.addAndGet(estimated)
     }
     // currentAgentMessage is EDT-owned (appendAgentText also touches it on the EDT); read+clear it there.
     SwingUtilities.invokeLater {
@@ -3258,6 +3274,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     val delta = (used - lastAccountedUsed.getAndSet(used)).coerceAtLeast(0)
     com.vibe.agent.budget.VibeSpendService.getInstance()
       .record(currentRole, targetLabel(), delta, amount, currency)
+    stretchTokens.addAndGet(delta)
   }
 
   /** ACP reports the window total, not a delta: the difference is what this turn actually added. */

@@ -38,6 +38,15 @@ object AutopilotPolicy {
     /** The turn budget for one unattended stretch is spent. */
     STOP_LIMIT,
 
+    /**
+     * The token budget for one unattended stretch is spent.
+     *
+     * Separate from STOP_LIMIT because turns are not money: one turn on a large model costs more
+     * than ten on a small one, and cost is what actually limits people — 79.8 % of the Temporal
+     * 2026 respondents named token and compute cost a limiting factor.
+     */
+    STOP_BUDGET,
+
     /** Something went wrong; the person decides what happens next. */
     STOP_UNSAFE,
   }
@@ -50,6 +59,9 @@ object AutopilotPolicy {
     /** Ask after this many automatic turns; 0 means never ask. */
     val checkpointEvery: Int,
     val plan: AgentPlan.Plan?,
+    /** Tokens spent since the person last spoke; 0 with [maxTokens] 0 means the ceiling is off. */
+    val spentTokens: Long = 0,
+    val maxTokens: Long = 0,
     val lastTurnFailed: Boolean = false,
     val breakerTripped: Boolean = false,
     val stoppedByUser: Boolean = false,
@@ -64,6 +76,7 @@ object AutopilotPolicy {
     if (plan == null || plan.isEmpty) return Decision.OFF
     if (plan.steps.all { it.status == AgentPlan.Status.COMPLETED }) return Decision.STOP_PLAN_DONE
     if (state.maxTurns > 0 && state.autoTurnsDone >= state.maxTurns) return Decision.STOP_LIMIT
+    if (state.maxTokens > 0 && state.spentTokens >= state.maxTokens) return Decision.STOP_BUDGET
     if (state.checkpointEvery > 0 && state.autoTurnsDone > 0 && state.autoTurnsDone % state.checkpointEvery == 0) {
       return Decision.CHECKPOINT
     }
