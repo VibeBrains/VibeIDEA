@@ -1274,5 +1274,16 @@
   "docs.view.graph": "graph",
   "docs.view.list": "list",
   "docs.graph.dropped": "the map is not complete: {count} hidden",
-  "runs.territoryBusy": "another run is already working in the same folders ({prefixes}): {goals}. Two edits of one file drift apart silently — decide whether to wait or to start."
+  "runs.territoryBusy": "another run is already working in the same folders ({prefixes}): {goals}. Two edits of one file drift apart silently — decide whether to wait or to start.",
+  "autopilot.title": "Autopilot",
+  "autopilot.enabled": "walk the plan unattended, asking at checkpoints",
+  "autopilot.maxTurns": "turns in a row without a person",
+  "autopilot.checkpointEvery": "ask every N turns (0 — never ask)",
+  "autopilot.hint": "The autopilot only works when the agent has a plan: «continue» without one is a guess about what the person wanted. Anything unusual — a failure, a stop, a tripped breaker — hands control back.",
+  "autopilot.continue": "continue with the plan",
+  "autopilot.step": "autopilot: turn {index} of {max}, plan items left — {remaining}",
+  "autopilot.checkpoint": "the autopilot stopped at a checkpoint. Next item: «{step}». Items left — {remaining}. Continue?",
+  "autopilot.planDone": "autopilot: the plan is complete",
+  "autopilot.limit": "the autopilot stopped: {max} turns in a row without a person is the limit set in the settings",
+  "autopilot.unsafe": "the autopilot handed control back: the turn did not end normally, and it does not decide such things for you"
 }

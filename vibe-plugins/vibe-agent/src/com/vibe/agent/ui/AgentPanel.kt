@@ -222,6 +222,10 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
   private val announcedContextLevels = java.util.Collections.synchronizedSet(HashSet<String>())
   /** Set when a turn ran an edit/command tool: its writes may be invisible to the client (agent-internal Bash). */
   @Volatile private var turnHadMutatingTool = false
+  /** Did the turn end in anything other than a normal finish? The autopilot refuses to resume such a turn. */
+  @Volatile private var turnEndedBadly = false
+  /** Turns the autopilot has taken since the person last spoke. */
+  @Volatile private var autopilotTurns = 0
 
   /** CAS-guarded: concurrent finishers (reader/exit/pooled threads) must not double-finish. */
   private val turnInFlight = java.util.concurrent.atomic.AtomicBoolean(false)
@@ -248,7 +252,13 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
   private val recordRows = ArrayList<JComponent>()
 
   private val composer = ComposerPanel(project, this, object : ComposerPanel.Listener {
-    override fun onSend(message: ComposedMessage): Boolean = when {
+    override fun onSend(message: ComposedMessage): Boolean = run {
+      // The person spoke: the autopilot's stretch of unattended turns starts counting again.
+      autopilotTurns = 0
+      dispatch(message)
+    }
+
+    private fun dispatch(message: ComposedMessage): Boolean = when {
       // A command typed without the argument it cannot work without is answered, not sent to the
       // model: «/bg» as a question is the shape of a feature that looks broken.
       reportMissingArgument(message) -> false
@@ -1600,6 +1610,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
   /** Validates, shows the user bubble and starts the turn; false keeps the draft in the composer. */
   private fun startTurn(message: ComposedMessage, threadId: String = currentThreadId): Boolean {
     if (disposed) return false
+    turnEndedBadly = false
     val t = target ?: run {
       systemLine(t("chat.noTargetHint", "path" to AcpConfig.configPath()))
       return false
@@ -1705,8 +1716,65 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
       if (disposed) return@invokeLater
       composer.busy = false
       // Queued notes belong to the thread whose turn just ended, not to whichever tab is open now.
-      composer.queue.drain()?.let { merged ->
-        if (!startTurn(merged, endedThreadId ?: currentThreadId)) composer.restoreDraft(merged)
+      val queued = composer.queue.drain()
+      if (queued != null) {
+        // A note the person left while the turn ran outranks the autopilot: they have said
+        // something newer than the plan.
+        autopilotTurns = 0
+        if (!startTurn(queued, endedThreadId ?: currentThreadId)) composer.restoreDraft(queued)
+        return@invokeLater
+      }
+      maybeAutopilot(endedThreadId ?: currentThreadId)
+    }
+  }
+
+  /**
+   * The autopilot: takes the next step of the plan by itself, and asks at checkpoints.
+   *
+   * The whole human contribution to a long task is usually the word «продолжай», and automating it
+   * is the feature. The policy — not this method — decides when that word is unsafe; here we only
+   * carry out the decision and always say out loud which one it was, because an agent that starts a
+   * turn nobody asked for, silently, is indistinguishable from a bug.
+   */
+  private fun maybeAutopilot(threadId: String?) {
+    val id = threadId ?: return
+    if (!VibeAgentSettings.autopilotEnabled || disposed) return
+    val plan = runCatching { com.vibe.agent.plans.PlanStore.getInstance(project).load(id) }.getOrNull()
+    val state = com.vibe.agent.autopilot.AutopilotPolicy.State(
+      enabled = VibeAgentSettings.autopilotEnabled,
+      autoTurnsDone = autopilotTurns,
+      maxTurns = VibeAgentSettings.autopilotMaxTurns,
+      checkpointEvery = VibeAgentSettings.autopilotCheckpointEvery,
+      plan = plan,
+      lastTurnFailed = turnEndedBadly,
+      breakerTripped = breakers.isBlocking(),
+    )
+    val remaining = com.vibe.agent.autopilot.AutopilotPolicy.remaining(plan)
+    when (com.vibe.agent.autopilot.AutopilotPolicy.decide(state)) {
+      com.vibe.agent.autopilot.AutopilotPolicy.Decision.OFF -> Unit
+      com.vibe.agent.autopilot.AutopilotPolicy.Decision.CONTINUE -> {
+        autopilotTurns++
+        systemLine(t("autopilot.step", "index" to autopilotTurns,
+                     "max" to VibeAgentSettings.autopilotMaxTurns, "remaining" to remaining))
+        if (!startTurn(ComposedMessage(text = t("autopilot.continue")), id)) autopilotTurns = 0
+      }
+      com.vibe.agent.autopilot.AutopilotPolicy.Decision.CHECKPOINT -> {
+        autopilotTurns = 0
+        systemLine(t("autopilot.checkpoint",
+                     "step" to (com.vibe.agent.autopilot.AutopilotPolicy.currentStep(plan) ?: ""),
+                     "remaining" to remaining))
+      }
+      com.vibe.agent.autopilot.AutopilotPolicy.Decision.STOP_PLAN_DONE -> {
+        autopilotTurns = 0
+        systemLine(t("autopilot.planDone"))
+      }
+      com.vibe.agent.autopilot.AutopilotPolicy.Decision.STOP_LIMIT -> {
+        autopilotTurns = 0
+        systemLine(t("autopilot.limit", "max" to VibeAgentSettings.autopilotMaxTurns))
+      }
+      com.vibe.agent.autopilot.AutopilotPolicy.Decision.STOP_UNSAFE -> {
+        autopilotTurns = 0
+        systemLine(t("autopilot.unsafe"))
       }
     }
   }
@@ -1970,6 +2038,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
           audit?.append(AuditEvent(System.currentTimeMillis(), AuditEvent.Action.REPLY, ok = false,
             model = "acp/${t.config.name}", latencyMs = System.currentTimeMillis() - startedAt,
             meta = mapOf("error" to (error.message ?: "error"))))
+          turnEndedBadly = true
           finishTurn()
           return@whenComplete
         }
@@ -1977,6 +2046,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
         val stop = (result as? JsonObject)?.get("stopReason")?.jsonPrimitive?.contentOrNull
         if (stop == STOP_CANCELLED || llmCancel.get() || disposed) {
           finishAgentBubble(secs, stop)
+          turnEndedBadly = true
           finishTurn()
           return@whenComplete
         }

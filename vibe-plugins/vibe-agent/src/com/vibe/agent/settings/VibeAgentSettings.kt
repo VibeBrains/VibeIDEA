@@ -146,10 +146,23 @@ object VibeAgentSettings {
   private const val KEY_TELEGRAM_PROXY = "vibe.agent.telegramProxy"
   private const val KEY_METRIC_DIRECTION = "vibe.agent.metricDirection"
   private const val KEY_FAILOVER = "vibe.agent.failoverChain"
+  private const val KEY_AUTOPILOT = "vibe.agent.autopilot.enabled"
+  private const val KEY_AUTOPILOT_MAX_TURNS = "vibe.agent.autopilot.maxTurns"
+  private const val KEY_AUTOPILOT_CHECKPOINT = "vibe.agent.autopilot.checkpointEvery"
 
   /** Off by default: a ceiling nobody set must not become a wall in the middle of real work. */
   const val DEFAULT_ROLE_BUDGET_TOKENS = 0
   const val MAX_ROLE_BUDGET_TOKENS = 100_000_000
+
+  /**
+   * Autopilot: off by default, and bounded when on.
+   *
+   * A default-on autopilot would spend somebody's money on the first day they installed the IDE,
+   * and the limit exists so that «продолжай» automated cannot become «продолжай» forever.
+   */
+  const val DEFAULT_AUTOPILOT_MAX_TURNS = 10
+  const val MAX_AUTOPILOT_TURNS = 100
+  const val DEFAULT_AUTOPILOT_CHECKPOINT = 3
 
   /** Minutes of total silence before the turn is called hung; 0 turns the switch off. */
   const val DEFAULT_SILENCE_MINUTES = 5
@@ -382,6 +395,18 @@ object VibeAgentSettings {
   var roleBudgetTokens: Int
     get() = props.getInt(KEY_ROLE_BUDGET, DEFAULT_ROLE_BUDGET_TOKENS).coerceIn(0, MAX_ROLE_BUDGET_TOKENS)
     set(value) = props.setValue(KEY_ROLE_BUDGET, value.coerceIn(0, MAX_ROLE_BUDGET_TOKENS), DEFAULT_ROLE_BUDGET_TOKENS)
+
+  var autopilotEnabled: Boolean
+    get() = props.getBoolean(KEY_AUTOPILOT, false)
+    set(value) = props.setValue(KEY_AUTOPILOT, value, false)
+
+  var autopilotMaxTurns: Int
+    get() = props.getInt(KEY_AUTOPILOT_MAX_TURNS, DEFAULT_AUTOPILOT_MAX_TURNS).coerceIn(0, MAX_AUTOPILOT_TURNS)
+    set(value) = props.setValue(KEY_AUTOPILOT_MAX_TURNS, value.coerceIn(0, MAX_AUTOPILOT_TURNS), DEFAULT_AUTOPILOT_MAX_TURNS)
+
+  var autopilotCheckpointEvery: Int
+    get() = props.getInt(KEY_AUTOPILOT_CHECKPOINT, DEFAULT_AUTOPILOT_CHECKPOINT).coerceIn(0, MAX_AUTOPILOT_TURNS)
+    set(value) = props.setValue(KEY_AUTOPILOT_CHECKPOINT, value.coerceIn(0, MAX_AUTOPILOT_TURNS), DEFAULT_AUTOPILOT_CHECKPOINT)
 
   var agentSilenceMinutes: Int
     get() = props.getInt(KEY_SILENCE_MINUTES, DEFAULT_SILENCE_MINUTES).coerceIn(0, MAX_SILENCE_MINUTES)
