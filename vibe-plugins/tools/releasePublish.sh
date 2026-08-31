@@ -30,7 +30,15 @@ NOW_SHA=$(shasum -a 256 "$DMG" | awk '{print $1}')
 NOW_COMMIT=$(git rev-parse HEAD)
 [ "$NOW_COMMIT" = "$COMMIT" ] || { echo "✖ HEAD ($NOW_COMMIT) не тот коммит, что проверен в фазе 1 ($COMMIT)"; fail=1; }
 [ -z "$(git status --porcelain | head -1)" ] || { echo "✖ рабочее дерево грязное: публиковать надо ровно проверенное"; fail=1; }
-git rev-parse "$VERSION" >/dev/null 2>&1 || { echo "✖ тега $VERSION нет — поставьте его на проверенный коммит"; fail=1; }
+if ! git rev-parse "$VERSION" >/dev/null 2>&1; then
+  echo "✖ тега $VERSION нет — поставьте его на проверенный коммит"
+  fail=1
+else
+  # Существования тега мало: он может стоять на другом коммите, и тогда опубликованное не совпадёт
+  # с тем, что человек потом выкачает по тегу. Поймано собственным сухим прогоном 31.08.2026.
+  TAG_COMMIT=$(git rev-parse "$VERSION^{commit}")
+  [ "$TAG_COMMIT" = "$COMMIT" ] || { echo "✖ тег $VERSION указывает на $TAG_COMMIT, а проверялся $COMMIT"; fail=1; }
+fi
 
 if [ "$fail" -ne 0 ]; then
   echo "Публикация отменена: артефакты разошлись с проверенными."
