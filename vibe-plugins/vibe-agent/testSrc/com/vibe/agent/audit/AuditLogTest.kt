@@ -57,6 +57,42 @@ class AuditLogTest {
   }
 
   @Test
+  fun `the written journal verifies as intact`(@TempDir base: Path) {
+    val log = AuditLog(base.toString(), { true }, { 10L * 1024 * 1024 })
+    repeat(5) { i ->
+      log.append(AuditEvent(i.toLong(), AuditEvent.Action.PROMPT, ok = true, actor = AuditActor.HUMAN))
+    }
+    log.close()   // waits for the queued lines to land
+    val verdict = log.verifyChain()
+    assertTrue(verdict.intact, "цепочка должна сходиться: " + verdict)
+    assertEquals(5, verdict.checked)
+  }
+
+  @Test
+  fun `an edited record is caught by the chain`(@TempDir base: Path) {
+    val log = AuditLog(base.toString(), { true }, { 10L * 1024 * 1024 })
+    repeat(3) { i -> log.append(AuditEvent(i.toLong(), AuditEvent.Action.FS_WRITE, ok = true, actor = AuditActor.HUMAN)) }
+    log.close()   // waits for the queued lines to land
+    val file = base.resolve(".vibe").resolve("audit.jsonl")
+    val lines = Files.readAllLines(file)
+    // Someone rewrites the record of a write that failed into one that succeeded.
+    Files.write(file, lines.mapIndexed { i, l -> if (i == 1) l.replace("\"ok\":true", "\"ok\":false") else l })
+    assertEquals(2, log.verifyChain().brokenAtLine)
+  }
+
+  @Test
+  fun `rotation does not look like tampering`(@TempDir base: Path) {
+    // The first version computed the link before rotating, so the first record of the new file
+    // disagreed with its own genesis and every rotation read as a forgery.
+    val log = AuditLog(base.toString(), { true }, { 200L })
+    repeat(6) { i -> log.append(AuditEvent(i.toLong(), AuditEvent.Action.TERMINAL, ok = true, actor = AuditActor.IDE)) }
+    log.close()   // waits for the queued lines to land
+    assertTrue(Files.exists(base.resolve(".vibe").resolve("audit.1.jsonl.gz")), "ротация должна была случиться")
+    val verdict = log.verifyChain()
+    assertTrue(verdict.intact, "живой файл после ротации обязан сходиться: " + verdict)
+  }
+
+  @Test
   fun disabledLogNeverWrites(@TempDir base: Path) {
     val log = AuditLog(base.toString(), { false }, { 10L * 1024 * 1024 })
     log.append(AuditEvent(1L, AuditEvent.Action.PROMPT, ok = true, actor = AuditActor.HUMAN))
