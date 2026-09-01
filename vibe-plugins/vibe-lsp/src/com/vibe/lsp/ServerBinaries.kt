@@ -58,6 +58,13 @@ internal object ServerBinaries {
    *
    * The plugin path is right in both worlds: installed, and run from sources.
    */
+  /** A directory inside the servers directory we ship, or null when it is not there. */
+  fun bundledDir(vararg parts: String): Path? {
+    val root = pluginDir() ?: return null
+    val path = parts.fold(root.resolve("servers")) { acc, part -> acc.resolve(part) }
+    return path.takeIf { Files.isDirectory(it) }
+  }
+
   private fun bundled(vararg parts: String): String? {
     val root = pluginDir() ?: return null
     val path = parts.fold(root.resolve("servers")) { acc, part -> acc.resolve(part) }

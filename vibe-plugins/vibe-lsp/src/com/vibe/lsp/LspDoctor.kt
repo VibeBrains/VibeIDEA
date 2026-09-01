@@ -154,16 +154,29 @@ object LspDoctor {
    * way we look for a language server finds nothing on a machine where they ARE installed — the
    * report would then send someone to install what they already have.
    */
-  fun adapterEntryPoint(binary: String): String? {
+  fun adapterEntryPoint(binary: String): String? =
+    debugSpec(binary)?.let { DebugAdapters.entryPoint(it)?.toString() }
+
+  /** The person's OWN adapter — ours deliberately excluded, so the report can tell whose runs. */
+  fun adapterOwnPath(binary: String): String? = debugSpec(binary)?.let { spec ->
+    DebugAdapters.entryPoint(spec, DebugAdapters.candidateDirs(spec, bundled = null))?.toString()
+  }
+
+  /** The adapter we ship, or null when running from sources without the downloaded archives. */
+  fun adapterBundledPath(spec: ServerSpec): String? = debugSpec(spec.binary)?.let { adapter ->
+    val ours = ServerBinaries.bundledDir("dap", adapter.id) ?: return@let null
+    DebugAdapters.entryPoint(adapter, listOf(ours))?.toString()
+  }
+
+  private fun debugSpec(binary: String): DebugAdapters.AdapterSpec? {
     val id = DEBUG_ADAPTERS.firstOrNull { it.binary == binary }?.id ?: return null
-    val spec = DebugAdapters.ALL.firstOrNull { it.id == id } ?: return null
-    return DebugAdapters.entryPoint(spec)?.toString()
+    return DebugAdapters.ALL.firstOrNull { it.id == id }
   }
 
   /** The runtime a bundled server needs, or null when it needs none of ours. */
   fun runtimeFor(spec: ServerSpec): String? = when (spec.id) {
     PHPACTOR.id -> "php"
-    VTSLS.id, CSS.id, ESLINT.id -> "node"
+    VTSLS.id, CSS.id, ESLINT.id, JS_DEBUG.id, PHP_DEBUG.id -> "node"
     else -> null
   }
 

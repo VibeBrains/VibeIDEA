@@ -39,7 +39,7 @@ object DebugAdapters {
     val transport: Transport,
     /** Prefix of the line the adapter prints once its socket is up; null for stdio adapters. */
     val readyPattern: String?,
-    /** Where the archive comes from — shown to a person who has to install it by hand. */
+    /** Where the archive comes from — for the person who wants their own copy instead of ours. */
     val downloadUrl: String,
   )
 
@@ -93,13 +93,20 @@ object DebugAdapters {
    * one they will keep updating, and quietly running a second one would make version questions
    * unanswerable.
    */
-  fun candidateDirs(spec: AdapterSpec, home: String? = System.getProperty("user.home")): List<Path> =
-    buildList {
-      home?.let {
-        add(Path.of(it, ".lsp4ij", "dap", spec.id))
-        add(Path.of(it, ".local", "share", "vibe", "dap", spec.id))
-      }
+  fun candidateDirs(
+    spec: AdapterSpec,
+    home: String? = System.getProperty("user.home"),
+    bundled: Path? = ServerBinaries.bundledDir("dap", spec.id),
+  ): List<Path> = buildList {
+    home?.let {
+      add(Path.of(it, ".lsp4ij", "dap", spec.id))
+      add(Path.of(it, ".local", "share", "vibe", "dap", spec.id))
     }
+    // Ours goes last for the same reason the bundled Phpactor does: a project may be pinned to
+    // another version of the adapter, and our copy ages with the IDE release rather than with
+    // their decisions.
+    bundled?.let(::add)
+  }
 
   /**
    * The entry-point script of an installed adapter, or null when it is nowhere to be found.

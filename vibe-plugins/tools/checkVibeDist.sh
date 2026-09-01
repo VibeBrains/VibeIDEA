@@ -107,6 +107,43 @@ else
   php "$SERVERS/phpactor.phar" --version >/dev/null 2>&1 || { say "✖ встроенный phpactor.phar не запускается"; fail=1; }
 fi
 
+# --- 5б. Отладочные адаптеры: файлы на месте И запускаются ---
+#
+# Отладчик — то, что проверяют один раз: если точка останова не сработала, человек возвращается к
+# var_dump и больше не пробует. Поэтому оба адаптера здесь именно ЗАПУСКАЮТСЯ.
+JS_DAP="$SERVERS/dap/vibeJsDebug/js-debug/src/dapDebugServer.js"
+PHP_DAP="$SERVERS/dap/vibePhpDebug/extension/out/phpDebug.js"
+[ -f "$JS_DAP" ] || { say "✖ нет встроенного адаптера vscode-js-debug"; fail=1; }
+[ -f "$PHP_DAP" ] || { say "✖ нет встроенного адаптера vscode-php-debug"; fail=1; }
+# MIT: текст лицензии обязан ехать рядом с копией.
+[ -f "$SERVERS/dap/vibeJsDebug/js-debug/LICENSE" ] || { say "✖ нет лицензии vscode-js-debug"; fail=1; }
+[ -f "$SERVERS/dap/vibePhpDebug/extension/LICENSE.txt" ] || { say "✖ нет лицензии vscode-php-debug"; fail=1; }
+
+if ! command -v node >/dev/null 2>&1; then
+  say "  node не найден — запуск встроенных адаптеров не проверялся"
+else
+  if [ -f "$JS_DAP" ]; then
+    # Порт свой, не 0: адаптер печатает адрес, на котором слушает, и это его признак готовности —
+    # тот самый, по которому IDE начинает сессию.
+    out=$( { node "$JS_DAP" 45999 127.0.0.1 & pid=$!; sleep 4; kill "$pid" 2>/dev/null; } 2>&1 | head -c 200 || true)
+    case "$out" in
+      *"Debug server listening at"*) : ;;
+      *) say "✖ встроенный адаптер vscode-js-debug не поднял сервер отладки"; fail=1 ;;
+    esac
+  fi
+  if [ -f "$PHP_DAP" ]; then
+    # pathFormat обязателен: без него адаптер отвечает отказом «only supports native paths», и
+    # проверка «ответил ли» приняла бы отказ за успех.
+    B='{"seq":1,"type":"request","command":"initialize","arguments":{"adapterID":"php","clientID":"vibe","pathFormat":"path"}}'
+    answer=$({ printf 'Content-Length: %d\r\n\r\n%s' ${#B} "$B"; sleep 3; } \
+      | node "$PHP_DAP" 2>/dev/null | head -c 300 || true)
+    case "$answer" in
+      *'"success":true'*) : ;;
+      *) say "✖ встроенный адаптер vscode-php-debug не ответил успехом на initialize"; fail=1 ;;
+    esac
+  fi
+fi
+
 # --- 6. Лицензии поставляемых серверов названы, и версии не разъехались ---
 # Отчёт о третьих лицах генерируется из ЗАВИСИМОСТЕЙ модулей: phar и npm-дерево ему не видны, их
 # приходится объявлять руками — а значит версия объявленного однажды разойдётся с закреплённой.
@@ -120,6 +157,10 @@ else
     say "✖ версия Phpactor в отчёте о лицензиях не совпадает с закреплённой ($PHPACTOR_PIN)"
     fail=1
   }
+  for var in JS_DEBUG_V PHP_DEBUG_V; do
+    PIN=$(grep -m1 "^$var=" vibe-plugins/deps/download.sh | cut -d= -f2)
+    grep -q "\"$PIN\"" "$REPORT" || { say "✖ версия отладчика ($var=$PIN) в отчёте о лицензиях не совпадает"; fail=1; }
+  done
   for pkg in "@vtsls/language-server" "vscode-langservers-extracted"; do
     PIN=$(python3 -c "import json;print(json.load(open('vibe-plugins/deps/servers-npm/package.json'))['dependencies']['$pkg'])")
     grep -q "\"$PIN\"" "$REPORT" || { say "✖ версия $pkg в отчёте о лицензиях не совпадает с закреплённой ($PIN)"; fail=1; }

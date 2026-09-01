@@ -46,6 +46,12 @@ open class VibeIdeaProperties(communityHomeDir: Path) : IdeaCommunityProperties(
       LibraryLicense(name = "vscode-langservers-extracted", version = "4.10.0", attachedTo = "intellij.vibe.lsp",
                      url = "https://github.com/hrsh7th/vscode-langservers-extracted")
         .mit("https://github.com/hrsh7th/vscode-langservers-extracted/blob/master/LICENSE"),
+      LibraryLicense(name = "vscode-js-debug", version = "1.117.0", attachedTo = "intellij.vibe.lsp",
+                     url = "https://github.com/microsoft/vscode-js-debug")
+        .mit("https://github.com/microsoft/vscode-js-debug/blob/main/LICENSE"),
+      LibraryLicense(name = "vscode-php-debug", version = "1.40.1", attachedTo = "intellij.vibe.lsp",
+                     url = "https://github.com/xdebug/vscode-php-debug")
+        .mit("https://github.com/xdebug/vscode-php-debug/blob/main/LICENSE"),
     )
 
     productLayout.pluginLayouts = productLayout.pluginLayouts + persistentListOf(

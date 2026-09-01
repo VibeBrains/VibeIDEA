@@ -24,7 +24,7 @@ class DebugAdaptersTest {
   @Test
   fun `the person's own install wins over ours`() {
     val spec = DebugAdapters.JS_DEBUG
-    val dirs = DebugAdapters.candidateDirs(spec, home = "/home/x")
+    val dirs = DebugAdapters.candidateDirs(spec, home = "/home/x", bundled = null)
     // Both present: the LSP4IJ directory is the one they update themselves.
     val found = DebugAdapters.entryPoint(spec, dirs) { true }
     assertNotNull(found)
@@ -35,10 +35,25 @@ class DebugAdaptersTest {
   @Test
   fun `ours is used when only ours is there`() {
     val spec = DebugAdapters.JS_DEBUG
-    val dirs = DebugAdapters.candidateDirs(spec, home = "/home/x")
+    val dirs = DebugAdapters.candidateDirs(spec, home = "/home/x", bundled = null)
     val found = DebugAdapters.entryPoint(spec, dirs) { it.toString().contains("/.local/share/vibe/") }
     assertNotNull(found)
     assertTrue(found.toString().contains("/.local/share/vibe/dap/vibeJsDebug"), found.toString())
+  }
+
+  @Test
+  fun `the bundled copy is the last resort, never the first`() {
+    val spec = DebugAdapters.JS_DEBUG
+    val ours = Path.of("/Applications/VibeIDEA.app/plugins/vibe-lsp/servers/dap/vibeJsDebug")
+    val dirs = DebugAdapters.candidateDirs(spec, home = "/home/x", bundled = ours)
+    assertEquals(ours, dirs.last())
+    // Everything present: theirs still wins, because a project may be pinned to another version
+    // and ours ages with the IDE release rather than with their decisions.
+    val found = DebugAdapters.entryPoint(spec, dirs) { true }
+    assertTrue(found.toString().startsWith("/home/x/.lsp4ij/"), found.toString())
+    // Only ours present: it is used, and the person never learns the difference.
+    val fallback = DebugAdapters.entryPoint(spec, dirs) { it.startsWith(ours) }
+    assertTrue(fallback.toString().startsWith(ours.toString()), fallback.toString())
   }
 
   @Test

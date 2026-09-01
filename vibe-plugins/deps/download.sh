@@ -51,3 +51,33 @@ rm -rf extracted/servers/node && mkdir -p extracted/servers/node
 cp -R servers-npm/node_modules extracted/servers/node/node_modules
 printf 'Language servers (MIT/Apache-2.0) installed from a pinned package-lock.json; licences travel inside each package.\n' \
   > extracted/servers/node/README.txt
+
+# --- Отладочные адаптеры: vscode-js-debug (TS/JS) и vscode-php-debug (Xdebug) ---
+#
+# Везём по решению владельца 01.09.2026: 1,2 и 1,8 МБ архивов за то, чтобы точка останова
+# работала сразу после установки, как и переход к определению. Оба на Node — рантайм по-прежнему
+# машинный. Свой установленный адаптер остаётся сильнее нашего: каталоги пользователя
+# просматриваются раньше встроенного.
+JS_DEBUG_V=1.117.0
+JS_DEBUG_SHA=ad8d04ede9d4b75cc290fd5438a65047a06f786d04f604b6112485b36f090772
+[ -f "js-debug-dap-v$JS_DEBUG_V.tar.gz" ] || curl -sL -o "js-debug-dap-v$JS_DEBUG_V.tar.gz" \
+  "https://github.com/microsoft/vscode-js-debug/releases/download/v$JS_DEBUG_V/js-debug-dap-v$JS_DEBUG_V.tar.gz"
+echo "$JS_DEBUG_SHA  js-debug-dap-v$JS_DEBUG_V.tar.gz" | shasum -a 256 -c -
+rm -rf extracted/servers/dap/vibeJsDebug && mkdir -p extracted/servers/dap/vibeJsDebug
+tar -xzf "js-debug-dap-v$JS_DEBUG_V.tar.gz" -C extracted/servers/dap/vibeJsDebug
+
+PHP_DEBUG_V=1.40.1
+PHP_DEBUG_SHA=588e1de8a93e9449854d861fc121fbab7d9868e7a891d12ab85b59409732c830
+[ -f "php-debug-$PHP_DEBUG_V.vsix" ] || curl -sL -o "php-debug-$PHP_DEBUG_V.vsix" \
+  "https://github.com/xdebug/vscode-php-debug/releases/download/v$PHP_DEBUG_V/php-debug-$PHP_DEBUG_V.vsix"
+echo "$PHP_DEBUG_SHA  php-debug-$PHP_DEBUG_V.vsix" | shasum -a 256 -c -
+# vsix — это zip; распаковываем ТОЛЬКО extension/, остальное (иконки маркетплейса, манифест
+# расширения VS Code) в IDE не нужно и весит.
+rm -rf extracted/servers/dap/vibePhpDebug && mkdir -p extracted/servers/dap/vibePhpDebug
+unzip -qo "php-debug-$PHP_DEBUG_V.vsix" 'extension/*' -d extracted/servers/dap/vibePhpDebug
+# Обе лицензии MIT: текст обязан ехать рядом с копией. У php-debug он внутри extension/, у
+# js-debug — отдельным файлом в архиве.
+printf 'vscode-js-debug %s (MIT) and vscode-php-debug %s (MIT), bundled from project releases.\nLicences: vibeJsDebug/js-debug/LICENSE, vibePhpDebug/extension/LICENSE.txt\n' \
+  "$JS_DEBUG_V" "$PHP_DEBUG_V" > extracted/servers/dap/README.txt
+# Тот же капкан, что с npm-серверами: висячая ссылка валит обход дерева в сборщике дистрибутива.
+find extracted/servers/dap -type l ! -exec test -e {} \; -print -delete
