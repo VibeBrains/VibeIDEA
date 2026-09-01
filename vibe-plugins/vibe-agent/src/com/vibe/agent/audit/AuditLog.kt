@@ -36,10 +36,35 @@ class AuditLog(
   /** Latched off after a write failure — the warning promises "off until restart", so honour it. */
   @Volatile private var disabled = false
 
+  /**
+   * The link of the last line written, so the next one continues the chain.
+   *
+   * Read from disk once, on the first append after a restart: the chain must survive the IDE being
+   * closed, and starting a fresh chain on every launch would make «broken» the normal state.
+   */
+  private var lastLink: String? = null
+
   fun append(event: AuditEvent) {
     if (!enabled() || disabled) return
-    val line = event.toJson().toString() + "\n"
-    runCatching { worker.execute { writeLine(line) } } // rejected after close() = nothing to log
+    runCatching {
+      worker.execute {
+        // Linked on the writer thread, not at the call site: the chain depends on the ORDER lines
+        // reach the file, and that order is decided here.
+        val payload = event.toJson().toString()
+        val previous = lastLink ?: readLastLink()
+        val link = AuditChain.link(previous, payload)
+        lastLink = link
+        writeLine(payload.dropLast(1) + ",\"" + AuditChain.FIELD + "\":\"" + link + "\"}" + "\n")
+      }
+    } // rejected after close() = nothing to log
+  }
+
+  /** The last link on disk, or the genesis value when the journal is empty or unreadable. */
+  private fun readLastLink(): String = synchronized(ioLock) {
+    if (!Files.isRegularFile(logFile)) return AuditChain.GENESIS
+    val last = runCatching { Files.readAllLines(logFile).lastOrNull { it.isNotBlank() } }.getOrNull()
+      ?: return AuditChain.GENESIS
+    return AuditChain.linkOf(last) ?: AuditChain.GENESIS
   }
 
   /** Stop the writer thread; pending lines are dropped (best-effort audit). */
@@ -96,6 +121,17 @@ class AuditLog(
     }
   }
 
+  /**
+   * Verifies the chain of the live journal.
+   *
+   * IO-bound; the caller keeps it off the EDT. Rotated archives are not walked: they are a separate
+   * file with a chain of their own, and the answer «этот журнал не правили» is about this one.
+   */
+  fun verifyChain(): AuditChain.Verdict = synchronized(ioLock) {
+    val lines = runCatching { Files.readAllLines(logFile) }.getOrDefault(emptyList())
+    AuditChain.verify(lines, AuditChain::linkOf, AuditChain::withoutLink)
+  }
+
   private fun rotateIfNeeded(incoming: Long) {
     val current = if (Files.isRegularFile(logFile)) Files.size(logFile) else 0L
     if (current + incoming <= rotationBytes()) return
@@ -106,6 +142,9 @@ class AuditLog(
       it.write(bytes)
     }
     Files.write(logFile, ByteArray(0), StandardOpenOption.TRUNCATE_EXISTING)
+    // A rotated archive keeps its own complete chain; the live file starts a new one. Pretending
+    // otherwise would make every rotation look like tampering.
+    lastLink = AuditChain.GENESIS
   }
 
   /** First free `audit.N.jsonl.gz`, numbered from 1 (VibeIDE numeric suffix). */

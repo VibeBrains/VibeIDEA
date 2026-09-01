@@ -71,6 +71,28 @@ class VibeDoctorAction : AnAction({ t("doctor.action") }) {
       ))
     }
 
+    // A ceiling one cannot see the distance to is a ceiling one only meets by hitting it.
+    val spendLimits = com.vibe.agent.settings.VibeChatSettings.spendLimits()
+    if (spendLimits.any) {
+      val spend = com.vibe.agent.budget.VibeSpendService.getInstance()
+        .entries(com.vibe.agent.budget.SpendCeiling.MONTH_MS)
+      val windows = com.vibe.agent.budget.SpendCeiling.check(spend, System.currentTimeMillis(), spendLimits)
+      val worst = windows.firstOrNull()
+      lines.add(VibeDiagnosis.Line(
+        t("doctor.line.spend"),
+        when {
+          worst == null -> VibeDiagnosis.State.OK
+          worst.exceeded -> VibeDiagnosis.State.ABSENT
+          worst.ratio >= com.vibe.agent.budget.SpendCeiling.WARN_RATIO -> VibeDiagnosis.State.WARN
+          else -> VibeDiagnosis.State.OK
+        },
+        windows.joinToString("; ") { v ->
+          t("doctor.detail.spendWindow", "window" to v.window.id,
+            "spent" to "%.2f".format(v.spent), "limit" to "%.2f".format(v.limit))
+        },
+      ))
+    }
+
     val acp = base?.let { Files.exists(Path.of(it, ".vibe", "acp.json")) } ?: false
     val today = java.time.LocalDate.now()
     val notices = com.vibe.agent.providers.ModelSunset.notices(providers, today)

@@ -67,8 +67,38 @@ private class AuditViewerDialog(private val project: Project, private val log: A
     preferredSize = Dimension(JBUI.scale(760), JBUI.scale(460))
   }
 
-  // Left-aligned extra buttons: Export + Clear.
+  // Left-aligned extra buttons: Summary + Verify + Export + Clear.
   override fun createLeftSideActions(): Array<Action> = arrayOf(
+    object : DialogWrapperAction(t("auditAction.summary")) {
+      override fun doAction(e: java.awt.event.ActionEvent?) {
+        com.intellij.openapi.application.ApplicationManager.getApplication().executeOnPooledThread {
+          // Reads the same tail the viewer shows: a summary of records the person cannot scroll to
+          // would answer a different question from the one they are looking at.
+          val report = AuditSummary.of(log.readRecent(RECENT_LIMIT))
+          val verdict = log.verifyChain()
+          val text = buildString {
+            appendLine(t("auditAction.summaryTotal", "total" to report.total))
+            if (report.unattributed > 0) appendLine(t("auditAction.summaryUnattributed", "count" to report.unattributed))
+            appendLine()
+            for (row in report.rows) {
+              appendLine(t("auditAction.summaryRow",
+                           "actor" to (row.actor + (row.role?.let { " ($it)" } ?: "")),
+                           "records" to row.records, "failures" to row.failures))
+              appendLine("    " + row.actions.joinToString(", "))
+            }
+            appendLine()
+            append(
+              when {
+                verdict.brokenAtLine != null -> t("auditAction.chainBroken", "line" to verdict.brokenAtLine)
+                verdict.unlinkedAtLine != null -> t("auditAction.chainPartial", "line" to verdict.unlinkedAtLine)
+                else -> t("auditAction.chainIntact", "count" to verdict.checked)
+              }
+            )
+          }
+          com.intellij.openapi.application.ApplicationManager.getApplication().invokeLater { area.text = text }
+        }
+      }
+    },
     object : DialogWrapperAction(t("auditAction.export")) {
       override fun doAction(e: java.awt.event.ActionEvent?) {
         val descriptor = FileSaverDescriptor(t("auditAction.exportTitle"), t("auditAction.exportPrompt"), "jsonl")
