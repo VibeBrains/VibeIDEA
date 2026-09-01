@@ -1,6 +1,8 @@
 // Copyright 2026 VibeBrains. Use of this source code is governed by the Apache 2.0 license.
 package com.vibe.lsp
 
+import com.vibe.lsp.dap.DebugAdapters
+
 /**
  * Answers the one question the language support cannot answer by itself: is the server
  * that does the work actually here?
@@ -90,7 +92,14 @@ object LspDoctor {
     id = "vibeJsDebug",
     displayName = "JavaScript/TypeScript (vscode-js-debug)",
     binary = "js-debug-adapter",
-    installCommand = "npm install -g js-debug-adapter",
+    // NOT `npm install -g js-debug-adapter`: there is no such package (checked 01.09.2026 — the
+    // registry answers 404), and the same lesson as `brew install phpactor` applies — a command
+    // that fails makes people conclude the whole feature is broken. Microsoft publishes the
+    // adapter as a release archive, which unpacks where the factory looks for it.
+    installCommand = "mkdir -p ~/.lsp4ij/dap/vibeJsDebug && curl -sL " +
+                     "$(curl -s https://api.github.com/repos/microsoft/vscode-js-debug/releases/latest " +
+                     "| grep -o 'https[^\"]*js-debug-dap[^\"]*tar.gz') " +
+                     "| tar -xz -C ~/.lsp4ij/dap/vibeJsDebug",
     extensions = setOf("ts", "tsx", "js", "jsx", "mjs", "cjs"),
   )
 
@@ -98,7 +107,13 @@ object LspDoctor {
     id = "vibePhpDebug",
     displayName = "PHP (Xdebug)",
     binary = "php-debug-adapter",
-    installCommand = "composer global require xdebug/vscode-php-debug",
+    // NOT a composer package: vscode-php-debug is a VS Code extension and packagist answers 404
+    // for it (checked 01.09.2026). The vsix is a zip; unzipping it gives extension/out/phpDebug.js,
+    // which is exactly the entry point the factory starts.
+    installCommand = "mkdir -p ~/.lsp4ij/dap/vibePhpDebug && curl -sL " +
+                     "$(curl -s https://api.github.com/repos/xdebug/vscode-php-debug/releases/latest " +
+                     "| grep -o 'https[^\"]*vsix') -o /tmp/php-debug.vsix && " +
+                     "unzip -oq /tmp/php-debug.vsix -d ~/.lsp4ij/dap/vibePhpDebug",
     extensions = setOf("php"),
   )
 
@@ -130,6 +145,19 @@ object LspDoctor {
   fun bundledPath(spec: ServerSpec): String? = when (spec.id) {
     PHPACTOR.id -> ServerBinaries.bundledPhpactor()
     else -> ServerBinaries.bundledNode(spec.binary)
+  }
+
+  /**
+   * Where an installed debug adapter actually is, keyed by the binary name of its spec.
+   *
+   * Adapters are unpacked archives of JavaScript, not executables on PATH, so looking for them the
+   * way we look for a language server finds nothing on a machine where they ARE installed — the
+   * report would then send someone to install what they already have.
+   */
+  fun adapterEntryPoint(binary: String): String? {
+    val id = DEBUG_ADAPTERS.firstOrNull { it.binary == binary }?.id ?: return null
+    val spec = DebugAdapters.ALL.firstOrNull { it.id == id } ?: return null
+    return DebugAdapters.entryPoint(spec)?.toString()
   }
 
   /** The runtime a bundled server needs, or null when it needs none of ours. */

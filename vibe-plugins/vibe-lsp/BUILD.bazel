@@ -30,6 +30,10 @@ jvm_library(
         "//platform/core-ui",
         "//platform/util:util-ui",
         "//platform/analysis-api:analysis",
+        # Отладчики: конфигурации запуска и XDebugger — точка расширения DAP у LSP4IJ говорит на них.
+        "//platform/execution",
+        "//platform/execution-impl",
+        "//platform/xdebugger-api:debugger",
         "//vibe-plugins/vibe-agent",
         "@lib//vibe/lsp4ij:vibe-lsp4ij",
     ],

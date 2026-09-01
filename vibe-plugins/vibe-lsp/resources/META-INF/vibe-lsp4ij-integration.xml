@@ -18,5 +18,16 @@
       <description>ESLint language server: the project's own rules in the editor</description>
     </server>
     <fileNamePatternMapping patterns="*.ts;*.tsx;*.js;*.jsx;*.mjs;*.cjs;*.vue;*.svelte" serverId="vibeEslint" languageId="javascript"/>
+
+    <!-- Отладчики. Точка расширения помечена у LSP4IJ как экспериментальная: две тонкие фабрики —
+         осознанная цена за «отладка одним действием» вместо JSON руками. -->
+    <debugAdapterServer id="vibeJsDebug" name="JavaScript/TypeScript (vscode-js-debug)"
+                        factoryClass="com.vibe.lsp.dap.JsDebugAdapterFactory">
+      <description>Debug adapter for JavaScript and TypeScript (vscode-js-debug, MIT)</description>
+    </debugAdapterServer>
+    <debugAdapterServer id="vibePhpDebug" name="PHP (Xdebug)"
+                        factoryClass="com.vibe.lsp.dap.PhpDebugAdapterFactory">
+      <description>Debug adapter for PHP over Xdebug (vscode-php-debug, MIT)</description>
+    </debugAdapterServer>
   </extensions>
 </idea-plugin>

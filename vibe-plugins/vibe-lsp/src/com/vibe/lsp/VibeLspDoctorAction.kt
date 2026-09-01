@@ -13,7 +13,7 @@ import com.vibe.agent.i18n.VibeI18n.t
 class VibeLspDoctorAction : AnAction({ t("lsp.doctor.action") }) {
   override fun actionPerformed(e: AnActionEvent) {
     val checks = LspDoctor.check()
-    val debuggers = LspDoctor.check(LspDoctor.DEBUG_ADAPTERS)
+    val debuggers = LspDoctor.check(LspDoctor.DEBUG_ADAPTERS, resolve = LspDoctor::adapterEntryPoint)
     val report = buildString {
       appendLine(t("lsp.doctor.intro"))
       appendLine()
