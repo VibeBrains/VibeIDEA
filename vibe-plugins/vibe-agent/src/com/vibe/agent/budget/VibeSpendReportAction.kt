@@ -47,7 +47,18 @@ class VibeSpendReportAction : AnAction({ t("spend.action") }) {
     Messages.showInfoMessage(e.project, report, t("spend.title"))
   }
 
-  private fun line(line: SpendLedger.Line): String {
+  private fun line(line: SpendLedger.Line): String = SpendLines.of(line)
+}
+
+/**
+ * One wording for a spending line, used by the menu report and by `/spend` in the chat.
+ *
+ * Two copies of this drifted apart the moment the second one was written: the money suffix carries
+ * a decision (a sum of dollars and roubles is not a number), and a decision copied is a decision
+ * that will be made differently next time.
+ */
+object SpendLines {
+  fun of(line: SpendLedger.Line): String {
     val money = when {
       line.cost <= 0.0 -> ""
       // A sum of dollars and roubles is not a number: when the currencies differ, the report says

@@ -108,8 +108,18 @@ private class AuditViewerDialog(private val project: Project, private val log: A
           val target = wrapper.file.toPath()
           com.intellij.openapi.application.ApplicationManager.getApplication().executeOnPooledThread {
             val err = runCatching { log.exportTo(target) }.exceptionOrNull()
-            if (err != null) com.intellij.openapi.application.ApplicationManager.getApplication().invokeLater {
-              Messages.showErrorDialog(project, t("auditAction.exportFailed", "reason" to err.message), t("auditAction.short"))
+            // A journal is exported to be shown to somebody — a colleague, an incident review. If
+            // its chain no longer agrees, that is the single most important thing about the file,
+            // and finding it out later, from the person you sent it to, is the worst order.
+            val verdict = runCatching { log.verifyChain() }.getOrNull()
+            com.intellij.openapi.application.ApplicationManager.getApplication().invokeLater {
+              when {
+                err != null ->
+                  Messages.showErrorDialog(project, t("auditAction.exportFailed", "reason" to err.message), t("auditAction.short"))
+                verdict?.brokenAtLine != null ->
+                  Messages.showWarningDialog(project, t("auditAction.exportBroken", "line" to verdict.brokenAtLine), t("auditAction.short"))
+                else -> {}
+              }
             }
           }
         }

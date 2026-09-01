@@ -54,6 +54,8 @@ class VibeProvidersWatcher(private val project: Project) : Disposable {
 
   override fun dispose() {
     globalWatch?.let { LocalFileSystem.getInstance().removeWatchedRoot(it) }
+    // A closed project must stop deciding how models are called: its quirk rules go with it.
+    ModelQuirksRegistry.forget(project.basePath)
   }
 
   private companion object {

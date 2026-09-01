@@ -64,6 +64,26 @@ class VibeSpendService {
     return SpendLedger.within(store.snapshot(), System.currentTimeMillis(), windowMs)
   }
 
+  /**
+   * The same window, but from memory only — for a check that runs on the EDT.
+   *
+   * [entries] reads the file on first use and flushes on every call, and the spending ceiling is
+   * asked in `onSend`, which IS the EDT: a disk write there is a freeze waiting for a slow volume.
+   *
+   * Returns null while the ledger has not been read yet, and the caller must treat that as «не
+   * знаю» rather than as «ноль»: a ceiling that blocks because it has not finished loading refuses
+   * work for a reason that has nothing to do with money. [prime] removes that state.
+   */
+  @Synchronized
+  fun cachedEntries(windowMs: Long): List<SpendLedger.Entry>? {
+    if (!loaded) return null
+    return SpendLedger.within(store.snapshot(), System.currentTimeMillis(), windowMs)
+  }
+
+  /** Reads the ledger into memory. Call OFF the EDT — that is the whole point. */
+  @Synchronized
+  fun prime() = ensureLoaded()
+
   /** Tokens this role has spent inside the window — the number a budget is checked against. */
   fun spentByRole(role: String?, windowMs: Long = SpendLedger.DAY_MS): Long =
     SpendLedger.tokensOf(entries(windowMs), role)

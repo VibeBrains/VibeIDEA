@@ -161,8 +161,15 @@ class AuditLog(
   }
 
   private companion object {
-    /** `,"h":"<12 hex>"}` plus the newline — counted so a rotation threshold stays a threshold. */
-    const val LINK_OVERHEAD_BYTES = 22L
+    /**
+     * What the link adds to a line: `,"h":"<hex>"}` plus the newline.
+     *
+     * Derived rather than written as a number: the field name and the link length are decided in
+     * [AuditChain], and a constant copied from them here would quietly stop matching the day
+     * either changes — leaving the rotation threshold off by a few bytes per line for ever.
+     */
+    val LINK_OVERHEAD_BYTES: Long =
+      (",\"".length + AuditChain.FIELD.length + "\":\"".length + AuditChain.LINK_LENGTH + "\"}\n".length).toLong()
 
     /** Long enough for a queue of pending lines, short enough never to be felt on exit. */
     const val CLOSE_WAIT_MS = 500L

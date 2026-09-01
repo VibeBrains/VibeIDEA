@@ -39,7 +39,7 @@ object AuditSummary {
       }
       val acc = groups.getOrPut(kind to field(line, "role")) { Acc() }
       acc.records++
-      if (field(line, "ok") == "false" || line.contains("\"ok\":false")) acc.failures++
+      if (field(line, "ok") == "false") acc.failures++
       field(line, "action")?.let { acc.actions[it] = (acc.actions[it] ?: 0) + 1 }
     }
     // Busiest first: a report sorted by name hides the answer, the same rule as the spend report.

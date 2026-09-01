@@ -302,6 +302,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
       handleBlameCommand(message) -> true
       handleMapCommand(message) -> true
       handleRulesCommand(message) -> true
+      handleSpendCommand(message) -> true
       sessionCeilingReached(message.text) -> false
       spendCeilingReached() -> false
       handleWatchCommand(message) -> true
@@ -355,6 +356,8 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
       val loadedAgents = AcpConfig.load { systemLine(t("chat.configNotice", "text" to it)) }
       val loadedProviders = ProvidersService.load(project.basePath) { systemLine("[providers] $it") }
       val catalogCache = ModelCatalogCache.load()
+      // Read here so the spending ceiling, which is asked on the EDT, never has to touch the disk.
+      com.vibe.agent.budget.VibeSpendService.getInstance().prime()
       // .vibe seeding lives in VibeDefaultsSeeder (project open), not here.
       val hooksDisabled = hooks.hasHooksButDisabled()
       val guardFindings = ProviderGuard.scan(loadedProviders)
@@ -693,6 +696,47 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
    * differ exactly where it matters — a tool retried three times, a gate that bounced the turn
    * back, a file read twice — and none of that is visible in prose.
    */
+  /**
+   * `/spend` — where the money went and how much of each window is left.
+   *
+   * The report already existed as a menu action, but money is asked about mid-work, in the chat,
+   * right after a turn feels expensive — and an answer that requires leaving the conversation is
+   * an answer people look up once and then stop looking up.
+   */
+  private fun handleSpendCommand(message: ComposedMessage): Boolean {
+    if (message.text.trim() != SPEND_COMMAND) return false
+    userBubble(message.text.trim())
+    // Disk IO for the ledger: off the EDT, then the text comes back.
+    ApplicationManager.getApplication().executeOnPooledThread {
+      val service = com.vibe.agent.budget.VibeSpendService.getInstance()
+      val month = service.entries(com.vibe.agent.budget.SpendCeiling.MONTH_MS)
+      val limits = VibeChatSettings.spendLimits()
+      val text = buildString {
+        val day = com.vibe.agent.budget.SpendLedger.within(month, System.currentTimeMillis(), com.vibe.agent.budget.SpendLedger.DAY_MS)
+        appendLine(t("spend.window.day", "tokens" to "%,d".format(day.sumOf { it.tokens })))
+        for (line in com.vibe.agent.budget.SpendLedger.byRole(day)) {
+          appendLine("  " + com.vibe.agent.budget.SpendLines.of(line))
+        }
+        if (limits.any) {
+          appendLine()
+          for (verdict in com.vibe.agent.budget.SpendCeiling.check(month, System.currentTimeMillis(), limits)) {
+            appendLine(t("spend.ceiling.line", "window" to windowName(verdict.window.id),
+                         "spent" to money(verdict.spent), "limit" to money(verdict.limit),
+                         "left" to money(verdict.left)))
+          }
+        }
+        else appendLine("\n" + t("spend.ceiling.off"))
+      }
+      SwingUtilities.invokeLater {
+        val console = TerminalConsole(t("spend.title"))
+        console.append(text)
+        messages.add(console)
+        revalidateScroll()
+      }
+    }
+    return true
+  }
+
   private fun handleTraceCommand(message: ComposedMessage): Boolean {
     if (message.text.trim() != TRACE_COMMAND) return false
     val events = trace.snapshot()
@@ -1416,8 +1460,10 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
   private fun spendCeilingReached(): Boolean {
     val limits = VibeChatSettings.spendLimits()
     if (!limits.any) return false
+    // Memory only: this runs on the EDT, and a ledger flush here would be a freeze on a slow disk.
+    // Not loaded yet means «не знаю», and «не знаю» must not refuse work.
     val entries = com.vibe.agent.budget.VibeSpendService.getInstance()
-      .entries(com.vibe.agent.budget.SpendCeiling.MONTH_MS)
+      .cachedEntries(com.vibe.agent.budget.SpendCeiling.MONTH_MS) ?: return false
     val now = System.currentTimeMillis()
     com.vibe.agent.budget.SpendCeiling.blocking(entries, now, limits)?.let { verdict ->
       systemLine(t("spend.ceiling.reached", "window" to windowName(verdict.window.id),
@@ -3683,6 +3729,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
   private companion object {
     const val SILENCE_CHECK_MS = 30_000
     const val OUTPUT_COMMAND = "/output"
+    const val SPEND_COMMAND = "/spend"
     const val GIT_COMMAND = "/git"
     const val COUNCIL_COMMAND = "/council"
     const val HANDOFF_COMMAND = "/handoff"

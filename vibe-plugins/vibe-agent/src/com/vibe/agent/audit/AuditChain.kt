@@ -28,6 +28,12 @@ object AuditChain {
   const val GENESIS = "0"
 
   /**
+   * Hex characters in a link: enough that a forger cannot fit a collision into a record that still
+   * reads as a plausible action, short enough that it does not visibly grow every line.
+   */
+  const val LINK_LENGTH = 12
+
+  /**
    * The link for a line: hash(previous link + the line's own JSON, without the link itself).
    *
    * The line is hashed WITHOUT its own `h`, or the value would have to contain itself. The
@@ -37,9 +43,11 @@ object AuditChain {
     val digest = MessageDigest.getInstance("SHA-256")
     digest.update(previous.toByteArray(Charsets.UTF_8))
     digest.update(payload.toByteArray(Charsets.UTF_8))
-    // Twelve hex characters: enough that a forger cannot fit a collision into a meaningful record,
-    // short enough that it does not double the size of a journal line.
-    return digest.digest().joinToString("", limit = 6, truncated = "") { "%02x".format(it) }
+    // Masked explicitly. Java's Formatter does treat a Byte as unsigned (checked, `%02x` of 0xAB
+    // is «ab»), but that rule is one `toInt()` away from silently producing «ffffffab», and the
+    // length of a link is load-bearing: the rotation budget is computed from it.
+    return digest.digest()
+      .joinToString("", limit = LINK_LENGTH / 2, truncated = "") { "%02x".format(it.toInt() and 0xFF) }
   }
 
   /**

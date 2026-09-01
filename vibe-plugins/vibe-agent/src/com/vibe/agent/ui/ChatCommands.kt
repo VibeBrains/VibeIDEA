@@ -47,6 +47,7 @@ object ChatCommands {
     Spec("/learn", false) { t("slash.command.learn") },
     Spec("/deploy", false) { t("slash.command.deploy") },
     Spec("/output", true) { t("slash.command.output") },
+    Spec("/spend", false) { t("slash.command.spend") },
     Spec("/watch", true) { t("slash.command.watch") },
     Spec("/skill:", false) { t("slash.command.skill") },
   )
