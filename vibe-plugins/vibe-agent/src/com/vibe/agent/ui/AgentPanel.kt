@@ -303,6 +303,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
       handleMapCommand(message) -> true
       handleRulesCommand(message) -> true
       sessionCeilingReached(message.text) -> false
+      spendCeilingReached() -> false
       handleWatchCommand(message) -> true
       else -> startTurn(message)
     }
@@ -1402,6 +1403,42 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     systemLine(t("context.sessionExceeded", "used" to "%,d".format(projected), "limit" to "%,d".format(limit)))
     return true
   }
+
+  /**
+   * The money ceiling of the plan's own windows, asked BEFORE the turn.
+   *
+   * Subscriptions are rationed in dollars over five hours, a week and a month, and a token ceiling
+   * cannot express that: the same hundred thousand tokens costs cents on one model and dollars on
+   * another. Checked here for the same reason as the session ceiling — a limit reported after the
+   * money is gone is a receipt, not a guard.
+   */
+  private fun spendCeilingReached(): Boolean {
+    val limits = VibeChatSettings.spendLimits()
+    if (!limits.any) return false
+    val entries = com.vibe.agent.budget.VibeSpendService.getInstance()
+      .entries(com.vibe.agent.budget.SpendCeiling.MONTH_MS)
+    val now = System.currentTimeMillis()
+    com.vibe.agent.budget.SpendCeiling.blocking(entries, now, limits)?.let { verdict ->
+      systemLine(t("spend.ceiling.reached", "window" to windowName(verdict.window.id),
+                   "spent" to money(verdict.spent), "limit" to money(verdict.limit)))
+      return true
+    }
+    // The warning is worth exactly one line, and only while there is still room to act on it.
+    com.vibe.agent.budget.SpendCeiling.warning(entries, now, limits)?.let { verdict ->
+      systemLine(t("spend.ceiling.near", "window" to windowName(verdict.window.id),
+                   "spent" to money(verdict.spent), "limit" to money(verdict.limit),
+                   "left" to money(verdict.left)))
+    }
+    return false
+  }
+
+  private fun windowName(id: String): String = when (id) {
+    com.vibe.agent.budget.SpendCeiling.FIVE_HOURS -> t("spend.window.fiveHours")
+    com.vibe.agent.budget.SpendCeiling.WEEK -> t("spend.window.weekName")
+    else -> t("spend.window.monthName")
+  }
+
+  private fun money(value: Double): String = "%.2f".format(value)
 
   private fun handleOutputCommand(message: ComposedMessage): Boolean {
     val text = message.text.trim()

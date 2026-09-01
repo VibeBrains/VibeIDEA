@@ -29,6 +29,10 @@ class VibeChatConfigurable : Configurable {
   override fun getDisplayName(): String = t("settings.chat.title")
 
   /** Grey hint under a control — one place, so wording and colour cannot drift between pages. */
+  private var spend5hSpinner: JBIntSpinner? = null
+  private var spendWeekSpinner: JBIntSpinner? = null
+  private var spendMonthSpinner: JBIntSpinner? = null
+
   private fun hint(text: String) = JBLabel("<html>$text</html>").apply { foreground = com.intellij.ui.JBColor.GRAY }
 
   override fun createComponent(): JComponent {
@@ -40,6 +44,11 @@ class VibeChatConfigurable : Configurable {
     messagesSpinner = messages
     val sessionTokens = JBIntSpinner(VibeChatSettings.sessionTokenLimit.toInt(), 0, MAX_SESSION_TOKENS)
     sessionSpinner = sessionTokens
+    // In whole dollars: subscriptions are sold in round numbers ($12 / $30 / $60), and cents in a
+    // ceiling would be precision nobody asked for.
+    val spend5h = JBIntSpinner(VibeChatSettings.spendLimitFiveHours.toInt(), 0, MAX_SPEND).also { spend5hSpinner = it }
+    val spendWeek = JBIntSpinner(VibeChatSettings.spendLimitWeek.toInt(), 0, MAX_SPEND).also { spendWeekSpinner = it }
+    val spendMonth = JBIntSpinner(VibeChatSettings.spendLimitMonth.toInt(), 0, MAX_SPEND).also { spendMonthSpinner = it }
     return FormBuilder.createFormBuilder()
       .addLabeledComponent(t("settings.chat.continueText"), field)
       .addComponent(hint(t("settings.chat.continueHint", "default" to VibeChatSettings.DEFAULT_CONTINUE_TEXT)))
@@ -49,6 +58,10 @@ class VibeChatConfigurable : Configurable {
       .addComponent(hint(t("settings.chat.maxMessagesHint")))
       .addLabeledComponent(t("settings.chat.sessionTokens"), sessionTokens)
       .addComponent(hint(t("settings.chat.sessionTokensHint")))
+      .addLabeledComponent(t("settings.chat.spend5h"), spend5h)
+      .addLabeledComponent(t("settings.chat.spendWeek"), spendWeek)
+      .addLabeledComponent(t("settings.chat.spendMonth"), spendMonth)
+      .addComponent(hint(t("settings.chat.spendHint")))
       .addLabeledComponent(t("settings.chat.codeFold"), JBIntSpinner(VibeChatSettings.codeFoldLines, 0, VibeChatSettings.MAX_CODE_FOLD_LINES).also { codeFold = it })
       .addComponent(hint(t("settings.chat.codeFoldHint")))
       .addComponent(com.intellij.ui.components.JBCheckBox(t("settings.sound.enabled"), VibeChatSettings.soundEnabled).also { soundEnabled = it })
@@ -97,7 +110,10 @@ class VibeChatConfigurable : Configurable {
     (continueField?.text?.trim() ?: VibeChatSettings.continueText) != VibeChatSettings.continueText ||
     (tabsSpinner?.number ?: VibeChatSettings.maxOpenTabs) != VibeChatSettings.maxOpenTabs ||
     (messagesSpinner?.number ?: VibeChatSettings.maxMessagesPerThread) != VibeChatSettings.maxMessagesPerThread ||
-    (sessionSpinner?.number?.toLong() ?: VibeChatSettings.sessionTokenLimit) != VibeChatSettings.sessionTokenLimit
+    (sessionSpinner?.number?.toLong() ?: VibeChatSettings.sessionTokenLimit) != VibeChatSettings.sessionTokenLimit ||
+    (spend5hSpinner?.number?.toDouble() ?: VibeChatSettings.spendLimitFiveHours) != VibeChatSettings.spendLimitFiveHours ||
+    (spendWeekSpinner?.number?.toDouble() ?: VibeChatSettings.spendLimitWeek) != VibeChatSettings.spendLimitWeek ||
+    (spendMonthSpinner?.number?.toDouble() ?: VibeChatSettings.spendLimitMonth) != VibeChatSettings.spendLimitMonth
 
   override fun apply() {
     codeFold?.let { VibeChatSettings.codeFoldLines = it.number }
@@ -113,6 +129,9 @@ class VibeChatConfigurable : Configurable {
     tabsSpinner?.let { VibeChatSettings.maxOpenTabs = it.number }
     messagesSpinner?.let { VibeChatSettings.maxMessagesPerThread = it.number }
     sessionSpinner?.let { VibeChatSettings.sessionTokenLimit = it.number.toLong() }
+    spend5hSpinner?.let { VibeChatSettings.spendLimitFiveHours = it.number.toDouble() }
+    spendWeekSpinner?.let { VibeChatSettings.spendLimitWeek = it.number.toDouble() }
+    spendMonthSpinner?.let { VibeChatSettings.spendLimitMonth = it.number.toDouble() }
   }
 
   override fun reset() {
@@ -128,10 +147,16 @@ class VibeChatConfigurable : Configurable {
     tabsSpinner?.number = VibeChatSettings.maxOpenTabs
     messagesSpinner?.number = VibeChatSettings.maxMessagesPerThread
     sessionSpinner?.number = VibeChatSettings.sessionTokenLimit.toInt()
+    spend5hSpinner?.number = VibeChatSettings.spendLimitFiveHours.toInt()
+    spendWeekSpinner?.number = VibeChatSettings.spendLimitWeek.toInt()
+    spendMonthSpinner?.number = VibeChatSettings.spendLimitMonth.toInt()
   }
 
   private companion object {
     /** Two hundred million tokens is far past any real chat — the spinner needs a top, not a policy. */
     const val MAX_SESSION_TOKENS = 200_000_000
+
+    /** A ceiling in the thousands is not a ceiling; the spinner should not invite one. */
+    const val MAX_SPEND = 10_000
   }
 }
