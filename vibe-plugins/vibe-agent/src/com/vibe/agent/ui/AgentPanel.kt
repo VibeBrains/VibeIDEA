@@ -147,7 +147,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
   @Volatile private var providers: List<ProviderEntry> = emptyList()
   /** Models hand-declared in providers files (before any catalog fetch) — they get the «кастом» mark. */
   @Volatile private var staticModelIds: Map<String, Set<String>> = emptyMap()
-  private val llmClient = LlmClient()
+  private val llmClient = LlmClient(projectBase = project.basePath)
   private val llmCancel = java.util.concurrent.atomic.AtomicBoolean(false)
   private val runs = com.vibe.agent.runs.VibeAgentRunService.getInstance(project)
   private val fileOps = IdeFileOps(
@@ -1085,7 +1085,8 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     sessionTokens.set(0)
     announcedContextLevels.clear()
     metricBaseline = null
-    lastAccountedUsed.set(0)
+    usedMeter.reset()
+    costMeter.reset()
   }
 
   private fun runShell(command: String): String {
@@ -1312,7 +1313,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     val model = com.vibe.agent.providers.ModelEntry(id = adviser.modelId)
     val answer = StringBuilder()
     return runCatching {
-      com.vibe.agent.providers.LlmClient().chat(
+      com.vibe.agent.providers.LlmClient(projectBase = project.basePath).chat(
         resolved, model,
         listOf(com.vibe.agent.providers.ChatMessage("user",
           com.vibe.agent.council.CouncilPlan.adviserPrompt(question, t("council.adviser")))),
@@ -3387,16 +3388,24 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     val currency = (u["cost"] as? JsonObject)?.get("currency")?.jsonPrimitive?.contentOrNull
     // ACP reports the window total, and a new turn starts it lower again: without the floor the
     // difference goes negative and the day's spend silently shrinks.
-    val delta = (used - lastAccountedUsed.getAndSet(used)).coerceAtLeast(0)
+    val delta = usedMeter.advanceWhole(used)
+    // The COST is cumulative in the same object, and it used to be recorded whole on every update.
+    // An update arrives many times per turn, so the ledger was adding the running total again and
+    // again — the report exaggerated by as many times as the agent reported progress. It showed as
+    // nothing while money was only a column in a report; it became a wall the moment a ceiling
+    // started reading it.
+    val costDelta = costMeter.advance(amount)
     com.vibe.agent.budget.VibeSpendService.getInstance()
       // The split between the turn's files is an estimate by size — a request is billed whole.
-      .record(currentRole, targetLabel(), delta, amount, currency,
+      .record(currentRole, targetLabel(), delta, costDelta, currency?.takeIf { costDelta != null },
               com.vibe.agent.budget.FileSpend.attribute(delta, turnAttachments))
     stretchTokens.addAndGet(delta)
   }
 
   /** ACP reports the window total, not a delta: the difference is what this turn actually added. */
-  private val lastAccountedUsed = java.util.concurrent.atomic.AtomicLong(0)
+  /** Cumulative reports from the agent, converted to increments — see [com.vibe.agent.budget.CumulativeMeter]. */
+  private val usedMeter = com.vibe.agent.budget.CumulativeMeter()
+  private val costMeter = com.vibe.agent.budget.CumulativeMeter()
 
   private fun targetLabel(): String = when (val t = target) {
     is ChatTarget.Agent -> "acp/${t.config.name}"

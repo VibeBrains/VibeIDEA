@@ -76,7 +76,7 @@ class VibeInlineEditAction : AnAction({ t("inline.action") }) {
     val prompt = InlineEditPrompt.build(request, language, code, instructions(), rules)
     val answer = StringBuilder()
     return runCatching {
-      LlmClient().chat(resolved, ModelEntry(id = modelId), listOf(ChatMessage("user", prompt))) { delta ->
+      LlmClient(projectBase = project.basePath).chat(resolved, ModelEntry(id = modelId), listOf(ChatMessage("user", prompt))) { delta ->
         answer.append(delta)
       }
       answer.toString().ifBlank { null }

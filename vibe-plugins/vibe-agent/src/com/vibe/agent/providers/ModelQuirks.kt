@@ -103,24 +103,8 @@ object ModelQuirks {
     ),
   )
 
-  /**
-   * What `.vibe/modelQuirks.json` says, replacing the built-in answer for the models it matches.
-   *
-   * Held here rather than passed through every call site because the quirk lookup happens deep
-   * inside request building, and threading a catalogue through it would put a parameter nobody
-   * reads into a dozen signatures. The pure functions still accept the list, so the behaviour is
-   * testable without touching this state.
-   */
-  @Volatile
-  private var overrides: List<Rule> = emptyList()
-
-  /** Installs what was read from disk; an empty list restores the built-in catalogue exactly. */
-  fun setOverrides(rules: List<Rule>) {
-    overrides = rules
-  }
-
   /** Everything known about this model ID; an empty set for a model nobody complained about. */
-  fun quirksOf(modelId: String, overrides: List<Rule> = this.overrides): Set<Quirk> {
+  fun quirksOf(modelId: String, overrides: List<Rule> = emptyList()): Set<Quirk> {
     val id = normalize(modelId)
     if (id.isEmpty()) return emptySet()
     // A matching file entry REPLACES the built-in answer rather than adding to it — otherwise
@@ -131,23 +115,25 @@ object ModelQuirks {
   }
 
   /** The human explanation, for the log line that says why the request was not sent as written. */
-  fun noteOf(modelId: String, overrides: List<Rule> = this.overrides): String? {
+  fun noteOf(modelId: String, overrides: List<Rule> = emptyList()): String? {
     val id = normalize(modelId)
     overrides.firstOrNull { it.pattern.containsMatchIn(id) }?.let { return it.note }
     return BUILT_IN.firstOrNull { it.pattern.containsMatchIn(id) }?.note
   }
 
   /** Where the answer for this model came from — the one thing «почему пропала temperature» needs. */
-  fun sourceOf(modelId: String, overrides: List<Rule> = this.overrides): String? {
+  fun sourceOf(modelId: String, overrides: List<Rule> = emptyList()): String? {
     val id = normalize(modelId)
     if (id.isEmpty()) return null
     if (overrides.any { it.pattern.containsMatchIn(id) }) return "modelQuirks.json"
     return if (BUILT_IN.any { it.pattern.containsMatchIn(id) }) "built-in" else null
   }
 
-  fun has(modelId: String, quirk: Quirk): Boolean = quirk in quirksOf(modelId)
+  fun has(modelId: String, quirk: Quirk, overrides: List<Rule> = emptyList()): Boolean =
+    quirk in quirksOf(modelId, overrides)
 
-  fun supportsStreaming(modelId: String): Boolean = !has(modelId, Quirk.NO_STREAMING)
+  fun supportsStreaming(modelId: String, overrides: List<Rule> = emptyList()): Boolean =
+    !has(modelId, Quirk.NO_STREAMING, overrides)
 
   /**
    * The request body, rewritten to what this model actually accepts.
@@ -155,17 +141,33 @@ object ModelQuirks {
    * Renaming keeps the VALUE: the user asked for a limit, and dropping it because the field moved
    * would replace their number with the provider's default without saying so.
    */
-  fun applyToBody(modelId: String, body: JsonObject): JsonObject {
-    val quirks = quirksOf(modelId)
+  fun applyToBody(
+    modelId: String,
+    body: JsonObject,
+    overrides: List<Rule> = emptyList(),
+    /**
+     * Which dialect the body is written in.
+     *
+     * Not cosmetic: the same refusal is a different field on each wire — a stop list is `stop` for
+     * OpenAI and `stop_sequences` for Anthropic. Applying the OpenAI names to an Anthropic body
+     * removes nothing and silently sends exactly what the model rejects, which is how a quirk
+     * catalogue turns into decoration.
+     */
+    wire: String = WIRE_OPENAI,
+  ): JsonObject {
+    val quirks = quirksOf(modelId, overrides)
     if (quirks.isEmpty()) return body
+    val anthropic = wire == WIRE_ANTHROPIC
     val fields = LinkedHashMap(body)
     if (Quirk.NO_SAMPLING in quirks || Quirk.NO_TEMPERATURE in quirks) fields.remove("temperature")
     if (Quirk.NO_SAMPLING in quirks || Quirk.NO_TOP_P in quirks) fields.remove("top_p")
     if (Quirk.NO_SAMPLING in quirks || Quirk.NO_TOP_K in quirks) fields.remove("top_k")
     if (Quirk.NO_STOP in quirks) {
-      fields.remove("stop")
+      fields.remove(if (anthropic) "stop_sequences" else "stop")
     }
-    if (Quirk.MAX_COMPLETION_TOKENS in quirks) {
+    // Anthropic's own field IS `max_tokens` and it is required — renaming it there would produce a
+    // request without an answer limit at all.
+    if (Quirk.MAX_COMPLETION_TOKENS in quirks && !anthropic) {
       fields.remove("max_tokens")?.let { fields["max_completion_tokens"] = it }
     }
     if (Quirk.NO_STREAMING in quirks) {
@@ -174,6 +176,9 @@ object ModelQuirks {
     return JsonObject(fields)
   }
 
+  const val WIRE_OPENAI = "openai"
+  const val WIRE_ANTHROPIC = "anthropic"
+
   /**
    * The messages, rewritten the same way.
    *
@@ -181,8 +186,12 @@ object ModelQuirks {
    * losing it: the system prompt is where the rules of the whole session live, and silently
    * dropping it produces an agent that ignores the project — with nothing in the log to explain it.
    */
-  fun applyToMessages(modelId: String, messages: List<ChatMessage>): List<ChatMessage> {
-    if (!has(modelId, Quirk.NO_SYSTEM_ROLE)) return messages
+  fun applyToMessages(
+    modelId: String,
+    messages: List<ChatMessage>,
+    overrides: List<Rule> = emptyList(),
+  ): List<ChatMessage> {
+    if (!has(modelId, Quirk.NO_SYSTEM_ROLE, overrides)) return messages
     val system = messages.filter { it.role == "system" }
     if (system.isEmpty()) return messages
     val rest = messages.filterNot { it.role == "system" }

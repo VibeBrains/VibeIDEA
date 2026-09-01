@@ -44,16 +44,10 @@ class ModelQuirksGranularTest {
     val file = ModelQuirksFile.rules(
       ModelQuirksFile.parse("""{"models":[{"match":"^solo","quirks":["NO_TEMPERATURE"]}]}""", "t") { }
     )
-    ModelQuirks.setOverrides(file)
-    try {
-      val out = ModelQuirks.applyToBody("solo-1", body())
-      assertNull(out["temperature"])
-      assertEquals(0.95, out.getValue("top_p").toString().toDouble())
-      assertEquals(40, out.getValue("top_k").toString().toInt())
-    }
-    finally {
-      ModelQuirks.setOverrides(emptyList())
-    }
+    val out = ModelQuirks.applyToBody("solo-1", body(), file)
+    assertNull(out["temperature"])
+    assertEquals(0.95, out.getValue("top_p").toString().toDouble())
+    assertEquals(40, out.getValue("top_k").toString().toInt())
   }
 
   @Test

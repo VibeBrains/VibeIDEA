@@ -196,7 +196,7 @@ class TelegramBridge {
 
     val answer = StringBuilder()
     val ok = runCatching {
-      com.vibe.agent.providers.LlmClient().chat(
+      com.vibe.agent.providers.LlmClient(projectBase = base).chat(
         provider = local.first,
         model = local.second,
         messages = listOf(com.vibe.agent.providers.ChatMessage("user", VoiceCleanup.prompt(raw))),

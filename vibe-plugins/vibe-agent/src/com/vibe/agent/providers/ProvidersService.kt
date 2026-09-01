@@ -33,7 +33,7 @@ object ProvidersService {
     val projectVibeDir = projectBase?.let { Path.of(it, ".vibe") }
     // Read together with the registry: both answer the same question — how a request to this model
     // must be built — and loading them apart is how the two drift into disagreeing.
-    ModelQuirks.setOverrides(loadQuirks(globalVibeDir, projectVibeDir, onWarning))
+    ModelQuirksRegistry.install(projectBase, loadQuirks(globalVibeDir, projectVibeDir, onWarning))
     return loadFrom(globalVibeDir, projectVibeDir, onWarning)
   }
 

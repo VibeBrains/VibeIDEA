@@ -112,7 +112,16 @@ internal object LlmMessages {
  * Model-level extraBody is merged into the request verbatim (vendor quirks).
  * Pure transport: no IDE types in here.
  */
-class LlmClient(private val http: HttpClient = defaultClient(Duration.ofSeconds(20))) {
+class LlmClient(
+  private val http: HttpClient = defaultClient(Duration.ofSeconds(20)),
+  /**
+   * Whose quirk catalogue to apply. Null is not «нет проекта вообще», it is «работа вне проекта» —
+   * settings pages and the catalogue probe, which have their own entry in the registry.
+   */
+  private val projectBase: String? = null,
+) {
+  private fun quirks(): List<ModelQuirks.Rule> = ModelQuirksRegistry.rulesFor(projectBase)
+
   private val json = Json { ignoreUnknownKeys = true }
   @Volatile private var cancelled: () -> Boolean = { false }
   @Volatile private var activeBody: java.io.InputStream? = null
@@ -276,9 +285,10 @@ class LlmClient(private val http: HttpClient = defaultClient(Duration.ofSeconds(
   private fun openAiChat(provider: ResolvedProvider, model: ModelEntry, messages: List<ChatMessage>, onDelta: (String) -> Unit) {
     // The quirks catalogue rewrites what this particular model refuses to be asked, and does it
     // BEFORE extraBody so a hand-written entry in providers.json always wins over our guess.
-    val asked = ModelQuirks.applyToMessages(model.id, messages)
-    val streaming = ModelQuirks.supportsStreaming(model.id)
-    val body = withExtras(ModelQuirks.applyToBody(model.id, buildJsonObject {
+    val overrides = quirks()
+    val asked = ModelQuirks.applyToMessages(model.id, messages, overrides)
+    val streaming = ModelQuirks.supportsStreaming(model.id, overrides)
+    val body = withExtras(ModelQuirks.applyToBody(model.id, overrides = overrides, body = buildJsonObject {
       put("model", model.id)
       put("stream", true)
       model.temperature?.let { put("temperature", it) }
@@ -286,8 +296,8 @@ class LlmClient(private val http: HttpClient = defaultClient(Duration.ofSeconds(
       model.maxOutputTokens?.let { put("max_tokens", it) }
       put("messages", JsonArray(asked.map(LlmMessages::openAi)))
     }.let { withReasoning(it, "openai", model) }), model.extraBody)
-    if (ModelQuirks.quirksOf(model.id).isNotEmpty()) {
-      logger<LlmClient>().info("Model quirks applied for " + model.id + ": " + ModelQuirks.noteOf(model.id))
+    if (ModelQuirks.quirksOf(model.id, overrides).isNotEmpty()) {
+      logger<LlmClient>().info("Model quirks applied for " + model.id + ": " + ModelQuirks.noteOf(model.id, overrides))
     }
     val request = requestBuilder(provider, "chat/completions")
       .POST(HttpRequest.BodyPublishers.ofString(body.toString()))
@@ -308,6 +318,7 @@ class LlmClient(private val http: HttpClient = defaultClient(Duration.ofSeconds(
   }
 
   private fun anthropicChat(provider: ResolvedProvider, model: ModelEntry, messages: List<ChatMessage>, onDelta: (String) -> Unit) {
+    val overrides = quirks()
     val system = messages.filter { it.role == "system" }.joinToString("\n") { it.text }
     val body = withExtras(buildJsonObject {
       put("model", model.id)
@@ -336,7 +347,11 @@ class LlmClient(private val http: HttpClient = defaultClient(Duration.ofSeconds(
       put("messages", JsonArray(wire.mapIndexed { index, message ->
         LlmMessages.anthropic(message, cacheable = index == boundary)
       }))
-    }.let { withReasoning(it, "anthropic", model) }, model.extraBody)
+    }.let { withReasoning(it, "anthropic", model) }
+      // Quirks were applied on the OpenAI path only, which left the Anthropic-compatible endpoints
+      // — where MiniMax and Qwen actually live — sending exactly the fields those models ignore.
+      .let { ModelQuirks.applyToBody(model.id, it, overrides, ModelQuirks.WIRE_ANTHROPIC) },
+      model.extraBody)
     val request = requestBuilder(provider, "messages")
       .header("anthropic-version", "2023-06-01")
       .POST(HttpRequest.BodyPublishers.ofString(body.toString()))

@@ -56,13 +56,12 @@ class VibeDoctorAction : AnAction({ t("doctor.action") }) {
 
     // «Почему у меня пропала temperature» имеет ровно один полезный ответ: кто это решил.
     // Без строки в докторе причуда — невидимая правка чужого запроса.
-    val quirkModel = com.vibe.agent.providers.ModelQuirks.let { _ ->
-      providers.firstOrNull { it.models.any { m -> m.default } }?.models?.firstOrNull { it.default }?.id
-      ?: providers.firstOrNull()?.models?.firstOrNull()?.id
-    }
+    val quirkModel = providers.firstOrNull { it.models.any { m -> m.default } }?.models?.firstOrNull { it.default }?.id
+                     ?: providers.firstOrNull()?.models?.firstOrNull()?.id
     if (quirkModel != null) {
-      val quirks = com.vibe.agent.providers.ModelQuirks.quirksOf(quirkModel)
-      val source = com.vibe.agent.providers.ModelQuirks.sourceOf(quirkModel)
+      val overrides = com.vibe.agent.providers.ModelQuirksRegistry.rulesFor(base)
+      val quirks = com.vibe.agent.providers.ModelQuirks.quirksOf(quirkModel, overrides)
+      val source = com.vibe.agent.providers.ModelQuirks.sourceOf(quirkModel, overrides)
       lines.add(VibeDiagnosis.Line(
         t("doctor.line.quirks"),
         VibeDiagnosis.State.OK,

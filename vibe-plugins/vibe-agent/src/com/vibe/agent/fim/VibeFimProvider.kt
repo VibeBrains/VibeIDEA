@@ -29,7 +29,11 @@ import kotlin.time.Duration.Companion.milliseconds
  */
 class VibeFimProvider : DebouncedInlineCompletionProvider() {
   override val id: InlineCompletionProviderID = InlineCompletionProviderID("com.vibe.agent.fim")
-  private val llm = LlmClient()
+  /**
+   * Built per request rather than once: the quirk catalogue is per project, and one shared client
+   * would answer with whichever project happened to open first.
+   */
+  private fun llmFor(projectBase: String?) = LlmClient(projectBase = projectBase)
 
   @Volatile private var cached: Pair<ResolvedProvider, ModelEntry>? = null
   @Volatile private var cachedAt: Long = 0
@@ -78,7 +82,7 @@ class VibeFimProvider : DebouncedInlineCompletionProvider() {
 
     val startedAt = System.currentTimeMillis()
     val raw = withContext(Dispatchers.IO) {
-      runCatching { llm.fimComplete(target.first, target.second, plan.prefix, plan.suffix, plan.stop) }
+      runCatching { llmFor(project.basePath).fimComplete(target.first, target.second, plan.prefix, plan.suffix, plan.stop) }
         .onFailure { metrics.failure() }
         .getOrNull()
     } ?: return InlineCompletionSuggestion.Empty
