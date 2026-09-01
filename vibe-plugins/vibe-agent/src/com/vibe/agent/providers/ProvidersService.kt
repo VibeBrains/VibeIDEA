@@ -28,12 +28,14 @@ data class ResolvedProvider(
  * determined by the endpoint host, not by a hardcoded vendor list.
  */
 object ProvidersService {
-  fun load(projectBase: String?, onWarning: (String) -> Unit): List<ProviderEntry> =
-    loadFrom(
-      globalVibeDir = Path.of(System.getProperty("user.home"), ".vibe"),
-      projectVibeDir = projectBase?.let { Path.of(it, ".vibe") },
-      onWarning = onWarning,
-    )
+  fun load(projectBase: String?, onWarning: (String) -> Unit): List<ProviderEntry> {
+    val globalVibeDir = Path.of(System.getProperty("user.home"), ".vibe")
+    val projectVibeDir = projectBase?.let { Path.of(it, ".vibe") }
+    // Read together with the registry: both answer the same question — how a request to this model
+    // must be built — and loading them apart is how the two drift into disagreeing.
+    ModelQuirks.setOverrides(loadQuirks(globalVibeDir, projectVibeDir, onWarning))
+    return loadFrom(globalVibeDir, projectVibeDir, onWarning)
+  }
 
   /** Same as [load], with explicit scope directories — the seam unit tests drive. */
   fun loadFrom(globalVibeDir: Path, projectVibeDir: Path?, onWarning: (String) -> Unit): List<ProviderEntry> {
@@ -56,6 +58,36 @@ object ProvidersService {
         else -> ProviderOrigin.GLOBAL
       })
     }
+  }
+
+  /**
+   * Reads `.vibe/modelQuirks.json` of both scopes and installs it as the quirk catalogue.
+   *
+   * Project over global, and both over the built-in rules: a repository pinned to a model that
+   * misbehaves carries the workaround with it, and the person who cloned it does not have to
+   * rediscover the same 400.
+   *
+   * Called on load and on every watcher event, so an edit takes effect without an IDE restart.
+   */
+  fun loadQuirks(
+    globalVibeDir: Path = Path.of(System.getProperty("user.home"), ".vibe"),
+    projectVibeDir: Path? = null,
+    onWarning: (String) -> Unit,
+  ): List<ModelQuirks.Rule> {
+    val global = readQuirks(globalVibeDir, onWarning)
+    val project = projectVibeDir?.let { readQuirks(it, onWarning) } ?: emptyList()
+    // Project first: the first matching rule wins, so the nearer file has the last word.
+    return ModelQuirksFile.rules(project + global)
+  }
+
+  private fun readQuirks(vibeDir: Path, onWarning: (String) -> Unit): List<ModelQuirksFile.Entry> {
+    val file = vibeDir.resolve(ProvidersWatchPaths.QUIRKS_FILE)
+    if (!Files.isRegularFile(file)) return emptyList()
+    val text = runCatching { Files.readString(file) }.getOrElse { e ->
+      onWarning(t("quirks.warn.unreadable", "source" to file, "reason" to e.message))
+      return emptyList()
+    }
+    return ModelQuirksFile.parse(text, file.toString(), onWarning)
   }
 
   private fun loadCatalog(vibeDir: Path, onWarning: (String) -> Unit): List<ProviderEntry> {

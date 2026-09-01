@@ -42,6 +42,7 @@ object VibeDefaults {
     "gitignore.seed" to ".gitignore",
     "hooks.example.jsonc" to "hooks.example.jsonc",
     "learning/MISSION.example.md" to "learning/MISSION.example.md",
+    "modelQuirks.example.jsonc" to "modelQuirks.example.jsonc",
     "pipelines.example.jsonc" to "pipelines.example.jsonc",
     "prompts/CLAUDE-FABLE-5.md" to "prompts/CLAUDE-FABLE-5.md",
     "prompts/deep-review.md" to "prompts/deep-review.md",

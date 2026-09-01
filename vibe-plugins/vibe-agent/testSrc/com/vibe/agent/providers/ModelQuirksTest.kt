@@ -74,9 +74,9 @@ class ModelQuirksTest {
 
   @Test
   fun `у каждого правила каталога есть человеческое объяснение`() {
-    assertTrue(ModelQuirks.RULES.isNotEmpty())
-    assertTrue(ModelQuirks.RULES.all { it.note.isNotBlank() })
-    assertTrue(ModelQuirks.RULES.all { it.quirks.isNotEmpty() })
+    assertTrue(ModelQuirks.BUILT_IN.isNotEmpty())
+    assertTrue(ModelQuirks.BUILT_IN.all { it.note.isNotBlank() })
+    assertTrue(ModelQuirks.BUILT_IN.all { it.quirks.isNotEmpty() })
   }
 
   @Test

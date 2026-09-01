@@ -8,6 +8,9 @@ package com.vibe.agent.providers
  * dir and `.env` under `<project>/.vibe` or `~/.vibe`.
  */
 object ProvidersWatchPaths {
+  /** The quirk catalogue a person maintains themselves; watched for the same reason as the rest. */
+  const val QUIRKS_FILE = "modelQuirks.json"
+
   fun matches(path: String, projectBase: String?, home: String): Boolean {
     val p = path.replace('\\', '/')
     val roots = listOfNotNull(projectBase, home).map { it.replace('\\', '/').trimEnd('/') + "/.vibe" }
@@ -17,7 +20,7 @@ object ProvidersWatchPaths {
         p.startsWith("$root/") -> p.removePrefix("$root/")
         else -> continue
       }
-      if (rel == "providers.json" || rel == ".env") return true
+      if (rel == "providers.json" || rel == ".env" || rel == QUIRKS_FILE) return true
       if (rel.startsWith("providers/") && (rel.endsWith(".jsonc") || rel.endsWith(".json"))) return true
       // A create/delete/rename of the providers dir itself also changes the registry.
       if (rel == "providers") return true

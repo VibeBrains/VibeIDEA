@@ -53,7 +53,7 @@ object ModelQuirks {
    * routers: `openai/o1-mini` is the same model as `o1-mini`, and a catalogue that missed one of
    * the two spellings would be a catalogue that works only on the direct provider.
    */
-  val RULES: List<Rule> = listOf(
+  val BUILT_IN: List<Rule> = listOf(
     Rule(
       Regex("^o1-(preview|mini)"),
       setOf(Quirk.NO_SAMPLING, Quirk.MAX_COMPLETION_TOKENS, Quirk.NO_SYSTEM_ROLE, Quirk.NO_STREAMING, Quirk.NO_STOP),
@@ -71,17 +71,46 @@ object ModelQuirks {
     ),
   )
 
+  /**
+   * What `.vibe/modelQuirks.json` says, replacing the built-in answer for the models it matches.
+   *
+   * Held here rather than passed through every call site because the quirk lookup happens deep
+   * inside request building, and threading a catalogue through it would put a parameter nobody
+   * reads into a dozen signatures. The pure functions still accept the list, so the behaviour is
+   * testable without touching this state.
+   */
+  @Volatile
+  private var overrides: List<Rule> = emptyList()
+
+  /** Installs what was read from disk; an empty list restores the built-in catalogue exactly. */
+  fun setOverrides(rules: List<Rule>) {
+    overrides = rules
+  }
+
   /** Everything known about this model ID; an empty set for a model nobody complained about. */
-  fun quirksOf(modelId: String): Set<Quirk> {
+  fun quirksOf(modelId: String, overrides: List<Rule> = this.overrides): Set<Quirk> {
     val id = normalize(modelId)
     if (id.isEmpty()) return emptySet()
-    return RULES.filter { it.pattern.containsMatchIn(id) }.flatMap { it.quirks }.toSet()
+    // A matching file entry REPLACES the built-in answer rather than adding to it — otherwise
+    // there would be no way to say "this model is fine now", which is half the reason the file
+    // exists: a vendor fixing its API must not need an IDE release to be believed.
+    overrides.firstOrNull { it.pattern.containsMatchIn(id) }?.let { return it.quirks }
+    return BUILT_IN.filter { it.pattern.containsMatchIn(id) }.flatMap { it.quirks }.toSet()
   }
 
   /** The human explanation, for the log line that says why the request was not sent as written. */
-  fun noteOf(modelId: String): String? {
+  fun noteOf(modelId: String, overrides: List<Rule> = this.overrides): String? {
     val id = normalize(modelId)
-    return RULES.firstOrNull { it.pattern.containsMatchIn(id) }?.note
+    overrides.firstOrNull { it.pattern.containsMatchIn(id) }?.let { return it.note }
+    return BUILT_IN.firstOrNull { it.pattern.containsMatchIn(id) }?.note
+  }
+
+  /** Where the answer for this model came from — the one thing «почему пропала temperature» needs. */
+  fun sourceOf(modelId: String, overrides: List<Rule> = this.overrides): String? {
+    val id = normalize(modelId)
+    if (id.isEmpty()) return null
+    if (overrides.any { it.pattern.containsMatchIn(id) }) return "modelQuirks.json"
+    return if (BUILT_IN.any { it.pattern.containsMatchIn(id) }) "built-in" else null
   }
 
   fun has(modelId: String, quirk: Quirk): Boolean = quirk in quirksOf(modelId)
