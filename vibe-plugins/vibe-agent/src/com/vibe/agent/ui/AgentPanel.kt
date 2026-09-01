@@ -1478,13 +1478,18 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
       // and the answer belongs to them, not to us. The same question goes to the phone, like every
       // other one that can hold up a run.
       val request = com.vibe.agent.telegram.PendingApprovals.open(body)
-      val onPhone = runCatching {
-        com.vibe.agent.telegram.TelegramBridge.getInstance()
-          .askApproval(request, t("telegram.approvalQuestion", "body" to body))
-      }.getOrDefault(false)
-      var approved = false
-      ApplicationManager.getApplication().invokeAndWait {
-        approved = com.vibe.agent.telegram.ApprovalDialog.ask(
+      // Posted from a background thread: sending the question to the phone reads the token out of
+      // the OS keychain and makes an HTTP call, and this method runs on the EDT. The dialog does
+      // not wait for it — the phone's answer is noticed by polling either way.
+      val onPhone = VibeAgentSettings.telegramEnabled
+      ApplicationManager.getApplication().executeOnPooledThread {
+        runCatching {
+          com.vibe.agent.telegram.TelegramBridge.getInstance()
+            .askApproval(request, t("telegram.approvalQuestion", "body" to body))
+        }
+      }
+      val approved = askOnEdt {
+        com.vibe.agent.telegram.ApprovalDialog.ask(
           project, t("spend.ceiling.title"), body, request, onPhone, t("spend.ceiling.continue"))
       }
       audit?.append(AuditEvent(System.currentTimeMillis(), AuditEvent.Action.PROMPT, ok = approved,
@@ -2437,14 +2442,30 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     else java.nio.file.Files.readString(p)
   } catch (e: Exception) { null }
 
+  /**
+   * Asks a modal question on the EDT, from wherever the caller happens to be.
+   *
+   * `invokeAndWait` looks like the tool for this and is only half of it: called from a background
+   * thread it is exactly right, but called FROM the EDT it runs the block inside an *intended write
+   * action* — and showing a modal dialog from a write action is what the platform forbids. Both of
+   * our question points can be reached either way (a turn starts on the EDT, an ACP permission
+   * arrives on a protocol thread), so the choice belongs here rather than in each of them.
+   */
+  private fun <T> askOnEdt(block: () -> T): T {
+    if (SwingUtilities.isEventDispatchThread()) return block()
+    var result: T? = null
+    ApplicationManager.getApplication().invokeAndWait { result = block() }
+    @Suppress("UNCHECKED_CAST")
+    return result as T
+  }
+
   /** Confirm clearing latched security breakers before an agent turn (manual-only, VibeIDE contract). */
   private fun confirmClearBreakers(): Boolean {
-    var cleared = false
-    ApplicationManager.getApplication().invokeAndWait {
+    val cleared = askOnEdt {
       val choice = Messages.showYesNoDialog(project,
         t("chat.breakerDialog", "reasons" to breakers.openReasons().joinToString("\n")),
         t("chat.breakerTitle"), t("chat.breakerClear"), t("common.cancel"), Messages.getWarningIcon())
-      cleared = choice == Messages.YES
+      choice == Messages.YES
     }
     if (cleared) {
       val n = breakers.clearAll()
@@ -3595,14 +3616,12 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
       t("chat.permission.destructive", "reasons" to destructive.reasons.joinToString(", "), "command" to command.take(DESTRUCTIVE_PREVIEW_LEN), "title" to title)
     else title
     val options = params["options"]?.jsonArray?.map { it.jsonObject } ?: emptyList()
-    var selected: String? = null
-    ApplicationManager.getApplication().invokeAndWait {
+    val chosen = askOnEdt {
       val names = options.map { it["name"]?.jsonPrimitive?.contentOrNull ?: it.getValue("optionId").jsonPrimitive.content }
       val choice = Messages.showDialog(project, dialogText, t("chat.permission.title"), names.toTypedArray(), 0,
         if (destructive != null) Messages.getWarningIcon() else Messages.getQuestionIcon())
-      if (choice >= 0) selected = options[choice].getValue("optionId").jsonPrimitive.content
+      if (choice >= 0) options[choice].getValue("optionId").jsonPrimitive.content else null
     }
-    val chosen = selected
     audit?.append(AuditEvent(System.currentTimeMillis(), AuditEvent.Action.PERMISSION, ok = chosen != null, actor = com.vibe.agent.audit.AuditActor.HUMAN,
       meta = mapOf("title" to title.take(120), "outcome" to if (chosen != null) "selected" else "cancelled")))
     return buildJsonObject {
@@ -3661,7 +3680,6 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     // Destructive-command gate: same deterministic classifier as VibeIDE, asked before execution.
     val verdict = ShellSafetyAnalyzer.analyzeLine((listOf(command) + args).joinToString(" "))
     if (verdict != null) {
-      var approved = false
       // The same question in two places: the dialog here and, when the bridge is running, buttons
       // on the phone. A long unattended run otherwise waits silently for someone who left the room.
       val body = t("chat.destructive.body",
@@ -3672,8 +3690,8 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
         com.vibe.agent.telegram.TelegramBridge.getInstance()
           .askApproval(request, t("telegram.approvalQuestion", "body" to body))
       }.getOrDefault(false)
-      ApplicationManager.getApplication().invokeAndWait {
-        approved = com.vibe.agent.telegram.ApprovalDialog.ask(
+      val approved = askOnEdt {
+        com.vibe.agent.telegram.ApprovalDialog.ask(
           project, t("chat.destructive.title"), body, request, onPhone, t("chat.destructive.run"))
       }
       audit?.append(AuditEvent(System.currentTimeMillis(), AuditEvent.Action.TERMINAL, ok = approved, actor = com.vibe.agent.audit.AuditActor.HUMAN,
