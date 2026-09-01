@@ -1,0 +1,29 @@
+# Еженедельный аудит форка: отставание от апстрима и уязвимости в том, что мы поставляем.
+#
+# По расписанию, а не на каждый пуш: отставание — повод запланировать работу, а не остановить
+# чужой коммит, и падающий на этом пуш научил бы только игнорировать красный цвет.
+name: Vibe audit
+
+on:
+  schedule:
+    - cron: '0 6 * * 1'   # понедельник, 06:00 UTC
+  workflow_dispatch:
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Подключить апстрим (только чтение)
+        run: git remote add upstream https://github.com/JetBrains/intellij-community.git || true
+
+      - name: Отставание от апстрима
+        run: ./vibe-plugins/tools/checkUpstreamLag.sh 30
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+
+      - name: Уязвимости и закрепление версий поставляемых серверов
+        run: ./vibe-plugins/tools/checkServerDeps.sh

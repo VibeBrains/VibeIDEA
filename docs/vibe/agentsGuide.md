@@ -33,6 +33,8 @@
 ./vibe-plugins/tools/checkVibeDocs.sh      # запись без строки в индексе, битая ссылка, мануал вне дерева
 ./bazel.cmd test //vibe-plugins/vibe-agent:vibe-agent_test
 ./vibe-plugins/tools/checkVibeDist.sh      # ПОСЛЕ сборки инсталлятора: плагины в индексе, серверы запускаются
+./vibe-plugins/tools/checkUpstreamLag.sh   # отставание базы от upstream/master (в CI — раз в неделю)
+./vibe-plugins/tools/checkServerDeps.sh    # уязвимости и закрепление версий поставляемых серверов
 ```
 
 Тесты никогда не запускаются при ошибках компиляции. Сборка dmg — **только**

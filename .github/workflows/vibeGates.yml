@@ -1,0 +1,40 @@
+# Гейты форка VibeIDEA. Это НАШ workflow, апстримовские рядом не трогаются.
+#
+# Сюда попадает только то, что честно проходит на бесплатном раннере за минуты: проверки
+# исходников на bash и python. Сборка инсталлятора требует около сотни гигабайт диска и часа
+# времени — она остаётся локальной, и обещать её в CI было бы обманом.
+name: Vibe gates
+
+on:
+  push:
+    branches: [main, next]
+    paths:
+      - 'vibe-plugins/**'
+      - 'docs/vibe/**'
+      - 'CLAUDE.md'
+      - 'FORK_CHANGES.md'
+      - '.github/workflows/vibeGates.yml'
+  pull_request:
+    branches: [main, next]
+  workflow_dispatch:
+
+jobs:
+  gates:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Сабмодуль с общими сидами: гейт манифеста сверяет его содержимое со списком в коде.
+          submodules: true
+
+      - name: Тонкие скроллы
+        run: ./vibe-plugins/tools/checkVibeUi.sh
+
+      - name: Каталог строк и храповик
+        run: ./vibe-plugins/tools/checkVibeI18n.sh
+
+      - name: Чужой брендинг
+        run: ./vibe-plugins/tools/checkVibeBranding.sh
+
+      - name: Целостность документации
+        run: ./vibe-plugins/tools/checkVibeDocs.sh
