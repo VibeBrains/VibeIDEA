@@ -1466,9 +1466,34 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
       .cachedEntries(com.vibe.agent.budget.SpendCeiling.MONTH_MS) ?: return false
     val now = System.currentTimeMillis()
     com.vibe.agent.budget.SpendCeiling.blocking(entries, now, limits)?.let { verdict ->
-      systemLine(t("spend.ceiling.reached", "window" to windowName(verdict.window.id),
-                   "spent" to money(verdict.spent), "limit" to money(verdict.limit)))
-      return true
+      val body = t("spend.ceiling.reached", "window" to windowName(verdict.window.id),
+                   "spent" to money(verdict.spent), "limit" to money(verdict.limit))
+      systemLine(body)
+      // An unattended stretch is stopped, not asked: nobody is at the keyboard, and a question
+      // with no one to answer it is a turn that hangs until morning. This is also the honest
+      // reading of the ceiling — it exists to end exactly this kind of run.
+      if (turnActor.kind == com.vibe.agent.audit.AuditActor.Kind.AGENT) return true
+      // A person, though, set this ceiling themselves and is sitting right here. Refusing without
+      // asking would send them into settings mid-thought to raise a number they will lower again —
+      // and the answer belongs to them, not to us. The same question goes to the phone, like every
+      // other one that can hold up a run.
+      val request = com.vibe.agent.telegram.PendingApprovals.open(body)
+      val onPhone = runCatching {
+        com.vibe.agent.telegram.TelegramBridge.getInstance()
+          .askApproval(request, t("telegram.approvalQuestion", "body" to body))
+      }.getOrDefault(false)
+      var approved = false
+      ApplicationManager.getApplication().invokeAndWait {
+        approved = com.vibe.agent.telegram.ApprovalDialog.ask(
+          project, t("spend.ceiling.title"), body, request, onPhone, t("spend.ceiling.continue"))
+      }
+      audit?.append(AuditEvent(System.currentTimeMillis(), AuditEvent.Action.PROMPT, ok = approved,
+        actor = com.vibe.agent.audit.AuditActor.HUMAN,
+        meta = mapOf("gate" to "spendCeiling", "window" to verdict.window.id,
+                     "spent" to money(verdict.spent), "approved" to approved.toString())))
+      if (!approved) return true
+      systemLine(t("spend.ceiling.overridden", "window" to windowName(verdict.window.id)))
+      return false
     }
     // The warning is worth exactly one line, and only while there is still room to act on it.
     com.vibe.agent.budget.SpendCeiling.warning(entries, now, limits)?.let { verdict ->
