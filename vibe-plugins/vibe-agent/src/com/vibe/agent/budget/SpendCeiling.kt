@@ -93,4 +93,40 @@ object SpendCeiling {
 
   /** Four fifths: early enough to change the model, late enough not to be noise. */
   const val WARN_RATIO = 0.8
+
+  /**
+   * How long the window lasts at the pace of the last hour, in milliseconds — or null when the
+   * question has no answer yet.
+   *
+   * A ratio says where the money went; a pace says when it runs out, and those are different
+   * decisions. «Потрачено 60 %» leaves a person guessing whether to switch models now or in an
+   * hour; «при текущем темпе окно кончится через сорок минут» does not.
+   *
+   * Null rather than a made-up number when the recent pace is zero or the window is already spent:
+   * a forecast of «никогда» would read as reassurance, and a forecast of «сейчас» as an alarm, and
+   * both would be inventions rather than measurements.
+   */
+  fun timeToLimitMs(
+    entries: List<SpendLedger.Entry>,
+    nowMs: Long,
+    verdict: Verdict,
+    paceWindowMs: Long = PACE_WINDOW_MS,
+  ): Long? {
+    if (verdict.exceeded) return null
+    val recent = spentIn(entries, nowMs, paceWindowMs)
+    if (recent <= 0.0) return null
+    val perMs = recent / paceWindowMs
+    val left = verdict.left
+    if (left <= 0.0) return null
+    return (left / perMs).toLong().takeIf { it > 0 }
+  }
+
+  /**
+   * The pace is measured over an hour, not over the whole window.
+   *
+   * A five-hour window averaged over five hours hides the burst that is happening right now, which
+   * is precisely the thing worth warning about; an hour is short enough to notice a burst and long
+   * enough not to turn one expensive turn into a panic.
+   */
+  const val PACE_WINDOW_MS: Long = 60L * 60 * 1000
 }

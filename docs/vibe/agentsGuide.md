@@ -36,6 +36,7 @@
 ./vibe-plugins/tools/checkUpstreamLag.sh   # отставание базы от upstream/master (в CI — раз в неделю)
 ./vibe-plugins/tools/checkServerDeps.sh    # уязвимости и закрепление версий поставляемых серверов
 ./vibe-plugins/tools/releaseChangelog.sh   # черновик заметок от последнего ОПУБЛИКОВАННОГО релиза
+./vibe-plugins/tools/verifyAuditChain.sh   # независимая проверка цепочки журнала аудита (без IDE)
 ```
 
 Тесты никогда не запускаются при ошибках компиляции. Сборка dmg — **только**

@@ -719,10 +719,13 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
         }
         if (limits.any) {
           appendLine()
-          for (verdict in com.vibe.agent.budget.SpendCeiling.check(month, System.currentTimeMillis(), limits)) {
+          val atMs = System.currentTimeMillis()
+          for (verdict in com.vibe.agent.budget.SpendCeiling.check(month, atMs, limits)) {
+            val forecast = com.vibe.agent.budget.SpendCeiling.timeToLimitMs(month, atMs, verdict)
             appendLine(t("spend.ceiling.line", "window" to windowName(verdict.window.id),
                          "spent" to money(verdict.spent), "limit" to money(verdict.limit),
-                         "left" to money(verdict.left)))
+                         "left" to money(verdict.left)) +
+                       (forecast?.let { " " + t("spend.ceiling.forecast", "minutes" to it / 60_000) } ?: ""))
           }
         }
         else appendLine("\n" + t("spend.ceiling.off"))
@@ -1502,9 +1505,11 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     }
     // The warning is worth exactly one line, and only while there is still room to act on it.
     com.vibe.agent.budget.SpendCeiling.warning(entries, now, limits)?.let { verdict ->
+      val forecast = com.vibe.agent.budget.SpendCeiling.timeToLimitMs(entries, now, verdict)
       systemLine(t("spend.ceiling.near", "window" to windowName(verdict.window.id),
                    "spent" to money(verdict.spent), "limit" to money(verdict.limit),
-                   "left" to money(verdict.left)))
+                   "left" to money(verdict.left)) +
+                 (forecast?.let { " " + t("spend.ceiling.forecast", "minutes" to it / 60_000) } ?: ""))
     }
     return false
   }

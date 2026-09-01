@@ -807,6 +807,7 @@
   "spend.ceiling.reached": "Потолок расхода исчерпан: {window} — ${spent} из ${limit}. Ход не начат.",
   "spend.ceiling.near": "Расход близок к потолку: {window} — ${spent} из ${limit}, осталось ${left}.",
   "spend.ceiling.line": "{window}: ${spent} из ${limit}, осталось ${left}",
+  "spend.ceiling.forecast": "— при текущем темпе хватит примерно на {minutes} мин",
   "spend.ceiling.off": "Потолки расхода выключены (Settings → Tools → VibeIDEA → Чат).",
   "spend.ceiling.title": "Потолок расхода",
   "spend.ceiling.continue": "Всё равно продолжить",
