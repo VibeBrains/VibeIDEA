@@ -30,6 +30,7 @@
   "design.action.measure": "Measure",
   "design.action.overlay": "⚑ markers",
   "design.label.address": "Address:",
+  "design.label.recent": "Recent:",
   "design.noFindings": "Nothing found.",
   "design.jcefMissing": "The embedded browser (JCEF) is unavailable in this build — there is nothing to measure with.",
   "design.class.floor": "floor",

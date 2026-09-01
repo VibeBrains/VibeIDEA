@@ -42,6 +42,9 @@ class DesignPreviewPanel(private val project: Project) : JPanel(BorderLayout()),
   private val urlField = JBTextField("http://localhost:3000").apply { columns = 30 }
   private val status = JBLabel(t("design.status.idle")).apply { foreground = JBColor.GRAY }
   private val results = JPanel().apply { layout = BoxLayout(this, BoxLayout.Y_AXIS); isOpaque = false }
+
+  /** Recent addresses of THIS project — the thing people mean when they ask for tabs. */
+  private val recent = JPanel(FlowLayout(FlowLayout.LEFT, 6, 0)).apply { isOpaque = false }
   private val browser: JBCefBrowser? = if (JBCefApp.isSupported()) JBCefBrowser() else null
 
   /** Last measured findings — the overlay redraws from them without re-measuring the page. */
@@ -84,8 +87,10 @@ class DesignPreviewPanel(private val project: Project) : JPanel(BorderLayout()),
       layout = BoxLayout(this, BoxLayout.Y_AXIS)
       isOpaque = false
       add(toolbar.apply { alignmentX = Component.LEFT_ALIGNMENT })
+      add(recent.apply { alignmentX = Component.LEFT_ALIGNMENT })
       add(status.apply { alignmentX = Component.LEFT_ALIGNMENT })
     }
+    renderRecent()
     add(header, BorderLayout.NORTH)
 
     pickQuery?.let { query ->
@@ -138,9 +143,40 @@ class DesignPreviewPanel(private val project: Project) : JPanel(BorderLayout()),
     add(center, BorderLayout.CENTER)
   }
 
+  /**
+   * The recent-address strip.
+   *
+   * Buttons rather than a dropdown, for the same reason the screen sizes are links: two clicks to
+   * reach an address one visits twenty times a day is not a shortcut.
+   */
+  private fun renderRecent() {
+    recent.removeAll()
+    val addresses = com.vibe.agent.preview.PreviewAddresses.parse(
+      com.intellij.ide.util.PropertiesComponent.getInstance(project).getValue(RECENT_KEY))
+    if (addresses.isNotEmpty()) recent.add(JBLabel(t("design.label.recent")).apply { foreground = JBColor.GRAY })
+    for (address in addresses) {
+      recent.add(ActionLink(com.vibe.agent.preview.PreviewAddresses.label(address)) {
+        urlField.text = address
+        open()
+      }.apply { toolTipText = address })
+    }
+    recent.isVisible = addresses.isNotEmpty()
+    recent.revalidate()
+    recent.repaint()
+  }
+
+  private fun rememberAddress(url: String) {
+    val props = com.intellij.ide.util.PropertiesComponent.getInstance(project)
+    val updated = com.vibe.agent.preview.PreviewAddresses.remember(
+      com.vibe.agent.preview.PreviewAddresses.parse(props.getValue(RECENT_KEY)), url)
+    props.setValue(RECENT_KEY, com.vibe.agent.preview.PreviewAddresses.store(updated))
+    renderRecent()
+  }
+
   private fun open() {
     val browser = browser ?: return
     val url = urlField.text.trim().ifEmpty { return }
+    rememberAddress(url)
     status.text = t("design.status.opening", "url" to url)
     browser.loadURL(url)
     // Installed on every open: the collector must exist BEFORE the page throws, otherwise the first
@@ -403,6 +439,9 @@ class DesignPreviewPanel(private val project: Project) : JPanel(BorderLayout()),
   override fun dispose() {}
 
   private companion object {
+    /** Per project: the addresses of one project say nothing about another. */
+    const val RECENT_KEY = "vibe.design.recentAddresses"
+
     const val PHONE_WIDTH = 390
     const val TABLET_WIDTH = 820
     const val ERRORS_LIMIT = 4000

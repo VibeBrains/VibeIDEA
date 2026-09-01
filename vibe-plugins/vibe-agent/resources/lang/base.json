@@ -30,6 +30,7 @@
   "design.action.measure": "Замерить",
   "design.action.overlay": "⚑ разметка",
   "design.label.address": "Адрес:",
+  "design.label.recent": "Недавние:",
   "design.noFindings": "Находок нет.",
   "design.jcefMissing": "Встроенный браузер (JCEF) недоступен в этой сборке — замерить страницу нечем.",
   "design.class.floor": "пол",
