@@ -13,7 +13,7 @@ import kotlin.test.assertTrue
 class AuditEventTest {
   @Test
   fun minimalRecordOmitsEmptyFields() {
-    val json = AuditEvent(ts = 42L, action = AuditEvent.Action.PROMPT, ok = true).toJson()
+    val json = AuditEvent(ts = 42L, action = AuditEvent.Action.PROMPT, ok = true, actor = AuditActor.HUMAN).toJson()
     assertEquals(42L, json.getValue("ts").jsonPrimitive.content.toLong())
     assertEquals("prompt", json.getValue("action").jsonPrimitive.content)
     assertTrue(json.getValue("ok").jsonPrimitive.content.toBoolean())
@@ -25,6 +25,7 @@ class AuditEventTest {
   @Test
   fun fullRecordSerializes() {
     val json = AuditEvent(
+      actor = AuditActor.agent(role = "developer", agent = "acp:claude"),
       ts = 1L, action = AuditEvent.Action.TOOL_CALL_DONE, ok = false,
       files = listOf("/a/b.kt"), model = "acp/claude", latencyMs = 120L,
       meta = mapOf("tool" to "edit_file", "status" to "failed"),
@@ -38,7 +39,7 @@ class AuditEventTest {
 
   @Test
   fun emptyFilesListOmitted() {
-    val json = AuditEvent(ts = 1L, action = "x", ok = true, files = emptyList()).toJson()
+    val json = AuditEvent(ts = 1L, action = "x", ok = true, actor = AuditActor.HUMAN, files = emptyList()).toJson()
     assertNull(json["files"])
   }
 }

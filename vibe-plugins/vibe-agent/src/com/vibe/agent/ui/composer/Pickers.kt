@@ -19,6 +19,9 @@ sealed interface ChatTarget {
   val id: String
   val label: String
 
+  /** How the audit journal names what was running — the id, not the display label. */
+  fun auditName(): String = id
+
   data class Agent(val config: AgentServerConfig) : ChatTarget {
     override val id: String get() = "acp:${config.name}"
     override val label: String get() = config.name

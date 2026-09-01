@@ -67,6 +67,7 @@ class VibeProjectCommandsAction : AnAction({ t("commands.action") }) {
           ts = System.currentTimeMillis(),
           action = com.vibe.agent.audit.AuditEvent.Action.SECRET_USED,
           ok = true,
+          actor = com.vibe.agent.audit.AuditActor.HUMAN,
           meta = mapOf("names" to command.secretNames.joinToString(","), "consumer" to command.title),
         )
       )

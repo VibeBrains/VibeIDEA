@@ -59,7 +59,7 @@ class AuditLogTest {
   @Test
   fun disabledLogNeverWrites(@TempDir base: Path) {
     val log = AuditLog(base.toString(), { false }, { 10L * 1024 * 1024 })
-    log.append(AuditEvent(1L, AuditEvent.Action.PROMPT, ok = true))
+    log.append(AuditEvent(1L, AuditEvent.Action.PROMPT, ok = true, actor = AuditActor.HUMAN))
     log.close()
     assertFalse(Files.exists(base.resolve(".vibe").resolve("audit.jsonl")))
   }

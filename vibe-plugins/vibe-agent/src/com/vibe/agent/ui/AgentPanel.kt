@@ -228,6 +228,16 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
   @Volatile private var turnAttachments: List<com.vibe.agent.budget.FileSpend.Attachment> = emptyList()
   /** Outcomes of the recent tool calls, for the thrash and repeated-timeout breakers. */
   private val thrashHistory = ArrayList<com.vibe.agent.safety.ThrashDetector.Event>()
+  /** The agent as the journal names it: the role it plays and the target that runs it. */
+  private fun agentActor(): com.vibe.agent.audit.AuditActor =
+    com.vibe.agent.audit.AuditActor.agent(currentRole, target?.auditName())
+
+  /**
+   * Whose turn this is, for the journal: the person by default, the autopilot when it continued
+   * by itself. Held per turn because the answer changes between turns, not between records.
+   */
+  @Volatile private var turnActor: com.vibe.agent.audit.AuditActor = com.vibe.agent.audit.AuditActor.HUMAN
+
   /** Turns the autopilot has taken since the person last spoke. */
   @Volatile private var autopilotTurns = 0
   /** What the last few turns moved, for the stall detector. */
@@ -1631,8 +1641,13 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
   }
 
   /** Validates, shows the user bubble and starts the turn; false keeps the draft in the composer. */
-  private fun startTurn(message: ComposedMessage, threadId: String = currentThreadId): Boolean {
+  private fun startTurn(
+    message: ComposedMessage,
+    threadId: String = currentThreadId,
+    actor: com.vibe.agent.audit.AuditActor = com.vibe.agent.audit.AuditActor.HUMAN,
+  ): Boolean {
     if (disposed) return false
+    turnActor = actor
     turnEndedBadly = false
     // Cleared at the START, not only filled on load: a turn without attachments would otherwise
     // inherit the previous turn's files and quietly bill them again.
@@ -1822,7 +1837,8 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
         autopilotTurns++
         systemLine(t("autopilot.step", "index" to autopilotTurns,
                      "max" to VibeAgentSettings.autopilotMaxTurns, "remaining" to remaining))
-        if (!startTurn(ComposedMessage(text = t("autopilot.continue")), id)) autopilotTurns = 0
+        if (!startTurn(ComposedMessage(text = t("autopilot.continue")), id,
+                       com.vibe.agent.audit.AuditActor.agent(currentRole, target?.auditName()))) autopilotTurns = 0
       }
       com.vibe.agent.autopilot.AutopilotPolicy.Decision.CHECKPOINT -> {
         autopilotTurns = 0
@@ -2097,7 +2113,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
   ) {
     checkpoints?.create(t("chat.checkpointLabel", "text" to text.take(CHECKPOINT_LABEL_LEN)))?.let {
       checkpointLine(it)
-      audit?.append(AuditEvent(System.currentTimeMillis(), AuditEvent.Action.CHECKPOINT, ok = true,
+      audit?.append(AuditEvent(System.currentTimeMillis(), AuditEvent.Action.CHECKPOINT, ok = true, actor = turnActor,
         meta = mapOf("hash" to it.hash.take(12))))
     }
     val design = DesignContextFile.load(project.basePath)
@@ -2117,7 +2133,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     changedPaths.clear()
     turnHadMutatingTool = false
     // thoughtsBlock is EDT-owned (created/read in appendThought's invokeLater) — reset it there, not here.
-    audit?.append(AuditEvent(System.currentTimeMillis(), AuditEvent.Action.PROMPT, ok = true,
+    audit?.append(AuditEvent(System.currentTimeMillis(), AuditEvent.Action.PROMPT, ok = true, actor = turnActor,
       model = "acp/${t.config.name}", meta = mapOf("chars" to text.length.toString())))
     SwingUtilities.invokeLater {
       modePicker.setModes(c.modes)
@@ -2144,7 +2160,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
         if (error != null) {
           finishAgentBubble(secs, t("chat.failed"))
           systemLine(t("chat.error", "reason" to error.message))
-          audit?.append(AuditEvent(System.currentTimeMillis(), AuditEvent.Action.REPLY, ok = false,
+          audit?.append(AuditEvent(System.currentTimeMillis(), AuditEvent.Action.REPLY, ok = false, actor = agentActor(),
             model = "acp/${t.config.name}", latencyMs = System.currentTimeMillis() - startedAt,
             meta = mapOf("error" to (error.message ?: "error"))))
           turnEndedBadly = true
@@ -2171,7 +2187,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
             }
             else {
               finishAgentBubble(secs, stop)
-              audit?.append(AuditEvent(System.currentTimeMillis(), AuditEvent.Action.REPLY, ok = true,
+              audit?.append(AuditEvent(System.currentTimeMillis(), AuditEvent.Action.REPLY, ok = true, actor = agentActor(),
                 model = "acp/${t.config.name}", latencyMs = System.currentTimeMillis() - startedAt,
                 meta = mapOf("stopReason" to (stop ?: "end_turn"))))
               runTurnEndHooks()
@@ -2228,11 +2244,11 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
       findings.forEach { f ->
         val id = if (f.check == com.vibe.agent.gates.TurnCheckId.NO_SECRET_LEAK) VibeBreakerService.SECRET_LEAK else VibeBreakerService.PROTECTED_PATH
         if (breakers.trip(id, "${f.detail}: ${f.path}", System.currentTimeMillis())) {
-          audit?.append(AuditEvent(System.currentTimeMillis(), AuditEvent.Action.CIRCUIT_BREAKER_OPENED, ok = false,
+          audit?.append(AuditEvent(System.currentTimeMillis(), AuditEvent.Action.CIRCUIT_BREAKER_OPENED, ok = false, actor = com.vibe.agent.audit.AuditActor.IDE,
             meta = mapOf("breaker" to id, "reason" to f.detail)))
         }
       }
-      audit?.append(AuditEvent(System.currentTimeMillis(), AuditEvent.Action.TURN_CHECK, ok = false,
+      audit?.append(AuditEvent(System.currentTimeMillis(), AuditEvent.Action.TURN_CHECK, ok = false, actor = com.vibe.agent.audit.AuditActor.IDE,
         meta = mapOf("findings" to findings.size.toString(), "mode" to cMode)))
     }
 
@@ -2240,7 +2256,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     val vMode = VibeAgentSettings.verifyMode
     if (vMode != VibeAgentSettings.VERIFY_OFF && verifyRunner != null && VibeAgentSettings.verifyCommand.isNotBlank()) {
       val res = verifyRunner.run(VibeAgentSettings.verifyCommand, VibeAgentSettings.verifyTimeoutMs) { llmCancel.get() || disposed }
-      audit?.append(AuditEvent(System.currentTimeMillis(), AuditEvent.Action.VERIFY_GATE, ok = res.passed,
+      audit?.append(AuditEvent(System.currentTimeMillis(), AuditEvent.Action.VERIFY_GATE, ok = res.passed, actor = com.vibe.agent.audit.AuditActor.IDE,
         meta = mapOf("ran" to res.ran.toString(), "exit" to (res.exitCode?.toString() ?: "none"))))
       // Stop pressed while the build ran → complete the turn, do not bounce the agent again.
       if (llmCancel.get() || disposed) return null
@@ -2324,7 +2340,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     if (cleared) {
       val n = breakers.clearAll()
       status.set(VibeAgentStatusService.State.IDLE)
-      audit?.append(AuditEvent(System.currentTimeMillis(), AuditEvent.Action.CIRCUIT_BREAKER_RECOVERED, ok = true,
+      audit?.append(AuditEvent(System.currentTimeMillis(), AuditEvent.Action.CIRCUIT_BREAKER_RECOVERED, ok = true, actor = com.vibe.agent.audit.AuditActor.IDE,
         meta = mapOf("cleared" to n.toString())))
       systemLine(t("chat.breakerCleared", "count" to n))
     }
@@ -2336,7 +2352,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     val decision = hooks.run(event, tool, params, emptyList())
     // ok reflects whether a hook flagged a problem (exit 2), not merely whether it blocked —
     // a postToolUse refusal is a real "not ok" even though it cannot stop the already-run tool.
-    audit?.append(AuditEvent(System.currentTimeMillis(), AuditEvent.Action.HOOK, ok = !decision.flagged,
+    audit?.append(AuditEvent(System.currentTimeMillis(), AuditEvent.Action.HOOK, ok = !decision.flagged, actor = com.vibe.agent.audit.AuditActor.IDE,
       meta = mapOf("event" to event.wire, "tool" to (tool ?: ""), "blocked" to decision.blocked.toString(),
         "broken" to decision.brokenHooks.size.toString())))
     // Notes and post/turnEnd requirements are for the agent; the ACP model can't inject a mid-turn
@@ -2347,7 +2363,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
 
   private fun runTurnEndHooks() {
     val decision = hooks.run(HookEvent.TURN_END, null, null, changedPaths.toList())
-    audit?.append(AuditEvent(System.currentTimeMillis(), AuditEvent.Action.HOOK, ok = !decision.flagged,
+    audit?.append(AuditEvent(System.currentTimeMillis(), AuditEvent.Action.HOOK, ok = !decision.flagged, actor = com.vibe.agent.audit.AuditActor.IDE,
       meta = mapOf("event" to HookEvent.TURN_END.wire, "changedFiles" to changedPaths.size.toString(),
         "broken" to decision.brokenHooks.size.toString())))
     decision.agentMessage?.let { systemLine(t("chat.projectCheck", "text" to it)) }
@@ -3401,7 +3417,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
   }
 
   private fun markTerminalExit(terminalId: String, exitCode: Int?, signal: String?) {
-    audit?.append(AuditEvent(System.currentTimeMillis(), AuditEvent.Action.TERMINAL, ok = exitCode == 0,
+    audit?.append(AuditEvent(System.currentTimeMillis(), AuditEvent.Action.TERMINAL, ok = exitCode == 0, actor = agentActor(),
       meta = mapOf("exit" to (exitCode?.toString() ?: "signal:${signal ?: "?"}"))))
     SwingUtilities.invokeLater { terminalConsoles[terminalId]?.markExit(exitCode, signal) }
   }
@@ -3434,6 +3450,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     log.append(AuditEvent(
       ts = System.currentTimeMillis(),
       action = action,
+      actor = agentActor(),
       ok = call.status != ToolCall.STATUS_FAILED,
       files = target?.let { listOf(it) },
       meta = mapOf("tool" to tool, "status" to call.status),
@@ -3469,7 +3486,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
       if (choice >= 0) selected = options[choice].getValue("optionId").jsonPrimitive.content
     }
     val chosen = selected
-    audit?.append(AuditEvent(System.currentTimeMillis(), AuditEvent.Action.PERMISSION, ok = chosen != null,
+    audit?.append(AuditEvent(System.currentTimeMillis(), AuditEvent.Action.PERMISSION, ok = chosen != null, actor = com.vibe.agent.audit.AuditActor.HUMAN,
       meta = mapOf("title" to title.take(120), "outcome" to if (chosen != null) "selected" else "cancelled")))
     return buildJsonObject {
       put("outcome", buildJsonObject {
@@ -3498,7 +3515,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     }
     path?.let { changedPaths.add(it) }
     val result = fileOps.writeTextFile(params)
-    audit?.append(AuditEvent(System.currentTimeMillis(), AuditEvent.Action.FS_WRITE, ok = true,
+    audit?.append(AuditEvent(System.currentTimeMillis(), AuditEvent.Action.FS_WRITE, ok = true, actor = agentActor(),
       files = path?.let { listOf(it.take(ToolCallAudit.MAX_TARGET_LEN)) }))
     return result
   }
@@ -3542,7 +3559,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
         approved = com.vibe.agent.telegram.ApprovalDialog.ask(
           project, t("chat.destructive.title"), body, request, onPhone, t("chat.destructive.run"))
       }
-      audit?.append(AuditEvent(System.currentTimeMillis(), AuditEvent.Action.TERMINAL, ok = approved,
+      audit?.append(AuditEvent(System.currentTimeMillis(), AuditEvent.Action.TERMINAL, ok = approved, actor = com.vibe.agent.audit.AuditActor.HUMAN,
         meta = mapOf("gate" to "destructive", "reasons" to verdict.reasons.joinToString(","), "approved" to approved.toString())))
       if (!approved) throw IllegalStateException(t("chat.destructive.refused", "reasons" to verdict.reasons.joinToString(", ")))
     }

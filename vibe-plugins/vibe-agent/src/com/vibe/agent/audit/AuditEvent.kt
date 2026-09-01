@@ -18,6 +18,12 @@ data class AuditEvent(
   val ts: Long,
   val action: String,
   val ok: Boolean,
+  /**
+   * Who caused this. Deliberately WITHOUT a default: a default would be chosen once here and then
+   * silently inherited by every future call site, which is exactly how the journal lost the answer
+   * to «по чьей воле» in the first place. Making it a compile error is the point.
+   */
+  val actor: AuditActor,
   val files: List<String>? = null,
   val model: String? = null,
   val latencyMs: Long? = null,
@@ -27,6 +33,7 @@ data class AuditEvent(
     put("ts", ts)
     put("action", action)
     put("ok", ok)
+    put("actor", actor.toJson())
     files?.takeIf { it.isNotEmpty() }?.let { list ->
       put("files", kotlinx.serialization.json.JsonArray(list.map { JsonPrimitive(it) }))
     }
