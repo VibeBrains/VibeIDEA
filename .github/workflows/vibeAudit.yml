@@ -13,7 +13,7 @@ jobs:
   audit:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Подключить апстрим (только чтение)
         run: git remote add upstream https://github.com/JetBrains/intellij-community.git || true
