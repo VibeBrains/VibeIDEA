@@ -22,8 +22,31 @@ import kotlinx.serialization.json.JsonObject
  */
 object ModelQuirks {
   enum class Quirk {
-    /** Sampling knobs are rejected: the model decides its own temperature. */
+    /**
+     * Every sampling knob is rejected: the model decides for itself.
+     *
+     * Kept as an aggregate of the three below rather than replaced by them: it is the honest
+     * description of the reasoning families, it is already written in people's own
+     * `.vibe/modelQuirks.json`, and taking a spelling away from a config format is a way to break
+     * files that were correct yesterday.
+     */
     NO_SAMPLING,
+
+    /** Only `temperature` is rejected. */
+    NO_TEMPERATURE,
+
+    /** Only `top_p` is rejected. */
+    NO_TOP_P,
+
+    /**
+     * Only `top_k` is rejected — the case the aggregate could not express.
+     *
+     * MiniMax documents exactly this: `temperature` and `top_p` work, `top_k` and `stop_sequences`
+     * are ignored. Describing it with NO_SAMPLING would take away two knobs the model accepts,
+     * which is worse than describing nothing: the person set a temperature and silently did not
+     * get it.
+     */
+    NO_TOP_K,
 
     /** `max_tokens` is called `max_completion_tokens` here. */
     MAX_COMPLETION_TOKENS,
@@ -63,6 +86,15 @@ object ModelQuirks {
       Regex("^(o1|o3|o4)(-|$)"),
       setOf(Quirk.NO_SAMPLING, Quirk.MAX_COMPLETION_TOKENS, Quirk.NO_STOP),
       "o1/o3/o4 family: the model sets its own sampling, and the answer limit is named differently",
+    ),
+    Rule(
+      // MiniMax's own documentation of its Anthropic-compatible API: `temperature` and `top_p`
+      // work, `top_k` and `stop_sequences` are ignored. Nothing here is inferred from a symptom —
+      // the reported SSE oddities are deliberately NOT encoded, because no source names the
+      // events, and a quirk guessed from someone else's symptom rewrites requests blindly.
+      Regex("^minimax-"),
+      setOf(Quirk.NO_TOP_K, Quirk.NO_STOP),
+      "minimax: top_k and stop_sequences are ignored by the Anthropic-compatible endpoint",
     ),
     Rule(
       Regex("^gpt-5"),
@@ -127,11 +159,9 @@ object ModelQuirks {
     val quirks = quirksOf(modelId)
     if (quirks.isEmpty()) return body
     val fields = LinkedHashMap(body)
-    if (Quirk.NO_SAMPLING in quirks) {
-      fields.remove("temperature")
-      fields.remove("top_p")
-      fields.remove("top_k")
-    }
+    if (Quirk.NO_SAMPLING in quirks || Quirk.NO_TEMPERATURE in quirks) fields.remove("temperature")
+    if (Quirk.NO_SAMPLING in quirks || Quirk.NO_TOP_P in quirks) fields.remove("top_p")
+    if (Quirk.NO_SAMPLING in quirks || Quirk.NO_TOP_K in quirks) fields.remove("top_k")
     if (Quirk.NO_STOP in quirks) {
       fields.remove("stop")
     }
