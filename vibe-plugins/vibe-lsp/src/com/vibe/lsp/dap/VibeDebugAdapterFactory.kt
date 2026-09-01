@@ -39,20 +39,33 @@ abstract class VibeDebugAdapterFactory(private val spec: DebugAdapters.AdapterSp
     environment: ExecutionEnvironment,
   ): DebugAdapterDescriptor = DefaultDebugAdapterDescriptor(options, environment, serverDefinition)
 
-  override fun getLaunchConfigurations(): List<LaunchConfiguration> = listOf(
-    LaunchConfiguration(
-      "${spec.id}.launch",
-      "Launch",
-      DebugAdapters.launchConfiguration(spec, FILE_VARIABLE, WORKSPACE_VARIABLE),
-      DebugMode.LAUNCH,
-    ),
-    LaunchConfiguration(
+  /**
+   * Every shape this adapter knows, plus attach — so the drop-down in the run configuration is a
+   * choice between real ways of starting the work, not a single «this file» that half the projects
+   * cannot use.
+   */
+  override fun getLaunchConfigurations(): List<LaunchConfiguration> =
+    DebugAdapters.shapes(spec).map { shape ->
+      LaunchConfiguration(
+        "${spec.id}.${shape.name.lowercase()}",
+        shapeName(shape),
+        DebugAdapters.configurationFor(spec, shape, FILE_VARIABLE, WORKSPACE_VARIABLE),
+        DebugMode.LAUNCH,
+      )
+    } + LaunchConfiguration(
       "${spec.id}.attach",
       "Attach",
       DebugAdapters.attachConfiguration(spec, WORKSPACE_VARIABLE, DebugAdapters.defaultAttachPort(spec)),
       DebugMode.ATTACH,
-    ),
-  )
+    )
+
+  /** English on purpose: these names live in LSP4IJ's own configuration UI, next to its wording. */
+  private fun shapeName(shape: DebugAdapters.Shape): String = when (shape) {
+    DebugAdapters.Shape.FILE -> "Current file"
+    DebugAdapters.Shape.NPM_SCRIPT -> "npm run dev"
+    DebugAdapters.Shape.PHP_SERVER -> "PHP built-in server"
+    DebugAdapters.Shape.LISTEN -> "Listen for Xdebug"
+  }
 
   /**
    * Fills a fresh configuration for the file the person asked to debug.
@@ -75,8 +88,11 @@ abstract class VibeDebugAdapterFactory(private val spec: DebugAdapters.AdapterSp
     options.serverId = spec.id
     options.serverName = spec.displayName
     options.debugMode = DebugMode.LAUNCH
-    options.launchConfigurationId = "${spec.id}.launch"
-    options.launchConfiguration = DebugAdapters.launchConfiguration(spec, file.path, workspace)
+    // The default shape, not always «this file»: for PHP that would run the page under the CLI
+    // interpreter and break on the first session.
+    val shape = DebugAdapters.defaultShape(spec)
+    options.launchConfigurationId = "${spec.id}.${shape.name.lowercase()}"
+    options.launchConfiguration = DebugAdapters.configurationFor(spec, shape, file.path, workspace)
     options.attachConfigurationId = "${spec.id}.attach"
     options.attachConfiguration =
       DebugAdapters.attachConfiguration(spec, workspace, DebugAdapters.defaultAttachPort(spec))

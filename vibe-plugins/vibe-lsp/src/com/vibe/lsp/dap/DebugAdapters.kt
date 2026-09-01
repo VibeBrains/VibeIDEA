@@ -143,6 +143,94 @@ object DebugAdapters {
   }
 
   /**
+   * How a project is meant to be started under the debugger.
+   *
+   * One shape does not fit both halves of the work: a script is run, a web application is served
+   * and then visited, and a test suite is neither. Offering only «run this file» meant that
+   * everybody whose code lives behind a web server had to write the JSON by hand after all — which
+   * is the exact thing this feature exists to remove.
+   */
+  enum class Shape {
+    /** Run the open file under the debugger. */
+    FILE,
+
+    /** Start the project's own dev server (`npm run <script>`) and debug it. */
+    NPM_SCRIPT,
+
+    /** Serve the project with PHP's built-in server and debug the request. */
+    PHP_SERVER,
+
+    /** Wait for the debugger to connect from outside — a running server, a container, a worker. */
+    LISTEN,
+  }
+
+  /** Shapes this adapter can offer, most useful first. */
+  fun shapes(spec: AdapterSpec): List<Shape> = when (spec.id) {
+    JS_DEBUG.id -> listOf(Shape.FILE, Shape.NPM_SCRIPT, Shape.LISTEN)
+    // For PHP the listening shape comes FIRST: a page is debugged through a request from the
+    // browser, and running the file under the CLI interpreter breaks on the first session.
+    else -> listOf(Shape.LISTEN, Shape.PHP_SERVER, Shape.FILE)
+  }
+
+  /** The default shape — what «Debug» on a file does without anyone choosing anything. */
+  fun defaultShape(spec: AdapterSpec): Shape = shapes(spec).first()
+
+  /**
+   * The configuration for a shape.
+   *
+   * [script] is the npm script name (`dev`, `start`) or the address of the built-in PHP server;
+   * both have sane defaults, because a configuration that demands a decision before it can be
+   * tried is a configuration nobody tries.
+   */
+  fun configurationFor(
+    spec: AdapterSpec,
+    shape: Shape,
+    filePath: String,
+    workspaceFolder: String,
+    script: String = defaultScript(shape),
+  ): String = when (shape) {
+    Shape.FILE -> launchConfiguration(spec, filePath, workspaceFolder)
+
+    Shape.NPM_SCRIPT -> """
+      {
+        "type": "pwa-node",
+        "name": "npm run $script",
+        "request": "launch",
+        "runtimeExecutable": "npm",
+        "runtimeArgs": ["run", "$script"],
+        "cwd": "$workspaceFolder",
+        "console": "integratedTerminal",
+        "sourceMaps": true,
+        "outFiles": ["$workspaceFolder/**/*.(m|c|)js", "!**/node_modules/**"],
+        "__workspaceFolder": "$workspaceFolder"
+      }
+    """.trimIndent()
+
+    Shape.PHP_SERVER -> """
+      {
+        "type": "php",
+        "name": "PHP built-in server",
+        "request": "launch",
+        "runtimeArgs": ["-dxdebug.mode=debug", "-dxdebug.start_with_request=yes", "-S", "$script"],
+        "program": "",
+        "cwd": "$workspaceFolder",
+        "port": $XDEBUG_PORT
+      }
+    """.trimIndent()
+
+    Shape.LISTEN -> launchConfiguration(spec, filePath, workspaceFolder)
+  }
+
+  /** Defaults that make a shape runnable without asking anything first. */
+  fun defaultScript(shape: Shape): String = when (shape) {
+    // `dev` rather than `start`: it is what a modern front-end project actually calls the script
+    // that runs with source maps and a watcher.
+    Shape.NPM_SCRIPT -> "dev"
+    Shape.PHP_SERVER -> "localhost:8000"
+    else -> ""
+  }
+
+  /**
    * The launch configuration written into a fresh run configuration.
    *
    * This is the whole point of the feature: LSP4IJ can debug anything, but only after a person
