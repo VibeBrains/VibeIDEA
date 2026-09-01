@@ -124,17 +124,28 @@ object ProvidersService {
     }
   }
 
+  /**
+   * The protocol a REQUEST to this model must speak: the model's own when it names one, the
+   * provider's otherwise, and «openai» when neither names anything recognised.
+   *
+   * Unknown names fall back rather than fail: a provider file written for a newer IDE must not
+   * take the whole registry down, and the failure of a wrong protocol is loud anyway — the very
+   * first request answers with an error naming the endpoint.
+   */
+  fun protocolFor(providerProtocol: String?, modelProtocol: String? = null): String =
+    when (modelProtocol ?: providerProtocol) {
+      "anthropic" -> "anthropic"
+      "gemini" -> "gemini"
+      else -> "openai"
+    }
+
   fun resolve(entry: ProviderEntry, projectBase: String?, onWarning: (String) -> Unit): ResolvedProvider? {
     val base = entry.baseURL
     if (base.isNullOrBlank()) {
       onWarning(t("providers.warn.noBaseUrl", "id" to entry.id))
       return null
     }
-    val protocol = when (entry.protocol) {
-      "anthropic" -> "anthropic"
-      "gemini" -> "gemini"
-      else -> "openai"
-    }
+    val protocol = protocolFor(entry.protocol)
     val host = runCatching { java.net.URI(base).host }.getOrNull() ?: ""
     val key = ApiKeyResolver.resolve(entry, projectBase)
     return ResolvedProvider(

@@ -35,6 +35,15 @@ data class ModelEntry(
   val topP: Double? = null,
   val topK: Int? = null,
   val extraBody: JsonObject? = null,
+  /**
+   * The wire protocol for THIS model, when it differs from the provider's.
+   *
+   * One key, three formats: OpenCode Go serves MiniMax and Qwen over an Anthropic-compatible
+   * `/v1/messages` and GLM/Kimi/DeepSeek over `/v1/chat/completions` — under one provider, one
+   * base URL and one key. While `protocol` lived only on the provider, such a provider could not
+   * be described honestly at all: whichever value you chose, half its models were called wrong.
+   */
+  val protocol: String? = null,
   val fim: Boolean = false,
   /** Accepts images: null = unknown (attachments allowed), false = composer blocks image sends. */
   val vision: Boolean? = null,
@@ -160,6 +169,7 @@ object ProvidersFile {
         topP = mo["topP"]?.jsonPrimitive?.doubleOrNull,
         topK = mo["topK"]?.jsonPrimitive?.intOrNull,
         extraBody = mo["extraBody"] as? JsonObject,
+        protocol = mo["protocol"]?.jsonPrimitive?.contentOrNull,
         fim = mo["fim"]?.jsonPrimitive?.booleanOrNull ?: false,
         vision = mo["vision"]?.jsonPrimitive?.booleanOrNull,
         note = mo["note"]?.jsonPrimitive?.contentOrNull,
@@ -218,7 +228,11 @@ object ProvidersFile {
 
   /** Same-id model: the override wins; tri-state `vision` falls back to the base when unknown. */
   private fun overlayModel(base: ModelEntry?, over: ModelEntry): ModelEntry =
-    if (base == null) over else over.copy(vision = over.vision ?: base.vision)
+    if (base == null) over else over.copy(
+      vision = over.vision ?: base.vision,
+      // Same rule as every other optional field: silence inherits, a written value overrides.
+      protocol = over.protocol ?: base.protocol,
+    )
 
   private fun overlay(base: ProviderEntry, over: ProviderEntry): ProviderEntry {
     val mergedModels = LinkedHashMap<String, ModelEntry>()

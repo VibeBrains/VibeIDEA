@@ -145,7 +145,9 @@ class LlmClient(private val http: HttpClient = defaultClient(Duration.ofSeconds(
     var attempt = 1
     while (true) {
       try {
-        when (provider.protocol) {
+        // The MODEL decides, falling back to the provider: one key can serve three formats
+        // (OpenCode Go: MiniMax and Qwen over /v1/messages, GLM and Kimi over /v1/chat/completions).
+        when (ProvidersService.protocolFor(provider.protocol, model.protocol)) {
           "anthropic" -> anthropicChat(provider, model, messages, onDelta)
           "gemini" -> geminiChat(provider, model, messages, onDelta)
           else -> openAiChat(provider, model, messages, onDelta)
