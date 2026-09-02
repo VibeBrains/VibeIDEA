@@ -70,6 +70,43 @@ object SpendLines {
   }
 }
 
+/**
+ * «Выгрузить расход в CSV» — the numbers as a table somebody else can open.
+ *
+ * Our report answers our questions; «покажи бухгалтеру» and «сведи с выпиской» are asked in a
+ * spreadsheet. A number that cannot leave the IDE exists only for the person looking at it.
+ */
+class VibeExportSpendAction : AnAction({ t("spend.export.action") }) {
+  override fun getActionUpdateThread(): com.intellij.openapi.actionSystem.ActionUpdateThread =
+    com.intellij.openapi.actionSystem.ActionUpdateThread.BGT
+
+  override fun actionPerformed(e: AnActionEvent) {
+    val project = e.project ?: return
+    // A month, not a week: the question is usually asked at the end of one.
+    val entries = VibeSpendService.getInstance().entries(SpendCeiling.MONTH_MS)
+    if (entries.isEmpty()) {
+      Messages.showInfoMessage(project, t("spend.empty"), t("spend.title"))
+      return
+    }
+    val descriptor = com.intellij.openapi.fileChooser.FileSaverDescriptor(
+      t("spend.export.title"), t("spend.export.prompt"), "csv")
+    val wrapper = com.intellij.openapi.fileChooser.FileChooserFactory.getInstance()
+      .createSaveFileDialog(descriptor, project)
+      .save(null as java.nio.file.Path?, SpendCsv.suggestedFileName(System.currentTimeMillis()))
+      ?: return
+    val target = wrapper.file.toPath()
+    com.intellij.openapi.application.ApplicationManager.getApplication().executeOnPooledThread {
+      val error = runCatching {
+        java.nio.file.Files.writeString(target, SpendCsv.render(entries))
+      }.exceptionOrNull()
+      com.intellij.openapi.application.ApplicationManager.getApplication().invokeLater {
+        if (error != null) Messages.showErrorDialog(project, t("spend.export.failed", "reason" to error.message), t("spend.title"))
+        else Messages.showInfoMessage(project, t("spend.export.done", "path" to target, "rows" to entries.size), t("spend.title"))
+      }
+    }
+  }
+}
+
 /** The other half of an honest counter: it can be reset. */
 class VibeClearSpendAction : AnAction({ t("spend.clear.action") }) {
   override fun actionPerformed(e: AnActionEvent) {

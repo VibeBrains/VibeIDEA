@@ -112,6 +112,9 @@
               text="Связность документации" description="Недостижимые документы и ссылки в никуда"/>
       <action id="Vibe.DailyDigest" class="com.vibe.agent.digest.DailyDigestAction"
               text="Сводка за сутки" description="Что агенты сделали за последние сутки"/>
+      <action id="Vibe.SpendExport" class="com.vibe.agent.budget.VibeExportSpendAction"
+              text="VibeIDEA: выгрузить расход в CSV"
+              description="Расход за месяц таблицей: время, чат, роль, цель, токены, стоимость, файлы"/>
       <action id="Vibe.SpendReport" class="com.vibe.agent.budget.VibeSpendReportAction"
               text="Расход по ролям" description="Куда ушли токены за сутки и за неделю"/>
       <action id="Vibe.ClearSpend" class="com.vibe.agent.budget.VibeClearSpendAction"
