@@ -52,6 +52,14 @@ object VibeAgentSettings {
   const val DEFAULT_TERMINAL_ENABLED = true
   /** Fallback output cap when an agent's terminal/create omits outputByteLimit (never unbounded). */
   const val DEFAULT_TERMINAL_OUTPUT_BYTE_LIMIT = 1_048_576L
+
+  /** Half an hour: longer than any check worth watching, shorter than a night. 0 = без ограничения. */
+  const val DEFAULT_BG_TTL_MINUTES = 30
+  const val DEFAULT_BG_POLL_SECONDS = 60
+
+  /** A day is the point past which «срок жизни» stops meaning anything. */
+  const val MAX_BG_TTL_MINUTES = 24 * 60
+  const val MAX_BG_POLL_SECONDS = 3600
   // --- /watch (video and audio review) ---
   const val DEFAULT_WATCH_SCENE_THRESHOLD = 0.3
   const val DEFAULT_WATCH_MAX_FRAMES = 12
@@ -124,6 +132,8 @@ object VibeAgentSettings {
   private const val KEY_CHECKS_MAX_FILES = "vibe.agent.turnChecks.maxFiles"
   private const val KEY_CHECKS_MAX_FILE_KB = "vibe.agent.turnChecks.maxFileKb"
   private const val KEY_TERMINAL_ENABLED = "vibe.agent.terminal.enabled"
+  private const val KEY_BG_TTL_MIN = "vibe.agent.bg.ttlMinutes"
+  private const val KEY_BG_POLL_SEC = "vibe.agent.bg.pollSeconds"
   private const val KEY_HANDSHAKE_TIMEOUT_SEC = "vibe.agent.handshakeTimeoutSec"
   private const val KEY_WATCH_SCENE_THRESHOLD = "vibe.agent.watch.sceneThreshold"
   private const val KEY_WATCH_MAX_FRAMES = "vibe.agent.watch.maxFrames"
@@ -241,6 +251,28 @@ object VibeAgentSettings {
     set(value) = props.setValue(KEY_CHECKS_MAX_FILE_KB, value.coerceIn(MIN_CHECKS_MAX_FILE_KB, MAX_CHECKS_MAX_FILE_KB), DEFAULT_CHECKS_MAX_FILE_KB)
 
   val checksMaxFileBytes: Long get() = checksMaxFileKb.toLong() * 1024L
+
+  /**
+   * Lifetime of a background command in minutes, and how often it reports; 0 in the first turns the
+   * deadline off.
+   *
+   * A hardcoded half-hour was right for a check and wrong for a nightly build — and the rule of the
+   * project is that anything a person would want to change lives in the settings, not in a constant.
+   */
+  var backgroundTtlMinutes: Int
+    get() = props.getInt(KEY_BG_TTL_MIN, DEFAULT_BG_TTL_MINUTES).coerceIn(0, MAX_BG_TTL_MINUTES)
+    set(value) = props.setValue(KEY_BG_TTL_MIN, value.coerceIn(0, MAX_BG_TTL_MINUTES), DEFAULT_BG_TTL_MINUTES)
+
+  var backgroundPollSeconds: Int
+    get() = props.getInt(KEY_BG_POLL_SEC, DEFAULT_BG_POLL_SECONDS).coerceIn(0, MAX_BG_POLL_SECONDS)
+    set(value) = props.setValue(KEY_BG_POLL_SEC, value.coerceIn(0, MAX_BG_POLL_SECONDS), DEFAULT_BG_POLL_SECONDS)
+
+  /** The two numbers as the pure checker wants them. */
+  fun backgroundLimits(): com.vibe.agent.background.TaskLimits.Limits =
+    com.vibe.agent.background.TaskLimits.Limits(
+      ttlMs = backgroundTtlMinutes * 60_000L,
+      pollIntervalMs = backgroundPollSeconds * 1000L,
+    )
 
   var terminalEnabled: Boolean
     get() = props.getBoolean(KEY_TERMINAL_ENABLED, DEFAULT_TERMINAL_ENABLED)

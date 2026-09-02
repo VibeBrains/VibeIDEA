@@ -948,7 +948,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     // no stated deadline is indistinguishable from a hung one. Until now /bg silently borrowed a
     // timeout meant for measurements, and would have killed a long build with a message about
     // measurement.
-    val limits = com.vibe.agent.background.TaskLimits.Limits()
+    val limits = VibeAgentSettings.backgroundLimits()
     systemLine(t("bg.started", "command" to command) + " " +
                t("bg.limits", "minutes" to limits.ttlMs / 60_000, "seconds" to limits.pollIntervalMs / 1000))
     ApplicationManager.getApplication().executeOnPooledThread {
@@ -957,14 +957,17 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
       // a job nobody could have stopped.
       val handle = java.util.concurrent.atomic.AtomicReference<Process?>(null)
       val task = tasks.start(command, started) { handle.get()?.destroyForcibly() }
+      tasksChanged()
       systemLine(t("bg.handle", "id" to task.id))
       val output = runCatching { runShellWithLimits(command, limits, handle) }.getOrElse { error ->
         tasks.finish(task.id, com.vibe.agent.background.TaskRegistry.State.FAILED, System.currentTimeMillis())
+        tasksChanged()
         systemLine(t("bg.failed", "command" to command, "reason" to error.message))
         return@executeOnPooledThread
       }
       tasks.finish(task.id, com.vibe.agent.background.TaskRegistry.State.DONE, System.currentTimeMillis())
       tasks.forgetFinished(System.currentTimeMillis())
+      tasksChanged()
       val seconds = (System.currentTimeMillis() - started) / 1000
       val filtered = com.vibe.agent.context.ContextFilter.filter(
         output, com.vibe.agent.context.ContextFilter.modeOf(VibeAgentSettings.contextFilterMode),
@@ -1009,6 +1012,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
       val running = tasks.running()
       val count = running.count { tasks.stop(it.id) }
       running.forEach { tasks.finish(it.id, com.vibe.agent.background.TaskRegistry.State.STOPPED, now) }
+      tasksChanged()
       systemLine(if (count == 0) t("bg.none") else t("bg.stoppedAll", "count" to count))
       return true
     }
@@ -1020,6 +1024,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     }
     tasks.stop(id)
     tasks.finish(id, com.vibe.agent.background.TaskRegistry.State.STOPPED, now)
+    tasksChanged()
     systemLine(t("bg.stopped", "id" to id, "command" to task.command.take(BG_LIST_COMMAND_LEN)))
     return true
   }
@@ -3685,8 +3690,20 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
   }
 
   /** ACP reports the window total, not a delta: the difference is what this turn actually added. */
-  /** Background jobs of this panel: what runs, since when, and how to stop it. */
-  private val tasks = com.vibe.agent.background.TaskRegistry()
+  /**
+   * Background jobs of the PROJECT, not of this panel.
+   *
+   * Two registries would mean a job visible in the chat and invisible in the tool window — worse
+   * than no list at all, because a person who read «нет задач» would believe it.
+   */
+  private val tasks get() = com.vibe.agent.background.VibeTasksService.getInstance(project).registry
+
+  /** Repaints an open task panel; the chat and the panel must never disagree about what runs. */
+  private fun tasksChanged() {
+    if (!project.isDisposed) {
+      project.messageBus.syncPublisher(com.vibe.agent.background.TasksChangeListener.TOPIC).tasksChanged()
+    }
+  }
 
   /** Where images stop being carried; only ever moves forward, and only when a new one arrives. */
   @Volatile private var imageCutIndex: Int? = null

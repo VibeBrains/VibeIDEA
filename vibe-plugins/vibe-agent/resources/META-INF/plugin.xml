@@ -21,6 +21,9 @@
                 icon="/icons/vibeAgent.svg" doNotActivateOnStart="true"/>
     <toolWindow id="Диспетчерская" anchor="bottom" secondary="true" factoryClass="com.vibe.agent.runs.VibeRunsToolWindowFactory"
                 icon="/icons/vibeAgent.svg" doNotActivateOnStart="true"/>
+    <toolWindow id="Фоновые задачи" anchor="bottom" secondary="true"
+                factoryClass="com.vibe.agent.background.VibeTasksToolWindowFactory"
+                icon="/icons/vibeAgent.svg" doNotActivateOnStart="true"/>
     <toolWindow id="VibeAgent" anchor="right" factoryClass="com.vibe.agent.ui.VibeAgentToolWindowFactory" icon="/icons/vibeAgent.svg"/>
     <notificationGroup id="Vibe Agent" displayType="BALLOON"/>
     <inline.completion.provider implementation="com.vibe.agent.fim.VibeFimProvider"/>
@@ -45,6 +48,7 @@
     <postStartupActivity implementation="com.vibe.agent.providers.VibeProvidersWatcherStarter"/>
     <postStartupActivity implementation="com.vibe.agent.http.VibeHttpApiStarter"/>
     <statusBarWidgetFactory id="VibeAgentStatus" implementation="com.vibe.agent.ui.VibeAgentStatusWidgetFactory" order="last"/>
+    <statusBarWidgetFactory id="VibeSpendStatus" implementation="com.vibe.agent.budget.VibeSpendStatusWidgetFactory" order="last"/>
   </extensions>
   <actions>
     <action id="Vibe.InlineEdit" class="com.vibe.agent.inline.VibeInlineEditAction"
