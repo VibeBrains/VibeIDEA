@@ -15,6 +15,19 @@ cd "$(dirname "$0")/../.."
 VERSION="${1:-}"
 [ -n "$VERSION" ] || { echo "✖ укажите версию: releaseStamp.sh vX.Y.Z"; exit 1; }
 
+# Версия в «О программе» обязана совпадать с тегом. Разойтись им ничего не мешает — это два разных
+# файла, — а расхождение обнаруживает пользователь, который в issue пишет не ту версию, что стоит.
+INFO=vibeidea-customization/resources/idea/VibeIdeaApplicationInfo.xml
+XML_MAJOR=$(grep -o 'major="[0-9]*"' "$INFO" | head -1 | tr -dc '0-9')
+XML_MINOR=$(grep -o 'minor="[0-9]*"' "$INFO" | head -1 | tr -dc '0-9')
+XML_MICRO=$(grep -o 'micro="[0-9]*"' "$INFO" | head -1 | tr -dc '0-9')
+XML_VERSION="${XML_MAJOR}.${XML_MINOR}.${XML_MICRO:-0}"
+if [ "${VERSION#v}" != "$XML_VERSION" ]; then
+  echo "✖ версия в «О программе» ($XML_VERSION) не совпадает с выпускаемой (${VERSION#v})."
+  echo "  Поправьте $INFO — иначе установленная сборка будет называть себя чужим номером."
+  exit 1
+fi
+
 DMG=$(ls -t out/vibeidea/artifacts/*.dmg 2>/dev/null | head -1 || true)
 [ -n "$DMG" ] || { echo "✖ нет собранного dmg в out/vibeidea/artifacts — сначала соберите инсталлятор"; exit 1; }
 

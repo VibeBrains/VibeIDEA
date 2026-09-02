@@ -311,6 +311,16 @@ class DesignPreviewPanel(private val project: Project) : JPanel(BorderLayout()),
     }
   }
 
+  /** Прошлые находки по адресу: сравнивать надо страницу с собой, а не с соседней. */
+  private val previousFindings = HashMap<String, List<Finding>>()
+
+  private fun currentUrl(): String = urlField.text.trim()
+
+  private val diffLabels = object : com.vibe.agent.design.DesignDiff.Labels {
+    override fun appeared(count: Int): String = t("design.diff.appeared", "count" to count)
+    override fun fixed(count: Int): String = t("design.diff.fixed", "count" to count)
+  }
+
   private fun report(snapshots: List<DocumentSnapshot>) {
     if (snapshots.isEmpty()) {
       SwingUtilities.invokeLater { status.text = t("design.status.noAnswer") }
@@ -321,13 +331,28 @@ class DesignPreviewPanel(private val project: Project) : JPanel(BorderLayout()),
       .map { DesignReview.Accepted(it.ruleId, it.reason) }
     val reports = snapshots.map { DesignReview.run(it, accepted) }
     val findings = DesignReview.merge(reports)
+    // «Что сейчас плохо» перестают спрашивать после третьего раза: ответ — длинный список, с
+    // которым уже решили жить. Спрашивают «что я только что сломал», и на это нужен прошлый замер.
+    val diff = com.vibe.agent.design.DesignDiff.compare(previousFindings[currentUrl()], findings)
+    previousFindings[currentUrl()] = findings
     SwingUtilities.invokeLater {
       status.text = DesignReview.summary(findings)
+      com.vibe.agent.design.DesignDiff.summary(diff, diffLabels)?.let { line ->
+        status.text = status.text + " · " + line
+      }
       results.removeAll()
       if (findings.isEmpty()) results.add(hint(t("design.noFindings")))
       else findings.forEach { results.add(row(it)) }
       results.revalidate(); results.repaint()
       lastFindings = findings
+      // Регрессия по полу качества — единственное, что стоит отправлять в чат само: это то, что
+      // сломано только что, и человек ещё помнит, чем именно.
+      if (diff.floorAppeared.isNotEmpty()) {
+        com.vibe.agent.http.VibeAgentGateway.getInstance().putIntoComposer(
+          t("design.diff.regression",
+            "count" to diff.floorAppeared.size,
+            "rules" to diff.floorAppeared.joinToString(", ") { it.rule + " (" + it.selector + ")" }))
+      }
       if (overlayVisible) drawOverlay()
     }
   }

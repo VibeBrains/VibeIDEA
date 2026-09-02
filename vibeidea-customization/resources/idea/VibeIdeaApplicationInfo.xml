@@ -1,5 +1,9 @@
 <component xmlns="http://jetbrains.org/intellij/schema/application-info">
-  <version major="2026" minor="3" eap="false"/>
+  <!-- Версия ПРОДУКТА, а не платформы: в «О программе» человек должен видеть, какой VibeIDEA у
+       него стоит, а не какой релиз IntelliJ лёг в основу. Номер платформы никуда не девается —
+       он в номере сборки ниже (VI-263.*), и по нему же считается совместимость плагинов.
+       Это же число проверяется при выпуске: гейт релиза не даёт выложить тег, разошедшийся с ним. -->
+  <version major="0" minor="3" micro="0" eap="false"/>
   <company name="VibeBrains" shortName="VibeBrains" url="https://github.com/VibeBrains"/>
   <build number="VI-__BUILD__" date="__BUILD_DATE__" majorReleaseDate="20260823"/>
   <icon svg="/vibeidea.svg" svg-small="/vibeidea_16.svg"/>

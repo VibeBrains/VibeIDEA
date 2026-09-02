@@ -39,8 +39,11 @@ class VibeDoctorAction : AnAction({ t("doctor.action") }) {
     val lines = ArrayList<VibeDiagnosis.Line>()
     val base = project.basePath
 
+    // Две разные вещи, которые путают чаще всего: версия ПРОДУКТА (её спрашивают в issue) и линия
+    // платформы, на которой он собран (по ней считается совместимость плагинов).
+    val info = ApplicationInfo.getInstance()
     lines.add(VibeDiagnosis.Line(t("doctor.line.build"), VibeDiagnosis.State.OK,
-                                 ApplicationInfo.getInstance().fullVersion))
+                                 t("doctor.detail.build", "version" to info.fullVersion, "build" to info.build.asString())))
     lines.add(VibeDiagnosis.Line(t("doctor.line.language"), VibeDiagnosis.State.OK,
                                  com.vibe.agent.i18n.VibeI18n.activeCode()))
 
