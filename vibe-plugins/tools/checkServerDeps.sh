@@ -7,6 +7,7 @@
 # проверяем.
 set -euo pipefail
 cd "$(dirname "$0")/../.."
+. vibe-plugins/tools/pythonBin.sh
 
 fail=0
 say() { printf '%s\n' "$1"; }
@@ -43,7 +44,7 @@ for var in JS_DEBUG_V PHP_DEBUG_V; do
 done
 
 for pkg in "@vtsls/language-server" "vscode-langservers-extracted"; do
-  PIN=$(python3 -c "import json;print(json.load(open('vibe-plugins/deps/servers-npm/package.json'))['dependencies']['$pkg'])")
+  PIN=$("$PYTHON" -c "import json;print(json.load(open('vibe-plugins/deps/servers-npm/package.json'))['dependencies']['$pkg'])")
   grep -q "\"$PIN\"" build/src/org/jetbrains/intellij/build/VibeIdeaProperties.kt \
     || { say "✖ версия $pkg в лицензиях разошлась с закреплённой ($PIN)"; fail=1; }
 done

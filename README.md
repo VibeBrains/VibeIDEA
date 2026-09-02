@@ -41,7 +41,7 @@
 
 ## Установка
 
-Собранный `.dmg` — во вкладке [Releases](https://github.com/VibeBrains/VibeIDEA/releases).
+Собранные образы — `.dmg` для macOS (Apple Silicon) и `.exe`/`.win.zip` для Windows (x64) — во вкладке [Releases](https://github.com/VibeBrains/VibeIDEA/releases).
 
 Что нужно на машине, чтобы всё работало из коробки:
 

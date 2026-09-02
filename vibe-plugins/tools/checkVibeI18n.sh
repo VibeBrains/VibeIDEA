@@ -12,6 +12,7 @@
 # Диагностика выведена из-под гейта явно: логи и console-вывод — не интерфейс, их переводить незачем.
 set -euo pipefail
 cd "$(dirname "$0")/../.."
+. vibe-plugins/tools/pythonBin.sh
 
 BASE=vibe-plugins/vibe-agent/resources/lang/base.json
 LANG_DIR=vibe-plugins/vibe-agent/resources/lang
@@ -27,7 +28,7 @@ say() { printf '%s\n' "$1"; }
 [ -f "$BASE" ] || { say "✖ нет базового каталога строк: $BASE"; exit 1; }
 
 # --- 1 и 2: ключи кода против каталога ---
-python3 - "$BASE" "$SRC" <<'PY' || fail=1
+"$PYTHON" - "$BASE" "$SRC" <<'PY' || fail=1
 import json, io, re, sys, os
 base_path, src = sys.argv[1], sys.argv[2]
 base = json.load(io.open(base_path, encoding='utf-8'))
@@ -57,7 +58,7 @@ sys.exit(0 if ok else 1)
 PY
 
 # --- 3: языковые файлы против базы ---
-python3 - "$BASE" "$LANG_DIR" <<'PY' || fail=1
+"$PYTHON" - "$BASE" "$LANG_DIR" <<'PY' || fail=1
 import json, io, sys, os, glob
 base_path, lang_dir = sys.argv[1], sys.argv[2]
 base = set(json.load(io.open(base_path, encoding='utf-8')))
@@ -87,7 +88,7 @@ excluded_paths=$(grep -v '^#' "$EXCLUSIONS" 2>/dev/null | grep -v '^$' | cut -d'
 # Счёт ведёт python, а не grep: диапазон [А-Яа-яЁё] в POSIX-grep ловит по байтам и считает
 # кириллицей типографские тире, точки-разделители и стрелки. Планка при этом «держалась» на
 # пунктуации, а настоящая непереведённая строка тонула в шуме.
-count=$(python3 - "$EXCLUSIONS" <<'PYCOUNT'
+count=$("$PYTHON" - "$EXCLUSIONS" <<'PYCOUNT'
 import io, os, re, sys
 excluded = set()
 for line in io.open(sys.argv[1], encoding='utf-8'):
@@ -103,8 +104,10 @@ for root, _, files in os.walk('vibe-plugins'):
     for name in files:
         if not name.endswith('.kt'):
             continue
+        # Exclusions are written with '/', os.walk answers with the OS separator: compare the
+        # normalised form, or no exclusion matches on Windows and the ratchet counts data as UI.
         path = os.path.join(root, name)
-        if path in excluded:
+        if path.replace(os.sep, '/') in excluded:
             continue
         text = io.open(path, encoding='utf-8').read()
         # Комментарии считать нельзя: они по правилам проекта английские, а редкая кириллица
