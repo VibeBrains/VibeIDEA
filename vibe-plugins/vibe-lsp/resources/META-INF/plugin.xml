@@ -16,6 +16,9 @@
 
   <extensions defaultExtensionNs="com.intellij">
     <notificationGroup id="Vibe Languages" displayType="BALLOON"/>
+    <!-- Под общим корнем настроек VibeIDEA, который объявляет vibe-agent. -->
+    <applicationConfigurable parentId="com.vibe.settings" displayName="Языковые серверы"
+                             id="com.vibe.lsp.paths" instance="com.vibe.lsp.VibeLspConfigurable"/>
     <postStartupActivity implementation="com.vibe.lsp.VibeLspSuggestionSilencer"/>
   </extensions>
 

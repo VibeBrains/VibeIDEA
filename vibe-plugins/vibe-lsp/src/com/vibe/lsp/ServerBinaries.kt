@@ -26,6 +26,13 @@ internal object ServerBinaries {
    * answer: a path invented from the bare name would report an installed server that then
    * fails to start, which is exactly the silence the doctor exists to remove.
    */
+  /**
+   * A path the person set in settings beats every other rule, including PATH.
+   *
+   * «Свой сервер сильнее встроенного» used to hold only for servers that happen to be on PATH, and
+   * the projects that most need their own version keep it out of the way — `vendor/bin`, a shared
+   * container folder, a checkout built from source. For those the rule silently did not apply.
+   */
   fun find(binary: String): String? {
     val fromPath = System.getenv("PATH")?.split(java.io.File.pathSeparator).orEmpty()
       .asSequence().map { Path.of(it, binary) }.firstOrNull { Files.isExecutable(it) }
@@ -36,7 +43,9 @@ internal object ServerBinaries {
   // Falls back to the bare name: the failure to start then names exactly what is missing.
   internal fun resolve(binary: String): String = find(binary) ?: binary
 
-  fun vtslsCommand(): List<String> = nodeServerCommand("vtsls", "--stdio")
+  fun vtslsCommand(): List<String> =
+    ServerPaths.overrideFor(LspDoctor.VTSLS.id)?.let { listOf(it, "--stdio") }
+    ?: nodeServerCommand("vtsls", "--stdio")
 
   /**
    * The Phpactor phar we ship, or null when running from sources without it.
@@ -117,12 +126,19 @@ internal object ServerBinaries {
    * bare name and an honest failure to start rather than a mysterious silence.
    */
   fun phpactorCommand(): List<String> {
+    // A path the person set themselves outranks even their own PATH: they set it precisely because
+    // the copy that matters is not the one PATH would find.
+    ServerPaths.overrideFor(LspDoctor.PHPACTOR.id)?.let { return listOf(it, "language-server") }
     find("phpactor")?.let { return listOf(it, "language-server") }
     bundledPhpactor()?.let { phar -> return listOf(resolve("php"), phar, "language-server") }
     return listOf("phpactor", "language-server")
   }
 
-  fun cssCommand(): List<String> = nodeServerCommand("vscode-css-language-server", "--stdio")
+  fun cssCommand(): List<String> =
+    ServerPaths.overrideFor(LspDoctor.CSS.id)?.let { listOf(it, "--stdio") }
+    ?: nodeServerCommand("vscode-css-language-server", "--stdio")
 
-  fun eslintCommand(): List<String> = nodeServerCommand("vscode-eslint-language-server", "--stdio")
+  fun eslintCommand(): List<String> =
+    ServerPaths.overrideFor(LspDoctor.ESLINT.id)?.let { listOf(it, "--stdio") }
+    ?: nodeServerCommand("vscode-eslint-language-server", "--stdio")
 }
