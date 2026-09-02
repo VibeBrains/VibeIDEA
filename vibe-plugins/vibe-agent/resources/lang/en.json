@@ -557,6 +557,11 @@
   "composer.placeholder": "Plan; @ for context",
   "composer.attach.tooltip": "Attach an image (or paste / drag and drop)",
   "skills.action.title": "VibeIDEA: validate project skills",
+  "skills.approve.title": "Project skill",
+  "skills.approve.new": "The skill «{id}» will run with your authority. It lives in the repository and arrives with code changes — read what it does:\n\n{preview}",
+  "skills.approve.changed": "The skill «{id}» changed since you approved it. Approval is bound to the content, not the name — here is what it does now:\n\n{preview}",
+  "skills.approve.use": "Run it",
+  "skills.approve.refused": "The skill «{id}» was not applied: you did not approve it.",
   "skills.dialog.title": "Project skills",
   "skills.report.none": "The project has no skills.\n\nThey are expected at {dir}/<id>/{file}.",
   "skills.report.spec": "Format: docs/vibe/manuals/skillsSpec.md.",
@@ -789,6 +794,7 @@
   "git.noProject": "no project is open",
   "git.timeout": "git did not answer within {seconds}s: {command}",
   "write.conflict": "⚠️ {path} changed after the agent read it — this edit is being applied over someone else’s changes; read the diff carefully",
+  "write.wholeFileRewrite": "{path} was rewritten whole for {changed} lines out of {total}: the result is the same, but it costs more output tokens and time.",
   "autofix.command": "Editor fix after the agent",
   "autofix.applied": "🔧 the editor finished the job: {count} fix(es) ({names})",
   "loop.repeat": "the agent repeated the same call {count} times in a row — the turn was stopped by a breaker: {call}",
@@ -1390,5 +1396,6 @@
   "spend.fileLine": "{path} — {tokens} tokens, turns: {turns}",
   "spend.fileNote": "an estimate: a request is billed as a whole, and a file’s share is apportioned by its size rather than measured",
   "telegram.voice.rawBelow": "heard verbatim: «{text}»",
-  "trace.nearRepeated": "Similar calls (the same thing with different numbers — possibly circling one file): {items}"
+  "trace.nearRepeated": "Similar calls (the same thing with different numbers — possibly circling one file): {items}",
+  "trace.batches": "Tool-call batches: {batches}, {average} calls each on average. A value of one means the model stopped asking in batches — the answer is the same, but every extra round trip costs tokens and time."
 }

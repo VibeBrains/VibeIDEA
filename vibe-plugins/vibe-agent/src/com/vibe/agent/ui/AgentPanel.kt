@@ -758,6 +758,13 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
       if (near.isNotEmpty()) {
         console.append("\n\n" + t("trace.nearRepeated", "items" to near.entries.joinToString { "${it.key} ×${it.value}" }))
       }
+      // Batching is invisible to the loop detector — those calls are different, nothing repeats.
+      // What gives a regression away is the shape: single-call turns where batches used to be.
+      com.vibe.agent.trace.TurnTrace.averageBatch(events)?.let { average ->
+        console.append("\n\n" + t("trace.batches",
+                                  "batches" to com.vibe.agent.trace.TurnTrace.toolBatches(events).size,
+                                  "average" to String.format(java.util.Locale.ROOT, "%.1f", average)))
+      }
       messages.add(console)
       revalidateScroll()
     }
@@ -1608,6 +1615,34 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
   // --- skills ---
 
   /**
+   * Asks about a skill whose content the person has not approved yet, and remembers the answer.
+   *
+   * Bound to a digest of the body plus the names of the files beside it: a skill that gains a
+   * script gains a capability even when its text did not change. Approval is per project, because
+   * a skill of the same name in another repository is another skill.
+   */
+  private fun approveSkill(id: String, entry: com.vibe.agent.skills.SkillsStore.Entry): Boolean {
+    val digest = entry.digest()
+    val key = SKILL_APPROVAL_KEY + id
+    val props = com.intellij.ide.util.PropertiesComponent.getInstance(project)
+    val verdict = com.vibe.agent.skills.SkillApproval.verdictFor(digest, props.getValue(key))
+    if (verdict == com.vibe.agent.skills.SkillApproval.Verdict.UNCHANGED) return true
+    val body = if (verdict == com.vibe.agent.skills.SkillApproval.Verdict.CHANGED)
+      t("skills.approve.changed", "id" to id, "preview" to entry.pkg.body.take(SKILL_PREVIEW_LEN))
+    else t("skills.approve.new", "id" to id, "preview" to entry.pkg.body.take(SKILL_PREVIEW_LEN))
+    val approved = askOnEdt {
+      Messages.showYesNoDialog(project, body, t("skills.approve.title"),
+                               t("skills.approve.use"), t("common.cancel"), Messages.getQuestionIcon()) == Messages.YES
+    }
+    if (!approved) {
+      systemLine(t("skills.approve.refused", "id" to id))
+      return false
+    }
+    props.setValue(key, digest)
+    return true
+  }
+
+  /**
    * Turns `/skill:<id>` mentions into the actual recipe.
    *
    * Before this the token was only text: the model received the literal «/skill:grill» and never a
@@ -1630,6 +1665,9 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
         systemLine(t("chat.skillBroken", "id" to id, "reasons" to errors.joinToString("; ") { it.message }))
         continue
       }
+      // What was approved is the CONTENT, not the name: a skill lives in the repository and
+      // arrives with a pull request, so «я разрешил его вчера» says nothing about what it does now.
+      if (!approveSkill(id, entry)) continue
       // A skill is text from disk like any other — same guard as project files.
       val clean = com.vibe.agent.security.ContextSanitizer.sanitize(entry.pkg.body)
       if (clean.findings.isNotEmpty()) reportContextFindings("$id/${com.vibe.agent.skills.SkillPackage.SKILL_FILE}", clean.findings)
@@ -3823,6 +3861,9 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     const val SILENCE_CHECK_MS = 30_000
     const val OUTPUT_COMMAND = "/output"
     const val SPEND_COMMAND = "/spend"
+    /** Per project: a skill of the same name in another repository is another skill. */
+    const val SKILL_APPROVAL_KEY = "vibe.skill.approved."
+    const val SKILL_PREVIEW_LEN = 400
     const val GIT_COMMAND = "/git"
     const val COUNCIL_COMMAND = "/council"
     const val HANDOFF_COMMAND = "/handoff"

@@ -99,6 +99,11 @@ internal class IdeFileOps(
     if (verdict == com.vibe.agent.edits.WriteGuard.Verdict.CONFLICT) {
       onNotice(t("write.conflict", "path" to path))
     }
+    // Named, never blocked: a rewrite that produces the right file is not a defect, but a cost
+    // nobody can see is a cost nobody can decide about.
+    com.vibe.agent.edits.WholeFileRewrite.check(if (exists) oldText else null, content)?.let { v ->
+      onNotice(t("write.wholeFileRewrite", "path" to path.fileName, "changed" to v.changedLines, "total" to v.totalLines))
+    }
     if (!WritePreview.confirm(project, path.toString(), oldText, content)) {
       throw IllegalStateException(t("write.refused", "path" to path))
     }

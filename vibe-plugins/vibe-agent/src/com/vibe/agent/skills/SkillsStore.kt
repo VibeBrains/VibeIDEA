@@ -5,8 +5,17 @@ import java.io.File
 
 /** IO around the pure [SkillPackage] / [SkillValidator]: reading, path resolution, validation runs. */
 object SkillsStore {
-  class Entry(val pkg: SkillPackage, val findings: List<SkillValidator.Finding>, val dir: File) {
+  class Entry(
+    val pkg: SkillPackage,
+    val findings: List<SkillValidator.Finding>,
+    val dir: File,
+    /** Everything shipped beside SKILL.md — part of what gets approved, see [SkillApproval]. */
+    val attachments: List<String> = emptyList(),
+  ) {
     val isBroken: Boolean get() = SkillValidator.hasErrors(findings)
+
+    /** What the person approves when they approve this skill: the body plus the files beside it. */
+    fun digest(): String = SkillApproval.digest(pkg.body, attachments)
   }
 
   fun root(projectBase: String?): File? = projectBase?.let { File(it, SkillPackage.SKILLS_DIR) }
@@ -38,6 +47,6 @@ object SkillsStore {
     val escaping = (dir.listFiles() ?: emptyArray())
       .filter { runCatching { !it.canonicalPath.startsWith(root.canonicalPath + File.separator) }.getOrDefault(true) }
       .map { it.name }
-    return Entry(pkg, SkillValidator.validate(pkg, attachments, escaping), dir)
+    return Entry(pkg, SkillValidator.validate(pkg, attachments, escaping), dir, attachments)
   }
 }

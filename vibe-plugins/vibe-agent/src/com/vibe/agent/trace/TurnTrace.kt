@@ -106,6 +106,45 @@ object TurnTrace {
     }.trimEnd()
   }
 
+  /**
+   * How many tool calls the model asked for at once, turn by turn.
+   *
+   * Anthropic names this as a Fable 5.1 behaviour change: where Fable 5 batched several
+   * independent reads, 5.1 may issue one call per turn. It costs tokens, round trips and
+   * wall-clock time without changing the answer — which is why nobody notices it happening.
+   *
+   * The loop detector cannot see it: those calls are DIFFERENT, so nothing repeats. What gives it
+   * away is the shape of the trace — a run of single-call turns where there used to be batches.
+   *
+   * A batch here is a run of tool events with no other kind between them: the model asked, we ran
+   * them, and the next thing that happened was not another tool.
+   */
+  fun toolBatches(events: List<Event>): List<Int> {
+    val batches = ArrayList<Int>()
+    var current = 0
+    for (event in events) {
+      if (event.kind == Kind.TOOL) current++
+      else if (current > 0) {
+        batches.add(current)
+        current = 0
+      }
+    }
+    if (current > 0) batches.add(current)
+    return batches
+  }
+
+  /**
+   * The average batch size, or null when there were no tool calls at all.
+   *
+   * Reported rather than judged: what counts as «мало» depends on the task, and a threshold in our
+   * code would fire on tasks that legitimately do one thing at a time.
+   */
+  fun averageBatch(events: List<Event>): Double? {
+    val batches = toolBatches(events)
+    if (batches.isEmpty()) return null
+    return batches.sum().toDouble() / batches.size
+  }
+
   interface Labels {
     fun header(count: Int): String
     fun kind(kind: Kind): String
