@@ -44,6 +44,13 @@ data class ModelEntry(
    * be described honestly at all: whichever value you chose, half its models were called wrong.
    */
   val protocol: String? = null,
+  /**
+   * What a million tokens of this model costs on YOUR contract; absent means «не сказано».
+   *
+   * Ours to apply, never ours to invent: a price list in our code is wrong the day a vendor
+   * changes a line, but a price the person typed is a fact about their tariff.
+   */
+  val pricing: ModelPricing? = null,
   val fim: Boolean = false,
   /** Accepts images: null = unknown (attachments allowed), false = composer blocks image sends. */
   val vision: Boolean? = null,
@@ -170,6 +177,15 @@ object ProvidersFile {
         topK = mo["topK"]?.jsonPrimitive?.intOrNull,
         extraBody = mo["extraBody"] as? JsonObject,
         protocol = mo["protocol"]?.jsonPrimitive?.contentOrNull,
+        pricing = (mo["pricing"] as? JsonObject)?.let { pr ->
+          ModelPricing(
+            input = pr["input"]?.jsonPrimitive?.doubleOrNull ?: 0.0,
+            output = pr["output"]?.jsonPrimitive?.doubleOrNull ?: 0.0,
+            cacheRead = pr["cacheRead"]?.jsonPrimitive?.doubleOrNull ?: 0.0,
+            cacheWrite = pr["cacheWrite"]?.jsonPrimitive?.doubleOrNull ?: 0.0,
+            currency = pr["currency"]?.jsonPrimitive?.contentOrNull ?: ModelPricing.DEFAULT_CURRENCY,
+          ).takeIf { it.stated }
+        },
         fim = mo["fim"]?.jsonPrimitive?.booleanOrNull ?: false,
         vision = mo["vision"]?.jsonPrimitive?.booleanOrNull,
         note = mo["note"]?.jsonPrimitive?.contentOrNull,
@@ -230,6 +246,8 @@ object ProvidersFile {
   private fun overlayModel(base: ModelEntry?, over: ModelEntry): ModelEntry =
     if (base == null) over else over.copy(
       vision = over.vision ?: base.vision,
+      // Same rule as the rest: a layer that said nothing about the price does not erase it.
+      pricing = over.pricing ?: base.pricing,
       // Same rule as every other optional field: silence inherits, a written value overrides.
       protocol = over.protocol ?: base.protocol,
     )

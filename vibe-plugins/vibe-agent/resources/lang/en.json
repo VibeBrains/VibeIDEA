@@ -813,6 +813,7 @@
   "spend.ceiling.near": "Spending is close to the ceiling: {window} — ${spent} of ${limit}, ${left} left.",
   "spend.ceiling.line": "{window}: ${spent} of ${limit}, ${left} left",
   "spend.ceiling.forecast": "— about {minutes} min left at the current pace",
+  "spend.cacheSaved": "The cache saved ${saved}: {tokens} input tokens were read from it instead of being billed as new.",
   "spend.ceiling.off": "Spending ceilings are off (Settings → Tools → VibeIDEA → Chat).",
   "spend.ceiling.title": "Spending ceiling",
   "spend.ceiling.continue": "Continue anyway",

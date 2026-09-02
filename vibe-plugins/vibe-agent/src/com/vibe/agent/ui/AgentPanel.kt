@@ -2540,6 +2540,10 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
                        "reason" to (reason ?: "")))
         },
       ) { delta -> appendAgentText(delta) }
+      // What the provider itself reported, and the price the owner of the key wrote down. Both may
+      // be absent — then the accounting falls back to the old estimate, and says so by omission.
+      lastTurnUsage = llmClient.lastUsage()
+      lastTurnPricing = t.model.pricing
       finishAgentBubble((System.currentTimeMillis() - startedAt) / 1000.0, t.model.id)
     }
     catch (e: java.io.InterruptedIOException) {
@@ -3278,14 +3282,25 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     }
     if (threadId != null && fullText.isNotBlank()) {
       history.append(threadId, ChatMessageRecord(Role.ASSISTANT, fullText, at = nowIso()))
-      // Rough, and pessimistic on purpose: the session ceiling is about money, and a counter that
-      // under-counts is a ceiling that never trips.
-      val estimated = com.vibe.agent.context.ContextBudget.estimateTokens(fullText)
-      sessionTokens.addAndGet(estimated)
+      // The provider's own numbers when it reported them; the old length-based guess only when it
+      // did not. The guess counted the ANSWER and nothing else, so a request carrying two hundred
+      // thousand tokens of context cost, in the report, as much as the sentence it produced —
+      // which is why the spending ceiling never fired on this path.
+      val usage = lastTurnUsage
+      val counted = if (usage.known) usage.total
+                    else com.vibe.agent.context.ContextBudget.estimateTokens(fullText)
+      val cost = lastTurnPricing?.costOf(usage)
+      lastTurnPricing?.cacheSavingOf(usage)?.takeIf { it > 0 }?.let { saved ->
+        systemLine(t("spend.cacheSaved", "saved" to "%.2f".format(saved),
+                     "tokens" to "%,d".format(usage.cacheReadTokens)))
+      }
+      lastTurnUsage = com.vibe.agent.providers.TokenUsage.NONE
+      lastTurnPricing = null
+      sessionTokens.addAndGet(counted)
       com.vibe.agent.budget.VibeSpendService.getInstance().record(
-        currentRole, targetLabel(), estimated, null, null,
-        com.vibe.agent.budget.FileSpend.attribute(estimated, turnAttachments))
-      stretchTokens.addAndGet(estimated)
+        currentRole, targetLabel(), counted, cost, cost?.let { lastTurnCurrency },
+        com.vibe.agent.budget.FileSpend.attribute(counted, turnAttachments))
+      stretchTokens.addAndGet(counted)
     }
     // currentAgentMessage is EDT-owned (appendAgentText also touches it on the EDT); read+clear it there.
     SwingUtilities.invokeLater {
@@ -3500,6 +3515,11 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
   }
 
   /** ACP reports the window total, not a delta: the difference is what this turn actually added. */
+  /** What the provider reported for the turn that just finished, and the price to apply to it. */
+  @Volatile private var lastTurnUsage: com.vibe.agent.providers.TokenUsage = com.vibe.agent.providers.TokenUsage.NONE
+  @Volatile private var lastTurnPricing: com.vibe.agent.providers.ModelPricing? = null
+  private val lastTurnCurrency: String get() = lastTurnPricing?.currency ?: com.vibe.agent.providers.ModelPricing.DEFAULT_CURRENCY
+
   /** Cumulative reports from the agent, converted to increments — see [com.vibe.agent.budget.CumulativeMeter]. */
   private val usedMeter = com.vibe.agent.budget.CumulativeMeter()
   private val costMeter = com.vibe.agent.budget.CumulativeMeter()

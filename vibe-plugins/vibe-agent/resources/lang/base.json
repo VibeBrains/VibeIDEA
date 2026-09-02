@@ -813,6 +813,7 @@
   "spend.ceiling.near": "Расход близок к потолку: {window} — ${spent} из ${limit}, осталось ${left}.",
   "spend.ceiling.line": "{window}: ${spent} из ${limit}, осталось ${left}",
   "spend.ceiling.forecast": "— при текущем темпе хватит примерно на {minutes} мин",
+  "spend.cacheSaved": "Кэш сэкономил ${saved}: {tokens} токенов ввода прочитаны из кэша, а не оплачены как новые.",
   "spend.ceiling.off": "Потолки расхода выключены (Settings → Tools → VibeIDEA → Чат).",
   "spend.ceiling.title": "Потолок расхода",
   "spend.ceiling.continue": "Всё равно продолжить",

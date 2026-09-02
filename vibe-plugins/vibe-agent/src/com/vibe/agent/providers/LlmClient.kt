@@ -122,6 +122,18 @@ class LlmClient(
 ) {
   private fun quirks(): List<ModelQuirks.Rule> = ModelQuirksRegistry.rulesFor(projectBase)
 
+  /**
+   * What the provider said this turn cost, filled in as the stream reports it.
+   *
+   * Held on the client rather than returned from [chat] because both wires report it in pieces and
+   * at different moments: reading it at the end is the only place that sees the whole answer.
+   */
+  @Volatile
+  private var lastUsage: TokenUsage = TokenUsage.NONE
+
+  /** Usage of the last completed request, or [TokenUsage.NONE] when the provider reported none. */
+  fun lastUsage(): TokenUsage = lastUsage
+
   private val json = Json { ignoreUnknownKeys = true }
   @Volatile private var cancelled: () -> Boolean = { false }
   @Volatile private var activeBody: java.io.InputStream? = null
@@ -145,6 +157,7 @@ class LlmClient(
     onDelta: (String) -> Unit,
   ) {
     this.cancelled = isCancelled
+    lastUsage = TokenUsage.NONE
     // The offline promise is kept HERE, at the single door out: a check in the UI would be a
     // reminder, and a reminder is not a guarantee. A local provider is still allowed — nothing
     // leaves the machine.
@@ -291,6 +304,10 @@ class LlmClient(
     val body = withExtras(ModelQuirks.applyToBody(model.id, overrides = overrides, body = buildJsonObject {
       put("model", model.id)
       put("stream", true)
+      // Without this the OpenAI wire streams no usage at all and the turn is billed by guesswork.
+      // Servers that do not know the option ignore an unknown field, which is why it is safe to
+      // send to every openai-compatible endpoint rather than to a list of known-good ones.
+      put("stream_options", buildJsonObject { put("include_usage", true) })
       model.temperature?.let { put("temperature", it) }
       model.topP?.let { put("top_p", it) }
       model.maxOutputTokens?.let { put("max_tokens", it) }
@@ -311,7 +328,9 @@ class LlmClient(
     }
     streamSse(request) { data ->
       if (data == "[DONE]") return@streamSse
-      val delta = json.parseToJsonElement(data).jsonObject["choices"]?.jsonArray?.firstOrNull()
+      val chunk = json.parseToJsonElement(data).jsonObject
+      TokenUsage.fromOpenAiChunk(chunk)?.let { lastUsage = lastUsage.merge(it) }
+      val delta = chunk["choices"]?.jsonArray?.firstOrNull()
         ?.jsonObject?.get("delta")?.jsonObject?.get("content")?.jsonPrimitive?.contentOrNull
       if (delta != null) onDelta(delta)
     }
@@ -358,6 +377,9 @@ class LlmClient(
       .build()
     streamSse(request) { data ->
       val obj = json.parseToJsonElement(data).jsonObject
+      // Input, cache reads and cache writes arrive at `message_start`; the output count at
+      // `message_delta`. One reader for both, because both put it under `usage`.
+      TokenUsage.fromAnthropicEvent(obj)?.let { lastUsage = lastUsage.merge(it) }
       if (obj["type"]?.jsonPrimitive?.contentOrNull == "content_block_delta") {
         val text = obj["delta"]?.jsonObject?.get("text")?.jsonPrimitive?.contentOrNull
         if (text != null) onDelta(text)
