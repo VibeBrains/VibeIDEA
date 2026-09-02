@@ -131,6 +131,16 @@ open class VibeIdeaProperties(communityHomeDir: Path) : IdeaCommunityProperties(
   override fun createWindowsCustomizer(projectHome: Path): WindowsDistributionCustomizer = ideaCommunityWindowsCustomizer(projectHome) {
     fullName { _ -> "VibeIDEA" }
     installDirNameHandler { _ -> "VibeIDEA" }
+    // Same lesson as the macOS Dock icon: the SVG from ApplicationInfo lives INSIDE the app, while
+    // the launcher, the taskbar and the installer take .ico/.bmp files — left unset, they inherit
+    // the stock IntelliJ images. All four are generated from vibeidea.icns by
+    // vibe-plugins/tools/makeWinImages.py.
+    icoPath = "vibeidea-customization/resources/win/vibeidea.ico"
+    icoPathForEAP = "vibeidea-customization/resources/win/vibeidea.ico"
+    installerImagesPath = "vibeidea-customization/resources/win"
+    // The inherited handler opens JetBrains' IDEA uninstall survey — a page about a product the
+    // user does not have. No survey is better than someone else's.
+    uninstallFeedbackUrl { _ -> null }
   }
 
   override fun createLinuxCustomizer(projectHome: Path): LinuxDistributionCustomizer = ideaCommunityLinuxCustomizer(projectHome) {

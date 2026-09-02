@@ -68,10 +68,14 @@ tar -xzf "js-debug-dap-v$JS_DEBUG_V.tar.gz" -C extracted/servers/dap/vibeJsDebug
 [ -f "php-debug-$PHP_DEBUG_V.vsix" ] || curl -sL -o "php-debug-$PHP_DEBUG_V.vsix" \
   "https://github.com/xdebug/vscode-php-debug/releases/download/v$PHP_DEBUG_V/php-debug-$PHP_DEBUG_V.vsix"
 echo "$PHP_DEBUG_SHA  php-debug-$PHP_DEBUG_V.vsix" | shasum -a 256 -c -
-# vsix — это zip; распаковываем ТОЛЬКО extension/, остальное (иконки маркетплейса, манифест
-# расширения VS Code) в IDE не нужно и весит.
-rm -rf extracted/servers/dap/vibePhpDebug && mkdir -p extracted/servers/dap/vibePhpDebug
-unzip -qo "php-debug-$PHP_DEBUG_V.vsix" 'extension/*' -d extracted/servers/dap/vibePhpDebug
+# vsix — это zip; в IDE нужен ТОЛЬКО extension/, остальное (иконки маркетплейса, манифест
+# расширения VS Code) не нужно и весит. Распаковываем целиком во временный каталог и переносим
+# подкаталог: шаблон `extension/*` в unzip на Windows не пересекает `/` и оставлял от адаптера
+# четыре файла верхнего уровня без `out/phpDebug.js` (поймано гейтом дистрибутива 02.09.2026).
+rm -rf extracted/servers/dap/vibePhpDebug extracted/vsix-tmp && mkdir -p extracted/servers/dap/vibePhpDebug extracted/vsix-tmp
+unzip -qo "php-debug-$PHP_DEBUG_V.vsix" -d extracted/vsix-tmp
+mv extracted/vsix-tmp/extension extracted/servers/dap/vibePhpDebug/extension
+rm -rf extracted/vsix-tmp
 # Обе лицензии MIT: текст обязан ехать рядом с копией. У php-debug он внутри extension/, у
 # js-debug — отдельным файлом в архиве.
 printf 'vscode-js-debug %s (MIT) and vscode-php-debug %s (MIT), bundled from project releases.\nLicences: vibeJsDebug/js-debug/LICENSE, vibePhpDebug/extension/LICENSE.txt\n' \

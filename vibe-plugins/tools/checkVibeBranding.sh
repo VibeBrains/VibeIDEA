@@ -12,6 +12,7 @@
 # тоже валит гейт: устаревшее исключение — такой же долг, как забытое упоминание.
 set -euo pipefail
 cd "$(dirname "$0")/../.."
+. vibe-plugins/tools/pythonBin.sh
 
 ALLOWLIST=vibe-plugins/tools/brandingAllowlist.txt
 # vibeDefaults — submodule общего набора сидов (VibeBrains): его брендинг живёт в своём репозитории.
@@ -24,7 +25,7 @@ fail=0
 
 hits=$(grep -rInE "$PATTERN" "${ROOTS[@]}" 2>/dev/null | grep -v '/vibeDefaults/' | grep -v '/resources/help/' | grep -v '/tools/brandingAllowlist.txt' | grep -v '/tools/checkVibeBranding.sh' || true)
 
-python3 - "$ALLOWLIST" <<PY || fail=1
+"$PYTHON" - "$ALLOWLIST" <<PY || fail=1
 import sys, io
 allow_path = sys.argv[1]
 hits = """$hits""".strip().splitlines()

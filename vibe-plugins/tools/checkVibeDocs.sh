@@ -12,13 +12,14 @@
 #   4. битая относительная ссылка на .md внутри docs/vibe.
 set -euo pipefail
 cd "$(dirname "$0")/../.."
+. vibe-plugins/tools/pythonBin.sh
 
 DOCS=docs/vibe
 fail=0
 say() { printf '%s\n' "$1"; }
 
 # --- 1 и 2: база знаний против своего индекса ---
-python3 - "$DOCS" <<'PY' || fail=1
+"$PYTHON" - "$DOCS" <<'PY' || fail=1
 import io, os, re, sys
 docs = sys.argv[1]
 index_path = os.path.join(docs, 'knowledge', 'README.md')
@@ -31,7 +32,9 @@ for root, _, files in os.walk(os.path.join(docs, 'knowledge')):
     for name in files:
         if not name.endswith('.md') or name == 'README.md':
             continue
-        rel = os.path.relpath(os.path.join(root, name), os.path.join(docs, 'knowledge'))
+        # Index links are written with '/', os.walk answers with the OS separator: normalise,
+        # or every record is «missing» on Windows.
+        rel = os.path.relpath(os.path.join(root, name), os.path.join(docs, 'knowledge')).replace(os.sep, '/')
         on_disk.append(rel)
 
 missing = [rel for rel in sorted(on_disk) if rel not in linked]
@@ -54,7 +57,7 @@ sys.exit(0 if ok else 1)
 PY
 
 # --- 3: мануалы против дерева ---
-python3 - "$DOCS" <<'PY' || fail=1
+"$PYTHON" - "$DOCS" <<'PY' || fail=1
 import io, os, sys
 docs = sys.argv[1]
 tree = io.open(os.path.join(docs, 'README.md'), encoding='utf-8').read()
@@ -69,7 +72,7 @@ print(f"  мануалы: {len(manuals)}, все в дереве")
 PY
 
 # --- 4: относительные ссылки внутри docs/vibe ---
-python3 - "$DOCS" <<'PY' || fail=1
+"$PYTHON" - "$DOCS" <<'PY' || fail=1
 import io, os, re, sys
 docs = sys.argv[1]
 broken = []

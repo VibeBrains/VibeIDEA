@@ -13,6 +13,7 @@
 # Использование: ./vibe-plugins/tools/releaseChangelog.sh [vX.Y.Z]
 set -euo pipefail
 cd "$(dirname "$0")/../.."
+. vibe-plugins/tools/pythonBin.sh
 
 REPO=VibeBrains/VibeIDEA
 VERSION="${1:-}"
@@ -55,7 +56,7 @@ fi
 
 echo
 git -c core.abbrev=10 log "$RANGE" --no-merges --pretty=format:'%h%x09%s' -- "${OURS[@]}" \
-  | python3 -c '
+  | "$PYTHON" -c '
 # -*- coding: utf-8 -*-
 import re, sys, collections
 
