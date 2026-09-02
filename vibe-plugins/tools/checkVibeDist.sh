@@ -154,13 +154,13 @@ if [ -z "$REPORT" ]; then
   say "✖ в дистрибутиве нет отчёта о третьих лицах (license/third-party-libraries.json)"
   fail=1
 else
-  PHPACTOR_PIN=$(grep -m1 '^PHPACTOR_V=' vibe-plugins/deps/download.sh | cut -d= -f2)
+  PHPACTOR_PIN=$(grep -m1 '^PHPACTOR_V=' vibe-plugins/deps/pins.env | cut -d= -f2)
   grep -q "\"$PHPACTOR_PIN\"" "$REPORT" || {
     say "✖ версия Phpactor в отчёте о лицензиях не совпадает с закреплённой ($PHPACTOR_PIN)"
     fail=1
   }
   for var in JS_DEBUG_V PHP_DEBUG_V; do
-    PIN=$(grep -m1 "^$var=" vibe-plugins/deps/download.sh | cut -d= -f2)
+    PIN=$(grep -m1 "^$var=" vibe-plugins/deps/pins.env | cut -d= -f2)
     grep -q "\"$PIN\"" "$REPORT" || { say "✖ версия отладчика ($var=$PIN) в отчёте о лицензиях не совпадает"; fail=1; }
   done
   for pkg in "@vtsls/language-server" "vscode-langservers-extracted"; do

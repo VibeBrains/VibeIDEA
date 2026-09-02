@@ -63,10 +63,12 @@
 ```shell
 git clone --recurse-submodules https://github.com/VibeBrains/VibeIDEA.git
 cd VibeIDEA
-./getPlugins.sh                       # клон android/, нужен инсталлятору
-sh vibe-plugins/deps/download.sh      # LSP4IJ и языковые серверы по закреплённым версиям
-./vibeidea-installers.cmd -Dintellij.build.target.os=current -Dintellij.build.target.arch=current
+./getPlugins.sh          # клон android/, нужен инсталлятору
+./vibeidea-build.sh      # зависимости по закреплённым версиям + сборка
 ```
+
+На Windows то же самое одной командой: `getPlugins.bat`, затем `vibeidea-build.bat`
+(подробности — [docs/vibe/manuals/buildWindows.md](docs/vibe/manuals/buildWindows.md)).
 
 Готовые артефакты — в `out/vibeidea/artifacts/`. Запуск из исходников:
 `./bazel.cmd run //build:idea_community`.

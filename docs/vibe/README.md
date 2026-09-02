@@ -26,6 +26,7 @@
 - [manuals/providersSpec.md](manuals/providersSpec.md) — спека `providers.json`: свои LLM-провайдеры для прямого чата (самодостаточная, для LLM).
 - [manuals/pipelinesSpec.md](manuals/pipelinesSpec.md) — спека `.vibe/pipelines.json`: цепочки шагов-ролей (самодостаточная, для LLM).
 - [manuals/serversSpec.md](manuals/serversSpec.md) — спека `.vibe/servers.json`: декларативный дев-стек с волнами и readyCheck (самодостаточная, для LLM).
+- [manuals/buildWindows.md](manuals/buildWindows.md) — сборка артефактов на Windows одной командой: что нужно заранее, что получится, чем проверить.
 - [manuals/modelQuirksSpec.md](manuals/modelQuirksSpec.md) — спека `.vibe/modelQuirks.json`: что конкретная модель отказывается принимать (самодостаточная, для LLM).
 - [manuals/designSpec.md](manuals/designSpec.md) — спека дизайн-контекста `.vibe/design/` (4 файла; самодостаточная, для LLM).
 - [manuals/hooksSpec.md](manuals/hooksSpec.md) — спека `.vibe/hooks.json`: хуки проекта вокруг работы агента (самодостаточная, для LLM).

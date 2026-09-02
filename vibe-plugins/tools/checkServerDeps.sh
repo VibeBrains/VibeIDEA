@@ -32,12 +32,12 @@ fi
 # --- 2. Версии в лицензионном отчёте не разошлись с закреплёнными ---
 # Отчёт о третьих лицах пишется руками (phar и npm-дерево сборке не видны), а значит однажды
 # разъедется с локом. Здесь дешёвая сверка на уровне исходников, до всякой сборки.
-PHPACTOR_PIN=$(grep -m1 '^PHPACTOR_V=' vibe-plugins/deps/download.sh | cut -d= -f2)
+PHPACTOR_PIN=$(grep -m1 '^PHPACTOR_V=' vibe-plugins/deps/pins.env | cut -d= -f2)
 grep -q "\"$PHPACTOR_PIN\"" build/src/org/jetbrains/intellij/build/VibeIdeaProperties.kt \
   || { say "✖ версия Phpactor в лицензиях разошлась с закреплённой ($PHPACTOR_PIN)"; fail=1; }
 
 for var in JS_DEBUG_V PHP_DEBUG_V; do
-  PIN=$(grep -m1 "^$var=" vibe-plugins/deps/download.sh | cut -d= -f2)
+  PIN=$(grep -m1 "^$var=" vibe-plugins/deps/pins.env | cut -d= -f2)
   grep -q "\"$PIN\"" build/src/org/jetbrains/intellij/build/VibeIdeaProperties.kt \
     || { say "✖ версия отладчика ($var=$PIN) в лицензиях разошлась с закреплённой"; fail=1; }
 done

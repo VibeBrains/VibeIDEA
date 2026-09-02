@@ -7,8 +7,11 @@
 # means something different every day.
 set -e
 cd "$(dirname "$0")"
-V=0.20.1
-SHA=3d2bffc78df998aebdbefc4714f351353b22762ec5d383eb33591acb54d3e419
+# Версии — из pins.env, одного файла на оба скрипта: копия версии расходится не «если», а «когда»,
+# и расходится молча — обе сборки успешны, содержимое разное.
+. ./pins.env
+V=$LSP4IJ_V
+SHA=$LSP4IJ_SHA
 [ -f "lsp4ij-$V.zip" ] || curl -sL -o "lsp4ij-$V.zip" "https://github.com/redhat-developer/lsp4ij/releases/download/$V/lsp4ij-$V.zip"
 echo "$SHA  lsp4ij-$V.zip" | shasum -a 256 -c -
 rm -rf extracted && mkdir -p extracted && unzip -q "lsp4ij-$V.zip" -d extracted
@@ -16,8 +19,6 @@ rm -rf extracted && mkdir -p extracted && unzip -q "lsp4ij-$V.zip" -d extracted
 # --- Phpactor: PHP language server, one self-contained phar ---
 # Runs on the machine's PHP (>= 8.1). We do not ship a PHP runtime: a PHP developer without PHP
 # does not exist, and bundling one would add a second interpreter to keep patched.
-PHPACTOR_V=2026.06.23.0
-PHPACTOR_SHA=25645647d9aa2dc69536fb4f75c976e33ef1a7b5533534a8456736e5e6fd5079
 [ -f "phpactor-$PHPACTOR_V.phar" ] || curl -sL -o "phpactor-$PHPACTOR_V.phar" \
   "https://github.com/phpactor/phpactor/releases/download/$PHPACTOR_V/phpactor.phar"
 echo "$PHPACTOR_SHA  phpactor-$PHPACTOR_V.phar" | shasum -a 256 -c -
@@ -58,16 +59,12 @@ printf 'Language servers (MIT/Apache-2.0) installed from a pinned package-lock.j
 # работала сразу после установки, как и переход к определению. Оба на Node — рантайм по-прежнему
 # машинный. Свой установленный адаптер остаётся сильнее нашего: каталоги пользователя
 # просматриваются раньше встроенного.
-JS_DEBUG_V=1.117.0
-JS_DEBUG_SHA=ad8d04ede9d4b75cc290fd5438a65047a06f786d04f604b6112485b36f090772
 [ -f "js-debug-dap-v$JS_DEBUG_V.tar.gz" ] || curl -sL -o "js-debug-dap-v$JS_DEBUG_V.tar.gz" \
   "https://github.com/microsoft/vscode-js-debug/releases/download/v$JS_DEBUG_V/js-debug-dap-v$JS_DEBUG_V.tar.gz"
 echo "$JS_DEBUG_SHA  js-debug-dap-v$JS_DEBUG_V.tar.gz" | shasum -a 256 -c -
 rm -rf extracted/servers/dap/vibeJsDebug && mkdir -p extracted/servers/dap/vibeJsDebug
 tar -xzf "js-debug-dap-v$JS_DEBUG_V.tar.gz" -C extracted/servers/dap/vibeJsDebug
 
-PHP_DEBUG_V=1.40.1
-PHP_DEBUG_SHA=588e1de8a93e9449854d861fc121fbab7d9868e7a891d12ab85b59409732c830
 [ -f "php-debug-$PHP_DEBUG_V.vsix" ] || curl -sL -o "php-debug-$PHP_DEBUG_V.vsix" \
   "https://github.com/xdebug/vscode-php-debug/releases/download/v$PHP_DEBUG_V/php-debug-$PHP_DEBUG_V.vsix"
 echo "$PHP_DEBUG_SHA  php-debug-$PHP_DEBUG_V.vsix" | shasum -a 256 -c -
