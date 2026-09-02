@@ -814,6 +814,7 @@
   "spend.ceiling.line": "{window}: ${spent} из ${limit}, осталось ${left}",
   "spend.ceiling.forecast": "— при текущем темпе хватит примерно на {minutes} мин",
   "spend.cacheSaved": "Кэш сэкономил ${saved}: {tokens} токенов ввода прочитаны из кэша, а не оплачены как новые.",
+  "cache.prefixBroken": "Промпт-кэш сброшен: совпало {shared} сообщений из {total} — что-то в ранней части разговора изменилось, и всё после этого места оплачивается как новый ввод.",
   "spend.ceiling.off": "Потолки расхода выключены (Settings → Tools → VibeIDEA → Чат).",
   "spend.ceiling.title": "Потолок расхода",
   "spend.ceiling.continue": "Всё равно продолжить",

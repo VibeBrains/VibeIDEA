@@ -2520,8 +2520,17 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
       // so reopening an old thread resumes with its full context.
       val threadId = turnThreadId ?: return
       val transcript = history.get(threadId)?.messages.orEmpty()
-      // Old screenshots stop paying rent: only the last few user messages keep their images on the wire.
-      val imageBearing = transcript.indices.filter { transcript[it].role == Role.USER }.takeLast(MAX_IMAGE_HISTORY_MESSAGES).toSet()
+      // Old screenshots stop paying rent: only the newest image-bearing messages keep them.
+      //
+      // The boundary is STICKY. Recomputing it every turn quietly rewrote an earlier message the
+      // moment a fifth picture appeared — and a rewritten earlier message is where the prompt cache
+      // stops matching, so every token after it was billed as fresh input on every later turn.
+      val imageIndices = transcript.indices.filter { transcript[it].images.isNotEmpty() }
+      val newImageArrived = transcript.lastOrNull()?.images?.isNotEmpty() == true
+      val cut = com.vibe.agent.history.WirePrefix.imageCut(
+        imageIndices, MAX_IMAGE_HISTORY_MESSAGES, imageCutIndex, newImageArrived)
+      imageCutIndex = cut
+      val imageBearing = imageIndices.filter { it >= cut }.toSet()
       val wireMessages = transcript.withIndex().filter { it.value.role != Role.OTHER }.map { (index, r) ->
         ChatMessage(
           role = if (r.role == Role.USER) "user" else "assistant",
@@ -2531,6 +2540,16 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
       }
       // A model declared non-vision must not receive images lingering in the history either.
       val wire = if (t.model.vision == false) wireMessages.map { it.withoutImages() } else wireMessages
+      // Said out loud when it happens: a broken prefix is invisible, and its whole cost lands on
+      // the bill. The line names the turn where the conversation stopped being append-only.
+      val lines = wire.map {
+        com.vibe.agent.history.WirePrefix.Line(it.role, it.text, it.images.map { img -> img.base64.take(64) })
+      }
+      if (!com.vibe.agent.history.WirePrefix.appendOnly(lastWireLines, lines)) {
+        systemLine(t("cache.prefixBroken", "shared" to com.vibe.agent.history.WirePrefix.sharedPrefix(lastWireLines, lines),
+                     "total" to lastWireLines.size))
+      }
+      lastWireLines = lines
       llmClient.chat(
         resolved, t.model, wire, { llmCancel.get() },
         onWaiting = { attempt, delayMs, reason ->
@@ -3515,6 +3534,12 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
   }
 
   /** ACP reports the window total, not a delta: the difference is what this turn actually added. */
+  /** Where images stop being carried; only ever moves forward, and only when a new one arrives. */
+  @Volatile private var imageCutIndex: Int? = null
+
+  /** The previous turn's wire, to notice when an earlier message changed under us. */
+  @Volatile private var lastWireLines: List<com.vibe.agent.history.WirePrefix.Line> = emptyList()
+
   /** What the provider reported for the turn that just finished, and the price to apply to it. */
   @Volatile private var lastTurnUsage: com.vibe.agent.providers.TokenUsage = com.vibe.agent.providers.TokenUsage.NONE
   @Volatile private var lastTurnPricing: com.vibe.agent.providers.ModelPricing? = null

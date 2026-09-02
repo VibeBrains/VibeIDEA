@@ -814,6 +814,7 @@
   "spend.ceiling.line": "{window}: ${spent} of ${limit}, ${left} left",
   "spend.ceiling.forecast": "— about {minutes} min left at the current pace",
   "spend.cacheSaved": "The cache saved ${saved}: {tokens} input tokens were read from it instead of being billed as new.",
+  "cache.prefixBroken": "The prompt cache was reset: {shared} of {total} messages matched — something earlier in the conversation changed, and everything after that point is billed as fresh input.",
   "spend.ceiling.off": "Spending ceilings are off (Settings → Tools → VibeIDEA → Chat).",
   "spend.ceiling.title": "Spending ceiling",
   "spend.ceiling.continue": "Continue anyway",
