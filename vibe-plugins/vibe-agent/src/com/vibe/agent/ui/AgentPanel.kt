@@ -932,10 +932,16 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     val command = text.removePrefix(BG_COMMAND).trim()
     if (command.isEmpty()) return false
     userBubble(text)
-    systemLine(t("bg.started", "command" to command))
+    // The lifetime is declared up front, the way MCP Tasks makes a server declare it: a job with
+    // no stated deadline is indistinguishable from a hung one. Until now /bg silently borrowed a
+    // timeout meant for measurements, and would have killed a long build with a message about
+    // measurement.
+    val limits = com.vibe.agent.background.TaskLimits.Limits()
+    systemLine(t("bg.started", "command" to command) + " " +
+               t("bg.limits", "minutes" to limits.ttlMs / 60_000, "seconds" to limits.pollIntervalMs / 1000))
     ApplicationManager.getApplication().executeOnPooledThread {
       val started = System.currentTimeMillis()
-      val output = runCatching { runShell(command) }.getOrElse { error ->
+      val output = runCatching { runShellWithLimits(command, limits) }.getOrElse { error ->
         systemLine(t("bg.failed", "command" to command, "reason" to error.message))
         return@executeOnPooledThread
       }
@@ -1141,6 +1147,38 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     metricBaseline = null
     usedMeter.reset()
     costMeter.reset()
+  }
+
+  /**
+   * A background command with a declared lifetime and a heartbeat.
+   *
+   * Separate from [runShell], which serves measurements: a measurement that outlives its timeout is
+   * a broken measurement, while a build that runs for twenty minutes is just a build. Sharing one
+   * timeout meant one of the two was always wrong.
+   */
+  private fun runShellWithLimits(command: String, limits: com.vibe.agent.background.TaskLimits.Limits): String {
+    val process = ProcessBuilder(com.vibe.agent.util.ProcessSupport.shellCommand(command))
+      .directory(project.basePath?.let { java.io.File(it) })
+      .redirectErrorStream(true)
+      .start()
+    val out = com.vibe.agent.util.ProcessSupport.drain(process.inputStream, "vibe-bg")
+    val started = System.currentTimeMillis()
+    var lastReport = started
+    while (process.isAlive) {
+      if (process.waitFor(BG_TICK_MS, java.util.concurrent.TimeUnit.MILLISECONDS)) break
+      val now = System.currentTimeMillis()
+      if (com.vibe.agent.background.TaskLimits.expired(started, now, limits)) {
+        process.destroyForcibly()
+        error(t("bg.expired", "command" to command.take(60), "minutes" to limits.ttlMs / 60_000))
+      }
+      if (com.vibe.agent.background.TaskLimits.progressDue(lastReport, now, limits)) {
+        lastReport = now
+        val left = com.vibe.agent.background.TaskLimits.remainingSeconds(started, now, limits)
+        systemLine(t("bg.running", "command" to command.take(60), "seconds" to (now - started) / 1000,
+                     "left" to (left ?: 0)))
+      }
+    }
+    return out.get(5, java.util.concurrent.TimeUnit.SECONDS).orEmpty()
   }
 
   private fun runShell(command: String): String {
@@ -3885,6 +3923,8 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
 
     /** Enough to see what failed; the rest is in the terminal for whoever wants it. */
     const val BG_TAIL_LINES = 40
+    /** How often the waiting loop wakes up — short enough to notice the deadline, cheap enough to ignore. */
+    const val BG_TICK_MS = 2_000L
     const val MEASURE_TIMEOUT_SEC = 900L
     const val INDEX_COMMAND = "/index"
     const val INDEX_PROGRESS_STEP = 25
