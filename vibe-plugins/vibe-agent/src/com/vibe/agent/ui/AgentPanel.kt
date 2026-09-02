@@ -928,6 +928,12 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
    */
   private fun handleBackgroundCommand(message: ComposedMessage): Boolean {
     val text = message.text.trim()
+    if (text == BG_COMMAND || text.startsWith("$BG_COMMAND ")) {
+      val rest = text.removePrefix(BG_COMMAND).trim()
+      // `/bg` alone and `/bg stop <id>` are questions about the jobs, not new jobs.
+      if (rest.isEmpty() || rest == BG_LIST) return listBackgroundTasks(text)
+      if (rest.startsWith(BG_STOP)) return stopBackgroundTask(text, rest.removePrefix(BG_STOP).trim())
+    }
     if (!text.startsWith("$BG_COMMAND ")) return false
     val command = text.removePrefix(BG_COMMAND).trim()
     if (command.isEmpty()) return false
@@ -941,10 +947,18 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
                t("bg.limits", "minutes" to limits.ttlMs / 60_000, "seconds" to limits.pollIntervalMs / 1000))
     ApplicationManager.getApplication().executeOnPooledThread {
       val started = System.currentTimeMillis()
-      val output = runCatching { runShellWithLimits(command, limits) }.getOrElse { error ->
+      // The handle is created before the work starts: a job that exists only after it finishes is
+      // a job nobody could have stopped.
+      val handle = java.util.concurrent.atomic.AtomicReference<Process?>(null)
+      val task = tasks.start(command, started) { handle.get()?.destroyForcibly() }
+      systemLine(t("bg.handle", "id" to task.id))
+      val output = runCatching { runShellWithLimits(command, limits, handle) }.getOrElse { error ->
+        tasks.finish(task.id, com.vibe.agent.background.TaskRegistry.State.FAILED, System.currentTimeMillis())
         systemLine(t("bg.failed", "command" to command, "reason" to error.message))
         return@executeOnPooledThread
       }
+      tasks.finish(task.id, com.vibe.agent.background.TaskRegistry.State.DONE, System.currentTimeMillis())
+      tasks.forgetFinished(System.currentTimeMillis())
       val seconds = (System.currentTimeMillis() - started) / 1000
       val filtered = com.vibe.agent.context.ContextFilter.filter(
         output, com.vibe.agent.context.ContextFilter.modeOf(VibeAgentSettings.contextFilterMode),
@@ -960,6 +974,56 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
       }
     }
     return true
+  }
+
+  /** `/bg` without arguments: what is running, since when, and what has just finished. */
+  private fun listBackgroundTasks(said: String): Boolean {
+    userBubble(said)
+    val now = System.currentTimeMillis()
+    val all = tasks.all()
+    if (all.isEmpty()) {
+      systemLine(t("bg.none"))
+      return true
+    }
+    val text = all.joinToString("\n") { task ->
+      t("bg.listLine", "id" to task.id, "state" to taskState(task.state),
+        "seconds" to task.ageMs(now) / 1000, "command" to task.command.take(BG_LIST_COMMAND_LEN))
+    }
+    systemLine(text + "\n" + t("bg.stopHint"))
+    return true
+  }
+
+  /** `/bg stop <id>` — or `/bg stop` for everything still running. */
+  private fun stopBackgroundTask(said: String, id: String): Boolean {
+    userBubble(said)
+    val now = System.currentTimeMillis()
+    if (id.isEmpty()) {
+      // Stop first, mark second: finish() drops the stopper, so the other order would leave every
+      // process running while the list happily reported them stopped.
+      val running = tasks.running()
+      val count = running.count { tasks.stop(it.id) }
+      running.forEach { tasks.finish(it.id, com.vibe.agent.background.TaskRegistry.State.STOPPED, now) }
+      systemLine(if (count == 0) t("bg.none") else t("bg.stoppedAll", "count" to count))
+      return true
+    }
+    val task = tasks.get(id)
+    if (task == null || !task.running) {
+      // «Этой задачи уже нет» is a real answer, and saying it plainly beats a silent no-op.
+      systemLine(t("bg.unknown", "id" to id))
+      return true
+    }
+    tasks.stop(id)
+    tasks.finish(id, com.vibe.agent.background.TaskRegistry.State.STOPPED, now)
+    systemLine(t("bg.stopped", "id" to id, "command" to task.command.take(BG_LIST_COMMAND_LEN)))
+    return true
+  }
+
+  private fun taskState(state: com.vibe.agent.background.TaskRegistry.State): String = when (state) {
+    com.vibe.agent.background.TaskRegistry.State.RUNNING -> t("bg.state.running")
+    com.vibe.agent.background.TaskRegistry.State.DONE -> t("bg.state.done")
+    com.vibe.agent.background.TaskRegistry.State.FAILED -> t("bg.state.failed")
+    com.vibe.agent.background.TaskRegistry.State.STOPPED -> t("bg.state.stopped")
+    com.vibe.agent.background.TaskRegistry.State.EXPIRED -> t("bg.state.expired")
   }
 
   /**
@@ -1156,11 +1220,16 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
    * a broken measurement, while a build that runs for twenty minutes is just a build. Sharing one
    * timeout meant one of the two was always wrong.
    */
-  private fun runShellWithLimits(command: String, limits: com.vibe.agent.background.TaskLimits.Limits): String {
+  private fun runShellWithLimits(
+    command: String,
+    limits: com.vibe.agent.background.TaskLimits.Limits,
+    handle: java.util.concurrent.atomic.AtomicReference<Process?>,
+  ): String {
     val process = ProcessBuilder(com.vibe.agent.util.ProcessSupport.shellCommand(command))
       .directory(project.basePath?.let { java.io.File(it) })
       .redirectErrorStream(true)
       .start()
+    handle.set(process)
     val out = com.vibe.agent.util.ProcessSupport.drain(process.inputStream, "vibe-bg")
     val started = System.currentTimeMillis()
     var lastReport = started
@@ -3610,6 +3679,9 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
   }
 
   /** ACP reports the window total, not a delta: the difference is what this turn actually added. */
+  /** Background jobs of this panel: what runs, since when, and how to stop it. */
+  private val tasks = com.vibe.agent.background.TaskRegistry()
+
   /** Where images stop being carried; only ever moves forward, and only when a new one arrives. */
   @Volatile private var imageCutIndex: Int? = null
 
@@ -3925,6 +3997,9 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     const val BG_TAIL_LINES = 40
     /** How often the waiting loop wakes up — short enough to notice the deadline, cheap enough to ignore. */
     const val BG_TICK_MS = 2_000L
+    const val BG_LIST = "list"
+    const val BG_STOP = "stop"
+    const val BG_LIST_COMMAND_LEN = 60
     const val MEASURE_TIMEOUT_SEC = 900L
     const val INDEX_COMMAND = "/index"
     const val INDEX_PROGRESS_STEP = 25

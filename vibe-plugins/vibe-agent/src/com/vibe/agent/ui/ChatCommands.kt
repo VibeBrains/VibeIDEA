@@ -42,6 +42,7 @@ object ChatCommands {
     Spec("/simplify", false) { t("slash.command.simplify") },
     Spec("/measure", true) { t("slash.command.measure") },
     Spec("/bg", true) { t("slash.command.bg") },
+    Spec("/bg stop", true) { t("slash.command.bgStop") },
     Spec("/undo", false) { t("slash.command.undo") },
     Spec("/blame", true) { t("slash.command.blame") },
     Spec("/learn", false) { t("slash.command.learn") },
