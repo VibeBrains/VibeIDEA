@@ -7,45 +7,72 @@
 # увидеть: тесты исполняются там, где всё уже на classpath и все пути совпадают.
 #
 # Использование:
-#   ./vibe-plugins/tools/checkVibeDist.sh [путь к .dmg или к распакованному .app]
-# Без аргумента берётся свежий dmg из out/vibeidea/artifacts.
+#   ./vibe-plugins/tools/checkVibeDist.sh [путь к .dmg, .tar.gz, .app или к распакованной папке]
+# Без аргумента берётся свежий образ из out/vibeidea/artifacts — dmg на macOS, tar.gz на Linux.
+#
+# Windows-близнец — checkVibeDist.ps1: там свой распаковщик и свой запуск процессов, но проверки
+# те же, и главная из них та же — серверы и адаптеры не просто лежат, а ЗАПУСКАЮТСЯ.
 set -euo pipefail
 cd "$(dirname "$0")/../.."
 
 TARGET="${1:-}"
 MOUNTED=""
-cleanup() { [ -n "$MOUNTED" ] && hdiutil detach "$MOUNTED" >/dev/null 2>&1 || true; }
+UNPACKED=""
+cleanup() {
+  [ -n "$MOUNTED" ] && hdiutil detach "$MOUNTED" >/dev/null 2>&1 || true
+  [ -n "$UNPACKED" ] && rm -rf "$UNPACKED" || true
+}
 trap cleanup EXIT
 
 if [ -z "$TARGET" ]; then
-  TARGET=$(ls -t out/vibeidea/artifacts/*.dmg 2>/dev/null | head -1 || true)
-  [ -n "$TARGET" ] || { echo "✖ нет собранного dmg в out/vibeidea/artifacts — сначала соберите инсталлятор"; exit 1; }
+  TARGET=$(ls -t out/vibeidea/artifacts/*.dmg out/vibeidea/artifacts/*.tar.gz 2>/dev/null | head -1 || true)
+  [ -n "$TARGET" ] || { echo "✖ нет собранного образа в out/vibeidea/artifacts — сначала соберите инсталлятор"; exit 1; }
 fi
 
+# PLUGINS и LICENSE_DIR — единственное, чем macOS отличается от Linux: у приложения на macOS всё
+# лежит внутри Contents/, у Linux-сборки — прямо в корне распакованной папки. Дальше проверки
+# общие, и это не экономия строк: две копии одних и тех же проверок разошлись бы на первой же
+# правке, а разошлись бы молча — обе зелёные, проверяют разное.
 case "$TARGET" in
   *.dmg)
     MOUNTED=$(mktemp -d)
     hdiutil attach "$TARGET" -nobrowse -readonly -mountpoint "$MOUNTED" >/dev/null
-    APP="$MOUNTED/VibeIDEA.app"
+    ROOT_DIR="$MOUNTED/VibeIDEA.app/Contents"
     ;;
-  *.app) APP="$TARGET" ;;
-  *) APP="$TARGET/VibeIDEA.app" ;;
+  *.tar.gz)
+    UNPACKED=$(mktemp -d)
+    tar -xzf "$TARGET" -C "$UNPACKED"
+    # Архив разворачивается в один каталог с версией в имени — берём его, каким бы он ни был.
+    ROOT_DIR=$(find "$UNPACKED" -maxdepth 1 -mindepth 1 -type d | head -1)
+    ;;
+  *.app) ROOT_DIR="$TARGET/Contents" ;;
+  *)
+    # Папка: либо распакованный .app, либо корень Linux-сборки.
+    if [ -d "$TARGET/VibeIDEA.app/Contents" ]; then ROOT_DIR="$TARGET/VibeIDEA.app/Contents"
+    elif [ -d "$TARGET/Contents" ]; then ROOT_DIR="$TARGET/Contents"
+    else ROOT_DIR="$TARGET"
+    fi
+    ;;
 esac
 
-[ -d "$APP" ] || { echo "✖ не найдено приложение: $APP"; exit 1; }
+[ -n "${ROOT_DIR:-}" ] && [ -d "$ROOT_DIR/plugins" ] || {
+  echo "✖ в $TARGET не найден каталог plugins — это не наша сборка или архив пуст"
+  exit 1
+}
+APP_PLUGINS="$ROOT_DIR/plugins"
 echo "  проверяю $TARGET"
 fail=0
 say() { printf '%s\n' "$1"; }
 
 # --- 1. Наши плагины на месте ---
 for plugin in vibe-agent vibe-lsp vibe-server vibe-theme; do
-  [ -d "$APP/Contents/plugins/$plugin" ] || { say "✖ нет плагина $plugin"; fail=1; }
+  [ -d "$APP_PLUGINS/$plugin" ] || { say "✖ нет плагина $plugin"; fail=1; }
 done
 
 # --- 2. Готовые плагины ВПИСАНЫ В ИНДЕКС, а не просто скопированы ---
 # Каталог в plugins/ ничего не значит: платформа грузит встроенные плагины только по
 # plugin-classpath.txt (разбор — knowledge/build/bundledPluginIndex.md).
-INDEX="$APP/Contents/plugins/plugin-classpath.txt"
+INDEX="$APP_PLUGINS/plugin-classpath.txt"
 [ -f "$INDEX" ] || { say "✖ нет индекса встроенных плагинов $INDEX"; fail=1; }
 if [ -f "$INDEX" ]; then
   hits=$(strings "$INDEX" | grep -ci "lsp4ij" || true)
@@ -59,14 +86,14 @@ if [ -f "$INDEX" ]; then
 fi
 
 # --- 3. Библиотеки, которые едут внутри наших плагинов ---
-if ! ls "$APP/Contents/plugins/vibe-agent/lib/zxing-core.jar" >/dev/null 2>&1; then
+if ! ls "$APP_PLUGINS/vibe-agent/lib/zxing-core.jar" >/dev/null 2>&1; then
   say "✖ нет zxing-core.jar в vibe-agent/lib — QR-код адреса превью не заработает."
   say "  Зависимость в BUILD.bazel на упаковку не влияет: её решает раскладка плагина."
   fail=1
 fi
 
 # --- 4. Языковые серверы в комплекте ---
-SERVERS="$APP/Contents/plugins/vibe-lsp/servers"
+SERVERS="$APP_PLUGINS/vibe-lsp/servers"
 [ -f "$SERVERS/phpactor.phar" ] || { say "✖ нет встроенного phpactor.phar"; fail=1; }
 [ -f "$SERVERS/phpactor-LICENSE" ] || { say "✖ нет текста лицензии рядом с phar (MIT требует)"; fail=1; }
 for entry in \
@@ -149,7 +176,7 @@ fi
 # --- 6. Лицензии поставляемых серверов названы, и версии не разъехались ---
 # Отчёт о третьих лицах генерируется из ЗАВИСИМОСТЕЙ модулей: phar и npm-дерево ему не видны, их
 # приходится объявлять руками — а значит версия объявленного однажды разойдётся с закреплённой.
-REPORT=$(ls "$APP/Contents/license/third-party-libraries.json" 2>/dev/null | head -1 || true)
+REPORT=$(ls "$ROOT_DIR/license/third-party-libraries.json" 2>/dev/null | head -1 || true)
 if [ -z "$REPORT" ]; then
   say "✖ в дистрибутиве нет отчёта о третьих лицах (license/third-party-libraries.json)"
   fail=1
