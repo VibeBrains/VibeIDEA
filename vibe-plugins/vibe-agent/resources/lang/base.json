@@ -814,6 +814,7 @@
   "spend.title": "Расход",
   "spend.empty": "За последнюю неделю расхода не записано.",
   "spend.window.day": "За сутки: {tokens} токенов",
+  "spend.thisChat": "Этот чат:",
   "spend.window.week": "За неделю: {tokens} токенов",
   "spend.ceiling.reached": "Потолок расхода исчерпан: {window} — ${spent} из ${limit}. Ход не начат.",
   "spend.ceiling.near": "Расход близок к потолку: {window} — ${spent} из ${limit}, осталось ${left}.",

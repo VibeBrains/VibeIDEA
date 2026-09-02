@@ -44,10 +44,12 @@ class VibeSpendService {
     costAmount: Double?,
     costCurrency: String?,
     files: Map<String, Long> = emptyMap(),
+    threadId: String? = null,
   ) {
     if (tokens <= 0 && costAmount == null) return
     ensureLoaded()
-    store.add(SpendLedger.Entry(System.currentTimeMillis(), role, target, tokens, costAmount, costCurrency, files))
+    store.add(SpendLedger.Entry(System.currentTimeMillis(), role, target, tokens, costAmount, costCurrency,
+                                files, threadId))
     dirty = true
     // Debounced on purpose: an update arrives with every streamed chunk, and rewriting the whole
     // file each time would turn a convenience into a stream of disk writes. The file is a report,
@@ -115,6 +117,7 @@ class VibeSpendService {
           files = (e["files"] as? JsonObject)?.mapNotNull { (path, value) ->
             value.jsonPrimitive.longOrNull?.let { path to it }
           }?.toMap().orEmpty(),
+          threadId = e["thread"]?.jsonPrimitive?.contentOrNull,
         ))
       }
     }.onFailure { log.warn("spend.json could not be read: ${it.message}") }
@@ -141,6 +144,7 @@ class VibeSpendService {
             if (entry.files.isNotEmpty()) {
               put("files", buildJsonObject { entry.files.forEach { (path, share) -> put(path, share) } })
             }
+            entry.threadId?.let { put("thread", it) }
           }
         }))
       }))

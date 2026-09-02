@@ -712,6 +712,12 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
       val month = service.entries(com.vibe.agent.budget.SpendCeiling.MONTH_MS)
       val limits = VibeChatSettings.spendLimits()
       val text = buildString {
+        // This conversation first: «во что мне обошёлся этот чат» is the question people ask, and
+        // a day's total covers work they were not asking about.
+        com.vibe.agent.budget.SpendLedger.ofThread(month, currentThreadId)?.let { line ->
+          appendLine(t("spend.thisChat") + " " + com.vibe.agent.budget.SpendLines.of(line))
+          appendLine()
+        }
         val day = com.vibe.agent.budget.SpendLedger.within(month, System.currentTimeMillis(), com.vibe.agent.budget.SpendLedger.DAY_MS)
         appendLine(t("spend.window.day", "tokens" to "%,d".format(day.sumOf { it.tokens })))
         for (line in com.vibe.agent.budget.SpendLedger.byRole(day)) {
@@ -3463,7 +3469,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
       sessionTokens.addAndGet(counted)
       com.vibe.agent.budget.VibeSpendService.getInstance().record(
         currentRole, targetLabel(), counted, cost, cost?.let { lastTurnCurrency },
-        com.vibe.agent.budget.FileSpend.attribute(counted, turnAttachments))
+        com.vibe.agent.budget.FileSpend.attribute(counted, turnAttachments), threadId)
       stretchTokens.addAndGet(counted)
     }
     // currentAgentMessage is EDT-owned (appendAgentText also touches it on the EDT); read+clear it there.
@@ -3674,7 +3680,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     com.vibe.agent.budget.VibeSpendService.getInstance()
       // The split between the turn's files is an estimate by size — a request is billed whole.
       .record(currentRole, targetLabel(), delta, costDelta, currency?.takeIf { costDelta != null },
-              com.vibe.agent.budget.FileSpend.attribute(delta, turnAttachments))
+              com.vibe.agent.budget.FileSpend.attribute(delta, turnAttachments), currentThreadId)
     stretchTokens.addAndGet(delta)
   }
 

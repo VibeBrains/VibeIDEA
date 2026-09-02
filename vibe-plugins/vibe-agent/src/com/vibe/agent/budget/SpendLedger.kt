@@ -29,6 +29,15 @@ object SpendLedger {
      * «какой файл дорогой», not to make every row heavier.
      */
     val files: Map<String, Long> = emptyMap(),
+    /**
+     * Which conversation this went on, when it is known.
+     *
+     * «Во что мне обошёлся этот чат» is the question people ask about money, and until the ledger
+     * knew the thread it could answer only «за сутки» — a number covering work they were not
+     * asking about. Older entries have none: an old ledger stays readable, it simply answers one
+     * question fewer.
+     */
+    val threadId: String? = null,
   )
 
   data class Line(val name: String, val tokens: Long, val cost: Double, val currency: String?, val runs: Int)
@@ -60,6 +69,13 @@ object SpendLedger {
   fun byRole(entries: List<Entry>): List<Line> = group(entries) { it.role ?: CHAT }
 
   fun byTarget(entries: List<Entry>): List<Line> = group(entries) { it.target }
+
+  /** What one conversation cost — the question people actually ask about money. */
+  fun ofThread(entries: List<Entry>, threadId: String): Line? {
+    val mine = entries.filter { it.threadId == threadId }
+    if (mine.isEmpty()) return null
+    return group(mine) { threadId }.firstOrNull()
+  }
 
   private fun group(entries: List<Entry>, key: (Entry) -> String): List<Line> =
     entries.groupBy(key).map { (name, group) ->

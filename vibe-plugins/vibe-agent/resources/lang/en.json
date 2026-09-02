@@ -814,6 +814,7 @@
   "spend.title": "Spend",
   "spend.empty": "No spend recorded over the last week.",
   "spend.window.day": "Last day: {tokens} tokens",
+  "spend.thisChat": "This chat:",
   "spend.window.week": "Last week: {tokens} tokens",
   "spend.ceiling.reached": "Spending ceiling reached: {window} — ${spent} of ${limit}. The turn did not start.",
   "spend.ceiling.near": "Spending is close to the ceiling: {window} — ${spent} of ${limit}, ${left} left.",
