@@ -1,0 +1,16 @@
+<?xml version='1.0' encoding='utf-8'?>
+<!-- Канал обновлений VibeIDEA. IDE читает этот файл с ветки main (VibeProductUrls.UPDATES_URL).
+     Пишется скриптом vibe-plugins/tools/releaseUpdatesXml.sh по собранному артефакту, руками не правится.
+     Сборка 0.3.0 вышла с номером 263.SNAPSHOT: платформа читает SNAPSHOT как максимум, поэтому
+     её установкам обновление предложено не будет — первым, кому канал заговорит, станет 0.3.1. -->
+<products>
+  <product name="VibeIDEA">
+    <code>VI</code>
+    <channel id="vibeidea-release" status="release" licensing="release" name="VibeIDEA" url="https://github.com/VibeBrains/VibeIDEA/releases">
+      <build number="263.SNAPSHOT" version="0.3.0" releaseDate="20260902">
+        <message>Вышла VibeIDEA 0.3.0.</message>
+        <button name="Скачать" url="https://github.com/VibeBrains/VibeIDEA/releases/tag/v0.3.0" download="true" />
+      </build>
+    </channel>
+  </product>
+</products>

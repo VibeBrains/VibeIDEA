@@ -51,6 +51,18 @@ case "$(uname -s)" in
 esac
 [ -n "$IMAGE" ] || { echo "✖ нет собранного образа в $ARTIFACTS — сначала соберите инсталлятор"; exit 1; }
 
+# Номер сборки и канал обновлений. SNAPSHOT платформа читает как Integer.MAX_VALUE — такая сборка
+# считает себя новее всего, что мы когда-либо опубликуем, и канал для неё молчит навсегда.
+# updates.xml пишется releaseUpdatesXml.sh по этому же артефакту и обязан лежать в коммите.
+INFO_JSON=$(ls -t "$ARTIFACTS"/*.product-info.json 2>/dev/null | head -1 || true)
+[ -n "$INFO_JSON" ] || { echo "✖ нет product-info.json рядом с артефактом — сборка не завершилась"; exit 1; }
+BUILD_NUMBER=$(grep -o '"buildNumber" *: *"[^"]*"' "$INFO_JSON" | sed 's/.*: *"//; s/"//')
+case "$BUILD_NUMBER" in
+  *SNAPSHOT*) echo "✖ номер сборки $BUILD_NUMBER — SNAPSHOT: релиз обязан нести настоящий номер (см. VibeBuildNumber)"; exit 1 ;;
+esac
+grep -q "number=\"$BUILD_NUMBER\" version=\"${VERSION#v}\"" updates/updates.xml 2>/dev/null \
+  || { echo "✖ updates/updates.xml не содержит сборку $BUILD_NUMBER / ${VERSION#v}: выполните ./vibe-plugins/tools/releaseUpdatesXml.sh $VERSION и закоммитьте"; exit 1; }
+
 # Грязное дерево означает, что собранное и лежащее в git — разные вещи, и штамп соврал бы о коммите.
 DIRTY=$(git status --porcelain | head -1)
 [ -z "$DIRTY" ] || { echo "✖ рабочее дерево грязное: штамп привязывает сборку к коммиту, а коммит сейчас не описывает то, что собрано"; exit 1; }

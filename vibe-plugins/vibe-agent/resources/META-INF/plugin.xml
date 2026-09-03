@@ -26,6 +26,11 @@
                 icon="/icons/vibeAgent.svg" doNotActivateOnStart="true"/>
     <toolWindow id="VibeAgent" anchor="right" factoryClass="com.vibe.agent.ui.VibeAgentToolWindowFactory" icon="/icons/vibeAgent.svg"/>
     <notificationGroup id="Vibe Agent" displayType="BALLOON"/>
+    <!-- Адреса продукта (метаданные обновлений, страница загрузки, баг-репорты) — наши, а не
+         апстрима. Единственная точка расширения платформы для этого; патч платформы не нужен. -->
+    <applicationService serviceInterface="com.intellij.platform.ide.customization.ExternalProductResourceUrls"
+                        serviceImplementation="com.vibe.agent.product.VibeExternalProductResourceUrls"
+                        overrides="true"/>
     <inline.completion.provider implementation="com.vibe.agent.fim.VibeFimProvider"/>
     <applicationConfigurable groupId="tools" displayName="VibeIDEA" id="com.vibe.settings" instance="com.vibe.agent.settings.VibeSettingsRoot"/>
     <projectConfigurable parentId="com.vibe.settings" displayName="Провайдеры" id="com.vibe.agent.providers" instance="com.vibe.agent.settings.VibeProvidersConfigurable"/>
