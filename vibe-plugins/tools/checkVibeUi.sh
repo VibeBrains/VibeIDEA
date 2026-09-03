@@ -57,5 +57,23 @@ if ! grep -q 'vibeScrollBarThickness' "$jbscrollbar" 2>/dev/null; then
   status=1
 fi
 
-[[ $status -eq 0 ]] && echo "UI-гейт: тонкие скроллы на месте (наши панели + правка платформы), обходов VibeScroll нет"
+# 4. Значки тулвиндоу: четвёрка файлов на значок и совпадение с описанием в makeIcons.py.
+#    Значок правят в одном месте из четырёх — и в полосе он меняется, а в Search Everywhere нет;
+#    геометрия светлого и тёмного расходится — дёргается выделение. Генератор снимает оба случая.
+if ! python3 "$root/vibe-plugins/tools/makeIcons.py" --check >/dev/null 2>&1; then
+  echo "ОШИБКА: значки тулвиндоу разошлись с описанием vibe-plugins/tools/makeIcons.py."
+  python3 "$root/vibe-plugins/tools/makeIcons.py" --check 2>&1 | sed 's/^/  /'
+  echo "  Правьте ОПИСАНИЕ и перегенерируйте: python3 vibe-plugins/tools/makeIcons.py"
+  status=1
+fi
+
+# 5. Каждая наша панель — со своим значком: шесть панелей с одной картинкой в полосе неразличимы.
+icons_used=$(grep -o 'icon="/icons/[A-Za-z0-9]*\.svg"' "$root/vibe-plugins/vibe-agent/resources/META-INF/plugin.xml" | sort | uniq -c | awk '$1 > 1 {print $2}')
+if [[ -n "$icons_used" ]]; then
+  echo "ОШИБКА: один значок у нескольких панелей — в полосе они неразличимы:"
+  printf '%s\n' "$icons_used" | sed 's/^/  /'
+  status=1
+fi
+
+[[ $status -eq 0 ]] && echo "UI-гейт: тонкие скроллы на месте (наши панели + правка платформы), обходов VibeScroll нет; значки на месте и различимы"
 exit $status

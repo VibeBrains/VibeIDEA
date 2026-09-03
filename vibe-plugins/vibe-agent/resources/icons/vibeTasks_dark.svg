@@ -1,4 +1,4 @@
 <!-- Copyright 2026 VibeBrains. Use of this source code is governed by the Apache 2.0 license. -->
 <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
-<path d="M8 2.2C8.5 5.7 9.6 6.9 13.3 8 9.6 9.1 8.5 10.3 8 13.8 7.5 10.3 6.4 9.1 2.7 8 6.4 6.9 7.5 5.7 8 2.2Z" fill="#6C707E"/>
+<circle cx="8" cy="8" r="6" stroke="#CED0D6" stroke-width="1"/><path d="M8 4.6V8l2.4 1.7" stroke="#CED0D6" stroke-width="1" stroke-linecap="round" stroke-linejoin="round"/>
 </svg>
