@@ -44,7 +44,7 @@ open class VibeIdeaProperties(communityHomeDir: Path) : IdeaCommunityProperties(
         "intellij.xpath",
         //   JSONPath — what HTTP-client variables and JSON tooling are written against.
         "intellij.jsonpath",
-        "intellij.vibe.lsp", "intellij.vibe.agent", "intellij.vibe.theme", "intellij.vibe.server", "intellij.vibe.http",
+        "intellij.vibe.lsp", "intellij.vibe.agent", "intellij.vibe.theme", "intellij.vibe.server", "intellij.vibe.http", "intellij.vibe.db",
       )
 
     // Everything we bundle that is NOT a JPS library: the report is generated from library
@@ -82,6 +82,7 @@ open class VibeIdeaProperties(communityHomeDir: Path) : IdeaCommunityProperties(
       PluginLayout.pluginAuto("intellij.vibe.theme") {},
       PluginLayout.pluginAuto("intellij.vibe.server") {},
       PluginLayout.pluginAuto("intellij.vibe.http") {},
+      PluginLayout.pluginAuto("intellij.vibe.db") {},
     )
   }
 

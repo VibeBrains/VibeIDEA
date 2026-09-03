@@ -1,0 +1,13 @@
+<idea-plugin>
+  <id>com.vibe.db</id>
+  <name>Vibe Database</name>
+  <vendor>VibeBrains</vendor>
+  <description><![CDATA[
+    Databases next to the code: connections described in .vibe/dataSources.json, an object tree,
+    a SQL console and a result table. Passwords never live in the file — they go to the system
+    keychain.
+  ]]></description>
+  <depends>com.intellij.modules.platform</depends>
+  <!-- Каталог строк общий для всех наших плагинов (решение владельца 2026-08-30). -->
+  <depends>com.vibe.agent</depends>
+</idea-plugin>
