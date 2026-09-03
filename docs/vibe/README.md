@@ -22,6 +22,7 @@
 - [manuals/httpApiSpec.md](manuals/httpApiSpec.md) — спека входящего HTTP API (loopback + Bearer): как дёрнуть агента из CI/бота/крона (самодостаточная, для LLM).
 - [manuals/mcpSpec.md](manuals/mcpSpec.md) — спека MCP-сервера в IDE: адрес, версии протокола, инструменты, ошибки (самодостаточная, для LLM).
 - [manuals/httpClientSpec.md](manuals/httpClientSpec.md) — спека формата `.http` и окружений: как писать запросы и чем они выполняются (самодостаточная, для LLM).
+- [manuals/dataSourcesSpec.md](manuals/dataSourcesSpec.md) — спека `.vibe/dataSources.json`: подключения к БД, драйверы, пределы панели (самодостаточная, для LLM).
 - [manuals/acpSmoke.md](manuals/acpSmoke.md) — ручной чек-лист живого прогона ACP (12 шагов): то, что подделкой агента не проверить.
 - [manuals/languageServers.md](manuals/languageServers.md) — как поставить vtsls/Phpactor для TS/PHP.
 - [manuals/acpAgentsSpec.md](manuals/acpAgentsSpec.md) — спека реестра ACP-агентов `~/.jetbrains/acp.json` (самодостаточная, для LLM).

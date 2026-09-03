@@ -21,6 +21,7 @@ LIGHT = "#6C707E"
 DARK = "#CED0D6"
 AGENT = "vibe-plugins/vibe-agent/resources/icons"
 HTTP = "vibe-plugins/vibe-http/resources/icons"
+DB = "vibe-plugins/vibe-db/resources/icons"
 SERVER = "vibe-plugins/vibe-server/resources/icons"
 HEADER = "<!-- Copyright 2026 VibeBrains. Use of this source code is governed by the Apache 2.0 license. -->"
 
@@ -65,6 +66,16 @@ ICONS = {
         '<path d="M8 4.6V8l2.4 1.7" stroke="{C}" stroke-width="1" stroke-linecap="round" stroke-linejoin="round"/>',
         '<circle cx="10" cy="10" r="7.5" stroke="{C}" stroke-width="1.4"/>'
         '<path d="M10 5.7V10l3 2.1" stroke="{C}" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>',
+    ),
+    # База данных: цилиндр. Самая узнаваемая метафора в отрасли — её и берём, чтобы панель
+    # находили глазами без чтения подписи.
+    "vibeDb": (DB,
+        '<ellipse cx="8" cy="4" rx="5" ry="2.1" stroke="{C}" stroke-width="1"/>'
+        '<path d="M3 4v8c0 1.2 2.2 2.1 5 2.1s5-.9 5-2.1V4" stroke="{C}" stroke-width="1" stroke-linecap="round"/>'
+        '<path d="M3 8c0 1.2 2.2 2.1 5 2.1s5-.9 5-2.1" stroke="{C}" stroke-width="1"/>',
+        '<ellipse cx="10" cy="5" rx="6.5" ry="2.7" stroke="{C}" stroke-width="1.4"/>'
+        '<path d="M3.5 5v10c0 1.5 2.9 2.7 6.5 2.7s6.5-1.2 6.5-2.7V5" stroke="{C}" stroke-width="1.4" stroke-linecap="round"/>'
+        '<path d="M3.5 10c0 1.5 2.9 2.7 6.5 2.7s6.5-1.2 6.5-2.7" stroke="{C}" stroke-width="1.4"/>',
     ),
     # HTTP-клиент: стрелки туда и обратно — запрос ушёл, ответ пришёл.
     "vibeHttp": (HTTP,

@@ -10,4 +10,10 @@
   <depends>com.intellij.modules.platform</depends>
   <!-- Каталог строк общий для всех наших плагинов (решение владельца 2026-08-30). -->
   <depends>com.vibe.agent</depends>
+
+  <extensions defaultExtensionNs="com.intellij">
+    <toolWindow id="БД" anchor="right" icon="/icons/vibeDb.svg"
+                factoryClass="com.vibe.db.ui.VibeDbToolWindowFactory" doNotActivateOnStart="true"/>
+    <notificationGroup id="Vibe Database" displayType="BALLOON"/>
+  </extensions>
 </idea-plugin>
