@@ -18,10 +18,9 @@ VERSION="${1:-}"
 # Версия в «О программе» обязана совпадать с тегом. Разойтись им ничего не мешает — это два разных
 # файла, — а расхождение обнаруживает пользователь, который в issue пишет не ту версию, что стоит.
 INFO=vibeidea-customization/resources/idea/VibeIdeaApplicationInfo.xml
-XML_MAJOR=$(grep -o 'major="[0-9]*"' "$INFO" | head -1 | tr -dc '0-9')
-XML_MINOR=$(grep -o 'minor="[0-9]*"' "$INFO" | head -1 | tr -dc '0-9')
-XML_MICRO=$(grep -o 'micro="[0-9]*"' "$INFO" | head -1 | tr -dc '0-9')
-XML_VERSION="${XML_MAJOR}.${XML_MINOR}.${XML_MICRO:-0}"
+# Читаем именно full: major/minor кодируют линию платформы (иначе сборка падает), а версия
+# продукта живёт в full — это то, что видно в «О программе».
+XML_VERSION=$(grep -o 'full="[^"]*"' "$INFO" | head -1 | sed 's/full="//; s/"//')
 if [ "${VERSION#v}" != "$XML_VERSION" ]; then
   echo "✖ версия в «О программе» ($XML_VERSION) не совпадает с выпускаемой (${VERSION#v})."
   echo "  Поправьте $INFO — иначе установленная сборка будет называть себя чужим номером."

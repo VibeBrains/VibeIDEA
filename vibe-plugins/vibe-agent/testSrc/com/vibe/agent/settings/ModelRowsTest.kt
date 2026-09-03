@@ -49,8 +49,12 @@ class ModelRowsTest {
 
   @Test
   fun counterSwitchesToFoundOverTotalWhileSearching() {
-    assertEquals("(12)", ModelRows.counter(found = 12, totalAfterActives = 12, searching = false))
-    assertEquals("(3/12)", ModelRows.counter(found = 3, totalAfterActives = 12, searching = true))
+    // Дробь только когда что-то скрыто: «(24/24)» — шум, который учатся не читать, и на его фоне
+    // теряется «(3/24)», ради которого счётчик и нужен.
+    assertEquals("(12)", ModelRows.counter(shown = 12, total = 12))
+    assertEquals("(3/12)", ModelRows.counter(shown = 3, total = 12))
+    // Знаменатель — ВСЕ модели провайдера: «0 из 109» и есть ответ на «почему список пуст».
+    assertEquals("(0/109)", ModelRows.counter(shown = 0, total = 109))
   }
 
   @Test

@@ -50,6 +50,16 @@ object ModelRows {
     tokens.all { hay.lowercase().contains(it) }
 
   /** Group header counter: «(N)» normally, «(X/Y)» while searching (found / total-after-actives-filter). */
-  fun counter(found: Int, totalAfterActives: Int, searching: Boolean): String =
-    if (searching) "($found/$totalAfterActives)" else "($totalAfterActives)"
+  /**
+   * Счётчик в заголовке группы: «сколько видно из скольких есть».
+   *
+   * Раньше показывалось одно число — сколько видно, — и оно врало по умолчанию: с включённым
+   * фильтром «только активные» человек видел «(3)» у провайдера, где моделей сто девять, и не имел
+   * ни одного повода заподозрить, что список неполон. Дробь отвечает сразу на оба вопроса: сколько
+   * показано и почему это не всё.
+   *
+   * Когда ничего не скрыто, дроби нет: «(24/24)» — это шум, который учатся не читать, и на его фоне
+   * теряется «(3/24)», ради которого счётчик и существует.
+   */
+  fun counter(shown: Int, total: Int): String = if (shown == total) "($total)" else "($shown/$total)"
 }

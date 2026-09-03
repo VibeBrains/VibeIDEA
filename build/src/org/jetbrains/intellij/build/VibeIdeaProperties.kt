@@ -109,14 +109,44 @@ open class VibeIdeaProperties(communityHomeDir: Path) : IdeaCommunityProperties(
     // not break against ours.
     val servers = context.paths.communityHomeDir.resolve("vibe-plugins/deps/extracted/servers")
     check(Files.isDirectory(servers)) { "Bundled servers dir not found: $servers — run vibe-plugins/deps/download.sh first" }
-    copyDir(servers, targetDirectory.resolve("plugins/vibe-lsp/servers"))
+    // Фильтр мусора не косметика: сборщик в самом конце проверяет дистрибутив на «junk files» и
+    // падает на `.DS_Store`, которые macOS насыпает в любую папку, открытую в Finder. Артефакт к
+    // этому моменту уже создан — то есть неудачу легко принять за успех, а собранное окажется
+    // непроверенным. Чинить в download.sh недостаточно: Finder создаёт их в любой момент после.
+    copyDir(servers, targetDirectory.resolve("plugins/vibe-lsp/servers"), fileFilter = { path ->
+      val name = path.fileName.toString()
+      name != ".DS_Store" && !name.startsWith("._") && name != "Thumbs.db"
+    })
   }
 
-  override fun getBaseArtifactName(appInfo: ApplicationInfoProperties, buildNumber: String): String = "vibeIdea-$buildNumber"
+  /**
+   * Имя артефакта несёт версию ПРОДУКТА, а не линию платформы.
+   *
+   * Было `vibeIdea-$buildNumber` — калька с апстримного `ideaIC-$buildNumber`, где номер сборки и
+   * есть версия продукта. У форка это два разных числа, и скачанный `vibeIdea-263.SNAPSHOT.dmg`
+   * не отвечал на единственный вопрос, который к имени файла и задают: какая это версия. Линия
+   * платформы никуда не исчезает — она внутри, в номере сборки, и её печатает диагностика.
+   *
+   * Имя продукта — как он называется: `VibeIDEA-0.3.0.win.zip`. Строчное `vibeIdea` осталось от
+   * апстримного `ideaIC`, где так пишется идентификатор, а не имя; в zip лежит портативная версия,
+   * и человек видит это имя раньше всего остального.
+   */
+  override fun getBaseArtifactName(appInfo: ApplicationInfoProperties, buildNumber: String): String =
+    "VibeIDEA-" + appInfo.fullVersion
 
-  override fun getSystemSelector(appInfo: ApplicationInfoProperties, buildNumber: String): String {
-    return "VibeIdea${appInfo.majorVersion}.${appInfo.minorVersionMainPart}"
-  }
+  /**
+   * Каталог настроек НЕ привязан к версии — намеренно.
+   *
+   * Апстримная формула (`VibeIdea<major>.<minor>`) разводит настройки по версиям, и у JetBrains это
+   * работает вместе с мастером переноса при первом запуске новой версии. У нас такого мастера нет,
+   * поэтому та же формула означала бы «каждый выпуск начинается с чистых настроек» — человек
+   * решил бы, что обновление стёрло его конфигурацию, и был бы прав по последствиям.
+   *
+   * Пока нет переноса — селектор стабильный. Когда появится (или когда сломается совместимость
+   * настроек), сюда вернётся версия, и это будет осознанным решением, а не побочным эффектом
+   * смены номера в другом файле.
+   */
+  override fun getSystemSelector(appInfo: ApplicationInfoProperties, buildNumber: String): String = "VibeIdea"
 
   override fun getOutputDirectoryName(appInfo: ApplicationInfoProperties): String = "vibeidea"
 

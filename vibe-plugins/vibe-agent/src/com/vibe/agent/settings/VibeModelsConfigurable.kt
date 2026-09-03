@@ -62,6 +62,9 @@ class VibeModelsConfigurable(private val project: Project) : Configurable, Confi
   private val activesOnly = JBCheckBox(t("settings.models.activesOnly"), true).apply {
     toolTipText = t("settings.models.activesOnlyTooltip")
   }
+  /** «Показано N из M» — строка над списком; при включённом фильтре объясняет, почему N меньше. */
+  private val totalHint = JBLabel("").apply { foreground = com.intellij.ui.JBColor.GRAY }
+
   private var listPanel: JPanel? = null
   private var uiDisposable: Disposable? = null
   /** Держится на время нашей же публикации топика: Apply не должен перезапускать эту страницу. */
@@ -97,12 +100,17 @@ class VibeModelsConfigurable(private val project: Project) : Configurable, Confi
     rebuild(refreshCatalogs = true)
     return JPanel(BorderLayout(0, JBUI.scale(6))).apply {
       border = JBUI.Borders.empty(8)
-      add(JPanel(BorderLayout(JBUI.scale(8), 0)).apply {
-        add(search, BorderLayout.CENTER)
+      add(JPanel(BorderLayout(0, JBUI.scale(4))).apply {
         add(JPanel(BorderLayout(JBUI.scale(8), 0)).apply {
-          add(activesOnly, BorderLayout.CENTER)
-          add(refreshAll, BorderLayout.EAST)
-        }, BorderLayout.EAST)
+          add(search, BorderLayout.CENTER)
+          add(JPanel(BorderLayout(JBUI.scale(8), 0)).apply {
+            add(activesOnly, BorderLayout.CENTER)
+            add(refreshAll, BorderLayout.EAST)
+          }, BorderLayout.EAST)
+        }, BorderLayout.NORTH)
+        // Под поиском, а не в подсказке: подсказку читают, когда уже заподозрили неладное, а
+        // вопрос «а где остальные модели» возникает при первом же открытии страницы.
+        add(totalHint, BorderLayout.SOUTH)
       }, BorderLayout.NORTH)
       add(com.vibe.agent.ui.VibeScroll.pane(TracksViewportWidthPanel(list)), BorderLayout.CENTER)
     }
@@ -209,7 +217,9 @@ class VibeModelsConfigurable(private val project: Project) : Configurable, Confi
       val found = afterActives.filter { ModelRows.matches(it.hay, tokens) }
       for (r in groupRows) r.box.isVisible = r in found
       val chevron = if (searching || group.expanded) "▾" else "▸"
-      group.header.text = "$chevron  ${group.name}  ${ModelRows.counter(found.size, afterActives.size, searching)}"
+      // Знаменатель — ВСЕ модели провайдера, а не оставшиеся после фильтра: вопрос, на который
+      // отвечает счётчик, звучит «сколько их вообще», и ответ «3 из 3» на сотне моделей — ложь.
+      group.header.text = "$chevron  ${group.name}  ${ModelRows.counter(found.size, groupRows.size)}"
       group.header.toolTipText = t("settings.models.totalCount", "count" to groupRows.size)
       // While searching: only groups with matches are visible and they are force-expanded;
       // otherwise the manual collapsed/expanded state rules (collapsed by default).
@@ -217,6 +227,14 @@ class VibeModelsConfigurable(private val project: Project) : Configurable, Confi
       group.body.isVisible = if (searching) true else group.expanded
       group.filteredOutHint.isVisible = !searching && activesOnly.isSelected && groupRows.isNotEmpty() && afterActives.isEmpty()
     }
+    // Итог по всей странице: у одного провайдера «3 из 24» ещё можно не заметить, а строка над
+    // списком отвечает на вопрос, который задают при первом открытии, — «а где остальные».
+    val shown = rows.count { it.box.isVisible }
+    val total = rows.size
+    totalHint.text = if (activesOnly.isSelected && shown < total)
+      t("settings.models.shownOfTotalActives", "shown" to shown, "total" to total)
+    else t("settings.models.shownOfTotal", "shown" to shown, "total" to total)
+    totalHint.isVisible = total > 0
     listPanel?.revalidate(); listPanel?.repaint()
   }
 

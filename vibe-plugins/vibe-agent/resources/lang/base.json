@@ -120,6 +120,8 @@
   "settings.models.show": "Показать в списке",
   "settings.models.hidden": "Скрыт из списка",
   "settings.models.totalCount": "{count} всего",
+  "settings.models.shownOfTotal": "Показано {shown} из {total} моделей.",
+  "settings.models.shownOfTotalActives": "Показано {shown} из {total} моделей: включён фильтр «только активные». Каталоги провайдеров содержат десятки и сотни моделей — список без фильтра нечитаем, поэтому по умолчанию видно то, что вы включили.",
   "settings.models.asking": "запрашиваю каталог моделей…",
   "settings.models.fromCache": "каталог из кэша ({age}) — обновляю…",
   "settings.models.fetchDisabled": "модели заданы в файле (fetch: false)",

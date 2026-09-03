@@ -120,6 +120,8 @@
   "settings.models.show": "Shown in the picker",
   "settings.models.hidden": "Hidden from the picker",
   "settings.models.totalCount": "{count} total",
+  "settings.models.shownOfTotal": "Showing {shown} of {total} models.",
+  "settings.models.shownOfTotalActives": "Showing {shown} of {total} models: the «active only» filter is on. Provider catalogues hold dozens or hundreds of models — the unfiltered list is unreadable, so by default you see the ones you enabled.",
   "settings.models.asking": "asking for the model catalogue…",
   "settings.models.fromCache": "catalogue from cache ({age}) — refreshing…",
   "settings.models.fetchDisabled": "models are declared in the file (fetch: false)",
