@@ -13,7 +13,10 @@
 
   <extensions defaultExtensionNs="com.intellij">
     <fileType name="VibeHttpRequest" implementationClass="com.vibe.http.HttpFileType" fieldName="INSTANCE"
-              language="TEXT" extensions="http;rest"/>
+              language="VibeHttp" extensions="http;rest"/>
+    <lang.parserDefinition language="VibeHttp" implementationClass="com.vibe.http.HttpParserDefinition"/>
+    <lang.syntaxHighlighterFactory language="VibeHttp" implementationClass="com.vibe.http.HttpSyntaxHighlighterFactory"/>
+    <codeInsight.lineMarkerProvider language="VibeHttp" implementationClass="com.vibe.http.ui.HttpRunLineMarker"/>
     <toolWindow id="HTTP" anchor="right" icon="/icons/vibeHttp.svg"
                 factoryClass="com.vibe.http.ui.VibeHttpToolWindowFactory" doNotActivateOnStart="true"/>
     <notificationGroup id="Vibe HTTP" displayType="BALLOON"/>

@@ -1490,5 +1490,6 @@
   "db.updated": "Изменено строк: {count} · {ms} мс",
   "db.connectFailed": "Не подключиться к {source}: {reason}",
   "db.metaFailed": "Не прочитать список таблиц: {reason}",
-  "db.queryFailed": "Запрос не выполнен: {reason}"
+  "db.queryFailed": "Запрос не выполнен: {reason}",
+  "http.gutter.run": "Выполнить: {request}"
 }

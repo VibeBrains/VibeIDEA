@@ -1490,5 +1490,6 @@
   "db.updated": "Rows changed: {count} · {ms} ms",
   "db.connectFailed": "Cannot connect to {source}: {reason}",
   "db.metaFailed": "Cannot read the table list: {reason}",
-  "db.queryFailed": "The query failed: {reason}"
+  "db.queryFailed": "The query failed: {reason}",
+  "http.gutter.run": "Run: {request}"
 }
