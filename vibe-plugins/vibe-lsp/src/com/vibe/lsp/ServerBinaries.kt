@@ -34,10 +34,14 @@ internal object ServerBinaries {
    * container folder, a checkout built from source. For those the rule silently did not apply.
    */
   fun find(binary: String): String? {
-    val fromPath = System.getenv("PATH")?.split(java.io.File.pathSeparator).orEmpty()
-      .asSequence().map { Path.of(it, binary) }.firstOrNull { Files.isExecutable(it) }
-    if (fromPath != null) return fromPath.toString()
-    return EXTRA_DIRS.asSequence().map { it.resolve(binary) }.firstOrNull { Files.isExecutable(it) }?.toString()
+    val dirs = System.getenv("PATH")?.split(java.io.File.pathSeparator).orEmpty().map { Path.of(it) } + EXTRA_DIRS
+    // Порядок ВНЕШНИЙ — по именам, а не по каталогам: на Windows в одной папке с `npx.cmd` лежит
+    // `npx` для Git Bash, и обход «сначала все имена в первой папке» выбрал бы файл для чужой
+    // оболочки. CreateProcess отвечает на это «error=193», не называя причины.
+    for (name in com.vibe.agent.util.ExecutableNames.candidates(binary)) {
+      dirs.asSequence().map { it.resolve(name) }.firstOrNull { Files.isExecutable(it) }?.let { return it.toString() }
+    }
+    return null
   }
 
   // Falls back to the bare name: the failure to start then names exactly what is missing.

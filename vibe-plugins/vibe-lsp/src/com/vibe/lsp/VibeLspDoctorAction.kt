@@ -23,7 +23,7 @@ class VibeLspDoctorAction : AnAction({ t("lsp.doctor.action") }) {
       appendLine()
       for (check in checks) {
         appendLine(line(check))
-        if (!check.installed) appendLine("    " + check.spec.installCommand)
+        if (!check.installed) appendLine("    " + LspDoctor.installCommandFor(check.spec))
         // A setting that stopped applying without a word is worse than one that never applied:
         // the person keeps debugging the server instead of the path they typed months ago.
         ServerPaths.broken(check.spec.id)?.let { appendLine("    " + t("doctor.lsp.brokenPath", "path" to it)) }
@@ -41,7 +41,7 @@ class VibeLspDoctorAction : AnAction({ t("lsp.doctor.action") }) {
           if (check.installed) t("lsp.doctor.installed", "server" to check.spec.displayName, "path" to check.path)
           else t("lsp.doctor.missing", "server" to check.spec.displayName, "binary" to check.spec.binary)
         )
-        if (!check.installed) appendLine("    " + check.spec.installCommand)
+        if (!check.installed) appendLine("    " + LspDoctor.installCommandFor(check.spec))
       }
       appendLine()
       appendLine(t("lsp.doctor.debugSetup"))

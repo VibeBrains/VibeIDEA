@@ -37,14 +37,14 @@ class VibeLspMissingServerNotifier(private val project: Project) : FileEditorMan
     NotificationGroupManager.getInstance().getNotificationGroup(GROUP)
       .createNotification(
         t("lsp.missing.title", "server" to spec.displayName),
-        t("lsp.missing.body", "binary" to spec.binary, "command" to spec.installCommand),
+        t("lsp.missing.body", "binary" to spec.binary, "command" to LspDoctor.installCommandFor(spec)),
         NotificationType.WARNING,
       )
       .addAction(NotificationAction.createSimple(t("lsp.missing.install")) {
         install(project, spec)
       })
       .addAction(NotificationAction.createSimple(t("lsp.missing.copyCommand")) {
-        CopyPasteManager.getInstance().setContents(StringSelection(spec.installCommand))
+        CopyPasteManager.getInstance().setContents(StringSelection(LspDoctor.installCommandFor(spec)))
       })
       .addAction(NotificationAction.createSimple(t("lsp.missing.mute")) {
         properties.setValue(KEY_MUTED, true)
@@ -60,11 +60,11 @@ class VibeLspMissingServerNotifier(private val project: Project) : FileEditorMan
    * debug when it is not.
    */
   private fun install(project: Project, spec: LspDoctor.ServerSpec) {
-    if (!ServerInstall.isOfferable(spec.installCommand)) return
+    if (!ServerInstall.isOfferable(LspDoctor.installCommandFor(spec))) return
     com.intellij.openapi.application.ApplicationManager.getApplication().executeOnPooledThread {
       val terminals = com.vibe.agent.terminal.AgentTerminalService(project.basePath)
       val result = runCatching {
-        val shell = ServerInstall.shellCommand(spec.installCommand)
+        val shell = ServerInstall.shellCommand(LspDoctor.installCommandFor(spec))
         val id = terminals.create(shell.first(), shell.drop(1), emptyMap(), project.basePath, null)
         val status = terminals.waitForExit(id)
         val output = terminals.output(id)?.output.orEmpty()

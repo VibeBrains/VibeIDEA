@@ -26,6 +26,14 @@ object LspDoctor {
     val binary: String,
     /** Copy-pasteable, one line, no sudo — the answer to "so what do I do now?". */
     val installCommand: String,
+    /**
+     * То же для Windows, когда unix-однострочник там не выполним.
+     *
+     * `curl` и `tar` в Windows 10 есть, а `mkdir -p`, `unzip` и `~/` — нет. Команда, которая
+     * гарантированно падает, хуже отсутствующей: человек делает вывод, что сломана возможность,
+     * а не инструкция. Null означает «та же команда работает везде».
+     */
+    val installCommandWindows: String? = null,
     /** Extensions this server is mapped onto — used to ask about it only when it is relevant. */
     val extensions: Set<String>,
   )
@@ -56,6 +64,11 @@ object LspDoctor {
     installCommand = "mkdir -p ~/.local/bin && curl -Lo ~/.local/bin/phpactor " +
                      "https://github.com/phpactor/phpactor/releases/latest/download/phpactor.phar && " +
                      "chmod +x ~/.local/bin/phpactor",
+    // На Windows phar кладётся туда, где его найдёт наш резолвер, и chmod не нужен: право на
+    // исполнение там не файловый бит.
+    installCommandWindows = "powershell -Command \"New-Item -ItemType Directory -Force ${'$'}env:USERPROFILE\\.local\\bin | Out-Null; " +
+                            "Invoke-WebRequest -UseBasicParsing https://github.com/phpactor/phpactor/releases/latest/download/phpactor.phar " +
+                            "-OutFile ${'$'}env:USERPROFILE\\.local\\bin\\phpactor.phar\"",
     extensions = setOf("php"),
   )
 
@@ -100,6 +113,12 @@ object LspDoctor {
                      "$(curl -s https://api.github.com/repos/microsoft/vscode-js-debug/releases/latest " +
                      "| grep -o 'https[^\"]*js-debug-dap[^\"]*tar.gz') " +
                      "| tar -xz -C ~/.lsp4ij/dap/vibeJsDebug",
+    installCommandWindows = "powershell -Command \"${'$'}d=\\\"${'$'}env:USERPROFILE\\.lsp4ij\\dap\\vibeJsDebug\\\"; " +
+                            "New-Item -ItemType Directory -Force ${'$'}d | Out-Null; " +
+                            "${'$'}u=(Invoke-RestMethod https://api.github.com/repos/microsoft/vscode-js-debug/releases/latest).assets " +
+                            "| Where-Object name -like 'js-debug-dap-*.tar.gz' | Select-Object -First 1 -ExpandProperty browser_download_url; " +
+                            "Invoke-WebRequest -UseBasicParsing ${'$'}u -OutFile ${'$'}env:TEMP\\js-debug.tar.gz; " +
+                            "tar -xzf ${'$'}env:TEMP\\js-debug.tar.gz -C ${'$'}d\"",
     extensions = setOf("ts", "tsx", "js", "jsx", "mjs", "cjs"),
   )
 
@@ -114,6 +133,12 @@ object LspDoctor {
                      "$(curl -s https://api.github.com/repos/xdebug/vscode-php-debug/releases/latest " +
                      "| grep -o 'https[^\"]*vsix') -o /tmp/php-debug.vsix && " +
                      "unzip -oq /tmp/php-debug.vsix -d ~/.lsp4ij/dap/vibePhpDebug",
+    installCommandWindows = "powershell -Command \"${'$'}d=\\\"${'$'}env:USERPROFILE\\.lsp4ij\\dap\\vibePhpDebug\\\"; " +
+                            "New-Item -ItemType Directory -Force ${'$'}d | Out-Null; " +
+                            "${'$'}u=(Invoke-RestMethod https://api.github.com/repos/xdebug/vscode-php-debug/releases/latest).assets " +
+                            "| Where-Object name -like '*.vsix' | Select-Object -First 1 -ExpandProperty browser_download_url; " +
+                            "Invoke-WebRequest -UseBasicParsing ${'$'}u -OutFile ${'$'}env:TEMP\\php-debug.zip; " +
+                            "Expand-Archive -Path ${'$'}env:TEMP\\php-debug.zip -DestinationPath ${'$'}d -Force\"",
     extensions = setOf("php"),
   )
 
@@ -179,6 +204,10 @@ object LspDoctor {
     VTSLS.id, CSS.id, ESLINT.id, JS_DEBUG.id, PHP_DEBUG.id -> "node"
     else -> null
   }
+
+  /** Команда установки для ЭТОЙ системы — та, которую можно скопировать и выполнить. */
+  fun installCommandFor(spec: ServerSpec, windows: Boolean = com.vibe.agent.util.ExecutableNames.isWindows()): String =
+    if (windows) spec.installCommandWindows ?: spec.installCommand else spec.installCommand
 
   /** The server responsible for a file, or null when the file is none of our business. */
   fun serverFor(fileName: String, specs: List<ServerSpec> = ALL): ServerSpec? {

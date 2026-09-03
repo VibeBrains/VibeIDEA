@@ -37,7 +37,11 @@ object ServerInstall {
    * application on macOS inherits neither the shell PATH nor nvm's — the very trap that makes
    * ServerBinaries probe well-known directories by hand.
    */
-  fun shellCommand(command: String): List<String> = listOf("/bin/sh", "-lc", command)
+  fun shellCommand(command: String): List<String> =
+    if (com.vibe.agent.util.ExecutableNames.isWindows())
+      // На Windows /bin/sh нет вовсе: кнопка «Поставить» падала бы с «Cannot run program».
+      listOf(System.getenv("COMSPEC") ?: "cmd.exe", "/d", "/s", "/c", command)
+    else listOf("/bin/sh", "-lc", command)
 
   /** The part of the output worth showing when it failed: the end, where the reason usually is. */
   fun failureTail(output: String, limit: Int = 400): String =

@@ -371,9 +371,15 @@ class AcpClient(
     ).joinToString(File.pathSeparator)
 
     internal fun resolveBinary(binary: String): String {
-      if (binary.contains('/')) return binary
+      if (com.vibe.agent.util.ExecutableNames.looksLikePath(binary)) return binary
       val dirs = (System.getenv("PATH")?.split(File.pathSeparator).orEmpty()) + EXTRA_PATH.split(File.pathSeparator)
-      return dirs.asSequence().map { Path.of(it, binary) }.firstOrNull { Files.isExecutable(it) }?.toString() ?: binary
+      // Имена с расширением идут первыми: на Windows рядом с `npx.cmd` лежит `npx` — скрипт для
+      // Git Bash, который `Files.isExecutable` считает исполняемым, а CreateProcess не запускает
+      // («error=193, не является приложением Win32»). Поймано на живой машине.
+      for (name in com.vibe.agent.util.ExecutableNames.candidates(binary)) {
+        dirs.asSequence().map { Path.of(it, name) }.firstOrNull { Files.isExecutable(it) }?.let { return it.toString() }
+      }
+      return binary
     }
   }
 }
