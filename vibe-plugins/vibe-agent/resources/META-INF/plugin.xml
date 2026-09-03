@@ -26,6 +26,9 @@
                 icon="/icons/vibeAgent.svg" doNotActivateOnStart="true"/>
     <toolWindow id="VibeAgent" anchor="right" factoryClass="com.vibe.agent.ui.VibeAgentToolWindowFactory" icon="/icons/vibeAgent.svg"/>
     <notificationGroup id="Vibe Agent" displayType="BALLOON"/>
+    <!-- Блок версий в «О программе»: версия продукта, платформа, коммит — через точку расширения
+         платформы, без патча диалога. -->
+    <aboutPopupDescriptionProvider implementation="com.vibe.agent.product.VibeAboutPopupDescriptionProvider"/>
     <!-- Адреса продукта (метаданные обновлений, страница загрузки, баг-репорты) — наши, а не
          апстрима. Единственная точка расширения платформы для этого; патч платформы не нужен. -->
     <applicationService serviceInterface="com.intellij.platform.ide.customization.ExternalProductResourceUrls"

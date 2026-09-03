@@ -1444,5 +1444,9 @@
   "chat.voice.noMicrophone": "[voice] microphone unavailable: {reason}",
   "chat.voice.noTranscriber": "[voice] no transcriber on this machine. Install whisper: pip install -U openai-whisper (or brew install whisper-cpp)",
   "chat.voice.transcribing": "[voice] transcribing…",
-  "chat.voice.empty": "[voice] nothing intelligible in the recording"
+  "chat.voice.empty": "[voice] nothing intelligible in the recording",
+  "about.version": "Version",
+  "about.platform": "Platform",
+  "about.build": "build",
+  "about.revision": "Commit"
 }

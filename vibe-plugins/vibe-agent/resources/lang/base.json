@@ -1444,5 +1444,9 @@
   "chat.voice.noMicrophone": "[голос] микрофон недоступен: {reason}",
   "chat.voice.noTranscriber": "[голос] на машине нет расшифровщика. Поставьте whisper: pip install -U openai-whisper (или brew install whisper-cpp)",
   "chat.voice.transcribing": "[голос] расшифровываю…",
-  "chat.voice.empty": "[голос] в записи не разобрано ни слова"
+  "chat.voice.empty": "[голос] в записи не разобрано ни слова",
+  "about.version": "Версия",
+  "about.platform": "Платформа",
+  "about.build": "сборка",
+  "about.revision": "Коммит"
 }

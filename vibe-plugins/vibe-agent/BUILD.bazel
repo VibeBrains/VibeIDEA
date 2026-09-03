@@ -48,6 +48,8 @@ jvm_library(
         "//platform/lang-impl",
         "//platform/lang-api:lang",
         "//platform/platform-impl:ide-impl",
+        # About dialog: the git revision of the build lives in product-info custom properties.
+        "//platform/buildData:buildData",
         "//platform/util/text-matching",
         "//json/backend",
     ],
