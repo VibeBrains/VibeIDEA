@@ -1533,5 +1533,13 @@
   "db.problem.duplicateId": "this id already exists",
   "db.problem.password": "password in the file",
   "http.action.importCurl": "Paste cURL as a request",
-  "http.importCurl.notCurl": "The clipboard holds no curl command. Copy one from the docs, a ticket or the browser Network tab («Copy as cURL») and try again."
+  "http.importCurl.notCurl": "The clipboard holds no curl command. Copy one from the docs, a ticket or the browser Network tab («Copy as cURL») and try again.",
+  "http.annotate.unresolved": "Variable {name} will not be substituted: it is neither in the chosen environment nor in the file variables",
+  "http.annotate.unknownDynamic": "Unknown dynamic value {name}. Known ones: {known}",
+  "http.action.fromOpenApi": "VibeIDEA: build requests from OpenAPI",
+  "http.openApi.choose": "Choose openapi.json",
+  "http.openApi.notSpec": "«{file}» does not look like an OpenAPI description: a JSON with an openapi or swagger field is expected. YAML is not read — download the JSON («Download» next to the schema in Swagger UI).",
+  "http.openApi.writeFailed": "Could not write {name} next to the description",
+  "http.openApi.header": "Generated from OpenAPI. The server address lives in http-client.env.json.",
+  "http.openApi.server": "The description says the server is: {url}"
 }

@@ -44,6 +44,9 @@ class CsvExportTest {
   @Test
   fun `имя файла собирается из запроса и не содержит мусора`() {
     assertEquals("SELECT-FROM-users.csv", CsvExport.fileName("SELECT * FROM users\nWHERE id = 1"))
+    // Буквы ЛЮБОГО языка остаются: правило про \p{L}, а не про две азбуки, — иначе имя таблицы
+    // на греческом или иврите превращалось бы в череду дефисов.
+    assertEquals("SELECT-из-таблицы.csv", CsvExport.fileName("SELECT из таблицы"))
     assertEquals("result.csv", CsvExport.fileName("   \n"))
     assertTrue(CsvExport.fileName("a".repeat(100)).length <= 44)
   }

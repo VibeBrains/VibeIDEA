@@ -17,6 +17,8 @@
     <lang.parserDefinition language="VibeHttp" implementationClass="com.vibe.http.HttpParserDefinition"/>
     <lang.syntaxHighlighterFactory language="VibeHttp" implementationClass="com.vibe.http.HttpSyntaxHighlighterFactory"/>
     <codeInsight.lineMarkerProvider language="VibeHttp" implementationClass="com.vibe.http.ui.HttpRunLineMarker"/>
+    <completion.contributor language="VibeHttp" implementationClass="com.vibe.http.ui.HttpVariableCompletion"/>
+    <annotator language="VibeHttp" implementationClass="com.vibe.http.ui.HttpVariableAnnotator"/>
     <toolWindow id="HTTP" anchor="right" icon="/icons/vibeHttp.svg"
                 factoryClass="com.vibe.http.ui.VibeHttpToolWindowFactory" doNotActivateOnStart="true"/>
     <applicationConfigurable parentId="com.vibe.settings" displayName="HTTP-клиент" id="com.vibe.http.settings"
@@ -25,6 +27,9 @@
   </extensions>
 
   <actions>
+    <action id="Vibe.Http.FromOpenApi" class="com.vibe.http.ui.VibeHttpFromOpenApiAction" icon="AllIcons.Actions.Download">
+      <add-to-group group-id="ToolsMenu" anchor="last"/>
+    </action>
     <action id="Vibe.Http.ImportCurl" class="com.vibe.http.ui.VibeHttpImportCurlAction" icon="AllIcons.Actions.Download">
       <add-to-group group-id="EditorPopupMenu" anchor="first"/>
     </action>

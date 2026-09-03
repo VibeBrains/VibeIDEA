@@ -40,7 +40,12 @@ class HttpPanel(private val project: Project) : JPanel(BorderLayout()) {
   private val list: JBList<HttpRequestFile.Request> = JBList(requests).apply {
     cellRenderer = com.intellij.ui.SimpleListCellRenderer.create("") { it.title }
   }
-  private val environment = ComboBox<String>().apply { toolTipText = t("http.environment.hint") }
+  private val environment = ComboBox<String>().apply {
+    toolTipText = t("http.environment.hint")
+    // Выбор запоминается: он терялся при перезапуске IDE, и следующий запрос уходил в dev,
+    // пока человек был уверен, что работает с продом.
+    addActionListener { (selectedItem as? String)?.let { com.vibe.http.HttpEnvironmentChoice.set(project, it) } }
+  }
   private val runButton = JButton(t("http.run"), AllIcons.Actions.Execute).apply {
     isEnabled = false
     addActionListener { runSelected() }
@@ -145,24 +150,18 @@ class HttpPanel(private val project: Project) : JPanel(BorderLayout()) {
   }
 
   private fun fillEnvironments() {
-    val root = project.basePath?.let { runCatching { Path.of(it) }.getOrNull() }
-    val found = HttpEnvironments.locate(currentDir, root)
-    val names = HttpEnvironments.read(found).keys.sorted()
-    val previous = environment.selectedItem as? String
+    val names = com.vibe.http.HttpEnvironmentChoice.names(project, currentDir)
+    val previous = com.vibe.http.HttpEnvironmentChoice.get(project) ?: environment.selectedItem as? String
     environment.removeAllItems()
     names.forEach(environment::addItem)
+    // Исчезнувшее окружение не залипает: сохранённое имя без файла откатывается на первое по
+    // алфавиту, иначе панель предлагала бы то, чего нет.
     HttpEnvironments.choose(names.toSet(), previous)?.let { environment.selectedItem = it }
   }
 
-  private fun variables(): Map<String, String> {
-    val root = project.basePath?.let { runCatching { Path.of(it) }.getOrNull() }
-    val environments = HttpEnvironments.read(HttpEnvironments.locate(currentDir, root))
-    val chosen = environment.selectedItem as? String
-    val fromFile = FileEditorManager.getInstance(project).selectedTextEditor
-      ?.let { HttpRequestFile.parse(it.document.text).variables }.orEmpty()
-    // Переменные файла сильнее окружения: их пишут рядом с запросом именно затем, чтобы перекрыть.
-    return environments[chosen].orEmpty() + fromFile
-  }
+  /** Одно место сборки переменных на панель, подсказки и подсветку — иначе они разойдутся. */
+  private fun variables(): Map<String, String> = com.vibe.http.HttpEnvironmentChoice.variables(
+    project, currentDir, FileEditorManager.getInstance(project).selectedTextEditor?.document?.text)
 
   private fun runSelected() {
     val request = list.selectedValue ?: return

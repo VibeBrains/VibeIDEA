@@ -1533,5 +1533,13 @@
   "db.problem.duplicateId": "такой id уже есть",
   "db.problem.password": "пароль в файле",
   "http.action.importCurl": "Вставить cURL как запрос",
-  "http.importCurl.notCurl": "В буфере обмена нет команды curl. Скопируйте её из документации, тикета или вкладки «Network» браузера («Copy as cURL») и повторите."
+  "http.importCurl.notCurl": "В буфере обмена нет команды curl. Скопируйте её из документации, тикета или вкладки «Network» браузера («Copy as cURL») и повторите.",
+  "http.annotate.unresolved": "Переменная {name} не подставится: её нет ни в выбранном окружении, ни в переменных файла",
+  "http.annotate.unknownDynamic": "Неизвестное динамическое значение {name}. Известны: {known}",
+  "http.action.fromOpenApi": "VibeIDEA: собрать запросы из OpenAPI",
+  "http.openApi.choose": "Выберите openapi.json",
+  "http.openApi.notSpec": "«{file}» не похож на описание OpenAPI: нужен JSON с полем openapi или swagger. YAML не читаем — скачайте JSON («Download» рядом со схемой в Swagger UI).",
+  "http.openApi.writeFailed": "Не удалось записать файл {name} рядом с описанием",
+  "http.openApi.header": "Сгенерировано из OpenAPI. Адрес сервера — в окружении http-client.env.json.",
+  "http.openApi.server": "По описанию сервер: {url}"
 }

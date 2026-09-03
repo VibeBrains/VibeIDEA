@@ -51,7 +51,7 @@ object CsvExport {
   /** Имя файла по умолчанию: без пробелов и без даты, которую всё равно покажет файловая система. */
   fun fileName(query: String): String {
     val base = query.lineSequence().firstOrNull { it.isNotBlank() }.orEmpty()
-      .replace(Regex("[^A-Za-z0-9А-Яа-я_-]+"), "-")
+      .replace(Regex("[^\\p{L}\\p{N}_-]+"), "-")
       .trim('-')
       .take(40)
       .ifEmpty { "result" }
