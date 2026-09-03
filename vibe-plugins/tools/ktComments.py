@@ -14,6 +14,23 @@ def strip_comments(text: str) -> str:
     i, n = 0, len(text)
     while i < n:
         ch = text[i]
+        if ch == "'":
+            # Символьный литерал. Пропускать его нельзя: в коде встречается '"' — двойная кавычка
+            # ВНУТРИ символа, — и без этой ветки она открывает мнимую строку, после чего весь
+            # остаток файла разбирается наперекосяк (гейт локализации ловил «литерал» в комментарии).
+            j = i + 1
+            if j < n and text[j] == '\\':
+                j += 2
+            else:
+                j += 1
+            if j < n and text[j] == "'":
+                out.append(text[i:j + 1])
+                i = j + 1
+                continue
+            # Не символьный литерал (например, апостроф в тексте) — обычный символ.
+            out.append(ch)
+            i += 1
+            continue
         if ch == '"':
             # Raw string: no escapes inside, ends at the next triple quote.
             if text.startswith('"""', i):
@@ -33,8 +50,20 @@ def strip_comments(text: str) -> str:
             i = n if end == -1 else end
             continue
         if text.startswith('/*', i):
-            end = text.find('*/', i + 2)
-            i = n if end == -1 else end + 2
+            # Блочные комментарии в Kotlin ВЛОЖЕННЫЕ, и это не экзотика: любой KDoc, где упомянут
+            # «/* */», закрывался бы на этом упоминании, а остаток текста считался бы кодом —
+            # ровно так гейт локализации однажды нашёл «русский литерал» внутри комментария.
+            depth = 1
+            i += 2
+            while i < n and depth:
+                if text.startswith('/*', i):
+                    depth += 1
+                    i += 2
+                elif text.startswith('*/', i):
+                    depth -= 1
+                    i += 2
+                else:
+                    i += 1
             continue
         out.append(ch)
         i += 1
