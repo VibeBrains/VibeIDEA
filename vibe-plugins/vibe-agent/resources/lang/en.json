@@ -1491,5 +1491,12 @@
   "db.connectFailed": "Cannot connect to {source}: {reason}",
   "db.metaFailed": "Cannot read the table list: {reason}",
   "db.queryFailed": "The query failed: {reason}",
-  "http.gutter.run": "Run: {request}"
+  "http.gutter.run": "Run: {request}",
+  "db.export": "Export CSV",
+  "db.export.title": "Export result",
+  "db.export.description": "Where to save the CSV",
+  "db.exported": "Rows exported: {count} → {path}",
+  "db.exportFailed": "Export failed: {reason}",
+  "http.copyCurl": "Copy as cURL",
+  "http.copied": "Command copied"
 }

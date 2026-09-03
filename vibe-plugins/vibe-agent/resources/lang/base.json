@@ -1491,5 +1491,12 @@
   "db.connectFailed": "Не подключиться к {source}: {reason}",
   "db.metaFailed": "Не прочитать список таблиц: {reason}",
   "db.queryFailed": "Запрос не выполнен: {reason}",
-  "http.gutter.run": "Выполнить: {request}"
+  "http.gutter.run": "Выполнить: {request}",
+  "db.export": "Выгрузить CSV",
+  "db.export.title": "Выгрузка результата",
+  "db.export.description": "Куда сохранить CSV",
+  "db.exported": "Выгружено строк: {count} → {path}",
+  "db.exportFailed": "Не удалось выгрузить: {reason}",
+  "http.copyCurl": "Копировать как cURL",
+  "http.copied": "Команда скопирована"
 }

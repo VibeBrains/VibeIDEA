@@ -37,14 +37,31 @@ import javax.swing.SwingUtilities
  */
 class HttpPanel(private val project: Project) : JPanel(BorderLayout()) {
   private val requests = DefaultListModel<HttpRequestFile.Request>()
-  private val list = JBList(requests).apply {
+  private val list: JBList<HttpRequestFile.Request> = JBList(requests).apply {
     cellRenderer = com.intellij.ui.SimpleListCellRenderer.create("") { it.title }
-    addListSelectionListener { runButton.isEnabled = selectedValue != null }
   }
   private val environment = ComboBox<String>().apply { toolTipText = t("http.environment.hint") }
   private val runButton = JButton(t("http.run"), AllIcons.Actions.Execute).apply {
     isEnabled = false
     addActionListener { runSelected() }
+  }
+
+  /**
+   * «Копировать как cURL» — в Postman одна из самых нажимаемых кнопок: запрос уходит в тикет,
+   * в документацию, коллеге в мессенджер. Переменные подставляются, потому что команда нужна
+   * рабочая, а не с «{{host}}» посередине.
+   */
+  private val curlButton = JButton(t("http.copyCurl"), AllIcons.Actions.Copy).apply {
+    isEnabled = false
+    addActionListener {
+      val request = list.selectedValue ?: return@addActionListener
+      val (applied, unresolved) = HttpVariables.apply(request, variables()) { dynamic(it) }
+      com.intellij.openapi.ide.CopyPasteManager.getInstance()
+        .setContents(java.awt.datatransfer.StringSelection(com.vibe.http.CurlConversion.toCurl(applied)))
+      statusLine.foreground = JBColor.foreground()
+      statusLine.text = if (unresolved.isEmpty()) t("http.copied")
+      else t("http.copied") + "  ·  " + t("http.unresolved", "names" to unresolved.joinToString { "{{${it.name}}}" })
+    }
   }
   private val statusLine = JBLabel(" ").apply { border = JBUI.Borders.empty(4, 8) }
   private val bodyView = area()
@@ -58,12 +75,19 @@ class HttpPanel(private val project: Project) : JPanel(BorderLayout()) {
   private var currentDir: Path? = null
 
   init {
+    // Слушатель здесь, а не в объявлении списка: кнопки объявлены ниже, и ссылка на них из
+    // инициализатора списка — рекурсия для вывода типов.
+    list.addListSelectionListener {
+      runButton.isEnabled = list.selectedValue != null
+      curlButton.isEnabled = list.selectedValue != null
+    }
     val top = JPanel(BorderLayout()).apply {
       border = JBUI.Borders.empty(4)
       add(JPanel(java.awt.FlowLayout(java.awt.FlowLayout.LEFT, 6, 0)).apply {
         add(JBLabel(t("http.environment")))
         add(environment)
         add(runButton)
+        add(curlButton)
         add(JButton(t("http.reload"), AllIcons.Actions.Refresh).apply { addActionListener { reload() } })
       }, BorderLayout.WEST)
     }

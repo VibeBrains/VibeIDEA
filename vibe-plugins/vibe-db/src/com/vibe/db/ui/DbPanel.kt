@@ -15,6 +15,7 @@ import com.intellij.util.ui.JBUI
 import com.vibe.agent.i18n.VibeI18n.t
 import com.vibe.agent.ui.VibeScroll
 import com.vibe.db.DataSources
+import com.vibe.db.CsvExport
 import com.vibe.db.DbCatalog
 import com.vibe.db.QueryLimit
 import com.vibe.db.SqlStatements
@@ -72,6 +73,15 @@ class DbPanel(private val project: Project) : JPanel(BorderLayout()) {
   /** Схемы, как их вернула база: дерево строится из них, поиск только фильтрует показ. */
   private var schemas: List<DbCatalog.Schema> = emptyList()
 
+  /** Последний показанный результат — его и выгружаем; выгружать «то, что в таблице» нечего иначе. */
+  private var lastTable: com.vibe.db.ResultTable.Table? = null
+  private var lastQuery: String = ""
+
+  private val exportButton = JButton(t("db.export"), AllIcons.ToolbarDecorator.Export).apply {
+    isEnabled = false
+    addActionListener { exportCsv() }
+  }
+
   init {
     val top = JPanel(FlowLayout(FlowLayout.LEFT, 6, 4)).apply {
       add(JBLabel(t("db.source")))
@@ -87,6 +97,7 @@ class DbPanel(private val project: Project) : JPanel(BorderLayout()) {
       add(VibeScroll.pane(console), BorderLayout.CENTER)
       add(JPanel(FlowLayout(FlowLayout.LEFT, 6, 2)).apply {
         add(JButton(t("db.run"), AllIcons.Actions.Execute).apply { addActionListener { runConsole() } })
+        add(exportButton)
         add(JBLabel(t("db.run.hint")).apply { foreground = JBColor.GRAY })
       }, BorderLayout.SOUTH)
     }
@@ -179,8 +190,28 @@ class DbPanel(private val project: Project) : JPanel(BorderLayout()) {
     execute(statement.text)
   }
 
+  /**
+   * Выгружает показанное в CSV.
+   *
+   * Именно показанное, а не «повторим запрос и выгрузим»: между показом и нажатием данные могли
+   * измениться, и человек получил бы файл, не совпадающий с тем, на что он смотрел.
+   */
+  private fun exportCsv() {
+    val table = lastTable ?: return
+    val descriptor = com.intellij.openapi.fileChooser.FileSaverDescriptor(
+      t("db.export.title"), t("db.export.description"), "csv")
+    val dialog = com.intellij.openapi.fileChooser.FileChooserFactory.getInstance()
+      .createSaveFileDialog(descriptor, project)
+    val target = dialog.save(null as com.intellij.openapi.vfs.VirtualFile?, CsvExport.fileName(lastQuery)) ?: return
+    val text = CsvExport.render(table, nullText = "", binaryText = { t("db.binary", "bytes" to it) })
+    runCatching { Files.writeString(target.file.toPath(), text) }
+      .onSuccess { statusLine.text = t("db.exported", "path" to target.file.path, "count" to table.rowCount) }
+      .onFailure { fail(t("db.exportFailed", "reason" to (it.message ?: ""))) }
+  }
+
   private fun execute(sql: String) {
     val source = source() ?: return
+    lastQuery = sql
     statusLine.foreground = JBColor.foreground()
     statusLine.text = t("db.running")
     ApplicationManager.getApplication().executeOnPooledThread {
@@ -197,6 +228,8 @@ class DbPanel(private val project: Project) : JPanel(BorderLayout()) {
   private fun show(outcome: JdbcSession.Outcome) {
     when (outcome) {
       is JdbcSession.Outcome.Rows -> {
+        lastTable = outcome.table
+        exportButton.isEnabled = outcome.table.rowCount > 0
         val model = ResultTableModel(outcome.table)
         results.model = model
         // Ширина по содержимому: таблица должна открываться уже читаемой, а не после ручной подгонки.
@@ -210,6 +243,8 @@ class DbPanel(private val project: Project) : JPanel(BorderLayout()) {
         else t("db.rows", "count" to outcome.table.rowCount, "ms" to outcome.elapsedMs)
       }
       is JdbcSession.Outcome.Updated -> {
+        lastTable = null
+        exportButton.isEnabled = false
         results.model = javax.swing.table.DefaultTableModel()
         statusLine.foreground = JBColor.foreground()
         statusLine.text = t("db.updated", "count" to outcome.count, "ms" to outcome.elapsedMs)
