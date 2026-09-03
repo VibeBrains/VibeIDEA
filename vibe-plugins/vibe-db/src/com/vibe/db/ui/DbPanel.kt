@@ -18,6 +18,7 @@ import com.vibe.db.DataSources
 import com.vibe.db.DbCatalog
 import com.vibe.db.QueryLimit
 import com.vibe.db.SqlStatements
+import com.vibe.db.JdbcSession
 import com.vibe.db.VibeDbService
 import java.awt.BorderLayout
 import java.awt.Dimension
@@ -193,9 +194,9 @@ class DbPanel(private val project: Project) : JPanel(BorderLayout()) {
     }
   }
 
-  private fun show(outcome: VibeDbService.Outcome) {
+  private fun show(outcome: JdbcSession.Outcome) {
     when (outcome) {
-      is VibeDbService.Outcome.Rows -> {
+      is JdbcSession.Outcome.Rows -> {
         val model = ResultTableModel(outcome.table)
         results.model = model
         // Ширина по содержимому: таблица должна открываться уже читаемой, а не после ручной подгонки.
@@ -208,12 +209,12 @@ class DbPanel(private val project: Project) : JPanel(BorderLayout()) {
           t("db.rowsTruncated", "count" to outcome.table.rowCount, "ms" to outcome.elapsedMs)
         else t("db.rows", "count" to outcome.table.rowCount, "ms" to outcome.elapsedMs)
       }
-      is VibeDbService.Outcome.Updated -> {
+      is JdbcSession.Outcome.Updated -> {
         results.model = javax.swing.table.DefaultTableModel()
         statusLine.foreground = JBColor.foreground()
         statusLine.text = t("db.updated", "count" to outcome.count, "ms" to outcome.elapsedMs)
       }
-      is VibeDbService.Outcome.Failed -> fail(t("db.queryFailed", "reason" to outcome.message))
+      is JdbcSession.Outcome.Failed -> fail(t("db.queryFailed", "reason" to outcome.message))
     }
   }
 

@@ -53,6 +53,10 @@ jvm_library(
         "@lib//:kotlin-test-junit5",
         "//libraries/junit5",
         "//libraries/junit5:junit5_test_lib",
+        # Драйвер SQLite уже есть в дереве (им пользуется platform/sqlite) — берём ТОЛЬКО в тесты:
+        # это единственный способ проверить слой JDBC на настоящей базе, не требуя ни сети, ни
+        # сервера, ни установки чего-либо на машину проверяющего.
+        "@lib//:libraries-sqlite-sqlite",
     ],
     visibility = ["//visibility:public"],
     runtime_deps = [
