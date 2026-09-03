@@ -110,6 +110,12 @@ SERVERS="$APP_PLUGINS/vibe-lsp/servers"
 # Задачи и трекеры как в PhpStorm: платформа даёт только ядро Tasks & Contexts, а Open Task и трекеры
 # приезжают плагином intellij.tasks.core — его отсутствие снаружи выглядит как «в IDE нет задач».
 [ -d "$APP_PLUGINS/tasks" ] || { say "✖ нет плагина задач (plugins/tasks) — Open Task и трекеры не появятся"; fail=1; }
+# Плагины PhpStorm-паритета, которые лежали в дереве невключёнными: .env, XPath/XSLT, JSONPath.
+# Имена каталогов — из МОДУЛЯ, а не из папки исходников: intellij.dotenv едет в plugins/dotenv,
+# а не в plugins/env-files-support. Проверено сборкой 03.09.2026 (гейт на этом и поймал ошибку).
+for p in dotenv xpath jsonpath; do
+  [ -d "$APP_PLUGINS/$p" ] || { say "✖ нет плагина $p — он есть в дереве, но не попал в дистрибутив"; fail=1; }
+done
 [ -f "$SERVERS/phpactor.phar" ] || { say "✖ нет встроенного phpactor.phar"; fail=1; }
 [ -f "$SERVERS/phpactor-LICENSE" ] || { say "✖ нет текста лицензии рядом с phar (MIT требует)"; fail=1; }
 # Windows-выключатель проверки Box едет рядом с phar: без него на Windows сервер не стартует.

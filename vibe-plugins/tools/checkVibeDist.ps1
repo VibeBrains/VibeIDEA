@@ -82,6 +82,9 @@ try {
     if (-not (Test-Path (Join-Path $app 'plugins\tasks'))) {
         Fail '✖ нет плагина задач (plugins\tasks) — Open Task и трекеры не появятся'
     }
+    foreach ($p in @('dotenv', 'xpath', 'jsonpath')) {
+        if (-not (Test-Path (Join-Path $app "plugins\$p"))) { Fail "✖ нет плагина $p — он есть в дереве, но не попал в дистрибутив" }
+    }
 
     # --- 4. Языковые серверы в комплекте ---
     $servers = Join-Path $app 'plugins\vibe-lsp\servers'

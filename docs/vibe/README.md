@@ -34,6 +34,7 @@
 - [manuals/auditSpec.md](manuals/auditSpec.md) — спека журнала `.vibe/audit.jsonl`: формат записей аудита агента (для парсеров/дашбордов).
 - [releaseDonationPhrases.md](releaseDonationPhrases.md) — фразы блока «Поддержать проект» в релизах: пул, отложенные, история использования.
 - [references/releaseNotes-v0.1.0.md](references/releaseNotes-v0.1.0.md) — заметки первого релиза: образец оформления, на который равняются следующие.
+- [references/phpstormParity.md](references/phpstormParity.md) — разбор паритета с PhpStorm: что включено, что проприетарно, что писать самим (03.09.2026).
 - [references/digest20260831.md](references/digest20260831.md) — разбор внешнего дайджеста 31.08.2026: фолбэк при отзыве доступа к модели, подстановка секретов, навыки как пакет, режимы отказа агентов, сравнение моделей; бэклог с приоритетами.
 - [references/releaseNotes-v0.3.0.md](references/releaseNotes-v0.3.0.md) — заметки к релизу v0.3.0: честный расход, управляемая фоновая работа, кэш под контролем.
 - [references/releaseNotes-v0.2.0.md](references/releaseNotes-v0.2.0.md) — заметки к релизу v0.2.0 (образец оформления: разделы с эмодзи, обход неподписанной сборки, «чего пока нет», блок поддержки).

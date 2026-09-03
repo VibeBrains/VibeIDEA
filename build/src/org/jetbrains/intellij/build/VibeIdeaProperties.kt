@@ -33,6 +33,17 @@ open class VibeIdeaProperties(communityHomeDir: Path) : IdeaCommunityProperties(
         // tracker. The platform ships only the Tasks&Contexts core; this is the plugin that adds
         // the part a person actually uses, and it is community code with a layout already written.
         "intellij.tasks.core",
+        // Three more community plugins that sit in this repository unbundled while PhpStorm ships
+        // them. A module without an explicit PluginLayout gets pluginAuto (DistributionJARsBuilder
+        // :554), so a line each is the whole change.
+        //   .env — in every PHP project; JetBrains took the plugin over and bundles it since
+        //   PhpStorm 2024.3.2, and it stayed open source (MIT, plugins/env-files-support/LICENSE).
+        "intellij.dotenv",
+        //   XPath/XSLT — PhpStorm documents it as present; the layout is already written
+        //   (CommunityRepositoryModules.kt:84).
+        "intellij.xpath",
+        //   JSONPath — what HTTP-client variables and JSON tooling are written against.
+        "intellij.jsonpath",
         "intellij.vibe.lsp", "intellij.vibe.agent", "intellij.vibe.theme", "intellij.vibe.server",
       )
 
