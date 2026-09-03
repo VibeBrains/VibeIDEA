@@ -14,6 +14,8 @@
   <extensions defaultExtensionNs="com.intellij">
     <toolWindow id="БД" anchor="right" icon="/icons/vibeDb.svg"
                 factoryClass="com.vibe.db.ui.VibeDbToolWindowFactory" doNotActivateOnStart="true"/>
+    <applicationConfigurable parentId="com.vibe.settings" displayName="Базы данных" id="com.vibe.db.settings"
+                             instance="com.vibe.db.ui.VibeDbConfigurable"/>
     <notificationGroup id="Vibe Database" displayType="BALLOON"/>
   </extensions>
 </idea-plugin>

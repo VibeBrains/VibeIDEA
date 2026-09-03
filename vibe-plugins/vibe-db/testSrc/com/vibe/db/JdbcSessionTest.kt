@@ -141,4 +141,14 @@ class JdbcSessionTest {
   fun `несуществующий jar — отказ с причиной, а не падение`() {
     assertTrue(session.driver("/нет/такого.jar", null).isFailure)
   }
+
+  @Test
+  fun `сессия работает без запущенной IDE — значения по умолчанию не читают настройки`() {
+    // Регрессия 03.09.2026: дефолты execute() были переведены на DbSettings, и все проверки на
+    // настоящей базе упали вне IDE. Настройки подставляет проектный сервис, а не сессия.
+    withDatabase { connection ->
+      val rows = session.execute(connection, "SELECT 1") as JdbcSession.Outcome.Rows
+      assertEquals(1, rows.table.rowCount)
+    }
+  }
 }

@@ -97,5 +97,46 @@ for path in sorted(glob.glob(root + '/vibe-plugins/*/resources/META-INF/plugin.x
 PYWIN
 )
 
+# 7. Токены темы: каждый namedColor("Vibe.*") обязан быть объявлен в vibeNeonDark.theme.json.
+#    Незаявленный токен НЕ ошибка компиляции и НЕ видна глазами: код молча берёт запасной цвет,
+#    и тема просто не красит эту панель. Найдено ревизией 03.09.2026 — шесть таких токенов.
+python3 - "$root" <<'PYTOKENS' || status=1
+import collections, io, json, os, re, sys
+root = sys.argv[1]
+theme = json.load(io.open(os.path.join(root, 'vibe-plugins/vibe-theme/resources/vibeNeonDark.theme.json'), encoding='utf-8'),
+                  object_pairs_hook=collections.OrderedDict)
+
+def flat(obj, prefix=''):
+    out = {}
+    for key, value in obj.items():
+        full = prefix + key
+        if isinstance(value, dict):
+            out.update(flat(value, full + '.'))
+        else:
+            out[full] = value
+    return out
+
+declared = set(flat({'Vibe': theme['ui'].get('Vibe', {})}))
+used = set()
+for base, _, files in os.walk(os.path.join(root, 'vibe-plugins')):
+    if os.sep + 'src' + os.sep not in base + os.sep:
+        continue
+    for name in files:
+        if name.endswith('.kt'):
+            text = io.open(os.path.join(base, name), encoding='utf-8').read()
+            used |= set(re.findall(r'namedColor\("(Vibe\.[^"]+)"', text))
+missing = sorted(used - declared)
+dead = sorted(declared - used)
+if missing:
+    print('ОШИБКА: токены темы, которые зовёт код, но не объявляет тема (панель не перекрасится):')
+    for key in missing:
+        print('  ' + key)
+if dead:
+    print('ОШИБКА: токены объявлены в теме, но никем не используются — мёртвый цвет:')
+    for key in dead:
+        print('  ' + key)
+sys.exit(1 if (missing or dead) else 0)
+PYTOKENS
+
 [[ $status -eq 0 ]] && echo "UI-гейт: тонкие скроллы на месте (наши панели + правка платформы), обходов VibeScroll нет; значки на месте и различимы"
 exit $status

@@ -9,10 +9,8 @@ package com.vibe.db
  * его нет, а решение принимается по тексту, который мы сами и составили.
  */
 object QueryLimit {
-  const val PREVIEW_ROWS = 200
-
   /** Запрос «покажи таблицу» — его составляем мы, поэтому и кавычки ставим сами. */
-  fun preview(table: String, schema: String?, rows: Int = PREVIEW_ROWS): String {
+  fun preview(table: String, schema: String?, rows: Int = DbSettings.DEFAULT_PREVIEW_ROWS): String {
     val name = if (schema.isNullOrBlank()) quote(table) else "${quote(schema)}.${quote(table)}"
     return "SELECT * FROM $name LIMIT $rows"
   }

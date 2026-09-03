@@ -21,21 +21,23 @@ class VibeHttpService(private val project: Project) {
   /** Куки хранятся в памяти процесса: сессия живёт до перезапуска IDE и не утекает в файлы. */
   private val cookies = java.net.CookieManager(null, java.net.CookiePolicy.ACCEPT_ORIGINAL_SERVER)
 
-  private val client: HttpClient by lazy {
-    HttpClient.newBuilder()
-      .connectTimeout(Duration.ofSeconds(10))
-      .followRedirects(HttpClient.Redirect.NORMAL)
-      .cookieHandler(cookies)
-      .build()
-  }
+  /**
+   * Клиенты пересобираются, когда меняются настройки: держать один навсегда значило бы, что
+   * изменённый таймаут применится только после перезапуска IDE, и человек решит, что настройка
+   * не работает.
+   */
+  private var cached: Triple<Int, Boolean, HttpClient>? = null
 
-  /** Клиент без переходов по 3xx — для запросов с пометкой `# @no-redirect`. */
-  private val clientNoRedirect: HttpClient by lazy {
-    HttpClient.newBuilder()
-      .connectTimeout(Duration.ofSeconds(10))
-      .followRedirects(HttpClient.Redirect.NEVER)
+  private fun client(followRedirects: Boolean): HttpClient {
+    val timeout = HttpSettings.connectTimeoutSeconds
+    cached?.let { (seconds, redirects, client) -> if (seconds == timeout && redirects == followRedirects) return client }
+    val client = HttpClient.newBuilder()
+      .connectTimeout(Duration.ofSeconds(timeout.toLong()))
+      .followRedirects(if (followRedirects) HttpClient.Redirect.NORMAL else HttpClient.Redirect.NEVER)
       .cookieHandler(cookies)
       .build()
+    cached = Triple(timeout, followRedirects, client)
+    return client
   }
 
   sealed interface Result {
@@ -47,12 +49,13 @@ class VibeHttpService(private val project: Project) {
 
   /** Блокирует поток; вызывать только из фонового. */
   fun send(request: HttpRequestFile.Request, baseDir: Path?): Result {
-    return when (val prepared = HttpCall.prepare(request, baseDir)) {
+    return when (val prepared = HttpCall.prepare(request, baseDir, HttpSettings.requestTimeoutSeconds)) {
       is HttpCall.Prepared.Refused -> Result.Refused(prepared)
       is HttpCall.Prepared.Ready -> {
         val started = System.nanoTime()
         try {
-          val http = if (request.noRedirect) clientNoRedirect else client
+          // Пометка запроса сильнее настройки: она про этот запрос, настройка — про остальные.
+          val http = client(followRedirects = !request.noRedirect && HttpSettings.followRedirects)
           val response = http.send(prepared.request, HttpResponse.BodyHandlers.ofByteArray())
           val body = response.body() ?: ByteArray(0)
           val elapsed = (System.nanoTime() - started) / 1_000_000

@@ -13,6 +13,11 @@ import java.util.Properties
 /**
  * Всё общение с базой — и ни одной зависимости от IDE.
  *
+ * Значения по умолчанию здесь — КОНСТАНТЫ, а не настройки: чтение настроек требует запущенного
+ * приложения, и стоило поставить сюда `DbSettings.previewRows`, как тесты на настоящей базе
+ * перестали работать вне IDE. Настройки подставляет [VibeDbService] — он и есть край, где
+ * появляется окружение.
+ *
  * Отдельно от [VibeDbService] ровно затем, чтобы это можно было проверить на настоящей базе:
  * сервису нужен проект (ради связки ключей), а проверять надо не связку, а подключение, чтение
  * метаданных и разбор результата. Тест на временном файле SQLite делает это без сети и сервера.
@@ -61,8 +66,8 @@ class JdbcSession {
   fun execute(
     connection: Connection,
     sql: String,
-    maxRows: Int = QueryLimit.PREVIEW_ROWS,
-    timeoutSeconds: Int = 30,
+    maxRows: Int = DbSettings.DEFAULT_PREVIEW_ROWS,
+    timeoutSeconds: Int = DbSettings.DEFAULT_QUERY_TIMEOUT_SECONDS,
   ): Outcome {
     val started = System.nanoTime()
     return try {

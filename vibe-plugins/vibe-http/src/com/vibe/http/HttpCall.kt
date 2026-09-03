@@ -18,8 +18,6 @@ object HttpCall {
   /** Заголовки, которые запрещает подменять сам `java.net.http` — выставляет их он. */
   private val RESTRICTED = setOf("connection", "content-length", "expect", "host", "upgrade")
 
-  const val DEFAULT_TIMEOUT_SECONDS = 30
-
   sealed interface Prepared {
     data class Ready(val request: HttpRequest, val bodyBytes: Int) : Prepared
     /** Почему запрос нельзя отправить — кодом, фразу собирает интерфейс. */
@@ -50,7 +48,7 @@ object HttpCall {
   fun prepare(
     request: HttpRequestFile.Request,
     baseDir: Path?,
-    defaultTimeoutSeconds: Int = DEFAULT_TIMEOUT_SECONDS,
+    defaultTimeoutSeconds: Int = HttpSettings.DEFAULT_REQUEST_TIMEOUT_SECONDS,
   ): Prepared {
     val target = request.target.trim()
     Regex("\\{\\{[^{}]+}}").find(target)?.let {

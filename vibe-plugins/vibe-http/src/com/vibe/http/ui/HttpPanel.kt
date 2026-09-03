@@ -128,7 +128,19 @@ class HttpPanel(private val project: Project) : JPanel(BorderLayout()) {
     currentDir = runCatching { Path.of(file.parent.path) }.getOrNull()
     val parsed = HttpRequestFile.parse(editor.document.text)
     parsed.requests.forEach(requests::addElement)
-    statusLine.text = t("http.requestsFound", "count" to parsed.requests.size)
+    // Находки разбора называются вслух: до ревизии 03.09.2026 они считались и молча выбрасывались,
+    // то есть человек с опечаткой в заголовке видел «запросов: 3» и никакого намёка на четвёртый.
+    statusLine.foreground = JBColor.foreground()
+    statusLine.text = if (parsed.problems.isEmpty()) t("http.requestsFound", "count" to parsed.requests.size)
+    else t("http.requestsFoundWithProblems", "count" to parsed.requests.size,
+           "problems" to parsed.problems.joinToString("; ") { problem ->
+             val what = when (problem.trouble) {
+               HttpRequestFile.Trouble.NOT_A_REQUEST -> t("http.problem.notARequest")
+               HttpRequestFile.Trouble.NOT_A_HEADER -> t("http.problem.notAHeader")
+               HttpRequestFile.Trouble.TIMEOUT_NOT_A_NUMBER -> t("http.problem.timeout")
+             }
+             t("http.problem.at", "line" to (problem.line + 1), "what" to what)
+           })
     fillEnvironments()
   }
 

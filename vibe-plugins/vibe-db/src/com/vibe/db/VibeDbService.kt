@@ -34,8 +34,9 @@ class VibeDbService(private val project: Project) {
   /** Блокирует поток; вызывать только из фонового. */
   fun connect(source: DataSources.DataSource): Result<Connection> = session.connect(source, password(source))
 
-  fun execute(connection: Connection, sql: String, maxRows: Int = QueryLimit.PREVIEW_ROWS): JdbcSession.Outcome =
-    session.execute(connection, sql, maxRows)
+  /** Настройки подставляются ЗДЕСЬ: [JdbcSession] обязан остаться работоспособным без приложения. */
+  fun execute(connection: Connection, sql: String, maxRows: Int = DbSettings.previewRows): JdbcSession.Outcome =
+    session.execute(connection, sql, maxRows, DbSettings.queryTimeoutSeconds)
 
   fun tables(connection: Connection): List<DbCatalog.Table> = session.tables(connection)
 

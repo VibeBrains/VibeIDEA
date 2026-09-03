@@ -64,6 +64,7 @@ class HttpCallTest {
     val ready = HttpCall.prepare(request("# @timeout 5\nGET https://e.com/a"), null) as HttpCall.Prepared.Ready
     assertEquals(5, ready.request.timeout().get().seconds)
     val default = HttpCall.prepare(request("GET https://e.com/a"), null) as HttpCall.Prepared.Ready
-    assertEquals(HttpCall.DEFAULT_TIMEOUT_SECONDS.toLong(), default.request.timeout().get().seconds)
+    assertEquals(HttpSettings.DEFAULT_REQUEST_TIMEOUT_SECONDS.toLong(), default.request.timeout().get().seconds,
+                 "по умолчанию берётся значение из настроек, а не константа в коде отправки")
   }
 }

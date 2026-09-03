@@ -127,6 +127,20 @@
         "quoteForeground": "NeonCyanDim",
         "groupForeground": "NeonCyanDim",
         "revealBackground": "SelBg"
+      },
+      "Http": {
+        "success": "#5FAD5F",
+        "redirect": "#E0A030",
+        "error": "#FF6B5A"
+      },
+      "Db": {
+        "error": "#FF6B5A"
+      },
+      "Design": {
+        "floor": "#FF6B5A"
+      },
+      "Runs": {
+        "attention": "#FF6B5A"
       }
     }
   }

@@ -17,6 +17,7 @@ import com.vibe.agent.ui.VibeScroll
 import com.vibe.db.DataSources
 import com.vibe.db.CsvExport
 import com.vibe.db.DbCatalog
+import com.vibe.db.DbSettings
 import com.vibe.db.QueryLimit
 import com.vibe.db.SqlStatements
 import com.vibe.db.JdbcSession
@@ -70,6 +71,12 @@ class DbPanel(private val project: Project) : JPanel(BorderLayout()) {
   private val results = JBTable().apply { autoResizeMode = javax.swing.JTable.AUTO_RESIZE_OFF }
   private val statusLine = JBLabel(" ").apply { border = JBUI.Borders.empty(4, 8) }
 
+  /** Прочитанные столбцы по таблицам — чтобы не спрашивать метаданные на каждое раскрытие. */
+  private val columnsCache = HashMap<DbCatalog.Table, List<DbCatalog.Column>>()
+
+  /** Заглушка «ещё не читали» под таблицей: узел без детей не даёт стрелку раскрытия. */
+  private object LOADING { override fun toString(): String = t("db.loadingColumns") }
+
   /** Схемы, как их вернула база: дерево строится из них, поиск только фильтрует показ. */
   private var schemas: List<DbCatalog.Schema> = emptyList()
 
@@ -77,16 +84,37 @@ class DbPanel(private val project: Project) : JPanel(BorderLayout()) {
   private var lastTable: com.vibe.db.ResultTable.Table? = null
   private var lastQuery: String = ""
 
+  /**
+   * «Пароль…» — без этой кнопки пароль нельзя задать вовсе: в файле его нет по построению,
+   * а связка ключей сама себя не заполнит. Функциональная дыра, найденная ревизией 03.09.2026.
+   */
+  private val passwordButton = JButton(t("db.password"), AllIcons.General.InspectionsEye).apply {
+    addActionListener { askPassword() }
+  }
+
   private val exportButton = JButton(t("db.export"), AllIcons.ToolbarDecorator.Export).apply {
     isEnabled = false
     addActionListener { exportCsv() }
   }
 
   init {
+    // Столбцы читаются по раскрытию узла: на базе с тысячей таблиц читать их сразу — тысяча
+    // запросов к метаданным ради дерева, которое человек не разворачивал.
+    tree.addTreeExpansionListener(object : javax.swing.event.TreeExpansionListener {
+      override fun treeCollapsed(event: javax.swing.event.TreeExpansionEvent) = Unit
+      override fun treeExpanded(event: javax.swing.event.TreeExpansionEvent) {
+        val node = event.path.lastPathComponent as? DefaultMutableTreeNode ?: return
+        val table = node.userObject as? DbCatalog.Table ?: return
+        if (columnsCache.containsKey(table)) return
+        loadColumns(table, node)
+      }
+    })
+
     val top = JPanel(FlowLayout(FlowLayout.LEFT, 6, 4)).apply {
       add(JBLabel(t("db.source")))
       add(sources)
       add(JButton(t("db.reload"), AllIcons.Actions.Refresh).apply { addActionListener { reload() } })
+      add(passwordButton)
     }
     val left = JPanel(BorderLayout()).apply {
       add(search, BorderLayout.NORTH)
@@ -130,13 +158,55 @@ class DbPanel(private val project: Project) : JPanel(BorderLayout()) {
       else -> t("db.sourcesFound", "count" to parsed.sources.size)
     }
     // Пароль в файле — находка, а не мелочь: он уже в репозитории, и сказать об этом надо сразу.
-    parsed.problems.firstOrNull { it.trouble == DataSources.Trouble.PASSWORD_IN_FILE }?.let {
+    // Остальные находки тоже называются: пропущенное подключение без объяснения выглядит как
+    // «инструмент не видит мою базу».
+    val password = parsed.problems.firstOrNull { it.trouble == DataSources.Trouble.PASSWORD_IN_FILE }
+    val others = parsed.problems.filter { it.trouble != DataSources.Trouble.PASSWORD_IN_FILE }
+    if (password != null) {
       statusLine.foreground = JBColor.namedColor("Vibe.Db.error", JBColor(0xDB3B4B, 0xDB5C5C))
-      statusLine.text = t("db.passwordInFile", "source" to it.where, "file" to DataSources.FILE)
+      statusLine.text = t("db.passwordInFile", "source" to password.where, "file" to DataSources.FILE)
+    }
+    else if (others.isNotEmpty()) {
+      statusLine.foreground = JBColor.namedColor("Vibe.Db.error", JBColor(0xDB3B4B, 0xDB5C5C))
+      statusLine.text = t("db.sourceProblems", "problems" to others.joinToString("; ") { problem ->
+        val what = when (problem.trouble) {
+          DataSources.Trouble.NOT_AN_OBJECT -> t("db.problem.notAnObject")
+          DataSources.Trouble.NO_ID -> t("db.problem.noId")
+          DataSources.Trouble.NO_URL -> t("db.problem.noUrl")
+          DataSources.Trouble.DUPLICATE_ID -> t("db.problem.duplicateId")
+          DataSources.Trouble.PASSWORD_IN_FILE -> t("db.problem.password")
+        }
+        t("db.problem.at", "where" to problem.where, "what" to what)
+      })
     }
   }
 
   private fun source(): DataSources.DataSource? = sources.selectedItem as? DataSources.DataSource
+
+  /**
+   * Спрашивает пароль и кладёт его в связку ключей системы.
+   *
+   * Пустой ввод удаляет сохранённый: «оставить как было» и «убрать» — разные желания, и молча
+   * приравнивать первое ко второму значит однажды не дать человеку отозвать пароль.
+   */
+  private fun askPassword() {
+    val source = source() ?: return
+    val service = VibeDbService.getInstance(project)
+    val stored = service.password(source)
+    val entered = com.intellij.openapi.ui.Messages.showPasswordDialog(
+      project,
+      t("db.password.prompt", "source" to source.name, "user" to (source.user ?: "—")),
+      t("db.password.title"),
+      null,
+    ) ?: return
+    service.storePassword(source, entered.takeIf { it.isNotEmpty() })
+    statusLine.foreground = JBColor.foreground()
+    statusLine.text = when {
+      entered.isEmpty() && stored != null -> t("db.password.removed", "source" to source.name)
+      entered.isEmpty() -> t("db.password.none", "source" to source.name)
+      else -> t("db.password.saved", "source" to source.name)
+    }
+  }
 
   private fun loadTree() {
     val source = source() ?: return
@@ -152,7 +222,7 @@ class DbPanel(private val project: Project) : JPanel(BorderLayout()) {
         SwingUtilities.invokeLater { fail(t("db.metaFailed", "reason" to (error.message ?: ""))) }
         return@executeOnPooledThread
       }
-      val grouped = DbCatalog.group(tables)
+      val grouped = DbCatalog.group(tables, DbSettings.showSystemSchemas)
       SwingUtilities.invokeLater {
         schemas = grouped
         refreshTree()
@@ -162,11 +232,33 @@ class DbPanel(private val project: Project) : JPanel(BorderLayout()) {
     }
   }
 
+  private fun loadColumns(table: DbCatalog.Table, node: DefaultMutableTreeNode) {
+    val source = source() ?: return
+    ApplicationManager.getApplication().executeOnPooledThread {
+      val service = VibeDbService.getInstance(project)
+      val connection = service.connect(source).getOrNull() ?: return@executeOnPooledThread
+      val columns = runCatching { connection.use { service.columns(it, table) } }.getOrDefault(emptyList())
+      SwingUtilities.invokeLater {
+        columnsCache[table] = columns
+        node.removeAllChildren()
+        columns.forEach { node.add(DefaultMutableTreeNode(it)) }
+        treeModel.nodeStructureChanged(node)
+      }
+    }
+  }
+
   private fun refreshTree() {
     treeRoot.removeAllChildren()
     for (schema in DbCatalog.filter(schemas, search.text)) {
       val node = DefaultMutableTreeNode(schema.name.ifEmpty { t("db.noSchema") })
-      schema.tables.forEach { node.add(DefaultMutableTreeNode(it)) }
+      schema.tables.forEach { table ->
+        val tableNode = DefaultMutableTreeNode(table)
+        // Столбцы подгружаются по раскрытию узла, а не сразу для всех таблиц: на базе с тысячей
+        // таблиц это тысяча запросов к метаданным ради дерева, которое человек не разворачивал.
+        columnsCache[table]?.forEach { tableNode.add(DefaultMutableTreeNode(it)) }
+          ?: tableNode.add(DefaultMutableTreeNode(LOADING))
+        node.add(tableNode)
+      }
       treeRoot.add(node)
     }
     treeModel.reload()
@@ -176,7 +268,7 @@ class DbPanel(private val project: Project) : JPanel(BorderLayout()) {
   private fun openSelectedTable() {
     val node = tree.lastSelectedPathComponent as? DefaultMutableTreeNode ?: return
     val table = node.userObject as? DbCatalog.Table ?: return
-    val sql = QueryLimit.preview(table.name, table.schema)
+    val sql = QueryLimit.preview(table.name, table.schema, DbSettings.previewRows)
     console.text = sql
     execute(sql)
   }
@@ -187,6 +279,19 @@ class DbPanel(private val project: Project) : JPanel(BorderLayout()) {
       console.text.take(position).count { it == '\n' }
     }
     val statement = SqlStatements.statementAt(statements, line) ?: statements.firstOrNull() ?: return
+    // Изменяющий оператор спрашивает подтверждение: «выполнить» под курсором легко нажать
+    // случайно, а DELETE без WHERE отменить нельзя ничем.
+    if (!SqlStatements.isReadOnly(statement.text)) {
+      val answer = com.intellij.openapi.ui.Messages.showYesNoDialog(
+        project,
+        t("db.confirmWrite.body", "sql" to statement.title, "source" to (source()?.name ?: "")),
+        t("db.confirmWrite.title"),
+        t("db.confirmWrite.yes"),
+        t("db.confirmWrite.no"),
+        AllIcons.General.WarningDialog,
+      )
+      if (answer != com.intellij.openapi.ui.Messages.YES) return
+    }
     execute(statement.text)
   }
 
@@ -233,9 +338,12 @@ class DbPanel(private val project: Project) : JPanel(BorderLayout()) {
         val model = ResultTableModel(outcome.table)
         results.model = model
         // Ширина по содержимому: таблица должна открываться уже читаемой, а не после ручной подгонки.
+        // Ширина в пикселях считается по МЕТРИКАМ шрифта таблицы, а не «символ ≈ 8 пикселей»:
+        // на другом шрифте и другом масштабе экрана эта восьмёрка врёт, и колонки едут.
+        val charWidth = results.getFontMetrics(results.font).charWidth('0').coerceAtLeast(1)
         for (index in outcome.table.columns.indices) {
           val chars = com.vibe.db.ResultTable.preferredWidth(outcome.table.columns[index], outcome.table.rows, index, t("db.null"))
-          results.columnModel.getColumn(index).preferredWidth = chars * 8
+          results.columnModel.getColumn(index).preferredWidth = chars * charWidth + COLUMN_PADDING
         }
         statusLine.foreground = JBColor.foreground()
         statusLine.text = if (outcome.table.truncated)
@@ -251,6 +359,11 @@ class DbPanel(private val project: Project) : JPanel(BorderLayout()) {
       }
       is JdbcSession.Outcome.Failed -> fail(t("db.queryFailed", "reason" to outcome.message))
     }
+  }
+
+  private companion object {
+    /** Запас на отступы ячейки: без него текст упирается в границу столбца. */
+    const val COLUMN_PADDING = 12
   }
 
   private fun fail(text: String) {

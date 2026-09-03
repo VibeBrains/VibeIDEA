@@ -19,10 +19,15 @@
     <codeInsight.lineMarkerProvider language="VibeHttp" implementationClass="com.vibe.http.ui.HttpRunLineMarker"/>
     <toolWindow id="HTTP" anchor="right" icon="/icons/vibeHttp.svg"
                 factoryClass="com.vibe.http.ui.VibeHttpToolWindowFactory" doNotActivateOnStart="true"/>
+    <applicationConfigurable parentId="com.vibe.settings" displayName="HTTP-клиент" id="com.vibe.http.settings"
+                             instance="com.vibe.http.ui.VibeHttpConfigurable"/>
     <notificationGroup id="Vibe HTTP" displayType="BALLOON"/>
   </extensions>
 
   <actions>
+    <action id="Vibe.Http.ImportCurl" class="com.vibe.http.ui.VibeHttpImportCurlAction" icon="AllIcons.Actions.Download">
+      <add-to-group group-id="EditorPopupMenu" anchor="first"/>
+    </action>
     <action id="Vibe.Http.Run" class="com.vibe.http.ui.VibeHttpRunAction" icon="AllIcons.Actions.Execute">
       <add-to-group group-id="EditorPopupMenu" anchor="first"/>
       <keyboard-shortcut keymap="$default" first-keystroke="control alt ENTER"/>
