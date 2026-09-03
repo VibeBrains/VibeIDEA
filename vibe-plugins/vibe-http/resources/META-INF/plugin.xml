@@ -1,0 +1,13 @@
+<idea-plugin>
+  <id>com.vibe.http</id>
+  <name>Vibe HTTP Client</name>
+  <vendor>VibeBrains</vendor>
+  <description><![CDATA[
+    HTTP requests next to the code: .http files in the repository, environments in
+    http-client.env.json, responses shown in the IDE. Requests are files, so they go through
+    code review and version control like everything else.
+  ]]></description>
+  <depends>com.intellij.modules.platform</depends>
+  <!-- Каталог строк общий для всех наших плагинов (решение владельца 2026-08-30). -->
+  <depends>com.vibe.agent</depends>
+</idea-plugin>

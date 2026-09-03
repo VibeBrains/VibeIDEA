@@ -50,7 +50,7 @@ Say "  проверяю $Target"
 
 try {
     # --- 1. Наши плагины на месте ---
-    foreach ($plugin in @('vibe-agent', 'vibe-lsp', 'vibe-server', 'vibe-theme')) {
+    foreach ($plugin in @('vibe-agent', 'vibe-lsp', 'vibe-server', 'vibe-theme', 'vibe-http')) {
         if (-not (Test-Path (Join-Path $app "plugins\$plugin"))) { Fail "✖ нет плагина $plugin" }
     }
 

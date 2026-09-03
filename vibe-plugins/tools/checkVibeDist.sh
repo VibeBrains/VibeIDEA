@@ -76,7 +76,7 @@ fail=0
 say() { printf '%s\n' "$1"; }
 
 # --- 1. Наши плагины на месте ---
-for plugin in vibe-agent vibe-lsp vibe-server vibe-theme; do
+for plugin in vibe-agent vibe-lsp vibe-server vibe-theme vibe-http; do
   [ -d "$APP_PLUGINS/$plugin" ] || { say "✖ нет плагина $plugin"; fail=1; }
 done
 

@@ -90,6 +90,9 @@ object HttpRequestFile {
 
     var index = 0
     var pendingName: String? = null
+    // Пометки пишут и над строкой запроса, и под ней; собираем встреченные до неё и передаём внутрь.
+    // Без этого «# @name» сразу после «###» молча терялся: главный цикл считал его комментарием.
+    var pendingMeta = ArrayList<Pair<Int, String>>()
     while (index < lines.size) {
       val line = lines[index]
       val separator = SEPARATOR.matchEntire(line.trim())
@@ -104,18 +107,26 @@ object HttpRequestFile {
         index++
         continue
       }
+      val meta = META.matchEntire(line.trim())
+      if (meta != null) {
+        pendingMeta.add(index to line.trim())
+        index++
+        continue
+      }
       if (line.isBlank() || isComment(line)) {
         index++
         continue
       }
-      val parsed = parseRequest(lines, index, pendingName, problems)
+      val parsed = parseRequest(lines, index, pendingName, pendingMeta, problems)
       if (parsed == null) {
         problems.add(Problem(index, Trouble.NOT_A_REQUEST))
+        pendingMeta = ArrayList()
         index++
         continue
       }
       requests.add(parsed.first)
       pendingName = null
+      pendingMeta = ArrayList()
       index = parsed.second
     }
     return ParsedFile(requests, variables, problems)
@@ -131,6 +142,7 @@ object HttpRequestFile {
     lines: List<String>,
     from: Int,
     name: String?,
+    pendingMeta: List<Pair<Int, String>>,
     problems: MutableList<Problem>,
   ): Pair<Request, Int>? {
     val start = from
@@ -152,20 +164,26 @@ object HttpRequestFile {
     var saveTo: String? = null
     var handler: String? = null
 
+    fun applyMeta(lineNumber: Int, text: String) {
+      val meta = META.matchEntire(text) ?: return
+      when (meta.groupValues[1].lowercase()) {
+        "name" -> metaName = meta.groupValues[2].trim().takeIf { it.isNotEmpty() } ?: metaName
+        "no-redirect" -> noRedirect = true
+        "timeout" -> timeout = meta.groupValues[2].trim().toIntOrNull()
+          ?: run { problems.add(Problem(lineNumber, Trouble.TIMEOUT_NOT_A_NUMBER)); null }
+        // Незнакомая пометка — не ошибка: спека растёт, а файл должен остаться читаемым.
+        else -> Unit
+      }
+    }
+    for ((lineNumber, text) in pendingMeta) applyMeta(lineNumber, text)
+
     // Заголовки идут до пустой строки; метакомментарии среди них разрешены.
     while (index < lines.size) {
       val line = lines[index]
       if (line.isBlank()) { index++; break }
       if (SEPARATOR.matches(line.trim())) break
-      val meta = META.matchEntire(line.trim())
-      if (meta != null) {
-        when (meta.groupValues[1].lowercase()) {
-          "name" -> metaName = meta.groupValues[2].trim().takeIf { it.isNotEmpty() } ?: metaName
-          "no-redirect" -> noRedirect = true
-          "timeout" -> timeout = meta.groupValues[2].trim().toIntOrNull()
-            ?: run { problems.add(Problem(index, Trouble.TIMEOUT_NOT_A_NUMBER)); null }
-          else -> Unit // Незнакомая пометка — не ошибка: спека растёт, а файл должен остаться читаемым.
-        }
+      if (META.matches(line.trim())) {
+        applyMeta(index, line.trim())
         index++
         continue
       }
