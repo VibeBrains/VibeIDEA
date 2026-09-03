@@ -25,6 +25,9 @@ import java.util.concurrent.Executors
 class VibeHttpApi(
   private val tokenProvider: () -> String?,
   private val runner: Runner,
+  /** MCP tools, or null when the IDE side is not wired — then `/mcp` answers «инструменты недоступны». */
+  private val mcpTools: com.vibe.agent.mcp.McpServer.Tools? = null,
+  private val productVersion: () -> String = { "0" },
 ) {
   /** What actually performs a task; the production implementation talks to the agent tool window. */
   interface Runner {
@@ -82,6 +85,7 @@ class VibeHttpApi(
         remoteIsLoopback = exchange.remoteAddress?.address?.isLoopbackAddress == true,
         bodyLength = body.size,
         body = String(body, StandardCharsets.UTF_8),
+        mcpMethod = exchange.requestHeaders.getFirst("Mcp-Method"),
       )
       when (val decision = HttpApiPolicy.decide(request, tokenProvider())) {
         is HttpApiPolicy.Decision.Health -> respond(exchange, 200, buildJsonObject {
@@ -92,6 +96,17 @@ class VibeHttpApi(
           put("ok", false)
           put("error", decision.message)
         })
+        is HttpApiPolicy.Decision.Mcp -> {
+          val tools = mcpTools
+          val answer = if (tools == null) {
+            com.vibe.agent.mcp.McpServer.unavailable(decision.body, com.vibe.agent.mcp.McpProtocol.NO_PROJECT)
+          }
+          else {
+            com.vibe.agent.mcp.McpServer.handle(decision.body, productVersion(), tools, decision.mcpMethod)
+          }
+          respondText(exchange, answer.httpStatus, answer.body)
+        }
+
         is HttpApiPolicy.Decision.Run -> {
           val existing = decision.idempotencyKey?.let { runner.runningWithKey(it) }
           if (existing != null) {
@@ -143,6 +158,14 @@ class VibeHttpApi(
       }
     }
     return out.toByteArray()
+  }
+
+  /** A notification has no body at all: 202 with zero bytes is the honest answer to «я не спрашивал». */
+  private fun respondText(exchange: HttpExchange, code: Int, body: String?) {
+    val bytes = body?.toByteArray(StandardCharsets.UTF_8) ?: ByteArray(0)
+    exchange.responseHeaders.add("Content-Type", "application/json; charset=utf-8")
+    exchange.sendResponseHeaders(code, if (bytes.isEmpty()) -1L else bytes.size.toLong())
+    if (bytes.isNotEmpty()) exchange.responseBody.use { it.write(bytes) }
   }
 
   private fun respond(exchange: HttpExchange, code: Int, body: JsonObject) {

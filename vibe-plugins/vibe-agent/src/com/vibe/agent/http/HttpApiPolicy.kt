@@ -33,6 +33,8 @@ object HttpApiPolicy {
     val remoteIsLoopback: Boolean,
     val bodyLength: Int,
     val body: String,
+    /** `Mcp-Method`, required by MCP 2026-07-28 on POST so gateways route without reading bodies. */
+    val mcpMethod: String? = null,
   )
 
   sealed interface Decision {
@@ -50,6 +52,15 @@ object HttpApiPolicy {
        */
       val idempotencyKey: String? = null,
     ) : Decision
+
+    /**
+     * `POST /mcp` — one JSON-RPC message for the MCP server.
+     *
+     * A separate decision rather than a variant of [Run]: MCP decides for itself what a message
+     * means, and folding it into the run path would put a protocol parser inside the route that
+     * exists to be boring.
+     */
+    data class Mcp(val body: String, val mcpMethod: String?) : Decision
 
     /** Anything refused: [code] is the HTTP status, [message] goes into the JSON error body. */
     data class Refuse(val code: Int, val message: String) : Decision
@@ -79,7 +90,10 @@ object HttpApiPolicy {
     return when {
       request.method == "GET" && request.path == "/health" -> Decision.Health
       request.method == "POST" && request.path == "/run" -> parseRun(request.body)
-      else -> Decision.Refuse(404, "известны только GET /health и POST /run")
+      // The MCP endpoint deliberately lives beside /run rather than replacing it: the VibeIDE
+      // contract for /health and /run is carried over verbatim and scripts depend on it.
+      request.method == "POST" && request.path == "/mcp" -> Decision.Mcp(request.body, request.mcpMethod)
+      else -> Decision.Refuse(404, "известны только GET /health, POST /run и POST /mcp")
     }
   }
 

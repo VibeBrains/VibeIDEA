@@ -20,6 +20,7 @@
 - [manuals/commandsSpec.md](manuals/commandsSpec.md) — спека команд проекта `.vibe/commands.json`: формат, что отклоняется и почему, разрешение по хешу, секреты по имени (самодостаточная, для LLM).
 - [manuals/skillsSpec.md](manuals/skillsSpec.md) — спека Agent Skills `.vibe/skills/<id>/SKILL.md`: формат, шесть ключей шапки, валидатор, пример (самодостаточная, для LLM).
 - [manuals/httpApiSpec.md](manuals/httpApiSpec.md) — спека входящего HTTP API (loopback + Bearer): как дёрнуть агента из CI/бота/крона (самодостаточная, для LLM).
+- [manuals/mcpSpec.md](manuals/mcpSpec.md) — спека MCP-сервера в IDE: адрес, версии протокола, инструменты, ошибки (самодостаточная, для LLM).
 - [manuals/acpSmoke.md](manuals/acpSmoke.md) — ручной чек-лист живого прогона ACP (12 шагов): то, что подделкой агента не проверить.
 - [manuals/languageServers.md](manuals/languageServers.md) — как поставить vtsls/Phpactor для TS/PHP.
 - [manuals/acpAgentsSpec.md](manuals/acpAgentsSpec.md) — спека реестра ACP-агентов `~/.jetbrains/acp.json` (самодостаточная, для LLM).

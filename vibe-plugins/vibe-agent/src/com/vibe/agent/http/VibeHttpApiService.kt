@@ -39,6 +39,12 @@ class VibeHttpApiService {
           }
           .firstOrNull()
     },
+    // MCP speaks to the same project behind the same token: a separate server would mean a second
+    // lifecycle, a second port and a second place to get authentication wrong.
+    mcpTools = com.vibe.agent.mcp.VibeMcpTools(),
+    productVersion = {
+      runCatching { com.intellij.openapi.application.ApplicationInfo.getInstance().fullVersion }.getOrNull().orEmpty()
+    },
   )
 
   val port: Int get() = api.boundPort

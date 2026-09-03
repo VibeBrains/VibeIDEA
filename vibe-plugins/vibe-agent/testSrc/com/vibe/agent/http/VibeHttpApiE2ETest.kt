@@ -36,12 +36,23 @@ class VibeHttpApiE2ETest {
   }
 
   @BeforeEach fun setUp() {
-    api = VibeHttpApi(tokenProvider = { token }, runner = runner).also { it.start(0) }
+    api = VibeHttpApi(
+      tokenProvider = { token },
+      runner = runner,
+      mcpTools = EchoTools(),
+      productVersion = { "0.3.0" },
+    ).also { it.start(0) }
   }
 
   @AfterEach fun tearDown() { api.stop() }
 
   private class Response(val code: Int, val body: String)
+
+  /** Named rather than anonymous: the vintage engine cannot build a display name for the latter. */
+  private class EchoTools : com.vibe.agent.mcp.McpServer.Tools {
+    override fun call(name: String, arguments: kotlinx.serialization.json.JsonObject) =
+      com.vibe.agent.mcp.McpServer.Tools.Result("вызван $name")
+  }
 
   private fun call(
     method: String = "POST",
@@ -70,6 +81,21 @@ class VibeHttpApiE2ETest {
       ?.readBytes()?.toString(StandardCharsets.UTF_8).orEmpty()
     connection.disconnect()
     return Response(code, text)
+  }
+
+  @Test
+  fun `mcp answers over the same socket, behind the same token`() {
+    // Отдельный сервер означал бы второй порт и второе место, где можно ошибиться с токеном.
+    val listed = call(path = "/mcp", body = """{"jsonrpc":"2.0","id":1,"method":"tools/list"}""")
+    assertEquals(200, listed.code)
+    assertTrue(listed.body.contains(com.vibe.agent.mcp.McpProtocol.TOOL_IMPORTERS), listed.body)
+
+    val unauthorized = call(path = "/mcp", auth = null, body = """{"jsonrpc":"2.0","id":1,"method":"tools/list"}""")
+    assertEquals(401, unauthorized.code)
+
+    val called = call(path = "/mcp",
+                      body = """{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"${com.vibe.agent.mcp.McpProtocol.TOOL_PROJECT}","arguments":{}}}""")
+    assertTrue(called.body.contains("вызван ${com.vibe.agent.mcp.McpProtocol.TOOL_PROJECT}"), called.body)
   }
 
   @Test
