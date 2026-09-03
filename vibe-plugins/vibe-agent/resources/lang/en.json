@@ -1438,5 +1438,12 @@
   "spend.fileNote": "an estimate: a request is billed as a whole, and a file’s share is apportioned by its size rather than measured",
   "telegram.voice.rawBelow": "heard verbatim: «{text}»",
   "trace.nearRepeated": "Similar calls (the same thing with different numbers — possibly circling one file): {items}",
-  "trace.batches": "Tool-call batches: {batches}, {average} calls each on average. A value of one means the model stopped asking in batches — the answer is the same, but every extra round trip costs tokens and time."
+  "trace.batches": "Tool-call batches: {batches}, {average} calls each on average. A value of one means the model stopped asking in batches — the answer is the same, but every extra round trip costs tokens and time.",
+  "chat.voice.start": "Record a voice note",
+  "chat.voice.stop": "Recording — click to stop",
+  "chat.voice.tooShort": "[voice] too short to be a note — that was a misclick",
+  "chat.voice.noMicrophone": "[voice] microphone unavailable: {reason}",
+  "chat.voice.noTranscriber": "[voice] no transcriber on this machine. Install whisper: pip install -U openai-whisper (or brew install whisper-cpp)",
+  "chat.voice.transcribing": "[voice] transcribing…",
+  "chat.voice.empty": "[voice] nothing intelligible in the recording"
 }

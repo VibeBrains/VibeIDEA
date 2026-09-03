@@ -107,6 +107,9 @@ fi
 
 # --- 4. Языковые серверы в комплекте ---
 SERVERS="$APP_PLUGINS/vibe-lsp/servers"
+# Задачи и трекеры как в PhpStorm: платформа даёт только ядро Tasks & Contexts, а Open Task и трекеры
+# приезжают плагином intellij.tasks.core — его отсутствие снаружи выглядит как «в IDE нет задач».
+[ -d "$APP_PLUGINS/tasks" ] || { say "✖ нет плагина задач (plugins/tasks) — Open Task и трекеры не появятся"; fail=1; }
 [ -f "$SERVERS/phpactor.phar" ] || { say "✖ нет встроенного phpactor.phar"; fail=1; }
 [ -f "$SERVERS/phpactor-LICENSE" ] || { say "✖ нет текста лицензии рядом с phar (MIT требует)"; fail=1; }
 for entry in \

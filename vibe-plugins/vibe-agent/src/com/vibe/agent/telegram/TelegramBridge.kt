@@ -1,6 +1,8 @@
 // Copyright 2026 VibeBrains. Use of this source code is governed by the Apache 2.0 license.
 package com.vibe.agent.telegram
 
+import com.vibe.agent.voice.VoiceTranscription
+
 import com.intellij.credentialStore.CredentialAttributes
 import com.intellij.credentialStore.Credentials
 import com.intellij.ide.passwordSafe.PasswordSafe
@@ -147,7 +149,7 @@ class TelegramBridge {
    * outcome here: the person hears nothing, and finds out from the diff.
    */
   private fun handleVoice(token: String, chatId: Long, voice: TelegramProtocol.Command.Voice) {
-    val transcriber = VoiceNote.find() ?: run {
+    val transcriber = VoiceTranscription.find() ?: run {
       send(token, TelegramProtocol.sendMessage(chatId, t("telegram.voice.noTranscriber")))
       return
     }
@@ -158,7 +160,7 @@ class TelegramBridge {
     }
     send(token, TelegramProtocol.sendMessage(chatId, t("telegram.voice.recognising")))
     val text = runCatching { transcribe(token, transcriber, voice) }.getOrNull()
-    val task = text?.let { VoiceNote.taskFrom(it) }
+    val task = text?.let { VoiceTranscription.taskFrom(it) }
     if (task == null) {
       send(token, TelegramProtocol.sendMessage(chatId, t("telegram.voice.empty")))
       return
@@ -207,7 +209,7 @@ class TelegramBridge {
   }
 
   /** Downloads the note and runs the transcriber over it; the temporary directory is always removed. */
-  private fun transcribe(token: String, transcriber: VoiceNote.Transcriber, voice: TelegramProtocol.Command.Voice): String? {
+  private fun transcribe(token: String, transcriber: VoiceTranscription.Transcriber, voice: TelegramProtocol.Command.Voice): String? {
     val dir = java.nio.file.Files.createTempDirectory("vibe-voice").toFile()
     try {
       val meta = httpGet(VoiceNote.getFileUrl(token, voice.fileId)) ?: return null
@@ -215,13 +217,13 @@ class TelegramBridge {
       val audio = java.io.File(dir, path.substringAfterLast('/'))
       val bytes = httpBytes(VoiceNote.downloadUrl(token, path)) ?: return null
       audio.writeBytes(bytes)
-      val process = ProcessBuilder(VoiceNote.command(transcriber, audio, dir, VibeAgentSettings.telegramVoiceLanguage))
+      val process = ProcessBuilder(VoiceTranscription.command(transcriber, audio, dir, VibeAgentSettings.telegramVoiceLanguage))
         .redirectErrorStream(true).start()
       if (!process.waitFor(TRANSCRIBE_TIMEOUT_SEC, java.util.concurrent.TimeUnit.SECONDS)) {
         process.destroyForcibly()
         return null
       }
-      val out = VoiceNote.outputFile(audio, dir)
+      val out = VoiceTranscription.outputFile(audio, dir)
       return if (out.isFile) out.readText() else null
     }
     finally {

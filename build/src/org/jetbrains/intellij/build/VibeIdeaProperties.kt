@@ -27,7 +27,14 @@ open class VibeIdeaProperties(communityHomeDir: Path) : IdeaCommunityProperties(
     // Same trimming approach as AndroidStudioProperties: drop vendor AI/onboarding extras.
     productLayout.bundledPluginModules = IDEA_BUNDLED_PLUGINS
       .removing("intellij.mcpserver.plugin")
-      .removing("intellij.featuresTrainer") + persistentListOf("intellij.javaFX.community", "intellij.vibe.lsp", "intellij.vibe.agent", "intellij.vibe.theme", "intellij.vibe.server")
+      .removing("intellij.featuresTrainer") + persistentListOf(
+        "intellij.javaFX.community",
+        // Task management the way PhpStorm has it: create a task, switch context, connect an issue
+        // tracker. The platform ships only the Tasks&Contexts core; this is the plugin that adds
+        // the part a person actually uses, and it is community code with a layout already written.
+        "intellij.tasks.core",
+        "intellij.vibe.lsp", "intellij.vibe.agent", "intellij.vibe.theme", "intellij.vibe.server",
+      )
 
     // Everything we bundle that is NOT a JPS library: the report is generated from library
     // dependencies, and a phar or an npm tree is invisible to it. Shipping someone else's MIT code

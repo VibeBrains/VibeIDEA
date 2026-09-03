@@ -336,12 +336,19 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     isOpaque = false
   }
 
+  /** Composer microphone: click to record, click again to transcribe into the draft. */
+  private val voicePill: PillButton =
+    PillButton(icon = AllIcons.Ide.Macro.Recording_1) { toggleVoice() }.apply { toolTipText = t("chat.voice.start") }
+
   init {
     border = JBUI.Borders.empty(4)
     composer.addPill(modePicker.pill)
     composer.addPill(modelPicker.pill)
     composer.addPill(PillButton(icon = AllIcons.Actions.RunAll) { choosePipeline() }.apply { toolTipText = t("chat.pipelinePill") })
     composer.addPill(PillButton(icon = AllIcons.General.Settings) { openSettings() }.apply { toolTipText = t("chat.settingsPill") })
+    // The microphone appears only where recording is possible: a button that cannot work is worse
+    // than no button.
+    if (com.vibe.agent.voice.VoiceCapture.isSupported()) composer.addPill(voicePill)
     composer.addRightPill(historyPill)
     add(tabsStrip, BorderLayout.NORTH)
     add(centerWrap, BorderLayout.CENTER)
@@ -1834,6 +1841,64 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
       composer.attachImages(listOf(ImageAttachment(name, mimeType, bytes)))
       com.intellij.openapi.wm.ToolWindowManager.getInstance(project).getToolWindow("VibeAgent")?.activate(null)
     }
+  }
+
+  private var recording: com.vibe.agent.voice.VoiceCapture.Recording? = null
+
+  private fun toggleVoice() {
+    val active = recording
+    if (active == null) {
+      val target = java.io.File.createTempFile("vibe-voice-", ".wav")
+      val started = runCatching { com.vibe.agent.voice.VoiceCapture.start(target) }.getOrElse {
+        systemLine(t("chat.voice.noMicrophone", "reason" to (it.message ?: it.javaClass.simpleName)))
+        target.delete()
+        return
+      }
+      recording = started
+      voicePill.toolTipText = t("chat.voice.stop")
+      voicePill.repaint()
+      return
+    }
+    recording = null
+    voicePill.toolTipText = t("chat.voice.start")
+    voicePill.repaint()
+    val file = active.stop()
+    if (file == null) {
+      // Too short is a misclick, not a note. Transcribing silence costs seconds and returns
+      // whisper's filler invented out of nothing.
+      systemLine(t("chat.voice.tooShort"))
+      return
+    }
+    ApplicationManager.getApplication().executeOnPooledThread { transcribeVoice(file) }
+  }
+
+  private fun transcribeVoice(file: java.io.File) {
+    val transcriber = com.vibe.agent.voice.VoiceTranscription.find()
+    if (transcriber == null) {
+      systemLine(t("chat.voice.noTranscriber"))
+      file.delete()
+      return
+    }
+    systemLine(t("chat.voice.transcribing"))
+    val dir = file.parentFile
+    val text = runCatching {
+      val process = ProcessBuilder(
+        com.vibe.agent.voice.VoiceTranscription.command(transcriber, file, dir, VibeAgentSettings.telegramVoiceLanguage))
+        .redirectErrorStream(true).start()
+      process.inputStream.readBytes()
+      process.waitFor()
+      val out = com.vibe.agent.voice.VoiceTranscription.outputFile(file, dir)
+      out.takeIf { it.isFile }?.readText().also { runCatching { out.delete() } }
+    }.getOrNull()
+    runCatching { file.delete() }
+    val task = text?.let { com.vibe.agent.voice.VoiceTranscription.taskFrom(it) }
+    if (task == null) {
+      systemLine(t("chat.voice.empty"))
+      return
+    }
+    // Into the draft, not sent: what to do with the words stays the person's decision — the same
+    // rule the design detector's findings follow.
+    putIntoComposer(task)
   }
 
   override fun putIntoComposer(text: String) {

@@ -78,6 +78,11 @@ try {
         Say  '  Зависимость в BUILD.bazel на упаковку не влияет: её решает раскладка плагина.'
     }
 
+    # --- 3a. Задачи и трекеры как в PhpStorm: приезжают плагином intellij.tasks.core ---
+    if (-not (Test-Path (Join-Path $app 'plugins\tasks'))) {
+        Fail '✖ нет плагина задач (plugins\tasks) — Open Task и трекеры не появятся'
+    }
+
     # --- 4. Языковые серверы в комплекте ---
     $servers = Join-Path $app 'plugins\vibe-lsp\servers'
     foreach ($entry in @(

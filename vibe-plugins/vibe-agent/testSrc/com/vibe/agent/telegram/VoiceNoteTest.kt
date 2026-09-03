@@ -1,6 +1,8 @@
 // Copyright 2026 VibeBrains. Use of this source code is governed by the Apache 2.0 license.
 package com.vibe.agent.telegram
 
+import com.vibe.agent.voice.VoiceTranscription
+
 import java.io.File
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -24,38 +26,38 @@ class VoiceNoteTest {
 
   @Test
   fun `команда пишет транскрипт файлом, а не в stdout`() {
-    val cmd = VoiceNote.command(VoiceNote.Transcriber("/usr/bin/whisper"), File("/tmp/a/note.oga"), File("/tmp/a"), "ru")
+    val cmd = VoiceTranscription.command(VoiceTranscription.Transcriber("/usr/bin/whisper"), File("/tmp/a/note.oga"), File("/tmp/a"), "ru")
     assertEquals("/usr/bin/whisper", cmd.first())
     assertTrue(cmd.containsAll(listOf("--output_format", "txt", "--output_dir", "/tmp/a")))
     assertTrue(cmd.containsAll(listOf("--language", "ru")))
-    assertEquals(File("/tmp/a/note.txt"), VoiceNote.outputFile(File("/tmp/a/note.oga"), File("/tmp/a")))
+    assertEquals(File("/tmp/a/note.txt"), VoiceTranscription.outputFile(File("/tmp/a/note.oga"), File("/tmp/a")))
   }
 
   @Test
   fun `пустой язык не превращается в пустой аргумент`() {
-    val cmd = VoiceNote.command(VoiceNote.Transcriber("whisper"), File("note.oga"), File("."), "  ")
+    val cmd = VoiceTranscription.command(VoiceTranscription.Transcriber("whisper"), File("note.oga"), File("."), "  ")
     assertTrue("--language" !in cmd, "пустой аргумент сломал бы разбор командной строки")
   }
 
   @Test
   fun `слишком короткая расшифровка задачей не считается`() {
-    assertNull(VoiceNote.taskFrom("ага"))
-    assertNull(VoiceNote.taskFrom("   \n  "))
-    assertEquals("почини падающий тест", VoiceNote.taskFrom("почини падающий тест\n"))
+    assertNull(VoiceTranscription.taskFrom("ага"))
+    assertNull(VoiceTranscription.taskFrom("   \n  "))
+    assertEquals("почини падающий тест", VoiceTranscription.taskFrom("почини падающий тест\n"))
   }
 
   @Test
   fun `выдумки whisper на тишине задачей не становятся`() {
     // Известный артефакт обучающих данных: на тишине whisper печатает свои же титры.
-    assertNull(VoiceNote.taskFrom("Продолжение следует…"))
-    assertNull(VoiceNote.taskFrom("Субтитры сделал DimaTorzok"))
-    assertNull(VoiceNote.taskFrom("Thank you."))
+    assertNull(VoiceTranscription.taskFrom("Продолжение следует…"))
+    assertNull(VoiceTranscription.taskFrom("Субтитры сделал DimaTorzok"))
+    assertNull(VoiceTranscription.taskFrom("Thank you."))
     // Но настоящая задача, содержащая те же слова, проходит: длина отличает фразу от титра.
-    assertTrue(VoiceNote.taskFrom("продолжение следует за первым шагом, посмотри как это сделано в модуле сборки") != null)
+    assertTrue(VoiceTranscription.taskFrom("продолжение следует за первым шагом, посмотри как это сделано в модуле сборки") != null)
   }
 
   @Test
   fun `многострочная расшифровка склеивается в одну строку`() {
-    assertEquals("первое второе третье", VoiceNote.taskFrom("первое\n  второе  \nтретье"))
+    assertEquals("первое второе третье", VoiceTranscription.taskFrom("первое\n  второе  \nтретье"))
   }
 }
