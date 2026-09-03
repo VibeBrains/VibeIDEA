@@ -12,10 +12,17 @@
   <depends>com.vibe.agent</depends>
 
   <extensions defaultExtensionNs="com.intellij">
-    <toolWindow id="БД" anchor="right" icon="/icons/vibeDb.svg"
+    <toolWindow id="VibeDb" anchor="right" icon="/icons/vibeDb.svg"
                 factoryClass="com.vibe.db.ui.VibeDbToolWindowFactory" doNotActivateOnStart="true"/>
     <applicationConfigurable parentId="com.vibe.settings" displayName="Базы данных" id="com.vibe.db.settings"
                              instance="com.vibe.db.ui.VibeDbConfigurable"/>
     <notificationGroup id="Vibe Database" displayType="BALLOON"/>
   </extensions>
+
+  <actions>
+    <action id="Vibe.Db.RunSql" class="com.vibe.db.ui.VibeDbRunSqlAction" icon="AllIcons.Actions.Execute">
+      <add-to-group group-id="EditorPopupMenu" anchor="first"/>
+      <keyboard-shortcut keymap="$default" first-keystroke="control alt ENTER"/>
+    </action>
+  </actions>
 </idea-plugin>

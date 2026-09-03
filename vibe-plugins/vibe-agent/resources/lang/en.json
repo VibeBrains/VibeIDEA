@@ -1541,5 +1541,13 @@
   "http.openApi.notSpec": "«{file}» does not look like an OpenAPI description: a JSON with an openapi or swagger field is expected. YAML is not read — download the JSON («Download» next to the schema in Swagger UI).",
   "http.openApi.writeFailed": "Could not write {name} next to the description",
   "http.openApi.header": "Generated from OpenAPI. The server address lives in http-client.env.json.",
-  "http.openApi.server": "The description says the server is: {url}"
+  "http.openApi.server": "The description says the server is: {url}",
+  "db.driver.download": "Download driver",
+  "db.driver.downloadNamed": "Download {title} {version} driver ({licence})",
+  "db.driver.downloading": "Downloading the {title} driver, about {size} MB…",
+  "db.driver.downloaded": "Driver downloaded: {path}. Put this path into driverPath in {file}",
+  "db.driver.hashMismatch": "The checksum of the downloaded {title} driver does not match the pinned one — the file was deleted. Either a broken download or a substitution; try again later.",
+  "db.driver.failed": "Could not download the driver: {reason}",
+  "db.action.runSql": "Run SQL statement",
+  "db.toolWindow": "Databases"
 }

@@ -42,6 +42,37 @@ class VibeDbService(private val project: Project) {
 
   fun columns(connection: Connection, table: DbCatalog.Table): List<DbCatalog.Column> = session.columns(connection, table)
 
+  sealed interface Download {
+    data class Done(val path: java.nio.file.Path) : Download
+    /** Скачалось, но хеш не совпал — файл удалён и НЕ подсунут в classpath. */
+    data object HashMismatch : Download
+    data class Failed(val message: String) : Download
+  }
+
+  /**
+   * Скачивает драйвер по явной просьбе человека и проверяет sha256.
+   *
+   * Проверка не формальность: подменённый jar — это код, который выполнится в IDE с правами
+   * пользователя. Не совпал хеш — файл удаляется, а не «наверное, сойдёт».
+   *
+   * Блокирует поток; вызывать только из фонового.
+   */
+  fun download(driver: JdbcDrivers.Driver): Download {
+    val home = System.getProperty("user.home") ?: return Download.Failed("user.home")
+    val target = JdbcDrivers.target(home, driver)
+    return try {
+      val bytes = java.net.URI(driver.url).toURL().openStream().use { it.readBytes() }
+      if (!JdbcDrivers.matches(bytes, driver)) return Download.HashMismatch
+      java.nio.file.Files.createDirectories(target.parent)
+      java.nio.file.Files.write(target, bytes)
+      Download.Done(target)
+    }
+    catch (e: Exception) {
+      runCatching { java.nio.file.Files.deleteIfExists(target) }
+      Download.Failed(e.message ?: e.javaClass.simpleName)
+    }
+  }
+
   companion object {
     fun getInstance(project: Project): VibeDbService = project.service()
   }

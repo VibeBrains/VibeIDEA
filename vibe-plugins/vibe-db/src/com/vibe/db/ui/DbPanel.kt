@@ -18,6 +18,7 @@ import com.vibe.db.DataSources
 import com.vibe.db.CsvExport
 import com.vibe.db.DbCatalog
 import com.vibe.db.DbSettings
+import com.vibe.db.JdbcDrivers
 import com.vibe.db.QueryLimit
 import com.vibe.db.SqlStatements
 import com.vibe.db.JdbcSession
@@ -92,6 +93,15 @@ class DbPanel(private val project: Project) : JPanel(BorderLayout()) {
     addActionListener { askPassword() }
   }
 
+  /**
+   * «Скачать драйвер» — иначе первый шаг это задание по сборке: человек хотел посмотреть таблицу,
+   * а должен найти jar в интернете. Качаем по явному нажатию, из Maven Central, с проверкой sha256.
+   */
+  private val driverButton = JButton(t("db.driver.download"), AllIcons.Actions.Download).apply {
+    isVisible = false
+    addActionListener { downloadDriver() }
+  }
+
   private val exportButton = JButton(t("db.export"), AllIcons.ToolbarDecorator.Export).apply {
     isEnabled = false
     addActionListener { exportCsv() }
@@ -115,6 +125,7 @@ class DbPanel(private val project: Project) : JPanel(BorderLayout()) {
       add(sources)
       add(JButton(t("db.reload"), AllIcons.Actions.Refresh).apply { addActionListener { reload() } })
       add(passwordButton)
+      add(driverButton)
     }
     val left = JPanel(BorderLayout()).apply {
       add(search, BorderLayout.NORTH)
@@ -183,6 +194,39 @@ class DbPanel(private val project: Project) : JPanel(BorderLayout()) {
 
   private fun source(): DataSources.DataSource? = sources.selectedItem as? DataSources.DataSource
 
+  /** Кнопка показывается, только если драйвер для этой базы известен и ещё не скачан. */
+  private fun refreshDriverButton() {
+    val source = source()
+    val driver = source?.let { JdbcDrivers.forUrl(it.url) }
+    val home = System.getProperty("user.home")
+    val needed = driver != null && source.driverPath.isNullOrBlank() &&
+                 (home == null || !JdbcDrivers.isDownloaded(home, driver))
+    driverButton.isVisible = needed
+    driverButton.text = if (driver == null) t("db.driver.download")
+    else t("db.driver.downloadNamed", "title" to driver.title, "version" to driver.version, "licence" to driver.licence)
+  }
+
+  private fun downloadDriver() {
+    val source = source() ?: return
+    val driver = JdbcDrivers.forUrl(source.url) ?: return
+    statusLine.foreground = JBColor.foreground()
+    statusLine.text = t("db.driver.downloading", "title" to driver.title, "size" to (driver.sizeBytes / 1024 / 1024))
+    ApplicationManager.getApplication().executeOnPooledThread {
+      val outcome = VibeDbService.getInstance(project).download(driver)
+      SwingUtilities.invokeLater {
+        when (outcome) {
+          is VibeDbService.Download.Done -> {
+            statusLine.text = t("db.driver.downloaded", "path" to outcome.path.toString(), "file" to DataSources.FILE)
+            refreshDriverButton()
+          }
+          // Не совпал хеш — это не «сеть подвела», об этом надо сказать отдельно и громко.
+          VibeDbService.Download.HashMismatch -> fail(t("db.driver.hashMismatch", "title" to driver.title))
+          is VibeDbService.Download.Failed -> fail(t("db.driver.failed", "reason" to outcome.message))
+        }
+      }
+    }
+  }
+
   /**
    * Спрашивает пароль и кладёт его в связку ключей системы.
    *
@@ -209,6 +253,7 @@ class DbPanel(private val project: Project) : JPanel(BorderLayout()) {
   }
 
   private fun loadTree() {
+    refreshDriverButton()
     val source = source() ?: return
     schemas = emptyList()
     refreshTree()
@@ -273,6 +318,33 @@ class DbPanel(private val project: Project) : JPanel(BorderLayout()) {
     execute(sql)
   }
 
+  /**
+   * Выполняет оператор, пришедший из файла `.sql`.
+   *
+   * Через ту же проверку на изменяющий оператор, что и консоль: подтверждение зависит от того, ЧТО
+   * уйдёт в базу, а не от того, откуда нажали.
+   */
+  fun runFromEditor(sql: String) {
+    console.text = sql
+    if (!confirmWrite(sql)) return
+    execute(sql)
+  }
+
+  /** @return можно ли выполнять: для выборки — сразу, для изменения — после подтверждения. */
+  private fun confirmWrite(sql: String): Boolean {
+    if (SqlStatements.isReadOnly(sql)) return true
+    val answer = com.intellij.openapi.ui.Messages.showYesNoDialog(
+      project,
+      t("db.confirmWrite.body", "sql" to sql.lineSequence().firstOrNull { it.isNotBlank() }.orEmpty().take(120),
+        "source" to (source()?.name ?: "")),
+      t("db.confirmWrite.title"),
+      t("db.confirmWrite.yes"),
+      t("db.confirmWrite.no"),
+      AllIcons.General.WarningDialog,
+    )
+    return answer == com.intellij.openapi.ui.Messages.YES
+  }
+
   private fun runConsole() {
     val statements = SqlStatements.split(console.text)
     val line = console.caretPosition.let { position ->
@@ -281,17 +353,7 @@ class DbPanel(private val project: Project) : JPanel(BorderLayout()) {
     val statement = SqlStatements.statementAt(statements, line) ?: statements.firstOrNull() ?: return
     // Изменяющий оператор спрашивает подтверждение: «выполнить» под курсором легко нажать
     // случайно, а DELETE без WHERE отменить нельзя ничем.
-    if (!SqlStatements.isReadOnly(statement.text)) {
-      val answer = com.intellij.openapi.ui.Messages.showYesNoDialog(
-        project,
-        t("db.confirmWrite.body", "sql" to statement.title, "source" to (source()?.name ?: "")),
-        t("db.confirmWrite.title"),
-        t("db.confirmWrite.yes"),
-        t("db.confirmWrite.no"),
-        AllIcons.General.WarningDialog,
-      )
-      if (answer != com.intellij.openapi.ui.Messages.YES) return
-    }
+    if (!confirmWrite(statement.text)) return
     execute(statement.text)
   }
 
