@@ -7,13 +7,18 @@
 # увидеть: тесты исполняются там, где всё уже на classpath и все пути совпадают.
 #
 # Использование:
-#   ./vibe-plugins/tools/checkVibeDist.sh [путь к .dmg, .tar.gz, .app или к распакованной папке]
-# Без аргумента берётся свежий образ из out/vibeidea/artifacts — dmg на macOS, tar.gz на Linux.
+#   ./vibe-plugins/tools/checkVibeDist.sh [путь к .dmg, .tar.gz, .win.zip, .app или к распакованной папке]
+# Без аргумента берётся свежий образ из out/vibeidea/artifacts — dmg на macOS, tar.gz на Linux,
+# win.zip на Windows. Инсталлятор .exe здесь не открывается; его проверка — тихая установка и
+# сравнение с распакованным zip, порядок в manuals/release.md (сборка своё сравнение exe и zip в
+# dev-режиме пропускает).
 #
-# Windows-близнец — checkVibeDist.ps1: там свой распаковщик и свой запуск процессов, но проверки
-# те же, и главная из них та же — серверы и адаптеры не просто лежат, а ЗАПУСКАЮТСЯ.
+# На Windows этот же скрипт работает из Git Bash (проверено 02.09.2026 на живой сборке); для чистого
+# PowerShell есть близнец checkVibeDist.ps1 — проверки те же, и главная из них та же: серверы и
+# адаптеры не просто лежат, а ЗАПУСКАЮТСЯ.
 set -euo pipefail
 cd "$(dirname "$0")/../.."
+. vibe-plugins/tools/pythonBin.sh
 
 TARGET="${1:-}"
 MOUNTED=""
@@ -25,14 +30,14 @@ cleanup() {
 trap cleanup EXIT
 
 if [ -z "$TARGET" ]; then
-  TARGET=$(ls -t out/vibeidea/artifacts/*.dmg out/vibeidea/artifacts/*.tar.gz 2>/dev/null | head -1 || true)
+  TARGET=$(ls -t out/vibeidea/artifacts/*.dmg out/vibeidea/artifacts/*.tar.gz out/vibeidea/artifacts/*.win.zip 2>/dev/null | head -1 || true)
   [ -n "$TARGET" ] || { echo "✖ нет собранного образа в out/vibeidea/artifacts — сначала соберите инсталлятор"; exit 1; }
 fi
 
-# PLUGINS и LICENSE_DIR — единственное, чем macOS отличается от Linux: у приложения на macOS всё
-# лежит внутри Contents/, у Linux-сборки — прямо в корне распакованной папки. Дальше проверки
-# общие, и это не экономия строк: две копии одних и тех же проверок разошлись бы на первой же
-# правке, а разошлись бы молча — обе зелёные, проверяют разное.
+# ROOT_DIR — каталог, в котором лежат plugins/ и license/: у приложения на macOS всё внутри
+# Contents/, у Linux- и Windows-сборки — прямо в корне распакованной папки. Дальше проверки общие,
+# и это не экономия строк: две копии одних и тех же проверок разошлись бы на первой же правке, а
+# разошлись бы молча — обе зелёные, проверяют разное.
 case "$TARGET" in
   *.dmg)
     MOUNTED=$(mktemp -d)
@@ -45,9 +50,15 @@ case "$TARGET" in
     # Архив разворачивается в один каталог с версией в имени — берём его, каким бы он ни был.
     ROOT_DIR=$(find "$UNPACKED" -maxdepth 1 -mindepth 1 -type d | head -1)
     ;;
+  *.zip)
+    # Windows-архив разворачивается сразу в корень: bin/, plugins/, jbr/ без общего каталога.
+    UNPACKED=$(mktemp -d)
+    unzip -q "$TARGET" -d "$UNPACKED"
+    ROOT_DIR="$UNPACKED"
+    ;;
   *.app) ROOT_DIR="$TARGET/Contents" ;;
   *)
-    # Папка: либо распакованный .app, либо корень Linux-сборки.
+    # Папка: либо распакованный .app, либо корень Linux/Windows-сборки.
     if [ -d "$TARGET/VibeIDEA.app/Contents" ]; then ROOT_DIR="$TARGET/VibeIDEA.app/Contents"
     elif [ -d "$TARGET/Contents" ]; then ROOT_DIR="$TARGET/Contents"
     else ROOT_DIR="$TARGET"
@@ -75,7 +86,9 @@ done
 INDEX="$APP_PLUGINS/plugin-classpath.txt"
 [ -f "$INDEX" ] || { say "✖ нет индекса встроенных плагинов $INDEX"; fail=1; }
 if [ -f "$INDEX" ]; then
-  hits=$(strings "$INDEX" | grep -ci "lsp4ij" || true)
+  # Индекс двоичный: grep -a читает его как текст, -o считает вхождения, а не строки (`strings`
+  # на Windows нет).
+  hits=$(grep -a -o -i "lsp4ij" "$INDEX" | wc -l | tr -d ' ')
   # Двух-трёх упоминаний недостаточно: столько даёт само имя каталога в путях.
   if [ "$hits" -lt 20 ]; then
     say "✖ LSP4IJ не вписан в индекс встроенных плагинов (упоминаний: $hits) — плагин не загрузится,"
@@ -109,6 +122,28 @@ dangling=$(find "$SERVERS" -type l ! -exec test -e {} \; -print 2>/dev/null | he
 
 # --- 5. Серверы РЕАЛЬНО СТАРТУЮТ из образа, а не просто лежат ---
 # Файл на месте — это ещё не работающий сервер: проверяем ответом на настоящий LSP-запрос.
+#
+# Один запрос по stdio, ответ ждём ДО появления признака, а не фиксированную паузу: с паузой stdin
+# закрывался раньше, чем сервер успевал стартовать под нагрузкой, и гейт обвинял сборку в том, чего
+# в ней нет (плавал на Windows 02.09.2026: три прогона зелёные, один красный на той же сборке).
+# stderr — в тот же поток, не в /dev/null: node на Windows с отброшенным stderr завершался, не
+# записав ответ в stdout. Лишние строки проверке по подстроке не мешают.
+SERVER_WAIT=20
+server_answers() {  # <сообщение> <признак ответа> <команда…> → 0, если признак появился
+  local msg="$1" marker="$2"; shift 2
+  local out; out=$(mktemp)
+  { printf 'Content-Length: %d\r\n\r\n%s' ${#msg} "$msg"; sleep "$SERVER_WAIT"; } | "$@" >"$out" 2>&1 &
+  local pid=$! tick=0 seen=1
+  while [ "$tick" -lt $((SERVER_WAIT * 2)) ]; do
+    grep -a -q "$marker" "$out" 2>/dev/null && { seen=0; break; }
+    sleep 0.5; tick=$((tick + 1))
+  done
+  # wait возвращает код убитого процесса (143), а под set -e это уронило бы сам гейт.
+  kill "$pid" 2>/dev/null; wait "$pid" 2>/dev/null || true
+  rm -f "$out"
+  return "$seen"
+}
+
 CSS_ENTRY="$SERVERS/node/node_modules/vscode-langservers-extracted/bin/vscode-css-language-server"
 if [ ! -f "$CSS_ENTRY" ]; then
   : # об отсутствии сервера уже сказано выше
@@ -116,12 +151,8 @@ elif ! command -v node >/dev/null 2>&1; then
   say "  node не найден — запуск встроенных серверов не проверялся"
 else
   B='{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"processId":null,"rootUri":null,"capabilities":{}}}'
-  answer=$({ printf 'Content-Length: %d\r\n\r\n%s' ${#B} "$B"; sleep 3; } \
-    | node "$CSS_ENTRY" --stdio 2>/dev/null | head -c 200 || true)
-  case "$answer" in
-    *definitionProvider*) : ;;
-    *) say "✖ встроенный CSS-сервер не ответил на initialize"; fail=1 ;;
-  esac
+  server_answers "$B" definitionProvider node "$CSS_ENTRY" --stdio \
+    || { say "✖ встроенный CSS-сервер не ответил на initialize"; fail=1; }
 fi
 
 # Два условия разведены: «нет phar» и «нет php» — разные новости, и общее сообщение об одном из
@@ -131,7 +162,17 @@ if [ ! -f "$SERVERS/phpactor.phar" ]; then
 elif ! command -v php >/dev/null 2>&1; then
   say "  php не найден — запуск встроенного Phpactor не проверялся"
 else
-  php "$SERVERS/phpactor.phar" --version >/dev/null 2>&1 || { say "✖ встроенный phpactor.phar не запускается"; fail=1; }
+  phpactor_out=$(php "$SERVERS/phpactor.phar" --version 2>&1 || true)
+  case "$phpactor_out" in
+    *"Phpactor"*) : ;;
+    *'requires the extension "posix"'*)
+      # Phar собран Box с проверкой требований, и среди них ext-posix — расширение, которого в
+      # Windows-сборках PHP не существует. Это не дефект дистрибутива, а известное ограничение
+      # Phpactor на Windows (проверено 02.09.2026: обход проверки не помогает); оно названо в
+      # заметках релиза. Сломанный phar сюда не попадёт — он не печатает текст проверки требований.
+      say "  Phpactor на этой машине не запускается: phar требует ext-posix (нет на Windows) — известное ограничение, не дефект сборки" ;;
+    *) say "✖ встроенный phpactor.phar не запускается"; fail=1 ;;
+  esac
 fi
 
 # --- 5б. Отладочные адаптеры: файлы на месте И запускаются ---
@@ -153,23 +194,24 @@ else
     # Порт 0 — ОС выбирает свободный. Зашитый номер выглядел безобиднее и валил ГЕЙТ, а не сборку:
     # процесс от прошлого прогона оставался слушать, второй запуск не мог занять порт, и проверка
     # обвиняла дистрибутив в том, чего в нём нет. Признак готовности от этого не страдает — адаптер
-    # печатает адрес, на котором слушает, каким бы он ни был.
-    out=$( { node "$JS_DAP" 0 127.0.0.1 & pid=$!; sleep 4; kill "$pid" 2>/dev/null; wait "$pid" 2>/dev/null; } 2>&1 | head -c 200 || true)
-    case "$out" in
-      *"Debug server listening at"*) : ;;
-      *) say "✖ встроенный адаптер vscode-js-debug не поднял сервер отладки"; fail=1 ;;
-    esac
+    # печатает адрес, на котором слушает, каким бы он ни был. Ждём признак, а не паузу — по той же
+    # причине, что и у серверов выше.
+    js_out=$(mktemp)
+    node "$JS_DAP" 0 127.0.0.1 >"$js_out" 2>&1 &
+    js_pid=$!; tick=0; js_ok=1
+    while [ "$tick" -lt $((SERVER_WAIT * 2)) ]; do
+      grep -a -q "Debug server listening at" "$js_out" 2>/dev/null && { js_ok=0; break; }
+      sleep 0.5; tick=$((tick + 1))
+    done
+    kill "$js_pid" 2>/dev/null; wait "$js_pid" 2>/dev/null || true; rm -f "$js_out"
+    [ "$js_ok" -eq 0 ] || { say "✖ встроенный адаптер vscode-js-debug не поднял сервер отладки"; fail=1; }
   fi
   if [ -f "$PHP_DAP" ]; then
     # pathFormat обязателен: без него адаптер отвечает отказом «only supports native paths», и
     # проверка «ответил ли» приняла бы отказ за успех.
     B='{"seq":1,"type":"request","command":"initialize","arguments":{"adapterID":"php","clientID":"vibe","pathFormat":"path"}}'
-    answer=$({ printf 'Content-Length: %d\r\n\r\n%s' ${#B} "$B"; sleep 3; } \
-      | node "$PHP_DAP" 2>/dev/null | head -c 300 || true)
-    case "$answer" in
-      *'"success":true'*) : ;;
-      *) say "✖ встроенный адаптер vscode-php-debug не ответил успехом на initialize"; fail=1 ;;
-    esac
+    server_answers "$B" '"success":true' node "$PHP_DAP" \
+      || { say "✖ встроенный адаптер vscode-php-debug не ответил успехом на initialize"; fail=1; }
   fi
 fi
 
@@ -191,7 +233,7 @@ else
     grep -q "\"$PIN\"" "$REPORT" || { say "✖ версия отладчика ($var=$PIN) в отчёте о лицензиях не совпадает"; fail=1; }
   done
   for pkg in "@vtsls/language-server" "vscode-langservers-extracted"; do
-    PIN=$(python3 -c "import json;print(json.load(open('vibe-plugins/deps/servers-npm/package.json'))['dependencies']['$pkg'])")
+    PIN=$("$PYTHON" -c "import json;print(json.load(open('vibe-plugins/deps/servers-npm/package.json'))['dependencies']['$pkg'])")
     grep -q "\"$PIN\"" "$REPORT" || { say "✖ версия $pkg в отчёте о лицензиях не совпадает с закреплённой ($PIN)"; fail=1; }
   done
 fi

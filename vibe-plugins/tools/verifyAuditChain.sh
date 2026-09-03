@@ -8,12 +8,13 @@
 #
 # Использование: ./vibe-plugins/tools/verifyAuditChain.sh <файл.jsonl>
 set -euo pipefail
+. "$(dirname "$0")/pythonBin.sh"
 
 FILE="${1:-}"
 [ -n "$FILE" ] || { echo "✖ укажите файл: verifyAuditChain.sh <audit.jsonl>"; exit 1; }
 [ -f "$FILE" ] || { echo "✖ файла нет: $FILE"; exit 1; }
 
-python3 - "$FILE" <<'PYEOF'
+"$PYTHON" - "$FILE" <<'PYEOF'
 # -*- coding: utf-8 -*-
 import hashlib, io, sys
 
