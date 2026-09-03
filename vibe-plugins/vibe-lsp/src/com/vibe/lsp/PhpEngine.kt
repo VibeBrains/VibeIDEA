@@ -2,27 +2,22 @@
 package com.vibe.lsp
 
 import com.intellij.ide.util.PropertiesComponent
-import com.vibe.agent.util.ExecutableNames
 
 /**
- * Which of the two PHP language servers serves `*.php` on this machine.
+ * Which of the two PHP language servers serves `*.php`.
  *
- * PHP is the only language where one server cannot cover every system. The Phpactor phar we ship
- * is built with a hard requirement on `ext-posix`, and that extension does not exist in ANY Windows
- * build of PHP — it is a wrapper over POSIX system calls, not a package someone forgot to compile.
- * So on Windows Phpactor does not fail to be found, it fails to be possible, and the doctor telling
- * people to install it was sending them to spend an evening on something that cannot work
- * (найдено на живой машине 02–03.09.2026).
+ * The bundled Phpactor phar is the default everywhere, Windows included. It used to fail there:
+ * Box's requirement checker inside the phar demands `ext-posix`, an extension no Windows build of
+ * PHP has. The requirement turned out to be false — every `posix_*` call in the phar is guarded —
+ * and the checker has a documented switch, which [ServerBinaries.phpactorInterpreterArgs] applies.
+ * So «PHP on Windows» is answered by the server we already ship, not by a second one.
  *
- * Intelephense runs on Node, therefore everywhere. Its free tier covers exactly the hole Windows
- * has now — completion, go to definition, find references, diagnostics, hover, formatting; the paid
- * tier adds refactoring. It is proprietary, so it is installed on the machine and never shipped by
- * us, the same arrangement as vtsls and ESLint.
+ * Intelephense stays as an explicit choice: some people prefer it, and it runs on Node like the rest
+ * of our servers. It is proprietary and freemium, so it is installed on the machine and never
+ * shipped by us (the same arrangement as vtsls and ESLint).
  *
- * The choice is explicit and not only automatic: on Linux somebody will prefer Intelephense, and
- * under WSL somebody will point us at their own Phpactor through the path field that already
- * exists. [AUTO] is what people get without an opinion, and it is a decision about the system, not
- * about the person.
+ * The choice is stored once per application: a person who prefers a server prefers it for
+ * themselves, not for one project.
  */
 enum class PhpEngine(val id: String) {
   AUTO("auto"),
@@ -34,17 +29,16 @@ object PhpServerChoice {
   private const val KEY = "vibe.lsp.php.engine"
 
   /**
-   * The engine that actually starts, given the choice and the system.
+   * The engine that actually starts. [PhpEngine.AUTO] means the bundled one — on every system.
    *
-   * Pure: the OS arrives as a parameter, so «что будет на Windows» is answered by a test on macOS
-   * rather than by a machine somebody has to go and find.
+   * Pure and with the OS as a parameter on purpose: the day the answer depends on the system again,
+   * the test that says «Windows gets Phpactor» is where the decision will be visible.
    */
-  fun resolve(choice: PhpEngine, windows: Boolean): PhpEngine = when (choice) {
-    PhpEngine.AUTO -> if (windows) PhpEngine.INTELEPHENSE else PhpEngine.PHPACTOR
+  fun resolve(choice: PhpEngine, @Suppress("UNUSED_PARAMETER") windows: Boolean): PhpEngine = when (choice) {
+    PhpEngine.AUTO -> PhpEngine.PHPACTOR
     else -> choice
   }
 
-  /** An explicit choice is honoured even when it cannot work: it is theirs, and the doctor says so. */
   fun stored(): PhpEngine {
     val id = PropertiesComponent.getInstance().getValue(KEY).orEmpty()
     return PhpEngine.entries.firstOrNull { it.id == id } ?: PhpEngine.AUTO
@@ -52,22 +46,13 @@ object PhpServerChoice {
 
   fun store(engine: PhpEngine) = PropertiesComponent.getInstance().setValue(KEY, engine.id, PhpEngine.AUTO.id)
 
-  fun effective(): PhpEngine = resolve(stored(), ExecutableNames.isWindows())
+  fun effective(): PhpEngine = resolve(stored(), com.vibe.agent.util.ExecutableNames.isWindows())
 
   /** The server behind an engine. [PhpEngine.AUTO] is resolved first — it never reaches here. */
-  fun specOf(engine: PhpEngine): LspDoctor.ServerSpec = when (resolve(engine, ExecutableNames.isWindows())) {
+  fun specOf(engine: PhpEngine): LspDoctor.ServerSpec = when (resolve(engine, com.vibe.agent.util.ExecutableNames.isWindows())) {
     PhpEngine.INTELEPHENSE -> LspDoctor.INTELEPHENSE
     else -> LspDoctor.PHPACTOR
   }
 
   fun spec(): LspDoctor.ServerSpec = specOf(stored())
-
-  /**
-   * Whether this choice cannot work on this system.
-   *
-   * Said out loud rather than silently swapped: a person who chose Phpactor on Windows and got
-   * Intelephense would conclude our setting does nothing. The setting works — the choice does not.
-   */
-  fun impossibleHere(engine: PhpEngine, windows: Boolean): Boolean =
-    windows && resolve(engine, windows) == PhpEngine.PHPACTOR
 }

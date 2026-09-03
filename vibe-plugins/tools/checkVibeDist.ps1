@@ -88,10 +88,23 @@ try {
     foreach ($entry in @(
         'phpactor.phar',
         'phpactor-LICENSE',
+        'phpactorNoPosixCheck.php',
         'node\node_modules\@vtsls\language-server\bin\vtsls.js',
         'node\node_modules\vscode-langservers-extracted\bin\vscode-css-language-server',
         'node\node_modules\vscode-langservers-extracted\bin\vscode-eslint-language-server')) {
         if (-not (Test-Path (Join-Path $servers $entry))) { Fail "✖ нет встроенного сервера: $entry" }
+    }
+
+    # --- 4a. Phpactor на Windows: phar стартует только с выключенной проверкой Box ---
+    $php = Get-Command php -ErrorAction SilentlyContinue
+    $shim = Join-Path $servers 'phpactorNoPosixCheck.php'
+    if ($null -eq $php) {
+        Say '  php не найден — запуск встроенного Phpactor не проверялся'
+    }
+    elseif (Test-Path $shim) {
+        $out = & $php.Source -d "auto_prepend_file=$shim" (Join-Path $servers 'phpactor.phar') --version 2>&1 | Out-String
+        if ($out -match '^Phpactor') { Say "  phpactor.phar стартует на Windows с выключенной проверкой Box: $($out.Trim())" }
+        else { Fail "✖ phpactor.phar на Windows не стартует даже с выключателем: $($out.Trim())" }
     }
 
     # --- 5. Файл на месте — это ещё не работающий сервер ---

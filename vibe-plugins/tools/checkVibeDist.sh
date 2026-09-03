@@ -112,6 +112,8 @@ SERVERS="$APP_PLUGINS/vibe-lsp/servers"
 [ -d "$APP_PLUGINS/tasks" ] || { say "✖ нет плагина задач (plugins/tasks) — Open Task и трекеры не появятся"; fail=1; }
 [ -f "$SERVERS/phpactor.phar" ] || { say "✖ нет встроенного phpactor.phar"; fail=1; }
 [ -f "$SERVERS/phpactor-LICENSE" ] || { say "✖ нет текста лицензии рядом с phar (MIT требует)"; fail=1; }
+# Windows-выключатель проверки Box едет рядом с phar: без него на Windows сервер не стартует.
+[ -f "$SERVERS/phpactorNoPosixCheck.php" ] || { say "✖ нет phpactorNoPosixCheck.php рядом с phar — на Windows Phpactor не запустится"; fail=1; }
 for entry in \
   "node/node_modules/@vtsls/language-server/bin/vtsls.js" \
   "node/node_modules/vscode-langservers-extracted/bin/vscode-css-language-server" \
@@ -176,6 +178,16 @@ else
       say "  Phpactor на этой машине не запускается: phar требует ext-posix (нет на Windows) — известное ограничение, не дефект сборки" ;;
     *) say "✖ встроенный phpactor.phar не запускается"; fail=1 ;;
   esac
+  # Эмуляция Windows на этой машине: все posix_* выключены, а проверка Box снята нашим prepend —
+  # так проверяется и то, что выключатель работает, и то, что внутри phar нет незащищённого вызова.
+  if [ -f "$SERVERS/phpactorNoPosixCheck.php" ]; then
+    posix_fns=$(php -r 'echo implode(",", array_filter(get_defined_functions()["internal"], fn($f)=>str_starts_with($f,"posix_")));' 2>/dev/null || true)
+    win_out=$(php -d "disable_functions=$posix_fns" -d "auto_prepend_file=$SERVERS/phpactorNoPosixCheck.php" "$SERVERS/phpactor.phar" --version 2>&1 || true)
+    case "$win_out" in
+      Phpactor*) say "  phpactor.phar стартует без функций posix и с выключенной проверкой Box (эмуляция Windows)" ;;
+      *) say "✖ phpactor.phar без posix не стартует: $(printf '%s' "$win_out" | head -2 | tr '\n' ' ')"; fail=1 ;;
+    esac
+  fi
 fi
 
 # --- 5б. Отладочные адаптеры: файлы на месте И запускаются ---

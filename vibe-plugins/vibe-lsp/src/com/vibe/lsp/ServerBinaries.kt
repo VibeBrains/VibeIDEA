@@ -60,6 +60,26 @@ internal object ServerBinaries {
    */
   fun bundledPhpactor(): String? = bundled("phpactor.phar")
 
+  /** The prepend that switches off the phar's Box requirement checker — the whole Windows fix. */
+  fun bundledPhpactorShim(): String? = bundled(PHPACTOR_SHIM)
+
+  const val PHPACTOR_SHIM = "phpactorNoPosixCheck.php"
+
+  /**
+   * Interpreter options for the bundled phar, before the phar path.
+   *
+   * On Windows the phar refuses to start: Box's requirement checker demands `ext-posix`, which no
+   * Windows build of PHP has. The requirement is false — every `posix_*` call inside is guarded and
+   * the server answers `initialize` with all forty functions disabled (checked 03.09.2026) — so the
+   * checker is the only obstacle, and Box documents a switch for it. The switch travels as a
+   * prepend file rather than an environment variable: the process launcher of the LSP client is
+   * not ours to configure, while `-d` is.
+   *
+   * Pure: OS and shim path are parameters, so the Windows command line is tested on macOS.
+   */
+  fun phpactorInterpreterArgs(windows: Boolean, shim: String?): List<String> =
+    if (windows && shim != null) listOf("-d", "auto_prepend_file=$shim") else emptyList()
+
   /**
    * A file inside the servers directory we ship, or null when running from sources without it.
    *
@@ -134,7 +154,10 @@ internal object ServerBinaries {
     // the copy that matters is not the one PATH would find.
     ServerPaths.overrideFor(LspDoctor.PHPACTOR.id)?.let { return listOf(it, "language-server") }
     find("phpactor")?.let { return listOf(it, "language-server") }
-    bundledPhpactor()?.let { phar -> return listOf(resolve("php"), phar, "language-server") }
+    bundledPhpactor()?.let { phar ->
+      val args = phpactorInterpreterArgs(com.vibe.agent.util.ExecutableNames.isWindows(), bundledPhpactorShim())
+      return listOf(resolve("php")) + args + listOf(phar, "language-server")
+    }
     return listOf("phpactor", "language-server")
   }
 

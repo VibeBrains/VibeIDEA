@@ -27,6 +27,9 @@ mkdir -p extracted/servers && cp "phpactor-$PHPACTOR_V.phar" extracted/servers/p
 [ -f "phpactor-LICENSE" ] || curl -sL -o "phpactor-LICENSE" \
   "https://raw.githubusercontent.com/phpactor/phpactor/$PHPACTOR_V/LICENSE"
 cp "phpactor-LICENSE" extracted/servers/phpactor-LICENSE
+# Windows: the phar's Box checker demands ext-posix, which no Windows PHP has; every posix call
+# inside is guarded, so the checker is the only obstacle — this prepend switches it off.
+cp "phpactorNoPosixCheck.php" extracted/servers/phpactorNoPosixCheck.php
 printf 'Phpactor %s (MIT), bundled from the project release; see phpactor-LICENSE.\n' "$PHPACTOR_V" \
   > extracted/servers/README.txt
 

@@ -3,42 +3,34 @@ package com.vibe.lsp
 
 import kotlin.test.Test
 import kotlin.test.assertEquals
-import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
-/**
- * The Windows behaviour is checked here, on macOS: the OS is a parameter, not an environment.
- * Otherwise the only way to learn that Windows picks the wrong PHP server is to go and find a
- * Windows machine — which is exactly how this defect reached a release.
- */
+/** The OS is a parameter, so the Windows command line is checked here, on macOS. */
 class PhpEngineTest {
   @Test
-  fun `на Windows автоматический выбор не может быть Phpactor`() {
-    // Его phar требует ext-posix, которого в Windows-сборках PHP нет ни в одной: это обёртка над
-    // системными вызовами POSIX, а не пакет, который кто-то забыл собрать.
-    assertEquals(PhpEngine.INTELEPHENSE, PhpServerChoice.resolve(PhpEngine.AUTO, windows = true))
-  }
-
-  @Test
-  fun `вне Windows автоматический выбор — встроенный Phpactor`() {
-    // Встроенный, значит работающий сразу после установки и без чужой учётной записи в npm.
+  fun `автоматический выбор — встроенный Phpactor на любой системе, Windows включительно`() {
+    // Требование ext-posix у phar оказалось ложным: все вызовы внутри защищены, а проверку Box
+    // IDE отключает сама. Второй сервер ради Windows больше не нужен.
+    assertEquals(PhpEngine.PHPACTOR, PhpServerChoice.resolve(PhpEngine.AUTO, windows = true))
     assertEquals(PhpEngine.PHPACTOR, PhpServerChoice.resolve(PhpEngine.AUTO, windows = false))
   }
 
   @Test
-  fun `явный выбор человека уважается, даже когда он невозможен`() {
-    // Молча подменить выбор — научить человека, что настройка ничего не делает. Настройка
-    // работает; невозможен выбор, и доктор говорит об этом отдельной строкой.
+  fun `явный выбор человека уважается`() {
+    assertEquals(PhpEngine.INTELEPHENSE, PhpServerChoice.resolve(PhpEngine.INTELEPHENSE, windows = false))
     assertEquals(PhpEngine.PHPACTOR, PhpServerChoice.resolve(PhpEngine.PHPACTOR, windows = true))
-    assertTrue(PhpServerChoice.impossibleHere(PhpEngine.PHPACTOR, windows = true))
-    assertFalse(PhpServerChoice.impossibleHere(PhpEngine.INTELEPHENSE, windows = true))
-    assertFalse(PhpServerChoice.impossibleHere(PhpEngine.PHPACTOR, windows = false))
   }
 
   @Test
-  fun `автоматический выбор на Windows не считается невозможным`() {
-    // Иначе доктор ругался бы на настройку, которую человек не трогал и которая уже права.
-    assertFalse(PhpServerChoice.impossibleHere(PhpEngine.AUTO, windows = true))
+  fun `на Windows встроенный phar получает выключатель проверки Box, вне Windows — ничего`() {
+    // Именно -d, а не переменная окружения: запуск процесса делает клиент LSP, и его окружение
+    // не наше, а интерпретаторные опции — наши.
+    assertEquals(listOf("-d", "auto_prepend_file=/app/servers/phpactorNoPosixCheck.php"),
+                 ServerBinaries.phpactorInterpreterArgs(windows = true, shim = "/app/servers/phpactorNoPosixCheck.php"))
+    assertEquals(emptyList(), ServerBinaries.phpactorInterpreterArgs(windows = false, shim = "/app/servers/phpactorNoPosixCheck.php"))
+    // Нет файла — нет опции: php с несуществующим auto_prepend_file падает, а без опции phar хотя бы
+    // назовёт настоящую причину.
+    assertEquals(emptyList(), ServerBinaries.phpactorInterpreterArgs(windows = true, shim = null))
   }
 
   @Test
@@ -59,8 +51,6 @@ class PhpEngineTest {
 
   @Test
   fun `Intelephense мы не поставляем и он не требует php`() {
-    // Проприетарный: ставится на машину, как vtsls и ESLint. Заявить его встроенным значило бы
-    // обещать работу там, где ничего не установлено.
     assertEquals(null, LspDoctor.bundledPath(LspDoctor.INTELEPHENSE))
     assertEquals("node", LspDoctor.runtimeFor(LspDoctor.INTELEPHENSE))
     assertTrue(LspDoctor.INTELEPHENSE.installCommand.startsWith("npm install -g"))
@@ -68,8 +58,6 @@ class PhpEngineTest {
 
   @Test
   fun `свой путь можно задать каждому движку отдельно`() {
-    // Один путь на «PHP» не выразил бы обычный случай: Phpactor из vendor/bin в проекте И
-    // Intelephense из npm на той же машине.
     assertTrue(LspDoctor.PHPACTOR.id in ServerPaths.OVERRIDABLE)
     assertTrue(LspDoctor.INTELEPHENSE.id in ServerPaths.OVERRIDABLE)
   }

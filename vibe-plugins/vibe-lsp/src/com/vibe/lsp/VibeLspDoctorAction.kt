@@ -29,13 +29,6 @@ class VibeLspDoctorAction : AnAction({ t("lsp.doctor.action") }) {
         // A setting that stopped applying without a word is worse than one that never applied:
         // the person keeps debugging the server instead of the path they typed months ago.
         ServerPaths.broken(check.spec.id)?.let { appendLine("    " + t("doctor.lsp.brokenPath", "path" to it)) }
-        // The chosen PHP engine may be impossible on this system. Staying quiet about that leaves
-        // a person fixing the installation of a server that will never start here.
-        if (check.spec.id == LspDoctor.PHPACTOR.id) {
-          if (PhpServerChoice.impossibleHere(PhpServerChoice.stored(), com.vibe.agent.util.ExecutableNames.isWindows())) {
-            appendLine("    " + t("settings.lsp.php.noPosix"))
-          }
-        }
         // A bundled phar without an interpreter is a server that cannot start, and saying
         // «встроен» while it silently fails would be the same silence we exist to remove.
         val runtime = LspDoctor.runtimeFor(check.spec)
