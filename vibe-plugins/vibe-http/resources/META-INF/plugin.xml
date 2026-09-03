@@ -10,4 +10,19 @@
   <depends>com.intellij.modules.platform</depends>
   <!-- Каталог строк общий для всех наших плагинов (решение владельца 2026-08-30). -->
   <depends>com.vibe.agent</depends>
+
+  <extensions defaultExtensionNs="com.intellij">
+    <fileType name="VibeHttpRequest" implementationClass="com.vibe.http.HttpFileType" fieldName="INSTANCE"
+              language="TEXT" extensions="http;rest"/>
+    <toolWindow id="HTTP" anchor="right" icon="/icons/vibeHttp.svg"
+                factoryClass="com.vibe.http.ui.VibeHttpToolWindowFactory" doNotActivateOnStart="true"/>
+    <notificationGroup id="Vibe HTTP" displayType="BALLOON"/>
+  </extensions>
+
+  <actions>
+    <action id="Vibe.Http.Run" class="com.vibe.http.ui.VibeHttpRunAction" icon="AllIcons.Actions.Execute">
+      <add-to-group group-id="EditorPopupMenu" anchor="first"/>
+      <keyboard-shortcut keymap="$default" first-keystroke="control alt ENTER"/>
+    </action>
+  </actions>
 </idea-plugin>

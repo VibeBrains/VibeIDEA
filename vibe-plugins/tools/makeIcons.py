@@ -20,6 +20,7 @@ import sys
 LIGHT = "#6C707E"
 DARK = "#CED0D6"
 AGENT = "vibe-plugins/vibe-agent/resources/icons"
+HTTP = "vibe-plugins/vibe-http/resources/icons"
 SERVER = "vibe-plugins/vibe-server/resources/icons"
 HEADER = "<!-- Copyright 2026 VibeBrains. Use of this source code is governed by the Apache 2.0 license. -->"
 
@@ -64,6 +65,13 @@ ICONS = {
         '<path d="M8 4.6V8l2.4 1.7" stroke="{C}" stroke-width="1" stroke-linecap="round" stroke-linejoin="round"/>',
         '<circle cx="10" cy="10" r="7.5" stroke="{C}" stroke-width="1.4"/>'
         '<path d="M10 5.7V10l3 2.1" stroke="{C}" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>',
+    ),
+    # HTTP-клиент: стрелки туда и обратно — запрос ушёл, ответ пришёл.
+    "vibeHttp": (HTTP,
+        '<path d="M2.8 5.6h8.4M8.6 3 11.2 5.6 8.6 8.2" stroke="{C}" stroke-width="1" stroke-linecap="round" stroke-linejoin="round"/>'
+        '<path d="M13.2 10.4H4.8M7.4 7.8 4.8 10.4 7.4 13" stroke="{C}" stroke-width="1" stroke-linecap="round" stroke-linejoin="round"/>',
+        '<path d="M3.4 7h10.8M11.2 4 14.2 7l-3 3" stroke="{C}" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>'
+        '<path d="M16.6 13H5.8M8.8 10l-3 3 3 3" stroke="{C}" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>',
     ),
     # Дев-стек: серверная стойка. Отличается от будущего цилиндра БД тем же, чем в жизни:
     # стойка — это то, что мы запускаем, цилиндр — то, куда мы ходим за данными.
