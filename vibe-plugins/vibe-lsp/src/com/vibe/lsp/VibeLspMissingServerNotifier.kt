@@ -24,7 +24,7 @@ import java.awt.datatransfer.StringSelection
  */
 class VibeLspMissingServerNotifier(private val project: Project) : FileEditorManagerListener {
   override fun fileOpened(source: FileEditorManager, file: VirtualFile) {
-    val spec = LspDoctor.serverFor(file.name) ?: return
+    val spec = LspDoctor.serverFor(file.name, LspDoctor.active(PhpServerChoice.stored())) ?: return
     if (ServerBinaries.find(spec.binary) != null) return
     // Shipped with the IDE — nothing to install and nothing to say.
     if (LspDoctor.bundledPath(spec) != null) return

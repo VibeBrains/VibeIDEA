@@ -19,11 +19,27 @@ import javax.swing.JComponent
  */
 class VibeLspConfigurable : Configurable {
   private val fields = LinkedHashMap<String, TextFieldWithBrowseButton>()
+  private val phpEngine = com.intellij.openapi.ui.ComboBox(PhpEngine.entries.toTypedArray())
 
   override fun getDisplayName(): String = t("settings.lsp.title")
 
   override fun createComponent(): JComponent {
     val builder = FormBuilder.createFormBuilder()
+    // The PHP engine comes first: it decides which of the two paths below is even in play.
+    // Keys spelled out rather than assembled from the id: the i18n gate looks for literal calls,
+    // and a computed key reads to it as dead — it would offer to delete a string that is in use.
+    phpEngine.renderer = com.intellij.ui.SimpleListCellRenderer.create("") {
+      when (it) {
+        PhpEngine.AUTO -> t("settings.lsp.php.auto")
+        PhpEngine.PHPACTOR -> t("settings.lsp.php.phpactor")
+        PhpEngine.INTELEPHENSE -> t("settings.lsp.php.intelephense")
+      }
+    }
+    phpEngine.selectedItem = PhpServerChoice.stored()
+    builder.addLabeledComponent(t("settings.lsp.php.engine"), phpEngine)
+    builder.addComponent(JBLabel("<html>" + t("settings.lsp.php.hint") + "</html>").apply {
+      foreground = com.intellij.ui.JBColor.GRAY
+    })
     for (spec in LspDoctor.ALL) {
       if (spec.id !in ServerPaths.OVERRIDABLE) continue
       val field = TextFieldWithBrowseButton().apply {
@@ -44,13 +60,16 @@ class VibeLspConfigurable : Configurable {
   }
 
   override fun isModified(): Boolean =
-    fields.any { (id, field) -> field.text.trim() != ServerPaths.get(id) }
+    fields.any { (id, field) -> field.text.trim() != ServerPaths.get(id) } ||
+    phpEngine.selectedItem != PhpServerChoice.stored()
 
   override fun apply() {
     fields.forEach { (id, field) -> ServerPaths.set(id, field.text) }
+    (phpEngine.selectedItem as? PhpEngine)?.let { PhpServerChoice.store(it) }
   }
 
   override fun reset() {
     fields.forEach { (id, field) -> field.text = ServerPaths.get(id) }
+    phpEngine.selectedItem = PhpServerChoice.stored()
   }
 }

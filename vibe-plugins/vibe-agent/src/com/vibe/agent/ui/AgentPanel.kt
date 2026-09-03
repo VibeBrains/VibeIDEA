@@ -1674,8 +1674,8 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     }
     val target = target
     val hint = com.vibe.agent.watch.WatchInput.classify(command.source)
-    // Vision gate BEFORE the pipeline: downloading a lecture to then say t("chat.switchModel") wastes
-    // minutes. Audio needs no vision model, so it is not gated.
+    // Vision gate BEFORE the pipeline: downloading a lecture only to answer «switch the model»
+    // wastes minutes. Audio needs no vision model, so it is not gated.
     if (hint != com.vibe.agent.watch.WatchInput.Kind.AUDIO && !targetAcceptsImages(target)) {
       systemLine("[watch] " + com.vibe.agent.i18n.VibeI18n.t("watch.noVisionTarget"))
       return true
@@ -2578,7 +2578,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
         .measure(VibeAgentSettings.DESIGN_MEASURE_TIMEOUT_MS)
       val designFindings = measured.findings
       if (designFindings == null) {
-        // Why the detector is silent must be said: silence otherwise reads as t("chat.pageFine").
+        // Why the detector is silent must be said: silence otherwise reads as «the page is fine».
         systemLine(t("chat.design.notMeasured", "reason" to measured.reason))
       }
       else {

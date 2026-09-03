@@ -30,6 +30,8 @@ say() { printf '%s\n' "$1"; }
 # --- 1 и 2: ключи кода против каталога ---
 "$PYTHON" - "$BASE" "$SRC" <<'PY' || fail=1
 import json, io, re, sys, os
+sys.path.insert(0, os.path.join('vibe-plugins', 'tools'))
+from ktComments import strip_comments
 base_path, src = sys.argv[1], sys.argv[2]
 base = json.load(io.open(base_path, encoding='utf-8'))
 used = set()
@@ -38,7 +40,9 @@ for root, _, files in os.walk(src):
     for name in files:
         if not name.endswith('.kt'):
             continue
-        text = io.open(os.path.join(root, name), encoding='utf-8').read()
+        # Комментарии вырезаются: комментарий, ОБЪЯСНЯЮЩИЙ вызов t(), иначе изобретает ключ,
+        # которого в коде нет, и гейт требует завести строку под цитату.
+        text = strip_comments(io.open(os.path.join(root, name), encoding='utf-8').read())
         used.update(key_re.findall(text))
 
 missing = sorted(used - set(base))
@@ -90,6 +94,8 @@ excluded_paths=$(grep -v '^#' "$EXCLUSIONS" 2>/dev/null | grep -v '^$' | cut -d'
 # пунктуации, а настоящая непереведённая строка тонула в шуме.
 count=$("$PYTHON" - "$EXCLUSIONS" <<'PYCOUNT'
 import io, os, re, sys
+sys.path.insert(0, os.path.join('vibe-plugins', 'tools'))
+from ktComments import strip_comments
 excluded = set()
 for line in io.open(sys.argv[1], encoding='utf-8'):
     line = line.strip()
@@ -111,9 +117,9 @@ for root, _, files in os.walk('vibe-plugins'):
             continue
         text = io.open(path, encoding='utf-8').read()
         # Комментарии считать нельзя: они по правилам проекта английские, а редкая кириллица
-        # внутри них — пример или цитата, а не строка интерфейса.
-        text = re.sub(r'//[^\n]*', '', text)
-        text = re.sub(r'/\*.*?\*/', '', text, flags=re.S)
+        # внутри них — пример или цитата, а не строка интерфейса. Вырезает их общий разбор,
+        # знающий про строковые литералы: наивный «//» съедал бы хвост строки после https://.
+        text = strip_comments(text)
         total += sum(1 for m in literal.finditer(text) if cyrillic.search(m.group(0)))
 print(total)
 PYCOUNT

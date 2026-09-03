@@ -138,6 +138,20 @@ internal object ServerBinaries {
     return listOf("phpactor", "language-server")
   }
 
+  /**
+   * How to start Intelephense: only the person's own installation, because we ship none.
+   *
+   * `--stdio` is not optional for it: without a transport flag the server starts and says nothing,
+   * which looks exactly like a server that failed to start.
+   */
+  fun intelephenseCommand(): List<String> =
+    ServerPaths.overrideFor(LspDoctor.INTELEPHENSE.id)?.let { listOf(it, "--stdio") }
+    ?: nodeServerCommand("intelephense", "--stdio")
+
+  /** The PHP server the settings chose — the only spelling the factory needs to know. */
+  fun phpCommand(): List<String> =
+    if (PhpServerChoice.effective() == PhpEngine.INTELEPHENSE) intelephenseCommand() else phpactorCommand()
+
   fun cssCommand(): List<String> =
     ServerPaths.overrideFor(LspDoctor.CSS.id)?.let { listOf(it, "--stdio") }
     ?: nodeServerCommand("vscode-css-language-server", "--stdio")

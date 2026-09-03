@@ -76,6 +76,22 @@ object LspDoctor {
    * CSS/SCSS/LESS — the gap Community leaves open. HTML and JSON come from the same npm package
    * and are deliberately not wired: the platform serves them itself.
    */
+  /**
+   * PHP on Windows, and anywhere else somebody prefers it.
+   *
+   * Proprietary and freemium, therefore never shipped by us — installed on the machine like vtsls
+   * and ESLint. The free tier is what makes it worth wiring at all: completion, navigation,
+   * references, diagnostics, hover and formatting, which is the entire difference between «PHP
+   * works» and «PHP is a text file». Why it exists here at all — see [PhpEngine].
+   */
+  val INTELEPHENSE = ServerSpec(
+    id = "vibeIntelephense",
+    displayName = "PHP (Intelephense)",
+    binary = "intelephense",
+    installCommand = "npm install -g intelephense",
+    extensions = setOf("php"),
+  )
+
   val CSS = ServerSpec(
     id = "vibeCss",
     displayName = "CSS/SCSS/LESS (vscode-css-language-server)",
@@ -142,7 +158,21 @@ object LspDoctor {
     extensions = setOf("php"),
   )
 
-  val ALL: List<ServerSpec> = listOf(VTSLS, PHPACTOR, CSS, ESLINT)
+  /** Everything we know how to check — both PHP engines, of which only one ever runs. */
+  val ALL: List<ServerSpec> = listOf(VTSLS, PHPACTOR, INTELEPHENSE, CSS, ESLINT)
+
+  /**
+   * The servers that actually serve this machine: one per language.
+   *
+   * Reporting both PHP engines would tell a person to install two servers for one language, and
+   * the one they installed second would be the one not running.
+   */
+  fun active(engine: PhpEngine): List<ServerSpec> {
+    val php = PhpServerChoice.specOf(engine)
+    return ALL.filter { it.id !in PHP_ENGINE_IDS || it.id == php.id }
+  }
+
+  private val PHP_ENGINE_IDS = setOf(PHPACTOR.id, INTELEPHENSE.id)
 
   /** Checked on request rather than on every file open: debugging is a deliberate act. */
   val DEBUG_ADAPTERS: List<ServerSpec> = listOf(JS_DEBUG, PHP_DEBUG)
@@ -169,6 +199,8 @@ object LspDoctor {
    */
   fun bundledPath(spec: ServerSpec): String? = when (spec.id) {
     PHPACTOR.id -> ServerBinaries.bundledPhpactor()
+    // We ship no Intelephense: proprietary, installed on the machine — it is never bundled.
+    INTELEPHENSE.id -> null
     else -> ServerBinaries.bundledNode(spec.binary)
   }
 
@@ -201,7 +233,7 @@ object LspDoctor {
   /** The runtime a bundled server needs, or null when it needs none of ours. */
   fun runtimeFor(spec: ServerSpec): String? = when (spec.id) {
     PHPACTOR.id -> "php"
-    VTSLS.id, CSS.id, ESLINT.id, JS_DEBUG.id, PHP_DEBUG.id -> "node"
+    VTSLS.id, INTELEPHENSE.id, CSS.id, ESLINT.id, JS_DEBUG.id, PHP_DEBUG.id -> "node"
     else -> null
   }
 
@@ -209,8 +241,13 @@ object LspDoctor {
   fun installCommandFor(spec: ServerSpec, windows: Boolean = com.vibe.agent.util.ExecutableNames.isWindows()): String =
     if (windows) spec.installCommandWindows ?: spec.installCommand else spec.installCommand
 
-  /** The server responsible for a file, or null when the file is none of our business. */
-  fun serverFor(fileName: String, specs: List<ServerSpec> = ALL): ServerSpec? {
+  /**
+   * The server responsible for a file, or null when the file is none of our business.
+   *
+   * [specs] has no default on purpose: the answer for `*.php` depends on the chosen engine, and a
+   * default reading the settings would drag application state into a pure function.
+   */
+  fun serverFor(fileName: String, specs: List<ServerSpec>): ServerSpec? {
     val extension = fileName.substringAfterLast('.', "").lowercase()
     if (extension.isEmpty()) return null
     return specs.firstOrNull { extension in it.extensions }

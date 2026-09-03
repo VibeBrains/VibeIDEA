@@ -4,10 +4,12 @@
       <description>TypeScript/JavaScript language server (vtsls, wraps the VSCode TS extension)</description>
     </server>
     <fileNamePatternMapping patterns="*.ts;*.tsx;*.mts;*.cts;*.js;*.jsx;*.mjs;*.cjs" serverId="vibeVtsls" languageId="typescript"/>
-    <server id="vibePhpactor" name="PHP (Phpactor)" factoryClass="com.vibe.lsp.PhpactorServerFactory">
-      <description>PHP language server (Phpactor)</description>
+    <!-- Один вход на *.php: движок (Phpactor или Intelephense) выбирается в настройках, а два
+         зарегистрированных сервера на одном шаблоне запустились бы оба и удвоили подсказки. -->
+    <server id="vibePhp" name="PHP" factoryClass="com.vibe.lsp.PhpServerFactory">
+      <description>PHP language server: Phpactor or Intelephense, whichever the settings choose</description>
     </server>
-    <fileNamePatternMapping patterns="*.php" serverId="vibePhpactor" languageId="php"/>
+    <fileNamePatternMapping patterns="*.php" serverId="vibePhp" languageId="php"/>
     <!-- CSS/SCSS/LESS: единственный фронтовый язык, которого в Community нет вовсе.
          HTML и JSON тем же пакетом НЕ подключаем — платформа обслуживает их сама. -->
     <server id="vibeCss" name="CSS/SCSS/LESS" factoryClass="com.vibe.lsp.CssServerFactory">

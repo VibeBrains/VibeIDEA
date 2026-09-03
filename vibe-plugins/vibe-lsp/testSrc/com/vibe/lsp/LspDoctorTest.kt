@@ -31,18 +31,24 @@ class LspDoctorTest {
 
   @Test
   fun `the file extension picks the server responsible for it`() {
-    assertEquals(LspDoctor.VTSLS, LspDoctor.serverFor("AgentPanel.tsx"))
-    assertEquals(LspDoctor.VTSLS, LspDoctor.serverFor("index.MJS"))
-    assertEquals(LspDoctor.PHPACTOR, LspDoctor.serverFor("Kernel.php"))
+    val active = LspDoctor.active(PhpEngine.PHPACTOR)
+    assertEquals(LspDoctor.VTSLS, LspDoctor.serverFor("AgentPanel.tsx", active))
+    assertEquals(LspDoctor.VTSLS, LspDoctor.serverFor("index.MJS", active))
+    assertEquals(LspDoctor.PHPACTOR, LspDoctor.serverFor("Kernel.php", active))
+    // The engine decides who answers for PHP: on Windows the answer must not be Phpactor, or the
+    // notification sends people to install a server that cannot start there.
+    assertEquals(LspDoctor.INTELEPHENSE,
+                 LspDoctor.serverFor("Kernel.php", LspDoctor.active(PhpEngine.INTELEPHENSE)))
   }
 
   @Test
   fun `a file we do not serve asks about nothing`() {
     // Silence here matters: a notification about PHP while opening a README would train the
     // user to dismiss the notification that actually names a missing server.
-    assertNull(LspDoctor.serverFor("README.md"))
-    assertNull(LspDoctor.serverFor("Makefile"))
-    assertNull(LspDoctor.serverFor(".gitignore"))
+    val active = LspDoctor.active(PhpEngine.PHPACTOR)
+    assertNull(LspDoctor.serverFor("README.md", active))
+    assertNull(LspDoctor.serverFor("Makefile", active))
+    assertNull(LspDoctor.serverFor(".gitignore", active))
   }
 
   @Test
@@ -55,14 +61,18 @@ class LspDoctorTest {
   fun `server ids match the ids declared to LSP4IJ`() {
     // The report names the server the way the LSP4IJ console does; a drift here sends the
     // user looking for a server that is not called that anywhere in the UI.
-    assertEquals(setOf("vibeVtsls", "vibePhpactor", "vibeCss", "vibeEslint"), LspDoctor.ALL.map { it.id }.toSet())
+    // PHP is the exception: two engines share ONE LSP4IJ entry (`vibePhp`), because two servers
+    // mapped onto *.php would both start and double every completion. The spec ids stay separate —
+    // a person can point us at their own copy of either.
+    assertEquals(setOf("vibeVtsls", "vibePhpactor", "vibeIntelephense", "vibeCss", "vibeEslint"),
+                 LspDoctor.ALL.map { it.id }.toSet())
   }
 
   @Test
   fun `HTML и JSON отданы платформе, а не серверу`() {
     // Тот же npm-пакет несёт серверы html и json, и подключать их нельзя: в Community они уже есть,
     // а два движка на одном файле дают два набора подсказок, половина которых спорит с другой.
-    val served = LspDoctor.ALL.flatMap { it.extensions }.toSet()
+    val served = LspDoctor.active(PhpEngine.PHPACTOR).flatMap { it.extensions }.toSet()
     assertFalse("html" in served)
     assertFalse("json" in served)
     assertTrue("css" in served, "CSS в Community нет вовсе — вот его и закрываем")
