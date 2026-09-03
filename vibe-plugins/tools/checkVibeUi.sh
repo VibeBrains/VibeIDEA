@@ -68,12 +68,34 @@ if ! python3 "$root/vibe-plugins/tools/makeIcons.py" --check >/dev/null 2>&1; th
 fi
 
 # 5. Каждая наша панель — со своим значком: шесть панелей с одной картинкой в полосе неразличимы.
-icons_used=$(grep -o 'icon="/icons/[A-Za-z0-9]*\.svg"' "$root/vibe-plugins/vibe-agent/resources/META-INF/plugin.xml" | sort | uniq -c | awk '$1 > 1 {print $2}')
+icons_used=$(grep -ho 'icon="/icons/[A-Za-z0-9]*\.svg"' "$root"/vibe-plugins/*/resources/META-INF/plugin.xml | sort | uniq -c | awk '$1 > 1 {print $2}')
 if [[ -n "$icons_used" ]]; then
   echo "ОШИБКА: один значок у нескольких панелей — в полосе они неразличимы:"
   printf '%s\n' "$icons_used" | sed 's/^/  /'
   status=1
 fi
+
+# 6. Панель без значка и панель, спрятанная во «вторичные». Первое даёт безликий квадрат в полосе,
+#    второе прячет её под «...» — и то и другое означает «этой части продукта как будто нет».
+while IFS= read -r window; do
+  case "$window" in
+    *icon=*) ;;
+    *) echo "ОШИБКА: тулвиндоу без значка: $(printf '%s' "$window" | sed 's/.*id="\([^"]*\)".*/\1/')"; status=1 ;;
+  esac
+  case "$window" in
+    *secondary=\"true\"*)
+      echo "ОШИБКА: тулвиндоу спрятан во вторичные (secondary=true): $(printf '%s' "$window" | sed 's/.*id="\([^"]*\)".*/\1/')"
+      status=1 ;;
+  esac
+done < <(python3 - "$root" <<'PYWIN'
+import glob, io, re, sys
+root = sys.argv[1]
+for path in sorted(glob.glob(root + '/vibe-plugins/*/resources/META-INF/plugin.xml')):
+    text = io.open(path, encoding='utf-8').read()
+    for match in re.finditer(r'<toolWindow\b[^>]*/>', text, re.S):
+        print(' '.join(match.group(0).split()))
+PYWIN
+)
 
 [[ $status -eq 0 ]] && echo "UI-гейт: тонкие скроллы на месте (наши панели + правка платформы), обходов VibeScroll нет; значки на месте и различимы"
 exit $status

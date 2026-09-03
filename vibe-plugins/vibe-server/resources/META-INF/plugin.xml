@@ -11,7 +11,8 @@
        Оба плагина всегда едут в одном дистрибутиве, поэтому зависимость ничего не ломает. -->
   <depends>com.vibe.agent</depends>
   <extensions defaultExtensionNs="com.intellij">
-    <toolWindow id="VibeServer" anchor="bottom" factoryClass="com.vibe.server.ui.VibeServerToolWindowFactory"/>
+    <toolWindow id="VibeServer" anchor="bottom" icon="/icons/vibeServer.svg"
+                factoryClass="com.vibe.server.ui.VibeServerToolWindowFactory"/>
     <notificationGroup id="Vibe Server" displayType="BALLOON"/>
   </extensions>
 </idea-plugin>

@@ -13,15 +13,15 @@
   <!-- Схемы .vibe/*.json: автодополнение и проверка в редакторе вместо разбора по логам. -->
   <depends optional="true" config-file="vibe-json-schemas.xml">com.intellij.modules.json</depends>
   <extensions defaultExtensionNs="com.intellij">
-    <toolWindow id="Дизайн" anchor="right" secondary="true" factoryClass="com.vibe.agent.design.DesignToolWindowFactory"
+    <toolWindow id="Дизайн" anchor="right" factoryClass="com.vibe.agent.design.DesignToolWindowFactory"
                 icon="/icons/vibeDesign.svg" doNotActivateOnStart="true"/>
-    <toolWindow id="Аудит" anchor="bottom" secondary="true" factoryClass="com.vibe.agent.audit.VibeAuditToolWindowFactory"
+    <toolWindow id="Аудит" anchor="bottom" factoryClass="com.vibe.agent.audit.VibeAuditToolWindowFactory"
                 icon="/icons/vibeAudit.svg" doNotActivateOnStart="true"/>
-    <toolWindow id="Документы" anchor="right" secondary="true" factoryClass="com.vibe.agent.docs.VibeDocsToolWindowFactory"
+    <toolWindow id="Документы" anchor="right" factoryClass="com.vibe.agent.docs.VibeDocsToolWindowFactory"
                 icon="/icons/vibeDocs.svg" doNotActivateOnStart="true"/>
-    <toolWindow id="Диспетчерская" anchor="bottom" secondary="true" factoryClass="com.vibe.agent.runs.VibeRunsToolWindowFactory"
+    <toolWindow id="Диспетчерская" anchor="bottom" factoryClass="com.vibe.agent.runs.VibeRunsToolWindowFactory"
                 icon="/icons/vibeRuns.svg" doNotActivateOnStart="true"/>
-    <toolWindow id="Фоновые задачи" anchor="bottom" secondary="true"
+    <toolWindow id="Фоновые задачи" anchor="bottom"
                 factoryClass="com.vibe.agent.background.VibeTasksToolWindowFactory"
                 icon="/icons/vibeTasks.svg" doNotActivateOnStart="true"/>
     <toolWindow id="VibeAgent" anchor="right" factoryClass="com.vibe.agent.ui.VibeAgentToolWindowFactory" icon="/icons/vibeAgent.svg"/>
