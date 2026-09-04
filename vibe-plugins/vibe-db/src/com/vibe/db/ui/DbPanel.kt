@@ -69,7 +69,18 @@ class DbPanel(private val project: Project) : JPanel(BorderLayout()) {
     border = JBUI.Borders.empty(6)
     rows = 5
   }
-  private val results = JBTable().apply { autoResizeMode = javax.swing.JTable.AUTO_RESIZE_OFF }
+  private val results = JBTable().apply {
+    autoResizeMode = javax.swing.JTable.AUTO_RESIZE_OFF
+    // Правая кнопка на строке: скопировать в тикет, повторить на другом стенде, найти снова.
+    // Без этого человек выделяет ячейки по одной и склеивает руками — и ошибается в кавычках.
+    componentPopupMenu = javax.swing.JPopupMenu().apply {
+      add(javax.swing.JMenuItem(t("db.copy.json")).apply { addActionListener { copyRow(RowFormat.JSON) } })
+      add(javax.swing.JMenuItem(t("db.copy.insert")).apply { addActionListener { copyRow(RowFormat.INSERT) } })
+      add(javax.swing.JMenuItem(t("db.copy.where")).apply { addActionListener { copyRow(RowFormat.WHERE) } })
+    }
+  }
+
+  private enum class RowFormat { JSON, INSERT, WHERE }
   private val statusLine = JBLabel(" ").apply { border = JBUI.Borders.empty(4, 8) }
 
   /** Прочитанные столбцы по таблицам — чтобы не спрашивать метаданные на каждое раскрытие. */
@@ -376,6 +387,29 @@ class DbPanel(private val project: Project) : JPanel(BorderLayout()) {
    * Именно показанное, а не «повторим запрос и выгрузим»: между показом и нажатием данные могли
    * измениться, и человек получил бы файл, не совпадающий с тем, на что он смотрел.
    */
+  /**
+   * Копирует выделенную строку в выбранном виде.
+   *
+   * Имя таблицы для INSERT берём из выделенного узла дерева, если он есть; иначе из запроса не
+   * угадываем — подставленное наугад имя дало бы запрос, который выполнится не туда.
+   */
+  private fun copyRow(format: RowFormat) {
+    val table = lastTable ?: return
+    val viewRow = results.selectedRow
+    if (viewRow < 0) return
+    val row = table.rows.getOrNull(results.convertRowIndexToModel(viewRow)) ?: return
+    val selected = (tree.lastSelectedPathComponent as? DefaultMutableTreeNode)?.userObject as? DbCatalog.Table
+    val text = when (format) {
+      RowFormat.JSON -> com.vibe.db.RowExport.toJson(table.columns, row) { t("db.binary", "bytes" to it) }
+      RowFormat.INSERT -> com.vibe.db.RowExport.toInsert(
+        selected?.name ?: t("db.copy.tablePlaceholder"), selected?.schema, table.columns, row)
+      RowFormat.WHERE -> com.vibe.db.RowExport.toWhere(table.columns, row, table.columns.map { it.label })
+    }
+    com.intellij.openapi.ide.CopyPasteManager.getInstance().setContents(java.awt.datatransfer.StringSelection(text))
+    statusLine.foreground = JBColor.foreground()
+    statusLine.text = t("db.copy.done")
+  }
+
   private fun exportCsv() {
     val table = lastTable ?: return
     val descriptor = com.intellij.openapi.fileChooser.FileSaverDescriptor(

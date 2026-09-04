@@ -1565,5 +1565,10 @@
   "http.tab.history": "История",
   "http.history.line": "{time}  ·  {status}  ·  {ms} мс  ·  {size}",
   "http.history.statusChanged": "статус изменился: было {before}, стало {now}",
-  "http.history.bodyChanged": "тело ответа отличается от прошлого раза"
+  "http.history.bodyChanged": "тело ответа отличается от прошлого раза",
+  "db.copy.json": "Скопировать строку как JSON",
+  "db.copy.insert": "Скопировать строку как INSERT",
+  "db.copy.where": "Скопировать условие WHERE для этой строки",
+  "db.copy.done": "Скопировано в буфер обмена",
+  "db.copy.tablePlaceholder": "ТАБЛИЦА"
 }

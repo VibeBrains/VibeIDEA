@@ -1565,5 +1565,10 @@
   "http.tab.history": "History",
   "http.history.line": "{time}  ·  {status}  ·  {ms} ms  ·  {size}",
   "http.history.statusChanged": "status changed: was {before}, now {now}",
-  "http.history.bodyChanged": "the response body differs from the previous run"
+  "http.history.bodyChanged": "the response body differs from the previous run",
+  "db.copy.json": "Copy row as JSON",
+  "db.copy.insert": "Copy row as INSERT",
+  "db.copy.where": "Copy a WHERE clause for this row",
+  "db.copy.done": "Copied to the clipboard",
+  "db.copy.tablePlaceholder": "TABLE"
 }
