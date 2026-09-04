@@ -41,6 +41,14 @@ import json
 for f in json.load(open('$STAMP'))['files']: print(f['file'], f['sha256'])
 ")
 
+# Заметки проверяются ДО всего остального: без фразы поддержки релиз не выпускается, и узнавать
+# об этом после заливки 800 МБ — поздно. Гейт перенят у VibeIDE (vibe-release-lint.js).
+"$(dirname "$0")/checkVibeReleaseNotes.sh" "$(python3 -c "
+import json;print(json.load(open('$STAMP'))['version'])")" "$NOTES" || {
+  echo "Публикация отменена: заметки не прошли проверку."
+  exit 1
+}
+
 fail=0
 FILES=()
 for entry in "${ENTRIES[@]}"; do
