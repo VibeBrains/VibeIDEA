@@ -6,11 +6,12 @@ import com.intellij.ide.util.PropertiesComponent
 /**
  * Which of the two PHP language servers serves `*.php`.
  *
- * The bundled Phpactor phar is the default everywhere, Windows included. It used to fail there:
- * Box's requirement checker inside the phar demands `ext-posix`, an extension no Windows build of
- * PHP has. The requirement turned out to be false — every `posix_*` call in the phar is guarded —
- * and the checker has a documented switch, which [ServerBinaries.phpactorInterpreterArgs] applies.
- * So «PHP on Windows» is answered by the server we already ship, not by a second one.
+ * The bundled Phpactor phar is the default everywhere, Windows included. It used to fail there: the
+ * phar's own entry point refuses to start without `ext-posix`, an extension no Windows build of PHP
+ * has. The requirement turned out to be false — every `posix_*` call in the phar is guarded, and the
+ * server answers `initialize` in full without it — so [ServerBinaries.phpactorScript] starts the
+ * phar through a launcher that boots its autoloader past that check. So «PHP on Windows» is
+ * answered by the server we already ship, not by a second one.
  *
  * Intelephense stays as an explicit choice: some people prefer it, and it runs on Node like the rest
  * of our servers. It is proprietary and freemium, so it is installed on the machine and never

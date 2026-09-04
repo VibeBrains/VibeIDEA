@@ -19,6 +19,7 @@
 # Использование: ./vibe-plugins/tools/checkVibeReleaseNotes.sh vX.Y.Z <файл-заметок>
 set -euo pipefail
 cd "$(dirname "$0")/../.."
+. vibe-plugins/tools/pythonBin.sh
 
 VERSION="${1:-}"
 NOTES="${2:-}"
@@ -26,7 +27,7 @@ NOTES="${2:-}"
 [ -f "$NOTES" ] || { echo "✖ нет файла заметок: $NOTES"; exit 1; }
 PHRASES=docs/vibe/releaseDonationPhrases.md
 
-python3 - "$VERSION" "$NOTES" "$PHRASES" <<'PY'
+"$PYTHON" - "$VERSION" "$NOTES" "$PHRASES" <<'PY'
 import io, re, sys
 version, notes_path, phrases_path = sys.argv[1], sys.argv[2], sys.argv[3]
 text = io.open(notes_path, encoding='utf-8').read()

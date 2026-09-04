@@ -15,6 +15,7 @@
 
 set -euo pipefail
 root="$(cd "$(dirname "$0")/../.."; pwd)"
+. "$root/vibe-plugins/tools/pythonBin.sh"
 status=0
 
 thin_class="$root/platform/platform-api/src/com/intellij/ui/components/JBThinOverlappingScrollBar.kt"
@@ -60,9 +61,9 @@ fi
 # 4. Значки тулвиндоу: четвёрка файлов на значок и совпадение с описанием в makeIcons.py.
 #    Значок правят в одном месте из четырёх — и в полосе он меняется, а в Search Everywhere нет;
 #    геометрия светлого и тёмного расходится — дёргается выделение. Генератор снимает оба случая.
-if ! python3 "$root/vibe-plugins/tools/makeIcons.py" --check >/dev/null 2>&1; then
+if ! "$PYTHON" "$root/vibe-plugins/tools/makeIcons.py" --check >/dev/null 2>&1; then
   echo "ОШИБКА: значки тулвиндоу разошлись с описанием vibe-plugins/tools/makeIcons.py."
-  python3 "$root/vibe-plugins/tools/makeIcons.py" --check 2>&1 | sed 's/^/  /'
+  "$PYTHON" "$root/vibe-plugins/tools/makeIcons.py" --check 2>&1 | sed 's/^/  /'
   echo "  Правьте ОПИСАНИЕ и перегенерируйте: python3 vibe-plugins/tools/makeIcons.py"
   status=1
 fi
@@ -87,7 +88,7 @@ while IFS= read -r window; do
       echo "ОШИБКА: тулвиндоу спрятан во вторичные (secondary=true): $(printf '%s' "$window" | sed 's/.*id="\([^"]*\)".*/\1/')"
       status=1 ;;
   esac
-done < <(python3 - "$root" <<'PYWIN'
+done < <("$PYTHON" - "$root" <<'PYWIN'
 import glob, io, re, sys
 root = sys.argv[1]
 for path in sorted(glob.glob(root + '/vibe-plugins/*/resources/META-INF/plugin.xml')):
@@ -100,7 +101,7 @@ PYWIN
 # 7. Токены темы: каждый namedColor("Vibe.*") обязан быть объявлен в vibeNeonDark.theme.json.
 #    Незаявленный токен НЕ ошибка компиляции и НЕ видна глазами: код молча берёт запасной цвет,
 #    и тема просто не красит эту панель. Найдено ревизией 03.09.2026 — шесть таких токенов.
-python3 - "$root" <<'PYTOKENS' || status=1
+"$PYTHON" - "$root" <<'PYTOKENS' || status=1
 import collections, io, json, os, re, sys
 root = sys.argv[1]
 theme = json.load(io.open(os.path.join(root, 'vibe-plugins/vibe-theme/resources/vibeNeonDark.theme.json'), encoding='utf-8'),

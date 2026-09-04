@@ -10,12 +10,31 @@
 # упаковке и документации — ниже перечислено, что этим считается. Любой файл вне списка означает,
 # что продукт изменился, и тогда это уже следующая версия, а не второй артефакт этой.
 #
-# Использование: releasePackagingOnly.sh vX.Y.Z <коммит>   (код 0 — правило выполнено)
+# Исключение — «правка продукта поверх тега» (`--product-fix "<причина>"`). Оно существует ради
+# одного случая: вторая ОС при сборке обнаружила, что обещанное в этом релизе на ней НЕ РАБОТАЕТ, и
+# правка нужна прямо в её артефакт. Первый прецедент — 04.09.2026: заголовок 0.4.0 обещал «PHP на
+# Windows заработал», а сервер там не стартовал вовсе. Исключение ничего не прячет, а наоборот
+# заставляет назвать: причина уходит в штамп и в вывод публикации, полный список изменённых файлов
+# печатается. Разошедшиеся артефакты одной версии — плохо; артефакт, молча не делающий обещанного, —
+# хуже, и выбор между ними должен быть виден, а не сделан скриптом.
+#
+# Что НЕ разрешено даже так: смена закреплённых версий серверов. Тогда две ОС везут разные внешние
+# серверы под одним номером версии — это уже не «правка», а другой состав поставки.
+#
+# Использование:
+#   releasePackagingOnly.sh vX.Y.Z <коммит> [--product-fix "<причина>"]   (код 0 — правило выполнено)
 set -euo pipefail
 cd "$(dirname "$0")/../.."
 
-VERSION="${1:-}"; COMMIT="${2:-}"
-[ -n "$VERSION" ] && [ -n "$COMMIT" ] || { echo "✖ использование: releasePackagingOnly.sh vX.Y.Z <коммит>"; exit 1; }
+VERSION="${1:-}"; COMMIT="${2:-}"; MODE="${3:-}"; REASON="${4:-}"
+[ -n "$VERSION" ] && [ -n "$COMMIT" ] || { echo "✖ использование: releasePackagingOnly.sh vX.Y.Z <коммит> [--product-fix \"<причина>\"]"; exit 1; }
+if [ -n "$MODE" ] && [ "$MODE" != "--product-fix" ]; then
+  echo "✖ неизвестный ключ: $MODE"; exit 1
+fi
+if [ "$MODE" = "--product-fix" ] && [ -z "$REASON" ]; then
+  echo "✖ --product-fix требует причину одной строкой: чем именно артефакт этой ОС отличается от тега и почему это правильно"
+  exit 1
+fi
 TAG_COMMIT=$(git rev-parse "$VERSION^{commit}")
 
 git merge-base --is-ancestor "$TAG_COMMIT" "$COMMIT" || {
@@ -29,16 +48,29 @@ git merge-base --is-ancestor "$TAG_COMMIT" "$COMMIT" || {
 ALLOWED='^(build/|vibeidea-customization/|vibe-plugins/tools/|vibe-plugins/deps/download\.sh$|docs/|updates/|[^/]+\.md$)'
 CHANGED=$(git diff --name-only "$TAG_COMMIT" "$COMMIT")
 OUTSIDE=$(printf '%s\n' "$CHANGED" | grep -Ev "$ALLOWED" || true)
-if [ -n "$OUTSIDE" ]; then
+if [ -n "$OUTSIDE" ] && [ "$MODE" != "--product-fix" ]; then
   echo "✖ разница с тегом $VERSION выходит за пределы упаковки — это другой продукт, не второй артефакт:"
   printf '%s\n' "$OUTSIDE" | sed 's/^/    /'
+  echo "  Если это осознанная правка ради работоспособности ЭТОЙ ОС — назовите её:"
+  echo "  releasePackagingOnly.sh $VERSION $COMMIT --product-fix \"<причина>\""
   exit 1
 fi
-PINS=$(git diff "$TAG_COMMIT" "$COMMIT" -- vibe-plugins/deps/download.sh | grep -E '^[-+][^-+]' | grep -E '(_V|SHA)=' || true)
+
+# Версии серверов не расходятся между ОС ни при каком режиме.
+PINS=$(git diff "$TAG_COMMIT" "$COMMIT" -- vibe-plugins/deps/pins.env vibe-plugins/deps/download.sh \
+  | grep -E '^[-+][^-+]' | grep -E '(_V|SHA)=' || true)
 if [ -n "$PINS" ]; then
-  echo "✖ в download.sh изменены закреплённые версии или хеши — это другой набор серверов, не второй артефакт:"
+  echo "✖ изменены закреплённые версии или хеши серверов — это другой состав поставки, не второй артефакт:"
   printf '%s\n' "$PINS" | sed 's/^/    /'
   exit 1
 fi
-echo "  сборка на упаковочном потомке тега $VERSION: разница только в упаковке и документации"
+
+if [ -n "$OUTSIDE" ]; then
+  echo "  ВНИМАНИЕ: артефакт этой ОС содержит правку продукта поверх тега $VERSION"
+  echo "  причина: $REASON"
+  echo "  файлы продукта, изменённые поверх тега:"
+  printf '%s\n' "$OUTSIDE" | sed 's/^/    /'
+else
+  echo "  сборка на упаковочном потомке тега $VERSION: разница только в упаковке и документации"
+fi
 printf '%s\n' "$CHANGED" | sed 's/^/    /'

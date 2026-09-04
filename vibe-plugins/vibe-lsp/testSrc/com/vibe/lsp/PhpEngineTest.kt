@@ -22,15 +22,17 @@ class PhpEngineTest {
   }
 
   @Test
-  fun `на Windows встроенный phar получает выключатель проверки Box, вне Windows — ничего`() {
-    // Именно -d, а не переменная окружения: запуск процесса делает клиент LSP, и его окружение
-    // не наше, а интерпретаторные опции — наши.
-    assertEquals(listOf("-d", "auto_prepend_file=/app/servers/phpactorNoPosixCheck.php"),
-                 ServerBinaries.phpactorInterpreterArgs(windows = true, shim = "/app/servers/phpactorNoPosixCheck.php"))
-    assertEquals(emptyList(), ServerBinaries.phpactorInterpreterArgs(windows = false, shim = "/app/servers/phpactorNoPosixCheck.php"))
-    // Нет файла — нет опции: php с несуществующим auto_prepend_file падает, а без опции phar хотя бы
-    // назовёт настоящую причину.
-    assertEquals(emptyList(), ServerBinaries.phpactorInterpreterArgs(windows = true, shim = null))
+  fun `на Windows phar запускается через лаунчер, вне Windows — сам собой`() {
+    val launcher = "/app/servers/phpactorLaunch.php"
+    val phar = "/app/servers/phpactor.phar"
+    // Собственная проверка phar (extension_loaded('posix') и exit 255) на Windows не проходит
+    // никогда: расширения там нет ни в одной сборке PHP. Лаунчер поднимает автозагрузчик phar мимо
+    // этой строки — больше он не делает ничего.
+    assertEquals(launcher, ServerBinaries.phpactorScript(windows = true, launcher = launcher, phar = phar))
+    assertEquals(phar, ServerBinaries.phpactorScript(windows = false, launcher = launcher, phar = phar))
+    // Лаунчера рядом нет (запуск из исходников без скачанного набора) — зовём сам phar: он назовёт
+    // настоящую причину вместо падения на несуществующем пути.
+    assertEquals(phar, ServerBinaries.phpactorScript(windows = true, launcher = null, phar = phar))
   }
 
   @Test

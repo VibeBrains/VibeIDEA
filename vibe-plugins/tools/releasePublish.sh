@@ -28,6 +28,10 @@ STAMP=$ARTIFACTS/release-stamp.json
 read -r VERSION COMMIT PACKAGING_ONLY <<<"$("$PYTHON" -c "
 import json;d=json.load(open('$STAMP'));print(d['version'],d['commit'],str(d.get('packagingOnly',False)).lower())
 ")"
+# Причина правки продукта поверх тега — отдельной строкой: в ней пробелы, и в общий read она не лезет.
+PRODUCT_FIX=$("$PYTHON" -c "
+import json;print(json.load(open('$STAMP')).get('productFix',''))
+")
 # Одна строка на файл: «имя sha256».
 #
 # Читаем циклом, а не mapfile: в macOS штатный bash — 3.2, где mapfile не существует, и релиз
@@ -43,7 +47,7 @@ for f in json.load(open('$STAMP'))['files']: print(f['file'], f['sha256'])
 
 # Заметки проверяются ДО всего остального: без фразы поддержки релиз не выпускается, и узнавать
 # об этом после заливки 800 МБ — поздно. Гейт перенят у VibeIDE (vibe-release-lint.js).
-"$(dirname "$0")/checkVibeReleaseNotes.sh" "$(python3 -c "
+"$(dirname "$0")/checkVibeReleaseNotes.sh" "$("$PYTHON" -c "
 import json;print(json.load(open('$STAMP'))['version'])")" "$NOTES" || {
   echo "Публикация отменена: заметки не прошли проверку."
   exit 1
@@ -70,9 +74,12 @@ else
   # с тем, что человек потом выкачает по тегу. Поймано собственным сухим прогоном 31.08.2026.
   TAG_COMMIT=$(git rev-parse "$VERSION^{commit}")
   if [ "$TAG_COMMIT" != "$COMMIT" ]; then
-    # Единственное допустимое расхождение: релиз уже вышел под другую ОС, а эта сборка — на
-    # упаковочном потомке тега. Штампу здесь не верят — правило проверяется заново.
-    if [ "$PACKAGING_ONLY" = true ] && ./vibe-plugins/tools/releasePackagingOnly.sh "$VERSION" "$COMMIT"; then
+    # Допустимое расхождение: релиз уже вышел под другую ОС, а эта сборка — на потомке тега.
+    # Штампу здесь не верят — правило проверяется заново, вместе с причиной правки продукта, если
+    # она в штампе названа. Причина не «разрешение», а запись: её печатает и публикация.
+    if [ "$PACKAGING_ONLY" = true ] \
+       && ./vibe-plugins/tools/releasePackagingOnly.sh "$VERSION" "$COMMIT" \
+            ${PRODUCT_FIX:+--product-fix "$PRODUCT_FIX"}; then
       :
     else
       echo "✖ тег $VERSION указывает на $TAG_COMMIT, а проверялся $COMMIT"; fail=1
@@ -100,7 +107,8 @@ fi
 
 echo "  версия $VERSION, коммит $COMMIT"
 for f in "${FILES[@]}"; do echo "  файл $(basename "$f") — sha256 совпадает со штампом"; done
-echo "  дерево чистое, тег на месте$([ "$PACKAGING_ONLY" = true ] && echo " (сборка на упаковочном потомке тега)")"
+echo "  дерево чистое, тег на месте$([ "$PACKAGING_ONLY" = true ] && echo " (сборка на потомке тега)")"
+[ -n "$PRODUCT_FIX" ] && echo "  ВНИМАНИЕ: артефакты этой ОС содержат правку продукта поверх тега — $PRODUCT_FIX"
 if [ "$EXISTS" -eq 1 ]; then
   echo "  релиз $VERSION уже существует: файлы будут долиты, текст релиза — приведён к $NOTES"
 else

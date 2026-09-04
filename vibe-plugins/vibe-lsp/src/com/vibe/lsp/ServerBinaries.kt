@@ -60,25 +60,32 @@ internal object ServerBinaries {
    */
   fun bundledPhpactor(): String? = bundled("phpactor.phar")
 
-  /** The prepend that switches off the phar's Box requirement checker — the whole Windows fix. */
-  fun bundledPhpactorShim(): String? = bundled(PHPACTOR_SHIM)
+  /** The launcher that starts the phar on Windows — the whole Windows fix; see [phpactorScript]. */
+  fun bundledPhpactorLauncher(): String? = bundled(PHPACTOR_LAUNCHER)
 
-  const val PHPACTOR_SHIM = "phpactorNoPosixCheck.php"
+  const val PHPACTOR_LAUNCHER = "phpactorLaunch.php"
 
   /**
-   * Interpreter options for the bundled phar, before the phar path.
+   * The script `php` is told to run: the phar itself, or our launcher on Windows.
    *
-   * On Windows the phar refuses to start: Box's requirement checker demands `ext-posix`, which no
-   * Windows build of PHP has. The requirement is false — every `posix_*` call inside is guarded and
-   * the server answers `initialize` with all forty functions disabled (checked 03.09.2026) — so the
-   * checker is the only obstacle, and Box documents a switch for it. The switch travels as a
-   * prepend file rather than an environment variable: the process launcher of the LSP client is
-   * not ours to configure, while `-d` is.
+   * The phar's own entry point starts with `extension_loaded('posix')` and `exit(255)`, and no
+   * Windows build of PHP has that extension — so on Windows the phar can never start itself. The
+   * requirement is false for Phpactor (every `posix_*` call inside is guarded, and the server
+   * answers `initialize` in full without it — verified 04.09.2026 on Windows 11), so the launcher
+   * boots the phar's own autoloader past that one line and changes nothing else.
    *
-   * Pure: OS and shim path are parameters, so the Windows command line is tested on macOS.
+   * Version 0.4.0 shipped a different attempt — a prepend that switched off Box's requirement
+   * checker. It could not work: the phar's own check runs first and does not consult Box. The
+   * mistake survived review because it was verified on macOS by disabling the `posix_*` FUNCTIONS,
+   * while `extension_loaded('posix')` there stays true — the one thing Windows differs in.
+   *
+   * No launcher next to the phar (a dev run without the downloaded set) means the phar itself: it
+   * then says what is missing instead of failing on a path that does not exist.
+   *
+   * Pure: OS and both paths are parameters, so the Windows command line is tested on macOS.
    */
-  fun phpactorInterpreterArgs(windows: Boolean, shim: String?): List<String> =
-    if (windows && shim != null) listOf("-d", "auto_prepend_file=$shim") else emptyList()
+  fun phpactorScript(windows: Boolean, launcher: String?, phar: String): String =
+    if (windows && launcher != null) launcher else phar
 
   /**
    * A file inside the servers directory we ship, or null when running from sources without it.
@@ -155,8 +162,8 @@ internal object ServerBinaries {
     ServerPaths.overrideFor(LspDoctor.PHPACTOR.id)?.let { return listOf(it, "language-server") }
     find("phpactor")?.let { return listOf(it, "language-server") }
     bundledPhpactor()?.let { phar ->
-      val args = phpactorInterpreterArgs(com.vibe.agent.util.ExecutableNames.isWindows(), bundledPhpactorShim())
-      return listOf(resolve("php")) + args + listOf(phar, "language-server")
+      val script = phpactorScript(com.vibe.agent.util.ExecutableNames.isWindows(), bundledPhpactorLauncher(), phar)
+      return listOf(resolve("php"), script, "language-server")
     }
     return listOf("phpactor", "language-server")
   }
