@@ -29,7 +29,14 @@ read -r VERSION COMMIT PACKAGING_ONLY <<<"$("$PYTHON" -c "
 import json;d=json.load(open('$STAMP'));print(d['version'],d['commit'],str(d.get('packagingOnly',False)).lower())
 ")"
 # Одна строка на файл: «имя sha256».
-mapfile -t ENTRIES < <("$PYTHON" -c "
+#
+# Читаем циклом, а не mapfile: в macOS штатный bash — 3.2, где mapfile не существует, и релиз
+# останавливался на первой же строке (найдено выпуском 0.4.0). Скрипт релиза обязан работать на
+# машине, где релиз собирают.
+ENTRIES=()
+while IFS= read -r line; do
+  [ -n "$line" ] && ENTRIES+=("$line")
+done < <("$PYTHON" -c "
 import json
 for f in json.load(open('$STAMP'))['files']: print(f['file'], f['sha256'])
 ")
