@@ -46,16 +46,31 @@ if channel is None:
 for old in channel.findall('build'):
     if old.get('number') == build or old.get('version') == version:
         channel.remove(old)  # переиздание той же версии заменяет запись, а не дублирует её
+# Запись со SNAPSHOT в номере не просто бесполезна — она ВРЕДНА: платформа читает SNAPSHOT как
+# Integer.MAX_VALUE, поэтому свежей установке такая запись выглядит новее её самой, и IDE предложит
+# «обновиться» на старый релиз. Найдено при выпуске 0.4.0: в канале лежала запись 263.SNAPSHOT/0.3.0.
+for old in list(channel.findall('build')):
+    if not all(part.isdigit() for part in (old.get('number') or '').split('.')):
+        channel.remove(old)
+        print(f"  убрана запись без числового номера сборки: {old.get('number')} / {old.get('version')}")
 b = ET.SubElement(channel, 'build', number=build, version=version, releaseDate=today)
 ET.SubElement(b, 'message').text = f"Вышла VibeIDEA {version}. Патчей нет — новая версия ставится поверх, настройки сохраняются."
 ET.SubElement(b, 'button', name='Скачать', url=release_url, download='true')
 # Новые сборки первыми: платформа берёт максимум, но человеку удобнее читать сверху.
-builds = sorted(channel.findall('build'), key=lambda e: [int(x) for x in e.get('number').split('.')], reverse=True)
+builds = sorted(channel.findall('build'), key=lambda e: [int(x) for x in e.get('number').split('.')], reverse=True)  # номера здесь уже только числовые
 for e in channel.findall('build'): channel.remove(e)
 for e in builds: channel.append(e)
 ET.indent(tree, space='  ')
-tree.write(out, encoding='unicode', xml_declaration=True)
-io.open(out, 'a', encoding='utf-8').write('\n')
+# Шапку пишем сами на каждом выпуске: ElementTree теряет комментарии при разборе, и пояснение,
+# зачем этот файл и почему его нельзя править руками, исчезло бы после первого же релиза.
+header = (
+    "<!-- Канал обновлений VibeIDEA. IDE читает этот файл с ветки main (VibeProductUrls.UPDATES_URL).\n"
+    "     Пишется скриптом vibe-plugins/tools/releaseUpdatesXml.sh по СОБРАННОМУ артефакту, руками не правится.\n"
+    "     Номер сборки обязан быть числовым: SNAPSHOT платформа читает как максимум, и такая запись\n"
+    "     выглядела бы для свежей установки новее её самой — IDE предложила бы «обновиться» назад. -->\n"
+)
+body = ET.tostring(products, encoding='unicode')
+io.open(out, 'w', encoding='utf-8').write("<?xml version='1.0' encoding='UTF-8'?>\n" + header + body + "\n")
 print(f"  updates.xml: {code} {build} / {version} → {release_url}")
 PY
 echo "Закоммитьте $OUT: IDE читает его из ветки main, штамп сверит его с артефактом."
