@@ -13,14 +13,28 @@ import com.intellij.openapi.startup.ProjectActivity
  * banner). In VibeIDEA that offer is wrong twice over: TypeScript/PHP are supported here through
  * LSP, and a fork has no business selling someone else's product inside its own distribution.
  *
- * Turned off through the platform's OWN switch (`ide.try.ultimate.disabled`, checked first thing
- * in the provider) — no patch of the platform, nothing to lose on an upstream merge. Only the
- * default is ours: an explicit user decision is never overwritten, which is why the choice is
- * stored separately from the platform key.
+ * Turned off through the platform's OWN switches — no patch, nothing to lose on an upstream merge.
+ * Only the default is ours: an explicit user decision is never overwritten, which is why the choice
+ * is stored separately from the platform keys.
+ *
+ * **There are TWO surfaces, and one flag covers only one of them.** `ide.try.ultimate.disabled`
+ * silences the editor banner («*.tsx files are supported by WebStorm»); the notification balloon
+ * «Features covered by Ultimate Subscription PHP are detected» is gated by a different property,
+ * `promo.ignore.suggested.ide` (`PluginAdvertiserService`, branch `!isIgnoreIdeSuggestion`). Found
+ * on a live 0.4.0 by the owner: the banner was gone, the balloon was not.
  */
 object VibePromoSettings {
-  /** The platform's own flag; the advertiser bails out when it is true. */
+  /** The platform's own flag for the editor banner; the advertiser bails out when it is true. */
   private const val PLATFORM_KEY = "ide.try.ultimate.disabled"
+
+  /** The platform's own flag for the notification balloon — a different surface, a different key. */
+  private const val SUGGEST_IDE_KEY = "promo.ignore.suggested.ide"
+
+  /**
+   * Every switch we flip. A list rather than two calls: a third surface will appear one day, and
+   * the place to add it must be the place a test can look at.
+   */
+  val SILENCED_KEYS: List<String> = listOf(PLATFORM_KEY, SUGGEST_IDE_KEY)
 
   /** Our marker: "the default has been applied / the user has decided". Absent = never touched. */
   private const val DECIDED_KEY = "vibe.promo.decided"
@@ -32,7 +46,7 @@ object VibePromoSettings {
 
   fun setEnabled(enabled: Boolean) {
     val props = PropertiesComponent.getInstance()
-    props.setValue(PLATFORM_KEY, !enabled)
+    SILENCED_KEYS.forEach { props.setValue(it, !enabled) }
     props.setValue(DECIDED_KEY, true)
   }
 
@@ -44,7 +58,7 @@ object VibePromoSettings {
   fun applyDefaultOnce() {
     val props = PropertiesComponent.getInstance()
     if (props.getBoolean(DECIDED_KEY)) return
-    props.setValue(PLATFORM_KEY, true)
+    SILENCED_KEYS.forEach { props.setValue(it, true) }
     props.setValue(DECIDED_KEY, true)
   }
 }

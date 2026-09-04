@@ -20,4 +20,13 @@ class VibePromoSettingsTest {
   fun `an explicit re-enable survives, disabled=false means promo on`() {
     assertTrue(VibePromoSettings.enabledFrom("false"))
   }
+
+  @Test
+  fun `гасятся обе поверхности рекламы, а не одна`() {
+    // Найдено владельцем на живой 0.4.0: баннер в редакторе молчал, а всплывающее уведомление
+    // «Features covered by Ultimate Subscription PHP are detected» приходило — у него СВОЙ ключ
+    // (PluginAdvertiserService, ветка !isIgnoreIdeSuggestion). Один флаг закрывал половину рекламы.
+    assertTrue("ide.try.ultimate.disabled" in VibePromoSettings.SILENCED_KEYS, "баннер в редакторе")
+    assertTrue("promo.ignore.suggested.ide" in VibePromoSettings.SILENCED_KEYS, "всплывающее уведомление")
+  }
 }
