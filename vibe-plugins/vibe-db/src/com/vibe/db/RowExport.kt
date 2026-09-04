@@ -59,16 +59,10 @@ object RowExport {
     return if (parts.isEmpty()) "" else "WHERE " + parts.joinToString(" AND ")
   }
 
-  private fun sqlLiteral(cell: ResultTable.Cell?): String = when (cell) {
-    null, is ResultTable.Cell.Null -> "NULL"
-    // Двоичное не переносим: показать размер честно, а выдумать байты нельзя.
-    is ResultTable.Cell.Binary -> "NULL"
-    is ResultTable.Cell.Text -> if (looksNumeric(cell.value)) cell.value else "'" + cell.value.replace("'", "''") + "'"
-  }
+  // Цитирование живёт в SqlLiteral: те же правила выполняет правка данных.
+  private fun sqlLiteral(cell: ResultTable.Cell?): String = SqlLiteral.of(cell)
 
-  /** Число целиком, без ведущих нулей: `007` — это идентификатор, а не семёрка. */
-  fun looksNumeric(value: String): Boolean =
-    value.isNotEmpty() && Regex("^-?(0|[1-9][0-9]*)(\\.[0-9]+)?$").matches(value)
+  private fun looksNumeric(value: String): Boolean = SqlLiteral.looksNumeric(value)
 
   private fun quote(value: String): String =
     "\"" + value.replace("\\", "\\\\").replace("\"", "\\\"").replace("\n", "\\n") + "\""

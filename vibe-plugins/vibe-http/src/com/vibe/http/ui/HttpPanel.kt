@@ -80,10 +80,56 @@ class HttpPanel(private val project: Project) : JPanel(BorderLayout()) {
   private val bodyView = area()
   private val headersView = area()
   private val historyView = area()
+  private val cookiesView = area()
+
+  /**
+   * Вкладка «Cookies» — банка кук, а не отдельный ответ.
+   *
+   * Поэтому она обновляется по показу и по кнопке, а не по отправке: куку кладёт один запрос, а
+   * мешает она следующему, и смотрят сюда именно тогда, когда «почему-то 401».
+   */
+  private val cookiesPanel = JPanel(BorderLayout()).apply {
+    add(VibeScroll.pane(cookiesView), BorderLayout.CENTER)
+    add(JPanel(java.awt.FlowLayout(java.awt.FlowLayout.LEFT, 6, 2)).apply {
+      add(JButton(t("http.cookies.refresh"), AllIcons.Actions.Refresh).apply { addActionListener { showCookies() } })
+      add(JButton(t("http.cookies.clear"), AllIcons.Actions.GC).apply { addActionListener { clearCookies() } })
+    }, BorderLayout.SOUTH)
+  }
+
   private val tabs = JBTabbedPane().apply {
     addTab(t("http.tab.body"), VibeScroll.pane(bodyView))
     addTab(t("http.tab.headers"), VibeScroll.pane(headersView))
     addTab(t("http.tab.history"), VibeScroll.pane(historyView))
+    addTab(t("http.tab.cookies"), cookiesPanel)
+    addChangeListener { if (selectedComponent === cookiesPanel) showCookies() }
+  }
+
+  /**
+   * Показывает куки, которые сейчас поедут в запросы.
+   *
+   * Значение сокращается: чтобы понять, что сессия есть, полный токен не нужен, а панель с полным
+   * токеном однажды попадёт на скриншот в тикете.
+   */
+  private fun showCookies() {
+    val now = System.currentTimeMillis()
+    val cookies = VibeHttpService.getInstance(project).cookies().filter { com.vibe.http.Cookies.isAlive(it, now) }
+    cookiesView.text = if (cookies.isEmpty()) t("http.cookies.empty")
+    else cookies.sortedWith(compareBy({ it.domain }, { it.name })).joinToString("\n") { cookie ->
+      t("http.cookies.line",
+        "name" to cookie.name,
+        "value" to com.vibe.http.Cookies.shorten(cookie.value),
+        "domain" to cookie.domain,
+        "path" to cookie.path,
+        "expires" to (cookie.expiresAtEpochMs?.let { java.time.Instant.ofEpochMilli(it).toString() } ?: t("http.cookies.session")))
+    }
+    cookiesView.caretPosition = 0
+  }
+
+  private fun clearCookies() {
+    VibeHttpService.getInstance(project).clearCookies()
+    showCookies()
+    statusLine.foreground = JBColor.foreground()
+    statusLine.text = t("http.cookies.cleared")
   }
 
   /**

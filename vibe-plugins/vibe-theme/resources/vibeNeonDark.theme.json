@@ -134,7 +134,8 @@
         "error": "#FF6B5A"
       },
       "Db": {
-        "error": "#FF6B5A"
+        "error": "#FF6B5A",
+        "editedCell": "#4A4327"
       },
       "Design": {
         "floor": "#FF6B5A"

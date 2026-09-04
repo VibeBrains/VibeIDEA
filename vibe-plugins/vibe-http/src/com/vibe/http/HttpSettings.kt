@@ -15,6 +15,7 @@ object HttpSettings {
   private const val KEY_REQUEST_TIMEOUT = "vibe.http.requestTimeoutSeconds"
   private const val KEY_CONNECT_TIMEOUT = "vibe.http.connectTimeoutSeconds"
   private const val KEY_FOLLOW_REDIRECTS = "vibe.http.followRedirects"
+  private const val KEY_KEEP_COOKIES = "vibe.http.keepCookies"
 
   const val DEFAULT_REQUEST_TIMEOUT_SECONDS = 30
   const val DEFAULT_CONNECT_TIMEOUT_SECONDS = 10
@@ -33,6 +34,17 @@ object HttpSettings {
     get() = properties.getInt(KEY_CONNECT_TIMEOUT, DEFAULT_CONNECT_TIMEOUT_SECONDS)
       .coerceIn(MIN_TIMEOUT_SECONDS, MAX_TIMEOUT_SECONDS)
     set(value) = properties.setValue(KEY_CONNECT_TIMEOUT, value.coerceIn(MIN_TIMEOUT_SECONDS, MAX_TIMEOUT_SECONDS), DEFAULT_CONNECT_TIMEOUT_SECONDS)
+
+  /**
+   * Хранить ли куки между запусками IDE.
+   *
+   * По умолчанию нет: кука входа — это чужая сессия, и сохранять её на диск без спроса нельзя.
+   * Включённая настройка пишет файл в каталог настроек IDE, а не в проект: в проекте он уехал бы
+   * в git вместе с сессией.
+   */
+  var keepCookies: Boolean
+    get() = properties.getBoolean(KEY_KEEP_COOKIES, false)
+    set(value) = properties.setValue(KEY_KEEP_COOKIES, value, false)
 
   /** Пометка `# @no-redirect` сильнее: она про конкретный запрос, а это про поведение по умолчанию. */
   var followRedirects: Boolean

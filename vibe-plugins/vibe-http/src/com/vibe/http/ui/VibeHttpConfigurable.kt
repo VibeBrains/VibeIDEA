@@ -20,6 +20,7 @@ class VibeHttpConfigurable : Configurable {
   private val connectTimeout = JSpinner(SpinnerNumberModel(
     HttpSettings.DEFAULT_CONNECT_TIMEOUT_SECONDS, HttpSettings.MIN_TIMEOUT_SECONDS, HttpSettings.MAX_TIMEOUT_SECONDS, 1))
   private val followRedirects = JBCheckBox(t("settings.http.followRedirects"))
+  private val keepCookies = JBCheckBox(t("http.settings.keepCookies"))
 
   override fun getDisplayName(): String = t("settings.http.title")
 
@@ -33,6 +34,7 @@ class VibeHttpConfigurable : Configurable {
           .addLabeledComponent(t("settings.http.requestTimeout"), requestTimeout)
           .addLabeledComponent(t("settings.http.connectTimeout"), connectTimeout)
           .addComponent(followRedirects)
+          .addComponent(keepCookies)
           .addComponent(JBLabel("<html>" + t("settings.http.hint") + "</html>").apply {
             foreground = com.intellij.ui.JBColor.GRAY
           })
@@ -43,17 +45,20 @@ class VibeHttpConfigurable : Configurable {
   override fun isModified(): Boolean =
     requestTimeout.value != HttpSettings.requestTimeoutSeconds ||
     connectTimeout.value != HttpSettings.connectTimeoutSeconds ||
-    followRedirects.isSelected != HttpSettings.followRedirects
+    followRedirects.isSelected != HttpSettings.followRedirects ||
+    keepCookies.isSelected != HttpSettings.keepCookies
 
   override fun apply() {
     HttpSettings.requestTimeoutSeconds = requestTimeout.value as Int
     HttpSettings.connectTimeoutSeconds = connectTimeout.value as Int
     HttpSettings.followRedirects = followRedirects.isSelected
+    HttpSettings.keepCookies = keepCookies.isSelected
   }
 
   override fun reset() {
     requestTimeout.value = HttpSettings.requestTimeoutSeconds
     connectTimeout.value = HttpSettings.connectTimeoutSeconds
     followRedirects.isSelected = HttpSettings.followRedirects
+    keepCookies.isSelected = HttpSettings.keepCookies
   }
 }

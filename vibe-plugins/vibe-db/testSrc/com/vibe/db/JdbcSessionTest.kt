@@ -121,6 +121,39 @@ class JdbcSessionTest {
   }
 
   @Test
+  fun `первичный ключ читается из метаданных`() {
+    withDatabase { connection ->
+      assertEquals(listOf("id"), session.primaryKey(connection, null, "users"))
+    }
+  }
+
+  @Test
+  fun `правка ячейки доезжает до базы одной транзакцией`() {
+    withDatabase { connection ->
+      val rows = session.execute(connection, "SELECT id, name FROM users ORDER BY id") as JdbcSession.Outcome.Rows
+      val target = RowEdit.Target(null, "users", session.primaryKey(connection, null, "users"), readOnly = false)
+      val statement = RowEdit.update(target, rows.table.columns, rows.table.rows[0], columnIndex = 1, newValue = "Пётр")
+      val applied = session.applyAll(connection, listOf((statement as RowEdit.Statement.Sql).text))
+      assertEquals(1, (applied as JdbcSession.Outcome.Updated).count)
+      val after = session.execute(connection, "SELECT name FROM users WHERE id = 1") as JdbcSession.Outcome.Rows
+      assertEquals(ResultTable.Cell.Text("Пётр"), after.table.rows[0][0])
+    }
+  }
+
+  @Test
+  fun `упавшая правка откатывает и уже применённые`() {
+    withDatabase { connection ->
+      val outcome = session.applyAll(connection, listOf(
+        "UPDATE users SET name = 'первая' WHERE id = 1",
+        "UPDATE нет_такой_таблицы SET name = 'вторая' WHERE id = 2",
+      ))
+      assertTrue(outcome is JdbcSession.Outcome.Failed)
+      val after = session.execute(connection, "SELECT name FROM users WHERE id = 1") as JdbcSession.Outcome.Rows
+      assertEquals(ResultTable.Cell.Text("Иван"), after.table.rows[0][0], "половина правок опаснее, чем ни одной")
+    }
+  }
+
+  @Test
   fun `драйвер из указанного jar грузится своим загрузчиком`() {
     // Путь к jar берём у самого драйвера: так проверяется ветка driverPath, а не только classpath.
     // Через ресурс, а не через codeSource: под Bazel второй пуст, и тест молча ничего бы не проверил.

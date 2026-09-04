@@ -18,8 +18,62 @@ import java.time.Duration
  */
 @Service(Service.Level.PROJECT)
 class VibeHttpService(private val project: Project) {
-  /** Куки хранятся в памяти процесса: сессия живёт до перезапуска IDE и не утекает в файлы. */
+  /**
+   * Куки: хранением и подстановкой занимается JDK, показом и сохранением — мы.
+   *
+   * По умолчанию живут в памяти процесса и умирают вместе с IDE. Настройка «хранить между
+   * запусками» пишет их в каталог настроек IDE — не в проект, чтобы чужая сессия не уехала в git.
+   */
   private val cookies = java.net.CookieManager(null, java.net.CookiePolicy.ACCEPT_ORIGINAL_SERVER)
+
+  init {
+    if (HttpSettings.keepCookies) loadCookies()
+  }
+
+  private fun cookieFile(): java.nio.file.Path =
+    com.intellij.openapi.application.PathManager.getConfigDir().resolve(Cookies.FILE)
+
+  /** Что сейчас в банке — для вкладки «Cookies»; значения показываются сокращённо не здесь, а в UI. */
+  fun cookies(): List<Cookies.Cookie> = cookies.cookieStore.cookies.map {
+    Cookies.Cookie(
+      domain = it.domain ?: "",
+      path = it.path ?: "/",
+      name = it.name,
+      value = it.value ?: "",
+      secure = it.secure,
+      // JDK хранит остаток жизни в секундах; ноль и меньше — кука сессии.
+      expiresAtEpochMs = it.maxAge.takeIf { age -> age > 0 }?.let { age -> System.currentTimeMillis() + age * 1000 },
+    )
+  }
+
+  fun clearCookies() {
+    cookies.cookieStore.removeAll()
+    if (HttpSettings.keepCookies) runCatching { java.nio.file.Files.deleteIfExists(cookieFile()) }
+  }
+
+  /** Сохраняет то, что переживёт перезапуск: сессионные куки не сохраняются никогда. */
+  fun saveCookies() {
+    if (!HttpSettings.keepCookies) return
+    val text = Cookies.renderAll(Cookies.persistable(cookies(), System.currentTimeMillis()))
+    runCatching { java.nio.file.Files.writeString(cookieFile(), text) }
+  }
+
+  private fun loadCookies() {
+    val file = cookieFile()
+    val text = runCatching { java.nio.file.Files.readString(file) }.getOrNull() ?: return
+    val now = System.currentTimeMillis()
+    for (cookie in Cookies.render(text)) {
+      if (!Cookies.isAlive(cookie, now)) continue
+      val stored = java.net.HttpCookie(cookie.name, cookie.value).apply {
+        domain = cookie.domain
+        path = cookie.path
+        secure = cookie.secure
+        maxAge = ((cookie.expiresAtEpochMs!! - now) / 1000).coerceAtLeast(1)
+      }
+      val uri = runCatching { java.net.URI("https://" + cookie.domain.removePrefix(".")) }.getOrNull() ?: continue
+      cookies.cookieStore.add(uri, stored)
+    }
+  }
 
   /**
    * Клиенты пересобираются, когда меняются настройки: держать один навсегда значило бы, что
@@ -59,6 +113,9 @@ class VibeHttpService(private val project: Project) {
           val response = http.send(prepared.request, HttpResponse.BodyHandlers.ofByteArray())
           val body = response.body() ?: ByteArray(0)
           val elapsed = (System.nanoTime() - started) / 1_000_000
+          // Сохраняем сразу после ответа: IDE закрывают крестиком, и «сохраним при выходе» —
+          // это «не сохраним».
+          saveCookies()
           Result.Done(
             HttpExchange.Response(
               status = response.statusCode(),

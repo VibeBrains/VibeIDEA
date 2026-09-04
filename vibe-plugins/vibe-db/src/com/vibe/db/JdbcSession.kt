@@ -131,6 +131,54 @@ class JdbcSession {
     return result
   }
 
+  /**
+   * Первичный ключ таблицы — единственный способ адресовать строку при правке.
+   *
+   * Пустой список означает «править нельзя», и это ответ, а не сбой: у таблицы без ключа нет
+   * выражения, которое отличает одну строку от её точного двойника.
+   */
+  fun primaryKey(connection: Connection, schema: String?, table: String): List<String> {
+    val keys = ArrayList<Pair<Int, String>>()
+    runCatching {
+      connection.metaData.getPrimaryKeys(null, schema, table).use { rs ->
+        while (rs.next()) {
+          val name = rs.getString("COLUMN_NAME") ?: continue
+          keys.add(rs.getInt("KEY_SEQ") to name)
+        }
+      }
+    }
+    return keys.sortedBy { it.first }.map { it.second }
+  }
+
+  /**
+   * Правки одной транзакцией: либо применились все, либо ни одной.
+   *
+   * По отдельности они оставили бы таблицу в состоянии, которого не хотел никто: половина ячеек
+   * новая, половина старая, и какая именно половина — видно только по номеру упавшего запроса.
+   */
+  fun applyAll(connection: Connection, statements: List<String>, timeoutSeconds: Int = DbSettings.DEFAULT_QUERY_TIMEOUT_SECONDS): Outcome {
+    if (statements.isEmpty()) return Outcome.Updated(0, 0)
+    val started = System.nanoTime()
+    val restore = runCatching { connection.autoCommit }.getOrDefault(true)
+    return try {
+      connection.autoCommit = false
+      var total = 0
+      connection.createStatement().use { statement ->
+        runCatching { statement.queryTimeout = timeoutSeconds }
+        for (sql in statements) total += statement.executeUpdate(sql)
+      }
+      connection.commit()
+      Outcome.Updated(total, (System.nanoTime() - started) / 1_000_000)
+    }
+    catch (e: Exception) {
+      runCatching { connection.rollback() }
+      Outcome.Failed(e.message ?: e.javaClass.simpleName)
+    }
+    finally {
+      runCatching { connection.autoCommit = restore }
+    }
+  }
+
   fun columns(connection: Connection, table: DbCatalog.Table): List<DbCatalog.Column> {
     val result = ArrayList<DbCatalog.Column>()
     connection.metaData.getColumns(null, table.schema, table.name, "%").use { rs ->

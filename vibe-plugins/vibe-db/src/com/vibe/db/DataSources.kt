@@ -35,6 +35,13 @@ object DataSources {
     val driverPath: String?,
     /** Класс драйвера — нужен, когда jar не объявляет сервис (старые драйверы). */
     val driverClass: String?,
+    /**
+     * Подключение только для чтения: правка данных не предлагается вовсе.
+     *
+     * Осторожность на боевой базе должна быть свойством подключения, а не свойством человека в
+     * конкретную минуту: «внимательно нажимайте» — не защита.
+     */
+    val readOnly: Boolean = false,
   ) {
     val kind: Kind get() = kindOf(url)
   }
@@ -96,6 +103,7 @@ object DataSources {
           user = str("user"),
           driverPath = str("driverPath"),
           driverClass = str("driverClass"),
+          readOnly = (obj["readOnly"] as? JsonPrimitive)?.contentOrNull?.equals("true", ignoreCase = true) ?: false,
         )
       )
     }

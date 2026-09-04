@@ -68,8 +68,33 @@ class DbPanel(private val project: Project) : JPanel(BorderLayout()) {
     font = com.intellij.util.ui.JBFont.create(java.awt.Font(java.awt.Font.MONOSPACED, java.awt.Font.PLAIN, 12))
     border = JBUI.Borders.empty(6)
     rows = 5
+    // Ctrl+Space — тот же жест, что и везде в IDE: подсказка должна вызываться привычно, иначе о
+    // ней узнают из документации, то есть никогда.
+    registerKeyboardAction(
+      { suggestCompletion() },
+      javax.swing.KeyStroke.getKeyStroke(java.awt.event.KeyEvent.VK_SPACE, java.awt.event.InputEvent.CTRL_DOWN_MASK),
+      javax.swing.JComponent.WHEN_FOCUSED,
+    )
   }
-  private val results = JBTable().apply {
+  private val results = object : JBTable() {
+    /**
+     * Правка, которой ещё нет в базе, красится отдельно.
+     *
+     * Иначе набранное и сохранённое выглядят одинаково, и человек уходит с панели в уверенности,
+     * что изменил данные, — а не изменил ничего.
+     */
+    override fun prepareRenderer(renderer: javax.swing.table.TableCellRenderer, row: Int, column: Int): java.awt.Component {
+      val component = super.prepareRenderer(renderer, row, column)
+      val model = model as? ResultTableModel
+      if (model != null && !isCellSelected(row, column)) {
+        component.background =
+          if (model.isEdited(convertRowIndexToModel(row), convertColumnIndexToModel(column)))
+            JBColor.namedColor("Vibe.Db.editedCell", JBColor(0xFFF3C4, 0x4A4327))
+          else background
+      }
+      return component
+    }
+  }.apply {
     autoResizeMode = javax.swing.JTable.AUTO_RESIZE_OFF
     // Правая кнопка на строке: скопировать в тикет, повторить на другом стенде, найти снова.
     // Без этого человек выделяет ячейки по одной и склеивает руками — и ошибается в кавычках.
@@ -97,6 +122,15 @@ class DbPanel(private val project: Project) : JPanel(BorderLayout()) {
   private var lastQuery: String = ""
 
   /**
+   * Таблица, которую показывает результат, — и только она даёт право на правку.
+   *
+   * Правится то, что мы сами открыли двойным щелчком: там известны и таблица, и её ключ. Для
+   * запроса, набранного руками, таблицу пришлось бы угадывать по тексту, а угаданный `UPDATE`
+   * выполняется на настоящих данных.
+   */
+  private var editTarget: com.vibe.db.RowEdit.Target? = null
+
+  /**
    * «Пароль…» — без этой кнопки пароль нельзя задать вовсе: в файле его нет по построению,
    * а связка ключей сама себя не заполнит. Функциональная дыра, найденная ревизией 03.09.2026.
    */
@@ -116,6 +150,22 @@ class DbPanel(private val project: Project) : JPanel(BorderLayout()) {
   private val exportButton = JButton(t("db.export"), AllIcons.ToolbarDecorator.Export).apply {
     isEnabled = false
     addActionListener { exportCsv() }
+  }
+
+  /**
+   * «Применить правки» — единственный путь, которым правка ячейки попадает в базу.
+   *
+   * Кнопка появляется только когда правки есть: пустая кнопка «применить» на просмотре создаёт
+   * впечатление, что таблица редактируема, там где она не редактируема.
+   */
+  private val applyButton = JButton(t("db.edit.apply"), AllIcons.Actions.Commit).apply {
+    isVisible = false
+    addActionListener { applyEdits() }
+  }
+
+  private val discardButton = JButton(t("db.edit.discard"), AllIcons.Actions.Rollback).apply {
+    isVisible = false
+    addActionListener { discardEdits() }
   }
 
   init {
@@ -148,6 +198,8 @@ class DbPanel(private val project: Project) : JPanel(BorderLayout()) {
       add(JPanel(FlowLayout(FlowLayout.LEFT, 6, 2)).apply {
         add(JButton(t("db.run"), AllIcons.Actions.Execute).apply { addActionListener { runConsole() } })
         add(exportButton)
+        add(applyButton)
+        add(discardButton)
         add(JBLabel(t("db.run.hint")).apply { foreground = JBColor.GRAY })
       }, BorderLayout.SOUTH)
     }
@@ -339,7 +391,7 @@ class DbPanel(private val project: Project) : JPanel(BorderLayout()) {
     val table = node.userObject as? DbCatalog.Table ?: return
     val sql = QueryLimit.preview(table.name, table.schema, DbSettings.previewRows)
     console.text = sql
-    execute(sql)
+    execute(sql, table)
   }
 
   /**
@@ -423,7 +475,7 @@ class DbPanel(private val project: Project) : JPanel(BorderLayout()) {
       .onFailure { fail(t("db.exportFailed", "reason" to (it.message ?: ""))) }
   }
 
-  private fun execute(sql: String) {
+  private fun execute(sql: String, editable: DbCatalog.Table? = null) {
     val source = source() ?: return
     lastQuery = sql
     statusLine.foreground = JBColor.foreground()
@@ -434,18 +486,33 @@ class DbPanel(private val project: Project) : JPanel(BorderLayout()) {
         onUi { fail(t("db.connectFailed", "source" to DataSources.maskUrl(source.url), "reason" to (error.message ?: ""))) }
         return@executeOnPooledThread
       }
-      val outcome = connection.use { service.execute(it, sql) }
-      onUi { show(outcome) }
+      var target: com.vibe.db.RowEdit.Target? = null
+      // Ключ читаем в том же подключении, что и данные: отдельное подключение ради метаданных —
+      // лишний вход в базу, а на боевой базе входы считают.
+      val outcome = connection.use { open ->
+        val result = service.execute(open, sql)
+        target = if (editable == null) null else com.vibe.db.RowEdit.Target(
+          schema = editable.schema,
+          table = editable.name,
+          keyColumns = service.primaryKey(open, editable.schema, editable.name),
+          readOnly = source.readOnly,
+        )
+        result
+      }
+      onUi { show(outcome, target) }
     }
   }
 
-  private fun show(outcome: JdbcSession.Outcome) {
+  private fun show(outcome: JdbcSession.Outcome, target: com.vibe.db.RowEdit.Target? = null) {
     when (outcome) {
       is JdbcSession.Outcome.Rows -> {
         lastTable = outcome.table
+        editTarget = target
         exportButton.isEnabled = outcome.table.rowCount > 0
-        val model = ResultTableModel(outcome.table)
+        val model = ResultTableModel(outcome.table, target)
+        model.addTableModelListener { refreshEditButtons() }
         results.model = model
+        refreshEditButtons()
         // Ширина по содержимому: таблица должна открываться уже читаемой, а не после ручной подгонки.
         // Ширина в пикселях считается по МЕТРИКАМ шрифта таблицы, а не «символ ≈ 8 пикселей»:
         // на другом шрифте и другом масштабе экрана эта восьмёрка врёт, и колонки едут.
@@ -461,13 +528,132 @@ class DbPanel(private val project: Project) : JPanel(BorderLayout()) {
       }
       is JdbcSession.Outcome.Updated -> {
         lastTable = null
+        editTarget = null
         exportButton.isEnabled = false
         results.model = javax.swing.table.DefaultTableModel()
+        refreshEditButtons()
         statusLine.foreground = JBColor.foreground()
         statusLine.text = t("db.updated", "count" to outcome.count, "ms" to outcome.elapsedMs)
       }
       is JdbcSession.Outcome.Failed -> fail(t("db.queryFailed", "reason" to outcome.message))
     }
+  }
+
+  /**
+   * Подсказка по схеме подключения.
+   *
+   * Схема берётся из уже прочитанного дерева, а столбцы — из кеша: подсказка не имеет права идти
+   * в базу по нажатию клавиши. Столбцы нечитанной таблицы дочитываются один раз, в фоне.
+   */
+  private fun suggestCompletion() {
+    val caret = console.caretPosition
+    val suggestions = com.vibe.db.SqlCompletion.suggest(console.text, caret, schemas) { table ->
+      columnsCache[table] ?: emptyList()
+    }
+    if (suggestions.isEmpty()) {
+      // Молчать нельзя: нажатие без ответа читается как «подсказок нет в принципе».
+      statusLine.foreground = JBColor.foreground()
+      statusLine.text = if (schemas.isEmpty()) t("db.completion.noSchema") else t("db.completion.nothing")
+      loadMissingColumns()
+      return
+    }
+    val prefix = com.vibe.db.SqlCompletion.currentWord(console.text.take(caret))
+    com.intellij.openapi.ui.popup.JBPopupFactory.getInstance()
+      .createPopupChooserBuilder(suggestions)
+      .setRenderer(com.intellij.ui.SimpleListCellRenderer.create("") { "\${it.text}   \${it.detail}" })
+      .setTitle(t("db.completion.title"))
+      .setItemChosenCallback { chosen ->
+        console.document.remove(caret - prefix.length, prefix.length)
+        console.document.insertString(caret - prefix.length, chosen.text, null)
+      }
+      .createPopup()
+      .showInBestPositionFor(com.intellij.ide.DataManager.getInstance().getDataContext(console))
+  }
+
+  /** Дочитывает столбцы таблиц, упомянутых в запросе: иначе подсказка знает только раскрытые узлы. */
+  private fun loadMissingColumns() {
+    val mentioned = com.vibe.db.SqlCompletion.visibleTables(console.text, schemas).filterNot { columnsCache.containsKey(it) }
+    if (mentioned.isEmpty()) return
+    val source = source() ?: return
+    ApplicationManager.getApplication().executeOnPooledThread {
+      val service = VibeDbService.getInstance(project)
+      val connection = service.connect(source).getOrNull() ?: return@executeOnPooledThread
+      val loaded = connection.use { open -> mentioned.associateWith { service.columns(open, it) } }
+      onUi { columnsCache.putAll(loaded) }
+    }
+  }
+
+  private fun editModel(): ResultTableModel? = results.model as? ResultTableModel
+
+  private fun refreshEditButtons() {
+    val pending = editModel()?.hasEdits() == true
+    applyButton.isVisible = pending
+    discardButton.isVisible = pending
+    if (pending) {
+      statusLine.foreground = JBColor.foreground()
+      statusLine.text = t("db.edit.pending", "count" to (editModel()?.pendingStatements()?.size ?: 0))
+    }
+  }
+
+  private fun discardEdits() {
+    editModel()?.discardEdits()
+    refreshEditButtons()
+    statusLine.foreground = JBColor.foreground()
+    statusLine.text = t("db.edit.discarded")
+  }
+
+  /**
+   * Применяет накопленные правки — показав сперва сами операторы.
+   *
+   * Показ не формальность: человек правил ячейки, а в базу уходит `UPDATE … WHERE ключ`, и увидеть
+   * этот текст он должен ДО выполнения, а не в логе после. Отказ — обычный исход диалога.
+   */
+  private fun applyEdits() {
+    val model = editModel() ?: return
+    val source = source() ?: return
+    val statements = model.pendingStatements()
+    if (statements.isEmpty()) return
+    val answer = com.intellij.openapi.ui.Messages.showYesNoDialog(
+      project,
+      t("db.edit.confirm.body", "count" to statements.size, "source" to source.name,
+        "sql" to statements.joinToString("\n")),
+      t("db.edit.confirm.title"),
+      t("db.edit.confirm.yes"),
+      t("db.confirmWrite.no"),
+      AllIcons.General.WarningDialog,
+    )
+    if (answer != com.intellij.openapi.ui.Messages.YES) return
+    statusLine.foreground = JBColor.foreground()
+    statusLine.text = t("db.edit.applying", "count" to statements.size)
+    val query = lastQuery
+    val editable = editTarget
+    ApplicationManager.getApplication().executeOnPooledThread {
+      val service = VibeDbService.getInstance(project)
+      val connection = service.connect(source).getOrElse { error ->
+        onUi { fail(t("db.connectFailed", "source" to DataSources.maskUrl(source.url), "reason" to (error.message ?: ""))) }
+        return@executeOnPooledThread
+      }
+      val outcome = connection.use { service.applyAll(it, statements) }
+      onUi {
+        when (outcome) {
+          is JdbcSession.Outcome.Failed -> fail(t("db.edit.failed", "reason" to outcome.message))
+          else -> {
+            model.discardEdits()
+            refreshEditButtons()
+            statusLine.text = t("db.edit.applied", "count" to statements.size)
+            // Перечитываем: база могла изменить значение по-своему (тип, триггер, регистр), и
+            // показывать набранное человеком вместо сохранённого — врать ему в глаза.
+            if (editable != null) reRun(query, editable)
+          }
+        }
+      }
+    }
+  }
+
+  /** Повторяет запрос предпросмотра, сохраняя право на правку. */
+  private fun reRun(sql: String, target: com.vibe.db.RowEdit.Target) {
+    val table = target.table ?: return
+    execute(sql, DbCatalog.Table(target.schema, table, DbCatalog.Kind.TABLE))
   }
 
   private companion object {

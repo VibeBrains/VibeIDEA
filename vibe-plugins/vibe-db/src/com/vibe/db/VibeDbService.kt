@@ -42,6 +42,13 @@ class VibeDbService(private val project: Project) {
 
   fun columns(connection: Connection, table: DbCatalog.Table): List<DbCatalog.Column> = session.columns(connection, table)
 
+  fun primaryKey(connection: Connection, schema: String?, table: String): List<String> =
+    session.primaryKey(connection, schema, table)
+
+  /** Правки — одной транзакцией: половина применённых правок хуже, чем ни одной. */
+  fun applyAll(connection: Connection, statements: List<String>): JdbcSession.Outcome =
+    session.applyAll(connection, statements, DbSettings.queryTimeoutSeconds)
+
   sealed interface Download {
     data class Done(val path: java.nio.file.Path) : Download
     /** Скачалось, но хеш не совпал — файл удалён и НЕ подсунут в classpath. */

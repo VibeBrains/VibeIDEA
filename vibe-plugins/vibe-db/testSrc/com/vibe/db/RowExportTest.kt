@@ -34,10 +34,10 @@ class RowExportTest {
   fun `число остаётся числом`() {
     val json = RowExport.toJson(listOf(ResultTable.Column("n", "int")), listOf(ResultTable.Cell.Text("42"))) { "" }
     assertTrue(json.contains("\"n\": 42"), json)
-    assertTrue(RowExport.looksNumeric("-3.5"))
-    assertFalse(RowExport.looksNumeric("007"))
-    assertFalse(RowExport.looksNumeric("1,5"))
-    assertFalse(RowExport.looksNumeric(""))
+    assertTrue(SqlLiteral.looksNumeric("-3.5"))
+    assertFalse(SqlLiteral.looksNumeric("007"))
+    assertFalse(SqlLiteral.looksNumeric("1,5"))
+    assertFalse(SqlLiteral.looksNumeric(""))
   }
 
   @Test
