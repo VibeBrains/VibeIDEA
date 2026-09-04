@@ -139,5 +139,20 @@ if dead:
 sys.exit(1 if (missing or dead) else 0)
 PYTOKENS
 
+# 8. Страницы настроек: вертикальная прокрутка и ширина по окну.
+#    Длинная подсказка без переноса растягивает страницу, и настройки едут вбок — это повторялось
+#    трижды (провайдеры, модели, и снова корень + языковые серверы + БД + HTTP на живой 0.4.0).
+#    Способ один: VibeScroll.pane(TracksViewportWidthPanel(...)) вокруг содержимого страницы.
+while IFS= read -r page; do
+  # Ищем ВЫЗОВ, а не имя: неиспользованный импорт остаётся в файле после правки и делал бы
+  # проверку зелёной на странице, которая уже не обёрнута (поймано на себе же).
+  grep -q 'pane(TracksViewportWidthPanel(' "$page" || {
+    echo "ОШИБКА: страница настроек без TracksViewportWidthPanel — она поедет вбок на длинной подсказке:"
+    echo "  ${page#"$root"/}"
+    echo "  Оберните содержимое: VibeScroll.pane(TracksViewportWidthPanel(...)); см. knowledge/ui/settingsPageWidth.md"
+    status=1
+  }
+done < <(grep -rl 'com.intellij.openapi.options.Configurable\|: Configurable' "$root"/vibe-plugins/*/src --include='*.kt')
+
 [[ $status -eq 0 ]] && echo "UI-гейт: тонкие скроллы на месте (наши панели + правка платформы), обходов VibeScroll нет; значки на месте и различимы"
 exit $status

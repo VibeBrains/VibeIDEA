@@ -10,6 +10,7 @@ import com.intellij.util.ui.FormBuilder
 import com.intellij.util.ui.JBUI
 import javax.swing.JComponent
 import javax.swing.JPanel
+import com.vibe.agent.ui.VibeScroll
 
 /** Settings → Tools → VibeIDEA → Чат. */
 class VibeChatConfigurable : Configurable {
@@ -49,7 +50,7 @@ class VibeChatConfigurable : Configurable {
     val spend5h = JBIntSpinner(VibeChatSettings.spendLimitFiveHours.toInt(), 0, MAX_SPEND).also { spend5hSpinner = it }
     val spendWeek = JBIntSpinner(VibeChatSettings.spendLimitWeek.toInt(), 0, MAX_SPEND).also { spendWeekSpinner = it }
     val spendMonth = JBIntSpinner(VibeChatSettings.spendLimitMonth.toInt(), 0, MAX_SPEND).also { spendMonthSpinner = it }
-    return FormBuilder.createFormBuilder()
+    return VibeScroll.pane(TracksViewportWidthPanel(FormBuilder.createFormBuilder()
       .addLabeledComponent(t("settings.chat.continueText"), field)
       .addComponent(hint(t("settings.chat.continueHint", "default" to VibeChatSettings.DEFAULT_CONTINUE_TEXT)))
       .addLabeledComponent(t("settings.chat.maxTabs"), tabs)
@@ -74,7 +75,7 @@ class VibeChatConfigurable : Configurable {
       .addComponent(com.intellij.ui.components.ActionLink(t("settings.sound.preview")) { previewSound() })
       .addComponent(hint(t("settings.sound.hint")))
       .addComponentFillVertically(JPanel(), 0)
-      .panel.apply { border = JBUI.Borders.empty(8) }
+      .panel.apply { border = JBUI.Borders.empty(8) }))
   }
 
   /**

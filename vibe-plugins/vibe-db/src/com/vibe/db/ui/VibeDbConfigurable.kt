@@ -10,6 +10,8 @@ import com.vibe.db.DbSettings
 import javax.swing.JComponent
 import javax.swing.JSpinner
 import javax.swing.SpinnerNumberModel
+import com.vibe.agent.settings.TracksViewportWidthPanel
+import com.vibe.agent.ui.VibeScroll
 
 /** Настройки работы с базой: сколько строк показывать, сколько ждать, что прятать. */
 class VibeDbConfigurable : Configurable {
@@ -21,15 +23,22 @@ class VibeDbConfigurable : Configurable {
 
   override fun getDisplayName(): String = t("settings.db.title")
 
-  override fun createComponent(): JComponent = FormBuilder.createFormBuilder()
-    .addLabeledComponent(t("settings.db.previewRows"), previewRows)
-    .addLabeledComponent(t("settings.db.queryTimeout"), queryTimeout)
-    .addComponent(showSystemSchemas)
-    .addComponent(JBLabel("<html>" + t("settings.db.hint") + "</html>").apply {
-      foreground = com.intellij.ui.JBColor.GRAY
-    })
-    .panel
-    .also { reset() }
+  /**
+   * Прокрутка только вертикальная: страница настроек, которая едет вбок, — дефект, а не мелочь.
+   * Правило и способ — docs/vibe/knowledge/ui/settingsPageWidth.md.
+   */
+  override fun createComponent(): JComponent =
+    VibeScroll.pane(TracksViewportWidthPanel(
+      FormBuilder.createFormBuilder()
+          .addLabeledComponent(t("settings.db.previewRows"), previewRows)
+          .addLabeledComponent(t("settings.db.queryTimeout"), queryTimeout)
+          .addComponent(showSystemSchemas)
+          .addComponent(JBLabel("<html>" + t("settings.db.hint") + "</html>").apply {
+            foreground = com.intellij.ui.JBColor.GRAY
+          })
+          .panel
+          .also { reset() }
+    ))
 
   override fun isModified(): Boolean =
     previewRows.value != DbSettings.previewRows ||

@@ -8,6 +8,8 @@ import com.intellij.ui.components.JBLabel
 import com.intellij.util.ui.FormBuilder
 import com.vibe.agent.i18n.VibeI18n.t
 import javax.swing.JComponent
+import com.vibe.agent.settings.TracksViewportWidthPanel
+import com.vibe.agent.ui.VibeScroll
 
 /**
  * Settings page: where each language server actually is.
@@ -56,7 +58,7 @@ class VibeLspConfigurable : Configurable {
     builder.addComponent(JBLabel("<html>" + t("settings.lsp.hint") + "</html>").apply {
       foreground = com.intellij.ui.JBColor.GRAY
     })
-    return builder.panel
+    return VibeScroll.pane(TracksViewportWidthPanel(builder.panel))
   }
 
   override fun isModified(): Boolean =

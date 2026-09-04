@@ -10,6 +10,8 @@ import com.vibe.http.HttpSettings
 import javax.swing.JComponent
 import javax.swing.JSpinner
 import javax.swing.SpinnerNumberModel
+import com.vibe.agent.settings.TracksViewportWidthPanel
+import com.vibe.agent.ui.VibeScroll
 
 /** Настройки клиента запросов: таймауты и поведение по умолчанию. */
 class VibeHttpConfigurable : Configurable {
@@ -21,15 +23,22 @@ class VibeHttpConfigurable : Configurable {
 
   override fun getDisplayName(): String = t("settings.http.title")
 
-  override fun createComponent(): JComponent = FormBuilder.createFormBuilder()
-    .addLabeledComponent(t("settings.http.requestTimeout"), requestTimeout)
-    .addLabeledComponent(t("settings.http.connectTimeout"), connectTimeout)
-    .addComponent(followRedirects)
-    .addComponent(JBLabel("<html>" + t("settings.http.hint") + "</html>").apply {
-      foreground = com.intellij.ui.JBColor.GRAY
-    })
-    .panel
-    .also { reset() }
+  /**
+   * Прокрутка только вертикальная: страница настроек, которая едет вбок, — дефект, а не мелочь.
+   * Правило и способ — docs/vibe/knowledge/ui/settingsPageWidth.md.
+   */
+  override fun createComponent(): JComponent =
+    VibeScroll.pane(TracksViewportWidthPanel(
+      FormBuilder.createFormBuilder()
+          .addLabeledComponent(t("settings.http.requestTimeout"), requestTimeout)
+          .addLabeledComponent(t("settings.http.connectTimeout"), connectTimeout)
+          .addComponent(followRedirects)
+          .addComponent(JBLabel("<html>" + t("settings.http.hint") + "</html>").apply {
+            foreground = com.intellij.ui.JBColor.GRAY
+          })
+          .panel
+          .also { reset() }
+    ))
 
   override fun isModified(): Boolean =
     requestTimeout.value != HttpSettings.requestTimeoutSeconds ||
