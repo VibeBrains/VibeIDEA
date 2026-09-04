@@ -2003,7 +2003,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     if (t is ChatTarget.Model && t.model.vision == false && message.images.isNotEmpty()) {
       Messages.showErrorDialog(project,
         com.vibe.agent.i18n.VibeI18n.t("chat.model.noVisionDialog", "provider" to t.provider.name, "model" to t.model.name),
-        "Vibe Agent")
+        com.vibe.agent.ui.VibeNotifications.AGENT)
       return false
     }
     // A latched security breaker blocks starting an agent turn until the user clears it (VibeIDE contract).
@@ -2212,7 +2212,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
       val active = com.intellij.openapi.wm.WindowManager.getInstance().getFrame(project)?.isActive == true
       if (active) return@invokeLater
       com.intellij.notification.NotificationGroupManager.getInstance()
-        .getNotificationGroup("Vibe Agent")
+        .getNotificationGroup(com.vibe.agent.ui.VibeNotifications.AGENT)
         .createNotification(t("chat.turnDoneNotification"), com.intellij.notification.NotificationType.INFORMATION)
         .notify(project)
     }

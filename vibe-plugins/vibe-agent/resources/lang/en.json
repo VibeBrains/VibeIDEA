@@ -1570,5 +1570,14 @@
   "db.copy.insert": "Copy row as INSERT",
   "db.copy.where": "Copy a WHERE clause for this row",
   "db.copy.done": "Copied to the clipboard",
-  "db.copy.tablePlaceholder": "TABLE"
+  "db.copy.tablePlaceholder": "TABLE",
+  "http.runAll": "Run all",
+  "http.runAll.running": "Running {count} requests…",
+  "http.runAll.done": "Run: {ok} of {total} answered with success · {ms} ms",
+  "http.runAll.allOk": "All requests answered with success.",
+  "http.runAll.failedList": "Did not answer with success:",
+  "http.runAll.confirmTitle": "The file has data-changing requests",
+  "http.runAll.confirm": "Data-changing requests: {count} ({methods}). The run will actually perform them — a POST will create records. Continue?",
+  "http.runAll.yes": "Run",
+  "http.runAll.no": "Cancel"
 }

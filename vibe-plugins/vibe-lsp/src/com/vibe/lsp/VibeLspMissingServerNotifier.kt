@@ -90,7 +90,7 @@ class VibeLspMissingServerNotifier(private val project: Project) : FileEditorMan
   }
 
   private companion object {
-    const val GROUP = "Vibe Languages"
+    const val GROUP = com.vibe.agent.ui.VibeNotifications.LANGUAGES
     const val KEY_SHOWN_PREFIX = "vibe.lsp.missingShown."
     const val KEY_MUTED = "vibe.lsp.missingMuted"
   }

@@ -100,7 +100,7 @@ class VibeJsConfigNotifier(private val project: Project) : FileEditorManagerList
   }
 
   private companion object {
-    const val GROUP = "Vibe Languages"
+    const val GROUP = com.vibe.agent.ui.VibeNotifications.LANGUAGES
     const val KEY_SHOWN = "vibe.lsp.jsconfigShown"
     const val KEY_MUTED = "vibe.lsp.jsconfigMuted"
 

@@ -28,7 +28,7 @@ class ExportCodeGraphAction : AnAction({ t("graph.action.title") }) {
         } ?: return
         val graph = result.graph
         val facts = graph.edges.count { it.provenance == CodeGraphIndex.Provenance.FACT }
-        NotificationGroupManager.getInstance().getNotificationGroup("Vibe Agent")
+        NotificationGroupManager.getInstance().getNotificationGroup(com.vibe.agent.ui.VibeNotifications.AGENT)
           .createNotification(
             t("graph.done", "files" to result.files, "parsed" to result.parsed,
               "edges" to graph.edges.size, "facts" to facts, "guesses" to (graph.edges.size - facts)),

@@ -195,5 +195,50 @@ for problem in problems:
 sys.exit(1 if problems else 0)
 PYIDS
 
+# 10. Группы уведомлений и расширения файлов: один факт — одно место.
+#     Группа, написанная литералом с опечаткой, не ломает сборку: платформа создаст группу с новым
+#     именем, и уведомление уедет мимо настроек, где человек его отключал. Список расширений в
+#     plugin.xml и в коде тоже обязан совпадать — иначе тип файла зарегистрируется, а действие не
+#     сработает (или наоборот).
+python3 - "$root" <<'PYFACTS' || status=1
+import glob, io, os, re, sys
+root = sys.argv[1]
+problems = []
+
+declared = set(re.findall(r'"(Vibe [A-Za-z]+)"',
+                          io.open(os.path.join(root, 'vibe-plugins/vibe-agent/src/com/vibe/agent/ui/VibeNotifications.kt'),
+                                  encoding='utf-8').read()))
+used = set()
+for path in sorted(glob.glob(os.path.join(root, 'vibe-plugins/*/resources/META-INF/plugin.xml'))):
+    text = io.open(path, encoding='utf-8').read()
+    for group in re.findall(r'<notificationGroup\b[^>]*id="([^"]+)"', text):
+        used.add(group)
+        if group not in declared:
+            problems.append(f'группа уведомлений {group} не объявлена в VibeNotifications ({os.path.relpath(path, root)})')
+
+for base, _, files in os.walk(os.path.join(root, 'vibe-plugins')):
+    if os.sep + 'src' + os.sep not in base + os.sep:
+        continue
+    for name in files:
+        if not name.endswith('.kt') or name == 'VibeNotifications.kt':
+            continue
+        for line in io.open(os.path.join(base, name), encoding='utf-8'):
+            for group in used:
+                if f'"{group}"' in line:
+                    problems.append(f'{name}: группа уведомлений литералом «{group}» — возьмите VibeNotifications')
+
+# Расширения типа файла: XML против кода.
+xml = io.open(os.path.join(root, 'vibe-plugins/vibe-http/resources/META-INF/plugin.xml'), encoding='utf-8').read()
+kt = io.open(os.path.join(root, 'vibe-plugins/vibe-http/src/com/vibe/http/HttpFileType.kt'), encoding='utf-8').read()
+from_xml = set(re.search(r'extensions="([^"]+)"', xml).group(1).split(';'))
+from_kt = set(re.findall(r'"([a-z0-9]+)"', re.search(r'val EXTENSIONS = listOf\(([^)]*)\)', kt).group(1)))
+if from_xml != from_kt:
+    problems.append(f'расширения .http расходятся: plugin.xml {sorted(from_xml)} против HttpFileType {sorted(from_kt)}')
+
+for problem in problems:
+    print('ОШИБКА: ' + problem)
+sys.exit(1 if problems else 0)
+PYFACTS
+
 [[ $status -eq 0 ]] && echo "UI-гейт: тонкие скроллы на месте (наши панели + правка платформы), обходов VibeScroll нет; значки на месте и различимы"
 exit $status

@@ -49,7 +49,7 @@ class DailyDigestStartup : ProjectActivity {
     if (!DailyDigest.shouldSend(now, today, scheduled, lastSent)) return
     properties.setValue(KEY_LAST_SENT, today.toString())
     val text = DailyDigestAction.text(project)
-    NotificationGroupManager.getInstance().getNotificationGroup("Vibe Agent")
+    NotificationGroupManager.getInstance().getNotificationGroup(com.vibe.agent.ui.VibeNotifications.AGENT)
       .createNotification(t("digest.title"), text, NotificationType.INFORMATION)
       .notify(project)
   }

@@ -56,6 +56,14 @@ class HttpPanel(private val project: Project) : JPanel(BorderLayout()) {
    * в документацию, коллеге в мессенджер. Переменные подставляются, потому что команда нужна
    * рабочая, а не с «{{host}}» посередине.
    */
+  /**
+   * «Прогнать всё» — дымовой проход по файлу. По одному запросы гоняют ровно до третьего, дальше
+   * перестают; сводка «сколько ответило, что упало» это то, ради чего пишут скрипты на curl.
+   */
+  private val runAllButton = JButton(t("http.runAll"), AllIcons.Actions.RunAll).apply {
+    addActionListener { runAll() }
+  }
+
   private val curlButton = JButton(t("http.copyCurl"), AllIcons.Actions.Copy).apply {
     isEnabled = false
     addActionListener {
@@ -103,6 +111,7 @@ class HttpPanel(private val project: Project) : JPanel(BorderLayout()) {
         add(JBLabel(t("http.environment")))
         add(environment)
         add(runButton)
+        add(runAllButton)
         add(curlButton)
         add(JButton(t("http.reload"), AllIcons.Actions.Refresh).apply { addActionListener { reload() } })
       }, BorderLayout.WEST)
@@ -221,6 +230,61 @@ class HttpPanel(private val project: Project) : JPanel(BorderLayout()) {
     val duration = HttpExchange.duration(ms)
     return if (duration.inSeconds) t("http.time.seconds", "value" to String.format("%.1f", duration.value))
     else t("http.time.ms", "value" to duration.value.toLong().toString())
+  }
+
+  /**
+   * Выполняет все запросы файла подряд и показывает сводку.
+   *
+   * Изменяющие запросы называются ДО прогона и требуют подтверждения: `POST /users` пять раз — это
+   * пять пользователей. Не запрещаем: файл писал человек, и он знает, что там.
+   */
+  private fun runAll() {
+    val all = (0 until requests.size()).map { requests.get(it) }
+    if (all.isEmpty()) return
+    val changing = com.vibe.http.HttpRunAll.changingRequests(all)
+    if (changing.isNotEmpty()) {
+      val answer = com.intellij.openapi.ui.Messages.showYesNoDialog(
+        project,
+        t("http.runAll.confirm", "count" to changing.size, "methods" to changing.joinToString { it.method }),
+        t("http.runAll.confirmTitle"),
+        t("http.runAll.yes"), t("http.runAll.no"), AllIcons.General.WarningDialog,
+      )
+      if (answer != com.intellij.openapi.ui.Messages.YES) return
+    }
+    statusLine.foreground = JBColor.foreground()
+    statusLine.text = t("http.runAll.running", "count" to all.size)
+    val dir = currentDir
+    val values = variables()
+    ApplicationManager.getApplication().executeOnPooledThread {
+      val service = VibeHttpService.getInstance(project)
+      val outcomes = all.map { request ->
+        val (applied, unresolved) = HttpVariables.apply(request, values) { dynamic(it) }
+        if (unresolved.isNotEmpty()) {
+          com.vibe.http.HttpRunAll.Outcome.Refused(applied.title, unresolved.joinToString { "{{${it.name}}}" })
+        }
+        else when (val result = service.send(applied, dir)) {
+          is VibeHttpService.Result.Done ->
+            com.vibe.http.HttpRunAll.Outcome.Answered(applied.title, result.response.status, result.response.durationMs)
+          is VibeHttpService.Result.Refused ->
+            com.vibe.http.HttpRunAll.Outcome.Refused(applied.title, result.refusal.detail)
+          is VibeHttpService.Result.Failed ->
+            com.vibe.http.HttpRunAll.Outcome.Failed(applied.title, result.message)
+        }
+      }
+      val summary = com.vibe.http.HttpRunAll.summarize(outcomes)
+      onUi {
+        statusLine.foreground = if (summary.allOk)
+          JBColor.namedColor("Vibe.Http.success", JBColor(0x208A3C, 0x57965C))
+        else JBColor.namedColor("Vibe.Http.error", JBColor(0xDB3B4B, 0xDB5C5C))
+        statusLine.text = t("http.runAll.done", "ok" to summary.ok, "total" to summary.total,
+                            "ms" to summary.totalMs)
+        // Упавшие называем поимённо в теле ответа: сводка без имён заставляет гонять по одному
+        // заново — ровно то, от чего прогон и избавляет.
+        bodyView.text = if (summary.failed.isEmpty()) t("http.runAll.allOk")
+        else t("http.runAll.failedList") + "\n" + summary.failed.joinToString("\n") { "  • " + it }
+        bodyView.caretPosition = 0
+      }
+    }
   }
 
   /** `{{$uuid}}` и соседи. Снаружи — чтобы в тестах разбора не зависеть от времени и случайности. */

@@ -33,7 +33,7 @@ import java.nio.file.Path
  *  • «Оставить своё» — recorded against the current revision, so it stays quiet until the next bump.
  */
 object SeedConflictNotifier {
-  private const val GROUP = "Vibe Agent"
+  private const val GROUP = com.vibe.agent.ui.VibeNotifications.AGENT
 
   fun notify(project: Project, projectBase: String, conflicts: List<VibeDefaults.SeedConflict>) {
     if (conflicts.isEmpty()) return

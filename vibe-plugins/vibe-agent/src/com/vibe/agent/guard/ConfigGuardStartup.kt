@@ -29,7 +29,7 @@ class ConfigGuardStartup : ProjectActivity {
     if (findings.isEmpty()) return
     val worst = ConfigGuard.worst(findings)
     val details = findings.take(MAX_SHOWN).joinToString("; ") { describe(it) }
-    NotificationGroupManager.getInstance().getNotificationGroup("Vibe Agent")
+    NotificationGroupManager.getInstance().getNotificationGroup(com.vibe.agent.ui.VibeNotifications.AGENT)
       .createNotification(
         t("configGuard.found", "count" to findings.size, "details" to details),
         if (worst == ConfigGuard.Severity.ERROR) NotificationType.WARNING else NotificationType.INFORMATION,

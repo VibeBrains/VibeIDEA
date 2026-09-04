@@ -1570,5 +1570,14 @@
   "db.copy.insert": "Скопировать строку как INSERT",
   "db.copy.where": "Скопировать условие WHERE для этой строки",
   "db.copy.done": "Скопировано в буфер обмена",
-  "db.copy.tablePlaceholder": "ТАБЛИЦА"
+  "db.copy.tablePlaceholder": "ТАБЛИЦА",
+  "http.runAll": "Прогнать всё",
+  "http.runAll.running": "Прогоняю {count} запросов…",
+  "http.runAll.done": "Прогон: {ok} из {total} ответили успехом · {ms} мс",
+  "http.runAll.allOk": "Все запросы ответили успехом.",
+  "http.runAll.failedList": "Не ответили успехом:",
+  "http.runAll.confirmTitle": "В файле есть изменяющие запросы",
+  "http.runAll.confirm": "Изменяющих запросов: {count} ({methods}). Прогон выполнит их по-настоящему — например, POST создаст записи. Продолжить?",
+  "http.runAll.yes": "Прогнать",
+  "http.runAll.no": "Отмена"
 }

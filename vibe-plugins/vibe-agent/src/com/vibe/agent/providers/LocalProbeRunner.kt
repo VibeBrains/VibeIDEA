@@ -97,7 +97,7 @@ class LocalProbeStartup : com.intellij.openapi.startup.ProjectActivity {
     val existing = ProvidersService.load(project.basePath) { }
     val found = LocalProbeRunner.probe(existing)
     if (found.isEmpty()) return
-    NotificationGroupManager.getInstance().getNotificationGroup("Vibe Agent")
+    NotificationGroupManager.getInstance().getNotificationGroup(com.vibe.agent.ui.VibeNotifications.AGENT)
       .createNotification(
         t("localProbe.notice", "names" to found.joinToString { it.candidate.name }),
         NotificationType.INFORMATION,

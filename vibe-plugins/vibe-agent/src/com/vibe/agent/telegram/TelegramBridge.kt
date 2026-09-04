@@ -289,7 +289,7 @@ class TelegramBridge {
 
   private fun askOwner(incoming: TelegramProtocol.Incoming) {
     val project = targetProject() ?: ProjectManager.getInstance().openProjects.firstOrNull() ?: return
-    NotificationGroupManager.getInstance().getNotificationGroup("Vibe Agent")
+    NotificationGroupManager.getInstance().getNotificationGroup(com.vibe.agent.ui.VibeNotifications.AGENT)
       .createNotification(
         t("telegram.requestAccess", "chat" to incoming.chatId, "user" to (incoming.fromUsername ?: "?")),
         NotificationType.WARNING,
