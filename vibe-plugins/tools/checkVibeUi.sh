@@ -154,5 +154,46 @@ while IFS= read -r page; do
   }
 done < <(grep -rl 'com.intellij.openapi.options.Configurable\|: Configurable' "$root"/vibe-plugins/*/src --include='*.kt')
 
+# 9. Идентификаторы панелей: только ASCII и только из VibeToolWindows.
+#    Идентификатор уезжает в .idea/workspace.xml и в раскладку окон — русская буква там ломается
+#    при смене кодировки, а литерал, написанный руками в пятом файле, однажды разойдётся с XML.
+python3 - "$root" <<'PYIDS' || status=1
+import glob, io, os, re, sys
+root = sys.argv[1]
+declared = set(re.findall(r'"(Vibe[A-Za-z]*)"',
+                          io.open(os.path.join(root, 'vibe-plugins/vibe-agent/src/com/vibe/agent/ui/VibeToolWindows.kt'),
+                                  encoding='utf-8').read()))
+problems = []
+used = set()
+for path in sorted(glob.glob(os.path.join(root, 'vibe-plugins/*/resources/META-INF/plugin.xml'))):
+    text = io.open(path, encoding='utf-8').read()
+    for window in re.findall(r'<toolWindow\b[^>]*id="([^"]+)"', text):
+        used.add(window)
+        if not window.isascii():
+            problems.append(f'идентификатор панели не ASCII: {window} ({os.path.relpath(path, root)})')
+        elif window not in declared:
+            problems.append(f'идентификатор {window} не объявлен в VibeToolWindows ({os.path.relpath(path, root)})')
+# Литерал идентификатора в коде мимо VibeToolWindows — тот самый пятый экземпляр строки.
+for base, _, files in os.walk(os.path.join(root, 'vibe-plugins')):
+    if os.sep + 'src' + os.sep not in base + os.sep:
+        continue
+    for name in files:
+        if not name.endswith('.kt') or name == 'VibeToolWindows.kt':
+            continue
+        text = io.open(os.path.join(base, name), encoding='utf-8').read()
+        # Ищем именно ОБРАЩЕНИЕ к панели, а не любое совпадение строки: «VibeHttp» — это ещё и
+        # идентификатор нашего языка (Language("VibeHttp")), и запрещать его было бы ложной
+        # тревогой (поймано на себе при первом прогоне гейта).
+        for line in text.split('\n'):
+            if 'getToolWindow(' not in line and 'TOOL_WINDOW' not in line:
+                continue
+            for window in used:
+                if f'"{window}"' in line:
+                    problems.append(f'{name}: идентификатор панели написан литералом «{window}» — возьмите VibeToolWindows')
+for problem in problems:
+    print('ОШИБКА: ' + problem)
+sys.exit(1 if problems else 0)
+PYIDS
+
 [[ $status -eq 0 ]] && echo "UI-гейт: тонкие скроллы на месте (наши панели + правка платформы), обходов VibeScroll нет; значки на месте и различимы"
 exit $status

@@ -93,6 +93,6 @@ class VibeHttpApiStarter : ProjectActivity {
   }
 
   private companion object {
-    const val TOOL_WINDOW_ID = "VibeAgent"
+    const val TOOL_WINDOW_ID = com.vibe.agent.ui.VibeToolWindows.AGENT
   }
 }

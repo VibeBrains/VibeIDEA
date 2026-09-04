@@ -24,7 +24,7 @@ import java.time.LocalDate
  * All actions are project-scoped: they operate on threads stamped with the project's
  * basePath, never on untagged threads or threads of other projects.
  */
-private const val TOOL_WINDOW_ID = "VibeAgent"
+private const val TOOL_WINDOW_ID = com.vibe.agent.ui.VibeToolWindows.AGENT
 private const val EXPORT_FILE_PREFIX = "vibeidea-history"
 private const val EXT_MARKDOWN = "md"
 private const val EXT_JSON = "json"

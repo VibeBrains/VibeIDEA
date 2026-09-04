@@ -192,6 +192,19 @@ class DbPanel(private val project: Project) : JPanel(BorderLayout()) {
     }
   }
 
+  /**
+   * Обновление интерфейса из фонового потока — только пока проект жив.
+   *
+   * Запрос может идти секунды, а проект за это время закрывают: `invokeLater` в закрытую панель
+   * даёт исключение в логе и выглядит как «IDE ругается сама на себя».
+   */
+  private fun onUi(block: () -> Unit) {
+    SwingUtilities.invokeLater {
+      if (project.isDisposed || !isDisplayable) return@invokeLater
+      block()
+    }
+  }
+
   private fun source(): DataSources.DataSource? = sources.selectedItem as? DataSources.DataSource
 
   /** Кнопка показывается, только если драйвер для этой базы известен и ещё не скачан. */
@@ -213,7 +226,7 @@ class DbPanel(private val project: Project) : JPanel(BorderLayout()) {
     statusLine.text = t("db.driver.downloading", "title" to driver.title, "size" to (driver.sizeBytes / 1024 / 1024))
     ApplicationManager.getApplication().executeOnPooledThread {
       val outcome = VibeDbService.getInstance(project).download(driver)
-      SwingUtilities.invokeLater {
+      onUi {
         when (outcome) {
           is VibeDbService.Download.Done -> {
             statusLine.text = t("db.driver.downloaded", "path" to outcome.path.toString(), "file" to DataSources.FILE)
@@ -260,15 +273,15 @@ class DbPanel(private val project: Project) : JPanel(BorderLayout()) {
     ApplicationManager.getApplication().executeOnPooledThread {
       val service = VibeDbService.getInstance(project)
       val connection = service.connect(source).getOrElse { error ->
-        SwingUtilities.invokeLater { fail(t("db.connectFailed", "source" to DataSources.maskUrl(source.url), "reason" to (error.message ?: ""))) }
+        onUi { fail(t("db.connectFailed", "source" to DataSources.maskUrl(source.url), "reason" to (error.message ?: ""))) }
         return@executeOnPooledThread
       }
       val tables = runCatching { connection.use { service.tables(it) } }.getOrElse { error ->
-        SwingUtilities.invokeLater { fail(t("db.metaFailed", "reason" to (error.message ?: ""))) }
+        onUi { fail(t("db.metaFailed", "reason" to (error.message ?: ""))) }
         return@executeOnPooledThread
       }
       val grouped = DbCatalog.group(tables, DbSettings.showSystemSchemas)
-      SwingUtilities.invokeLater {
+      onUi {
         schemas = grouped
         refreshTree()
         statusLine.foreground = JBColor.foreground()
@@ -283,7 +296,7 @@ class DbPanel(private val project: Project) : JPanel(BorderLayout()) {
       val service = VibeDbService.getInstance(project)
       val connection = service.connect(source).getOrNull() ?: return@executeOnPooledThread
       val columns = runCatching { connection.use { service.columns(it, table) } }.getOrDefault(emptyList())
-      SwingUtilities.invokeLater {
+      onUi {
         columnsCache[table] = columns
         node.removeAllChildren()
         columns.forEach { node.add(DefaultMutableTreeNode(it)) }
@@ -384,11 +397,11 @@ class DbPanel(private val project: Project) : JPanel(BorderLayout()) {
     ApplicationManager.getApplication().executeOnPooledThread {
       val service = VibeDbService.getInstance(project)
       val connection = service.connect(source).getOrElse { error ->
-        SwingUtilities.invokeLater { fail(t("db.connectFailed", "source" to DataSources.maskUrl(source.url), "reason" to (error.message ?: ""))) }
+        onUi { fail(t("db.connectFailed", "source" to DataSources.maskUrl(source.url), "reason" to (error.message ?: ""))) }
         return@executeOnPooledThread
       }
       val outcome = connection.use { service.execute(it, sql) }
-      SwingUtilities.invokeLater { show(outcome) }
+      onUi { show(outcome) }
     }
   }
 

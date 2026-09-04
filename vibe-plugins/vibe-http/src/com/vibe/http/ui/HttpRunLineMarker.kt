@@ -38,7 +38,7 @@ class HttpRunLineMarker : LineMarkerProvider {
       { t("http.gutter.run", "request" to request.title) },
       { _, _ ->
         val project = element.project
-        val window = ToolWindowManager.getInstance(project).getToolWindow("HTTP") ?: return@LineMarkerInfo
+        val window = ToolWindowManager.getInstance(project).getToolWindow(com.vibe.agent.ui.VibeToolWindows.HTTP) ?: return@LineMarkerInfo
         window.activate {
           val panel = window.contentManager.contents.firstNotNullOfOrNull { it.component as? HttpPanel }
             ?: return@activate

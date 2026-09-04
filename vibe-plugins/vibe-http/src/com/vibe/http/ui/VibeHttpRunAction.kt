@@ -45,6 +45,6 @@ class VibeHttpRunAction : AnAction({ t("http.action.run") }) {
   }
 
   private companion object {
-    const val TOOL_WINDOW = "HTTP"
+    const val TOOL_WINDOW = com.vibe.agent.ui.VibeToolWindows.HTTP
   }
 }

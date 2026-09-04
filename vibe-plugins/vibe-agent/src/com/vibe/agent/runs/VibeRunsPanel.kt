@@ -200,6 +200,11 @@ class VibeRunsPanel(private val project: Project) : JPanel(BorderLayout()), Disp
 }
 
 class VibeRunsToolWindowFactory : ToolWindowFactory {
+  /** Подпись — из каталога строк: идентификатор панели ASCII и не переводится, имя переводится. */
+  override fun init(toolWindow: com.intellij.openapi.wm.ToolWindow) {
+    toolWindow.stripeTitle = com.vibe.agent.i18n.VibeI18n.t("toolWindow.runs")
+  }
+
   override fun createToolWindowContent(project: Project, toolWindow: ToolWindow) {
     val panel = VibeRunsPanel(project)
     val content = ContentFactory.getInstance().createContent(panel, "", false)

@@ -1555,5 +1555,15 @@
   "lsp.jsconfig.create": "Создать jsconfig.json",
   "lsp.jsconfig.mute": "Больше не напоминать",
   "lsp.jsconfig.created": "Создан {path}. Языковой сервер перечитает проект; на большой базе первый разбор занимает минуту.",
-  "lsp.jsconfig.failed": "Не удалось создать jsconfig.json: {reason}"
+  "lsp.jsconfig.failed": "Не удалось создать jsconfig.json: {reason}",
+  "toolWindow.design": "Дизайн",
+  "toolWindow.audit": "Аудит",
+  "toolWindow.docs": "Документы",
+  "toolWindow.runs": "Диспетчерская",
+  "toolWindow.tasks": "Фоновые задачи",
+  "toolWindow.http": "HTTP",
+  "http.tab.history": "История",
+  "http.history.line": "{time}  ·  {status}  ·  {ms} мс  ·  {size}",
+  "http.history.statusChanged": "статус изменился: было {before}, стало {now}",
+  "http.history.bodyChanged": "тело ответа отличается от прошлого раза"
 }

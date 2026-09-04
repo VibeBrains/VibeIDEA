@@ -1839,7 +1839,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     SwingUtilities.invokeLater {
       if (disposed) return@invokeLater
       composer.attachImages(listOf(ImageAttachment(name, mimeType, bytes)))
-      com.intellij.openapi.wm.ToolWindowManager.getInstance(project).getToolWindow("VibeAgent")?.activate(null)
+      com.intellij.openapi.wm.ToolWindowManager.getInstance(project).getToolWindow(VibeToolWindows.AGENT)?.activate(null)
     }
   }
 
@@ -1905,7 +1905,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     SwingUtilities.invokeLater {
       if (disposed) return@invokeLater
       composer.appendDraft(text)
-      com.intellij.openapi.wm.ToolWindowManager.getInstance(project).getToolWindow("VibeAgent")?.activate(null)
+      com.intellij.openapi.wm.ToolWindowManager.getInstance(project).getToolWindow(VibeToolWindows.AGENT)?.activate(null)
     }
   }
 

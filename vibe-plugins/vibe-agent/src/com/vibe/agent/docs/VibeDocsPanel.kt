@@ -117,6 +117,11 @@ private const val CARD_LIST = "list"
 private const val CARD_GRAPH = "graph"
 
 class VibeDocsToolWindowFactory : com.intellij.openapi.wm.ToolWindowFactory, com.intellij.openapi.project.DumbAware {
+  /** Подпись — из каталога строк: идентификатор панели ASCII и не переводится, имя переводится. */
+  override fun init(toolWindow: com.intellij.openapi.wm.ToolWindow) {
+    toolWindow.stripeTitle = com.vibe.agent.i18n.VibeI18n.t("toolWindow.docs")
+  }
+
   override fun createToolWindowContent(project: Project, toolWindow: com.intellij.openapi.wm.ToolWindow) {
     val panel = VibeDocsPanel(project)
     val content = com.intellij.ui.content.ContentFactory.getInstance().createContent(panel, null, false)

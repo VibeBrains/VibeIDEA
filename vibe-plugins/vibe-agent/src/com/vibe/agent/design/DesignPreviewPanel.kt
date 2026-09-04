@@ -499,6 +499,11 @@ class DesignPreviewPanel(private val project: Project) : JPanel(BorderLayout()),
 }
 
 class DesignToolWindowFactory : ToolWindowFactory {
+  /** Подпись — из каталога строк: идентификатор панели ASCII и не переводится, имя переводится. */
+  override fun init(toolWindow: com.intellij.openapi.wm.ToolWindow) {
+    toolWindow.stripeTitle = com.vibe.agent.i18n.VibeI18n.t("toolWindow.design")
+  }
+
   override fun createToolWindowContent(project: Project, toolWindow: ToolWindow) {
     val panel = DesignPreviewPanel(project)
     val content = ContentFactory.getInstance().createContent(panel, "", false)

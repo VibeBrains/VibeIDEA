@@ -71,10 +71,21 @@ class HttpPanel(private val project: Project) : JPanel(BorderLayout()) {
   private val statusLine = JBLabel(" ").apply { border = JBUI.Borders.empty(4, 8) }
   private val bodyView = area()
   private val headersView = area()
+  private val historyView = area()
   private val tabs = JBTabbedPane().apply {
     addTab(t("http.tab.body"), VibeScroll.pane(bodyView))
     addTab(t("http.tab.headers"), VibeScroll.pane(headersView))
+    addTab(t("http.tab.history"), VibeScroll.pane(historyView))
   }
+
+  /**
+   * История ответов проекта. В памяти панели, а не на диске: в ответах токены и персональные
+   * данные, и писать их в файлы без спроса нельзя.
+   */
+  private var history: List<com.vibe.http.HttpHistory.Entry> = emptyList()
+
+  /** Последний отправленный запрос — по нему история узнаёт, чья это запись. */
+  private var lastRequest: HttpRequestFile.Request? = null
 
   /** Путь файла, из которого взяты запросы, — по нему ищутся окружения и относительные тела. */
   private var currentDir: Path? = null
@@ -110,6 +121,19 @@ class HttpPanel(private val project: Project) : JPanel(BorderLayout()) {
       secondComponent = right
     }, BorderLayout.CENTER)
     reload()
+  }
+
+  /**
+   * Обновление интерфейса из фонового потока — только пока проект жив.
+   *
+   * Запрос может идти секунды, а проект за это время закрывают: `invokeLater` в закрытую панель
+   * даёт исключение в логе и выглядит как «IDE ругается сама на себя».
+   */
+  private fun onUi(block: () -> Unit) {
+    SwingUtilities.invokeLater {
+      if (project.isDisposed || !isDisplayable) return@invokeLater
+      block()
+    }
   }
 
   private fun area() = JTextArea().apply {
@@ -171,12 +195,13 @@ class HttpPanel(private val project: Project) : JPanel(BorderLayout()) {
   /** Выполняет запрос и показывает ответ; вызывается и из действия в редакторе. */
   fun run(request: HttpRequestFile.Request) {
     val (applied, unresolved) = HttpVariables.apply(request, variables()) { dynamic(it) }
+    lastRequest = applied
     statusLine.foreground = JBColor.foreground()
     statusLine.text = t("http.sending", "request" to applied.title)
     val dir = currentDir
     ApplicationManager.getApplication().executeOnPooledThread {
       val result = VibeHttpService.getInstance(project).send(applied, dir)
-      SwingUtilities.invokeLater { show(result, unresolved) }
+      onUi { show(result, unresolved) }
     }
   }
 
@@ -224,6 +249,7 @@ class HttpPanel(private val project: Project) : JPanel(BorderLayout()) {
         bodyView.text = if (HttpExchange.looksLikeJson(response)) HttpExchange.prettyJson(response.body) else response.body
         bodyView.caretPosition = 0
         headersView.text = response.headers.joinToString("\n") { "${it.name}: ${it.value}" }
+        remember(response)
       }
       is VibeHttpService.Result.Refused -> {
         statusLine.foreground = JBColor.namedColor("Vibe.Http.error", JBColor(0xDB3B4B, 0xDB5C5C))
@@ -244,5 +270,33 @@ class HttpPanel(private val project: Project) : JPanel(BorderLayout()) {
     if (unresolved.isNotEmpty()) {
       statusLine.text = statusLine.text + "  ·  " + t("http.unresolved", "names" to unresolved.joinToString { "{{${it.name}}}" })
     }
+  }
+
+  /**
+   * Кладёт ответ в историю и показывает её.
+   *
+   * Отдельной строкой сообщается ТОЛЬКО изменение против прошлого раза: «всё как вчера» на каждом
+   * прогоне приучает не читать эту строку вовсе, а «вчера работало» — единственный вопрос, ради
+   * которого в историю и заглядывают.
+   */
+  private fun remember(response: HttpExchange.Response) {
+    val request = lastRequest ?: return
+    history = com.vibe.http.HttpHistory.add(history, com.vibe.http.HttpHistory.Entry(
+      requestTitle = request.title, method = request.method, target = request.target,
+      status = response.status, durationMs = response.durationMs, sizeBytes = response.sizeBytes,
+      body = response.body, atEpochMs = System.currentTimeMillis(),
+    ))
+    val mine = com.vibe.http.HttpHistory.of(history, request.title, request.method, request.target)
+    val stamp = java.time.format.DateTimeFormatter.ofPattern("HH:mm:ss")
+    historyView.text = mine.joinToString("\n") { entry ->
+      val time = java.time.Instant.ofEpochMilli(entry.atEpochMs).atZone(java.time.ZoneId.systemDefault()).format(stamp)
+      t("http.history.line", "time" to time, "status" to entry.status,
+        "ms" to entry.durationMs, "size" to size(entry.sizeBytes))
+    }
+    historyView.caretPosition = 0
+    com.vibe.http.HttpHistory.changeAgainstPrevious(mine, object : com.vibe.http.HttpHistory.Labels {
+      override fun statusChanged(before: Int, now: Int) = t("http.history.statusChanged", "before" to before, "now" to now)
+      override fun bodyChanged(comparedWith: Int) = t("http.history.bodyChanged")
+    })?.let { statusLine.text = statusLine.text + "  ·  " + it }
   }
 }

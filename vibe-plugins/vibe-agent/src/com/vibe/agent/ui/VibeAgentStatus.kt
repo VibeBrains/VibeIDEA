@@ -73,7 +73,7 @@ class VibeAgentStatusWidget(private val project: Project) : StatusBarWidget, Sta
   override fun getAlignment(): Float = Component.LEFT_ALIGNMENT
   override fun getTooltipText(): String = t("status.tooltip.click")
   override fun getClickConsumer(): Consumer<MouseEvent> = Consumer {
-    ToolWindowManager.getInstance(project).getToolWindow("VibeAgent")?.activate(null)
+    ToolWindowManager.getInstance(project).getToolWindow(VibeToolWindows.AGENT)?.activate(null)
   }
 }
 

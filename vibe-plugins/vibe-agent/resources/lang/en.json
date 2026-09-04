@@ -1555,5 +1555,15 @@
   "lsp.jsconfig.create": "Create jsconfig.json",
   "lsp.jsconfig.mute": "Do not remind me",
   "lsp.jsconfig.created": "Created {path}. The language server will re-read the project; on a large codebase the first pass takes a minute.",
-  "lsp.jsconfig.failed": "Could not create jsconfig.json: {reason}"
+  "lsp.jsconfig.failed": "Could not create jsconfig.json: {reason}",
+  "toolWindow.design": "Design",
+  "toolWindow.audit": "Audit",
+  "toolWindow.docs": "Documents",
+  "toolWindow.runs": "Agent runs",
+  "toolWindow.tasks": "Background tasks",
+  "toolWindow.http": "HTTP",
+  "http.tab.history": "History",
+  "http.history.line": "{time}  ·  {status}  ·  {ms} ms  ·  {size}",
+  "http.history.statusChanged": "status changed: was {before}, now {now}",
+  "http.history.bodyChanged": "the response body differs from the previous run"
 }

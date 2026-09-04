@@ -45,6 +45,6 @@ class VibeDbRunSqlAction : AnAction({ t("db.action.runSql") }) {
   }
 
   private companion object {
-    const val TOOL_WINDOW = "VibeDb"
+    const val TOOL_WINDOW = com.vibe.agent.ui.VibeToolWindows.DB
   }
 }
