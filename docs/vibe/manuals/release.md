@@ -42,6 +42,10 @@ git checkout main && git merge --ff-only next
 
 ## 2. Собрать и проверить дистрибутив
 
+Собирать **только** через `vibeidea-build.sh` либо не забывать шаг с зависимостями: раскладку
+`deps/extracted/servers` наполняет `download.sh`, и прямой вызов `vibeidea-installers.cmd` после
+merge чужой ветки отправляет в дистрибутив вчерашний набор файлов (поймано гейтом 04.09.2026).
+
 ```bash
 sh vibe-plugins/deps/download.sh      # LSP4IJ и языковые серверы по закреплённым версиям
 ./vibeidea-installers.cmd -Dintellij.build.target.os=current -Dintellij.build.target.arch=current
