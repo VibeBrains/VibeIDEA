@@ -194,6 +194,8 @@ Windows подтверждён разбором и проверкой на macOS
 
 Если VibeIDEA оказался полезным — буду рад благодарности.
 
+Этот релиз убрал два приложения с вашего рабочего стола. Кнопка ниже — единственное, что он туда добавил.
+
 <a href="https://raw.githubusercontent.com/VibeBrains/VibeIDEA/main/media/QR-Code.jpg" target="_blank">
   <img src="https://raw.githubusercontent.com/VibeBrains/VibeIDEA/main/media/QR-Code.jpg" width="120" alt="QR-код для поддержки проекта">
 </a>
