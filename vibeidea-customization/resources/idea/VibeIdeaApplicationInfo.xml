@@ -6,7 +6,7 @@
        full — то, что человек видит в «О программе» и называет в issue. Формат MessageFormat, и
        строка без подстановок означает буквально её саму, поэтому здесь стоит версия ПРОДУКТА.
        Это же число сверяется с тегом при выпуске (releaseStamp.sh). -->
-  <version major="2026" minor="3" micro="0" full="0.3.0" eap="false"/>
+  <version major="2026" minor="3" micro="0" full="0.4.0" eap="false"/>
   <company name="VibeBrains" shortName="VibeBrains" url="https://github.com/VibeBrains"/>
   <build number="VI-__BUILD__" date="__BUILD_DATE__" majorReleaseDate="20260823"/>
   <icon svg="/vibeidea.svg" svg-small="/vibeidea_16.svg"/>
