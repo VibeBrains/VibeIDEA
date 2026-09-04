@@ -25,6 +25,8 @@
   <projectListeners>
     <listener class="com.vibe.lsp.VibeLspMissingServerNotifier"
               topic="com.intellij.openapi.fileEditor.FileEditorManagerListener"/>
+    <listener class="com.vibe.lsp.VibeJsConfigNotifier"
+              topic="com.intellij.openapi.fileEditor.FileEditorManagerListener"/>
   </projectListeners>
 
   <actions>

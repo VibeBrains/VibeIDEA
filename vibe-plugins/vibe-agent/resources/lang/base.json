@@ -1549,5 +1549,11 @@
   "db.driver.hashMismatch": "Хеш скачанного драйвера {title} не совпал с закреплённым — файл удалён. Это либо сбой загрузки, либо подмена; повторите позже.",
   "db.driver.failed": "Не удалось скачать драйвер: {reason}",
   "db.action.runSql": "Выполнить SQL-оператор",
-  "db.toolWindow": "БД"
+  "db.toolWindow": "БД",
+  "lsp.jsconfig.title": "JavaScript: сервер видит не весь проект",
+  "lsp.jsconfig.body": "В проекте {count} своих js-файлов ({dirs}), но нет jsconfig.json. Без него языковой сервер видит только открытый файл и то, что достижимо через import — переход к определению и поиск использований по глобальным переменным работать не будут.",
+  "lsp.jsconfig.create": "Создать jsconfig.json",
+  "lsp.jsconfig.mute": "Больше не напоминать",
+  "lsp.jsconfig.created": "Создан {path}. Языковой сервер перечитает проект; на большой базе первый разбор занимает минуту.",
+  "lsp.jsconfig.failed": "Не удалось создать jsconfig.json: {reason}"
 }
