@@ -118,8 +118,9 @@ for p in dotenv xpath jsonpath; do
 done
 [ -f "$SERVERS/phpactor.phar" ] || { say "✖ нет встроенного phpactor.phar"; fail=1; }
 [ -f "$SERVERS/phpactor-LICENSE" ] || { say "✖ нет текста лицензии рядом с phar (MIT требует)"; fail=1; }
-# Windows-выключатель проверки Box едет рядом с phar: без него на Windows сервер не стартует.
-[ -f "$SERVERS/phpactorNoPosixCheck.php" ] || { say "✖ нет phpactorNoPosixCheck.php рядом с phar — на Windows Phpactor не запустится"; fail=1; }
+# Лаунчер едет рядом с phar и находит его по __DIR__: без него на Windows сервер не стартует вовсе.
+PHPACTOR_LAUNCHER=phpactorLaunch.php
+[ -f "$SERVERS/$PHPACTOR_LAUNCHER" ] || { say "✖ нет $PHPACTOR_LAUNCHER рядом с phar — на Windows Phpactor не запустится"; fail=1; }
 for entry in \
   "node/node_modules/@vtsls/language-server/bin/vtsls.js" \
   "node/node_modules/vscode-langservers-extracted/bin/vscode-css-language-server" \
@@ -173,25 +174,32 @@ if [ ! -f "$SERVERS/phpactor.phar" ]; then
 elif ! command -v php >/dev/null 2>&1; then
   say "  php не найден — запуск встроенного Phpactor не проверялся"
 else
-  phpactor_out=$(php "$SERVERS/phpactor.phar" --version 2>&1 || true)
-  case "$phpactor_out" in
-    *"Phpactor"*) : ;;
-    *'requires the extension "posix"'*)
-      # Phar собран Box с проверкой требований, и среди них ext-posix — расширение, которого в
-      # Windows-сборках PHP не существует. Это не дефект дистрибутива, а известное ограничение
-      # Phpactor на Windows (проверено 02.09.2026: обход проверки не помогает); оно названо в
-      # заметках релиза. Сломанный phar сюда не попадёт — он не печатает текст проверки требований.
-      say "  Phpactor на этой машине не запускается: phar требует ext-posix (нет на Windows) — известное ограничение, не дефект сборки" ;;
-    *) say "✖ встроенный phpactor.phar не запускается"; fail=1 ;;
+  # Вне Windows phar запускается сам — там расширение posix есть, и его собственная проверка проходит.
+  case "$(uname -s)" in
+    MINGW*|MSYS*|CYGWIN*) : ;;
+    *)
+      phpactor_out=$(php "$SERVERS/phpactor.phar" --version 2>&1 || true)
+      case "$phpactor_out" in
+        *"Phpactor"*) : ;;
+        *) say "✖ встроенный phpactor.phar не запускается: $(printf '%s' "$phpactor_out" | head -2 | tr '\n' ' ')"; fail=1 ;;
+      esac ;;
   esac
-  # Эмуляция Windows на этой машине: все posix_* выключены, а проверка Box снята нашим prepend —
-  # так проверяется и то, что выключатель работает, и то, что внутри phar нет незащищённого вызова.
-  if [ -f "$SERVERS/phpactorNoPosixCheck.php" ]; then
-    posix_fns=$(php -r 'echo implode(",", array_filter(get_defined_functions()["internal"], fn($f)=>str_starts_with($f,"posix_")));' 2>/dev/null || true)
-    win_out=$(php -d "disable_functions=$posix_fns" -d "auto_prepend_file=$SERVERS/phpactorNoPosixCheck.php" "$SERVERS/phpactor.phar" --version 2>&1 || true)
-    case "$win_out" in
-      Phpactor*) say "  phpactor.phar стартует без функций posix и с выключенной проверкой Box (эмуляция Windows)" ;;
-      *) say "✖ phpactor.phar без posix не стартует: $(printf '%s' "$win_out" | head -2 | tr '\n' ' ')"; fail=1 ;;
+  # На Windows рабочий путь один — лаунчер: собственная строка phar `extension_loaded('posix')` там
+  # не проходит НИКОГДА, а расширения нет ни в одной сборке PHP под Windows. Лаунчер проверяется на
+  # ЛЮБОЙ системе именно запуском: на Windows — как боевой путь, на macOS — как то, что этот путь
+  # вообще жив.
+  #
+  # Прежняя проверка «эмулировала Windows», отключая ФУНКЦИИ posix_* через disable_functions, и была
+  # слепа по построению: `extension_loaded('posix')` при этом остаётся true, то есть ровно то
+  # условие, на котором Windows и падает, не проверялось. Так в 0.4.0 уехало обещание «PHP на
+  # Windows заработал» при неработающем сервере (разбор — knowledge/build/windowsBuild.md).
+  if [ ! -f "$SERVERS/$PHPACTOR_LAUNCHER" ]; then
+    : # об отсутствии лаунчера уже сказано выше
+  else
+    launch_out=$(php "$SERVERS/$PHPACTOR_LAUNCHER" --version 2>&1 || true)
+    case "$launch_out" in
+      *"Phpactor"*) say "  phpactor.phar стартует через лаунчер (боевой путь Windows): $(printf '%s' "$launch_out" | head -1 | tr -d '\r')" ;;
+      *) say "✖ phpactor.phar не стартует через лаунчер — на Windows PHP не заработает: $(printf '%s' "$launch_out" | head -2 | tr '\n' ' ')"; fail=1 ;;
     esac
   fi
 fi

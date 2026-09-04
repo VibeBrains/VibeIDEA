@@ -18,7 +18,9 @@ set -euo pipefail
 cd "$(dirname "$0")/../.."
 
 VERSION="${1:-}"
-[ -n "$VERSION" ] || { echo "✖ укажите версию: releaseStamp.sh vX.Y.Z"; exit 1; }
+[ -n "$VERSION" ] || { echo "✖ укажите версию: releaseStamp.sh vX.Y.Z [--product-fix \"<причина>\"]"; exit 1; }
+# Правка продукта поверх уже выпущенного тега — только названная вслух; разбор — releasePackagingOnly.sh.
+FIX_MODE="${2:-}"; FIX_REASON="${3:-}"
 
 # Версия в «О программе» обязана совпадать с тегом. Разойтись им ничего не мешает — это два разных
 # файла, — а расхождение обнаруживает пользователь, который в issue пишет не ту версию, что стоит.
@@ -75,12 +77,14 @@ COMMIT=$(git rev-parse HEAD)
 # его упаковочном потомке; правило и проверка — releasePackagingOnly.sh.
 PACKAGING_ONLY=false
 if git rev-parse -q --verify "$VERSION^{commit}" >/dev/null 2>&1 && [ "$(git rev-parse "$VERSION^{commit}")" != "$COMMIT" ]; then
-  ./vibe-plugins/tools/releasePackagingOnly.sh "$VERSION" "$COMMIT" || { echo "✖ штамповать нечего: сборка не на теге $VERSION и не на его упаковочном потомке"; exit 1; }
+  ./vibe-plugins/tools/releasePackagingOnly.sh "$VERSION" "$COMMIT" ${FIX_MODE:+"$FIX_MODE" "$FIX_REASON"} \
+    || { echo "✖ штамповать нечего: сборка не на теге $VERSION и не на его упаковочном потомке"; exit 1; }
   PACKAGING_ONLY=true
 fi
 STAMP=$ARTIFACTS/release-stamp.json
 {
-  printf '{\n  "version": "%s",\n  "commit": "%s",\n  "packagingOnly": %s,\n  "os": "%s",\n  "files": [\n' "$VERSION" "$COMMIT" "$PACKAGING_ONLY" "$OS"
+  printf '{\n  "version": "%s",\n  "commit": "%s",\n  "packagingOnly": %s,\n  "productFix": "%s",\n  "os": "%s",\n  "files": [\n' \
+    "$VERSION" "$COMMIT" "$PACKAGING_ONLY" "$FIX_REASON" "$OS"
   for i in "${!FILES[@]}"; do
     f="${FILES[$i]}"
     sha=$(shasum -a 256 "$f" | awk '{print $1}')
@@ -92,7 +96,8 @@ STAMP=$ARTIFACTS/release-stamp.json
 } > "$STAMP"
 
 echo "  версия:  $VERSION"
-echo "  коммит:  $COMMIT$([ "$PACKAGING_ONLY" = true ] && echo " (упаковочный потомок тега $VERSION)")"
+echo "  коммит:  $COMMIT$([ "$PACKAGING_ONLY" = true ] && echo " (потомок тега $VERSION)")"
+[ -n "$FIX_REASON" ] && echo "  правка продукта поверх тега: $FIX_REASON"
 for f in "${FILES[@]}"; do
   echo "  файл:    $(basename "$f") ($(wc -c < "$f" | tr -d ' ') байт)"
   echo "  sha256:  $(shasum -a 256 "$f" | awk '{print $1}')"

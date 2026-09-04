@@ -60,8 +60,9 @@ Copy-Item $phar 'extracted\servers\phpactor.phar' -Force
 # MIT требует, чтобы текст лицензии ехал вместе с копией.
 Get-File "https://raw.githubusercontent.com/phpactor/phpactor/$($pins.PHPACTOR_V)/LICENSE" 'phpactor-LICENSE'
 Copy-Item 'phpactor-LICENSE' 'extracted\servers\phpactor-LICENSE' -Force
-# Windows: the phar's Box checker demands ext-posix, which no Windows PHP has — this prepend switches the checker off.
-Copy-Item 'phpactorNoPosixCheck.php' 'extracted\servers\phpactorNoPosixCheck.php' -Force
+# Windows: the phar's own entry point exits without ext-posix, which no Windows PHP has — this
+# launcher boots the phar's autoloader past that check and changes nothing else.
+Copy-Item 'phpactorLaunch.php' 'extracted\servers\phpactorLaunch.php' -Force
 "Phpactor $($pins.PHPACTOR_V) (MIT), bundled from the project release; see phpactor-LICENSE." |
     Set-Content -Path 'extracted\servers\README.txt' -Encoding UTF8
 
