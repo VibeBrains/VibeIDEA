@@ -96,7 +96,15 @@ $jsDir = 'extracted\servers\dap\vibeJsDebug'
 if (Test-Path $jsDir) { Remove-Item -Recurse -Force $jsDir }
 New-Item -ItemType Directory -Path $jsDir -Force | Out-Null
 # tar есть в Windows 10 1803 и новее; отдельного распаковщика tar.gz в PowerShell нет.
-tar -xzf $jsTar -C $jsDir
+#
+# Зовём ИМЕННО системный bsdtar по полному пути, а каталог передаём через «/». Просто `tar`
+# берётся из PATH, и у всякого, кто поставил Git for Windows (то есть у любого, кто клонировал
+# этот репозиторий), первым найдётся GNU tar из его usr/bin. Тот понимает обратный слэш как
+# часть имени, а не как разделитель, и падает с «Cannot open: No such file or directory» на
+# каталоге, созданном секундой раньше (поймано на живой Windows 04.09.2026).
+$tarExe = Join-Path $env:SystemRoot 'system32\tar.exe'
+if (-not (Test-Path $tarExe)) { $tarExe = 'tar' }
+& $tarExe -xzf $jsTar -C ($jsDir.Replace('\', '/'))
 if ($LASTEXITCODE -ne 0) { throw "tar не распаковал $jsTar (код $LASTEXITCODE)" }
 
 $vsix = "php-debug-$($pins.PHP_DEBUG_V).vsix"

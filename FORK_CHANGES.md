@@ -28,6 +28,16 @@
 **Причина:** латентный баг апстрима — `loadConsentsForEditing` получает от `ConsentOptions` иммутабельный список, когда у продукта нет бандленных согласий (вендор не JetBrains), и `removeTraceConsents`/`removeIf` падают с `UnsupportedOperationException`; ломает шаг `search_index` (traverseUI) при сборке нашего дистрибутива.
 **Изменено:** `var result = options.consents.first` → `…first.toMutableList()` (+ комментарий-маркер `[VibeIDEA]`). Кандидат на отправку апстриму.
 
+### .gitattributes (корень)
+**Причина:** апстрим объявляет `* text=auto eol=lf`, и наши батники выкладываются с LF. `cmd.exe`
+разбирает `.bat` построчно и на LF ломается: `@echo off` не действует, `%~dp0` пустеет, строки `rem`
+исполняются как команды — а скрипт при этом возвращает **код 0**, то есть «успех» без единого шага
+(поймано первым живым прогоном `vibeidea-build.bat` на Windows 04.09.2026).
+**Изменено:** в конец файла добавлено правило `*.bat text eol=crlf` с комментарием-маркером
+`[VibeIDEA]`. Правило `* text=auto eol=lf` не тронуто; `*.cmd` намеренно не включён — у апстрима это
+двойные bash+batch файлы, и CRLF сломал бы их bash-половину на Unix.
+**При синке:** конфликт возможен, только если апстрим сам правит хвост файла — правило аддитивное.
+
 ### platform/platform-api/src/com/intellij/ui/components/JBScrollBar.java
 **Причина:** продуктовое решение владельца 2026-08-28 — тонкие скроллы во ВСЁМ интерфейсе VibeIDEA (дерево проекта, редактор, панели платформы), не только в наших панелях. Другого рычага нет: толщина зашита в конструкторы `ThinScrollBarUI`/`ThinMacScrollBarUI`, а выбор тонкого варианта делает `JBScrollBar.isThin()`, недоступный ни теме, ни настройкам.
 **Изменено:** `isThin()` возвращает `vibeScrollBarThickness() > 0` вместо `false`; `createUI` передаёт толщину в тонкие UI; добавлен `vibeScrollBarThickness()` — чтение ключа `vibe.scrollbar.thickness` (дефолт 4, `0` возвращает штатные скроллы платформы). Ключ объявлен в `vibe-agent/plugin.xml` (EP `registryKey`), настройка — Settings → Tools → VibeIDEA → Интерфейс; `registry.properties` платформы не тронут. Комментарии-маркеры `[VibeIDEA]`.
