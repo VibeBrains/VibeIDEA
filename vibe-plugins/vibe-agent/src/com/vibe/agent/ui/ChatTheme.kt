@@ -38,6 +38,23 @@ internal object ChatTheme {
   }
 
   /** A quiet clickable «копировать» label; [supplier] provides the text at click time. */
+  /**
+   * Тихая ссылка рядом с сообщением — та же форма, что и «копировать».
+   *
+   * Отдельной кнопкой это делать нельзя: сообщений в ленте сотни, и кнопка у каждого превратила бы
+   * ленту в панель инструментов.
+   */
+  fun quietLabel(text: String, tooltip: String, onClick: () -> Unit): JLabel = JLabel(text).apply {
+    font = com.intellij.util.ui.JBFont.label().deriveFont(Font.PLAIN, CAPTION_FONT_PT)
+    foreground = META_FG
+    border = JBUI.Borders.empty(2, 8)
+    cursor = java.awt.Cursor.getPredefinedCursor(java.awt.Cursor.HAND_CURSOR)
+    toolTipText = tooltip
+    addMouseListener(object : java.awt.event.MouseAdapter() {
+      override fun mouseClicked(e: java.awt.event.MouseEvent) = onClick()
+    })
+  }
+
   fun copyLabel(tooltip: String, supplier: () -> String): JLabel = JLabel(com.vibe.agent.i18n.VibeI18n.t("code.copyShort")).apply {
     font = com.intellij.util.ui.JBFont.label().deriveFont(Font.PLAIN, CAPTION_FONT_PT)
     foreground = META_FG

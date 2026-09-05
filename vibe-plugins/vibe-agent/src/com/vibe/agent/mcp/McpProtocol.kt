@@ -77,6 +77,8 @@ object McpProtocol {
   const val TOOL_PATH = "vibe_code_graph_path"
   const val TOOL_PROJECT = "vibe_project_info"
   const val TOOL_RUN = "vibe_run_agent"
+  const val TOOL_DECISIONS_SEARCH = "vibe_decisions_search"
+  const val TOOL_DECISIONS_RECORD = "vibe_decisions_record"
 
   /**
    * The tools, in a fixed order — the 2026 revision asks for a deterministic listing so clients can
@@ -129,6 +131,33 @@ object McpProtocol {
       description = "Отдаёт задачу агенту VibeIDEA в открытом проекте и возвращает идентификатор сессии. " +
                     "Тот же ход, что POST /run, и та же авторизация.",
       schema = stringArg("task", "Что сделать. Формулировка уходит агенту как сообщение пользователя"),
+    ),
+    Tool(
+      name = TOOL_DECISIONS_SEARCH,
+      title = "Что уже решено по теме",
+      description = "Принятые решения проекта по теме запроса: номер, вопрос и путь файла. " +
+                    "Читать ДО того, как предлагать вариант: отвергнутое однажды не становится лучше со временем.",
+      schema = stringArg("query", "Тема или вопрос, например «подсветка PHP» или «хранение паролей»"),
+    ),
+    Tool(
+      name = TOOL_DECISIONS_RECORD,
+      title = "Зафиксировать решение",
+      description = "Записывает решение файлом в журнал проекта и строкой в его индекс. " +
+                    "Причина обязательна: запись без «почему» не отвечает на вопрос, ради которого её открывают.",
+      schema = buildJsonObject {
+        put("type", "object")
+        putJsonObject("properties") {
+          putJsonObject("question") { put("type", "string"); put("description", "Вопрос, на который отвечали") }
+          putJsonObject("chosen") { put("type", "string"); put("description", "Что выбрали") }
+          putJsonObject("rejected") { put("type", "string"); put("description", "Что рассмотрели и не взяли") }
+          putJsonObject("why") { put("type", "string"); put("description", "Почему именно так") }
+        }
+        putJsonArray("required") {
+          add(kotlinx.serialization.json.JsonPrimitive("question"))
+          add(kotlinx.serialization.json.JsonPrimitive("chosen"))
+          add(kotlinx.serialization.json.JsonPrimitive("why"))
+        }
+      },
     ),
   )
 }

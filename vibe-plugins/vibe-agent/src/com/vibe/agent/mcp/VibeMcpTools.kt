@@ -29,8 +29,43 @@ class VibeMcpTools(private val projectProvider: () -> Project? = { ProjectManage
       McpProtocol.TOOL_PATH -> path(project, arguments)
       McpProtocol.TOOL_PROJECT -> projectInfo(project)
       McpProtocol.TOOL_RUN -> run(arguments)
+      McpProtocol.TOOL_DECISIONS_SEARCH -> decisionsSearch(project, arguments)
+      McpProtocol.TOOL_DECISIONS_RECORD -> decisionsRecord(project, arguments)
       else -> McpServer.Tools.Result("неизвестный инструмент: $name", isError = true)
     }
+  }
+
+  /**
+   * Решения по теме — путями и вопросами, не текстом.
+   *
+   * Тем же поиском, что и у библиотекаря: два ранжирования одного корпуса разошлись бы, и агент
+   * получал бы разные ответы на один вопрос в зависимости от того, каким путём спросил.
+   */
+  private fun decisionsSearch(project: Project, arguments: JsonObject): McpServer.Tools.Result {
+    val query = string(arguments, "query") ?: return McpServer.Tools.Result("нужен аргумент query", isError = true)
+    val entries = com.vibe.agent.decisions.DecisionStore.getInstance(project).entries()
+    if (entries.isEmpty()) return McpServer.Tools.Result("В проекте нет журнала решений")
+    val hits = com.vibe.agent.knowledge.Librarian.find(entries, query)
+    if (hits.isEmpty()) return McpServer.Tools.Result("По этой теме решений не записано")
+    return McpServer.Tools.Result(hits.joinToString("\n") { "- ${it.entry.path} — ${it.entry.description}" })
+  }
+
+  private fun decisionsRecord(project: Project, arguments: JsonObject): McpServer.Tools.Result {
+    val question = string(arguments, "question") ?: return McpServer.Tools.Result("нужен аргумент question", isError = true)
+    val chosen = string(arguments, "chosen") ?: return McpServer.Tools.Result("нужен аргумент chosen", isError = true)
+    val why = string(arguments, "why") ?: return McpServer.Tools.Result("нужен аргумент why", isError = true)
+    val store = com.vibe.agent.decisions.DecisionStore.getInstance(project)
+    val decision = com.vibe.agent.decisions.DecisionRecord.Decision(
+      number = store.nextNumber(),
+      question = question,
+      chosen = chosen,
+      rejected = string(arguments, "rejected").orEmpty(),
+      why = why,
+      date = java.time.LocalDate.now().toString(),
+    )
+    val path = store.write(decision, com.vibe.agent.i18n.VibeI18n.t("decisions.index.header"))
+      ?: return McpServer.Tools.Result("не удалось записать решение в ${store.folder()}", isError = true)
+    return McpServer.Tools.Result("Решение ${decision.number} записано: $path")
   }
 
   private fun string(arguments: JsonObject, key: String): String? =

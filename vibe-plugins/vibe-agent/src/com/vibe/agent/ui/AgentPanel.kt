@@ -264,6 +264,9 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
   @Volatile private var turnThreadId: String? = null
   /** Assistant text of the running turn (reader thread appends, EDT projects). */
   private val turnText = StringBuffer()
+
+  /** Последний вопрос человека — им предзаполняется заголовок решения: решение отвечает на вопрос. */
+  private var lastUserText: String = ""
   /** How much of [turnText] the live feed row already shows (EDT-only). */
   private var uiConsumed = 0
   /** Row components aligned with the current thread's message indices (best effort during a live turn). */
@@ -2436,14 +2439,32 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
   private fun prependKnowledge(prompt: String, userText: String): String {
     val index = com.vibe.agent.knowledge.KnowledgeIndex.getInstance(project)
     val entries = index.entries()
+    var result = prompt
+    val hits = com.vibe.agent.knowledge.Librarian.find(entries, userText)
+    if (entries.isNotEmpty() && hits.isNotEmpty()) {
+      val withPaths = hits.map { hit ->
+        hit.copy(entry = hit.entry.copy(path = index.relativeTo(hit.entry)))
+      }
+      systemLine(t("knowledge.found", "paths" to withPaths.joinToString { it.entry.path }))
+      result = com.vibe.agent.knowledge.Librarian.promptBlock(withPaths, t("knowledge.header")) + "\n\n" + result
+    }
+    return prependDecisions(result, userText)
+  }
+
+  /**
+   * Принятые решения — тем же путём, что и записи знаний, и отдельным блоком.
+   *
+   * Отдельным намеренно: запись знаний рассказывает, как устроено, а решение говорит, что уже
+   * отвергнуто и почему. Агент, не видевший второго, предложит отвергнутое — вежливо, подробно и
+   * за ваши токены.
+   */
+  private fun prependDecisions(prompt: String, userText: String): String {
+    val entries = com.vibe.agent.decisions.DecisionStore.getInstance(project).entries()
     if (entries.isEmpty()) return prompt
     val hits = com.vibe.agent.knowledge.Librarian.find(entries, userText)
     if (hits.isEmpty()) return prompt
-    val withPaths = hits.map { hit ->
-      hit.copy(entry = hit.entry.copy(path = index.relativeTo(hit.entry)))
-    }
-    systemLine(t("knowledge.found", "paths" to withPaths.joinToString { it.entry.path }))
-    return com.vibe.agent.knowledge.Librarian.promptBlock(withPaths, t("knowledge.header")) + "\n\n" + prompt
+    systemLine(t("decisions.found", "paths" to hits.joinToString { it.entry.path }))
+    return com.vibe.agent.knowledge.Librarian.promptBlock(hits, t("decisions.header")) + "\n\n" + prompt
   }
 
   private fun sendToAcp(
@@ -3350,7 +3371,20 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     private val metaRow = JPanel(BorderLayout()).apply {
       isOpaque = false
       add(meta, BorderLayout.WEST)
-      add(copyLink { fullText.ifEmpty { text.text } }, BorderLayout.EAST)
+      add(JPanel(java.awt.FlowLayout(java.awt.FlowLayout.RIGHT, JBUI.scale(2), 0)).apply {
+        isOpaque = false
+        // «Решение» рядом с «копировать»: решение созревает в ответе агента и там же умирает,
+        // если переносить его в файл руками. Ссылкой, а не кнопкой — сообщений в ленте сотни.
+        add(ChatTheme.quietLabel(t("decisions.fromMessage"), t("decisions.fromMessage.hint")) {
+          com.vibe.agent.decisions.RecordDecisionAction.record(
+            project,
+            question = lastUserText,
+            chosen = fullText.ifEmpty { text.text }.trim().take(DECISION_PREFILL_CHARS),
+            why = "",
+          )
+        })
+        add(copyLink { fullText.ifEmpty { text.text } })
+      }, BorderLayout.EAST)
     }
     val row: JPanel = object : ChatRow(BorderLayout(0, JBUI.scale(2))) {
       // better than the original: cap the text column so lines stay readable in a wide panel
@@ -3476,6 +3510,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
   }
 
   private fun userBubble(text: String) {
+    lastUserText = text.trim().take(DECISION_QUESTION_CHARS)
     // The record is stored before the bubble is drawn, so its index is the last one — that is what
     // makes the pin and the branch act on THIS message and not on a neighbour.
     val index = currentThreadId?.let { history.get(it)?.messages?.lastIndex } ?: -1
@@ -4056,6 +4091,12 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
   }
 
   private companion object {
+    /** Ответ агента в поле «Решили»: длинный ответ в диалоге не читается, а правится. */
+    const val DECISION_PREFILL_CHARS = 2000
+
+    /** Вопрос — это заголовок; всё длиннее в заголовок и не поместится. */
+    const val DECISION_QUESTION_CHARS = 200
+
     const val SILENCE_CHECK_MS = 30_000
     const val OUTPUT_COMMAND = "/output"
     const val SPEND_COMMAND = "/spend"
