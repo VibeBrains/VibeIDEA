@@ -173,6 +173,18 @@ class DesignPreviewPanel(private val project: Project) : JPanel(BorderLayout()),
     renderRecent()
   }
 
+  /**
+   * Открывает адрес, пришедший извне (панель стека, действие).
+   *
+   * Публичная точка ровно одна, и она проходит тем же путём, что и кнопка «Открыть»: адрес
+   * попадает в поле, в историю и в браузер. Отдельный путь «только загрузить» разошёлся бы с
+   * кнопкой в первый же раз, когда в неё что-нибудь добавят.
+   */
+  fun openAt(url: String) {
+    urlField.text = url
+    open()
+  }
+
   private fun open() {
     val browser = browser ?: return
     val url = urlField.text.trim().ifEmpty { return }

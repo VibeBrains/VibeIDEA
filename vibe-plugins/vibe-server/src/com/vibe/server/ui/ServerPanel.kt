@@ -8,6 +8,7 @@ import com.intellij.ui.components.JBScrollPane
 import com.intellij.ui.components.JBThinOverlappingScrollBar
 import com.intellij.util.ui.JBUI
 import com.vibe.server.PortConflict
+import com.vibe.server.PreviewUrl
 import com.vibe.server.ServerEntry
 import com.vibe.server.ServerRunner
 import com.vibe.server.ServerStatus
@@ -80,6 +81,10 @@ class ServerPanel(private val project: Project) : JPanel(BorderLayout()) {
     val stopAll = JButton(t("servers.action.stopAll"))
     val startOne = JButton(t("servers.action.startSelected"))
     val reload = JButton(t("servers.action.reload"))
+    // «Превью» — то, ради чего в контракте с самого начала есть previewPath: адрес у записи был,
+    // а открыть его было нечем, хотя браузер в IDE есть (панель «Дизайн»).
+    val preview = JButton(t("servers.action.preview"))
+    preview.addActionListener { openPreview() }
     startAll.addActionListener { pooled { runner.startAll(entries) } }
     stopAll.addActionListener { pooled { runner.stopAll(entries) } }
     startOne.addActionListener {
@@ -91,7 +96,7 @@ class ServerPanel(private val project: Project) : JPanel(BorderLayout()) {
     }
     reload.addActionListener { reload() }
     val buttons = JPanel(FlowLayout(FlowLayout.LEFT)).apply {
-      add(startAll); add(stopAll); add(startOne); add(reload)
+      add(startAll); add(stopAll); add(startOne); add(preview); add(reload)
     }
     add(buttons, BorderLayout.NORTH)
     // Тонкие скроллы — как во всём нашем UI (решение владельца). Обёртки VibeScroll здесь нет:
@@ -103,6 +108,34 @@ class ServerPanel(private val project: Project) : JPanel(BorderLayout()) {
   private fun thinScroll(view: java.awt.Component): JBScrollPane = JBScrollPane(view).apply {
     verticalScrollBar = JBThinOverlappingScrollBar(java.awt.Adjustable.VERTICAL)
     horizontalScrollBar = JBThinOverlappingScrollBar(java.awt.Adjustable.HORIZONTAL)
+  }
+
+  /**
+   * Показывает страницу выбранной записи во встроенном браузере.
+   *
+   * Отказ называется вслух: молчащая кнопка читается как поломка, а причин ровно три — задача не
+   * страница, у записи нет порта, встроенного браузера в этой сборке нет.
+   */
+  private fun openPreview() {
+    val idx = list.selectedIndex
+    if (idx < 0 || idx >= entries.size) { appendLog(t("servers.preview.noSelection")); return }
+    val entry = entries[idx]
+    when (val address = PreviewUrl.of(entry)) {
+      is PreviewUrl.Address.Refused -> appendLog(when (address.refusal) {
+        PreviewUrl.Refusal.NO_PORT -> t("servers.preview.noPort", "id" to entry.id)
+        PreviewUrl.Refusal.TASK_HAS_NO_PAGE -> t("servers.preview.task", "id" to entry.id)
+      })
+      is PreviewUrl.Address.Url -> {
+        // Запущенности не требуем: смотреть на «не удалось подключиться» — законный способ понять,
+        // что сервис не поднялся, а запрет открывать превью до старта прятал бы это за кнопкой.
+        if (com.vibe.agent.preview.PreviewOpener.open(project, address.text)) {
+          appendLog(t("servers.preview.opened", "url" to address.text))
+        }
+        else {
+          appendLog(t("servers.preview.noBrowser", "url" to address.text))
+        }
+      }
+    }
   }
 
   private fun reload() {
