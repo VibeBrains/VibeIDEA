@@ -46,6 +46,8 @@
     <registryKey key="vibe.scrollbar.thickness" defaultValue="4" restartRequired="false"
                  description="Толщина скроллбаров VibeIDEA в пикселях (0 — штатные скроллы платформы)"/>
     <postStartupActivity implementation="com.vibe.agent.i18n.VibeLangSeeder"/>
+    <postStartupActivity implementation="com.vibe.agent.appearance.CompactModeStartup"/>
+    <postStartupActivity implementation="com.vibe.agent.features.FeaturesStartup"/>
     <postStartupActivity implementation="com.vibe.agent.history.VibeHistoryWarmUp"/>
     <postStartupActivity implementation="com.vibe.agent.guard.ConfigGuardStartup"/>
     <postStartupActivity implementation="com.vibe.agent.providers.LocalProbeStartup"/>
@@ -110,6 +112,9 @@
               text="Токен Telegram-бота" description="Мост в Telegram: свой бот, токен в защищённом хранилище"/>
       <action id="Vibe.UiKitMap" class="com.vibe.agent.design.VibeUiKitMapAction"
               text="Снять карту построенного" description="Токены, классы и компоненты проекта в .vibe/design/uiKit.md"/>
+      <action id="Vibe.Features" class="com.vibe.agent.features.VibeFeaturesAction"
+              text="Возможности VibeIDEA"
+              description="Что уже встроено и где это включается — списком, с именами действий"/>
       <action id="Vibe.Doctor" class="com.vibe.agent.doctor.VibeDoctorAction"
               text="Диагностика" description="Один отчёт: сборка, провайдеры, конфиги, режимы, индексы"/>
       <action id="Vibe.DesignDoctor" class="com.vibe.agent.design.VibeDesignDoctorAction"

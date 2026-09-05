@@ -36,6 +36,8 @@ jvm_library(
         "//platform/xdebugger-api:debugger",
         "//vibe-plugins/vibe-agent",
         "@lib//vibe/lsp4ij:vibe-lsp4ij",
+        "//libraries/gson",
+        "//libraries/lsp4j",
     ],
 )
 

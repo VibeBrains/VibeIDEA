@@ -96,6 +96,34 @@ if broken:
 print("  ссылки внутри docs/vibe: битых нет")
 PY
 
+# --- 5: список возможностей не зовёт к несуществующим действиям ---
+#
+# Список показывается ИЗ IDE (действие «Возможности VibeIDEA») и называет действия по именам.
+# Строка, отправляющая к действию, которого больше нет, выглядит не как устаревшая документация,
+# а как поломка IDE. Юнит-тест этого не ловит: описания плагинов лежат в соседних модулях, и на
+# classpath теста их нет — проверялось бы пустое множество.
+"$PYTHON" - <<'PYTOUR' || fail=1
+import io, os, re, sys
+tour = os.path.join('vibe-plugins', 'vibe-agent', 'resources', 'features', 'tour.md')
+if not os.path.isfile(tour):
+    print("✖ нет списка возможностей:", tour)
+    sys.exit(1)
+mentioned = set(re.findall(r'`(Vibe\.[A-Za-z0-9_]+)`', io.open(tour, encoding='utf-8').read()))
+declared = set()
+for root, _, files in os.walk('vibe-plugins'):
+    for name in files:
+        if name.endswith('.xml'):
+            text = io.open(os.path.join(root, name), encoding='utf-8', errors='ignore').read()
+            declared.update(re.findall(r'<action id="(Vibe\.[^"]+)"', text))
+missing = sorted(mentioned - declared)
+if missing:
+    print("✖ список возможностей зовёт к несуществующим действиям:")
+    for item in missing:
+        print("   ", item)
+    sys.exit(1)
+print("  список возможностей: упомянуто действий %d, все объявлены" % len(mentioned))
+PYTOUR
+
 if [ "$fail" -ne 0 ]; then
   say "Гейт документации: ПРОВАЛЕН"
   exit 1

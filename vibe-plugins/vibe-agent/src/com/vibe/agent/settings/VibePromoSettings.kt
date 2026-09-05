@@ -39,6 +39,24 @@ object VibePromoSettings {
   /** Our marker: "the default has been applied / the user has decided". Absent = never touched. */
   private const val DECIDED_KEY = "vibe.promo.decided"
 
+  /**
+   * Per-key marker: «этот выключатель мы уже трогали».
+   *
+   * Один общий маркер оказался ловушкой, и она сработала на живой 0.4.1. В 0.4.0 список содержал
+   * один ключ; маркер выставился. В 0.4.1 в список добавился второй ключ — и не применился ни у
+   * кого, кто запускал 0.4.0: общий маркер уже стоял, а он ничего не знает про состав списка.
+   * Пользователь при этом видел ровно то же всплывающее окно, которое выпуск обещал убрать.
+   *
+   * Маркер на ключ отвечает на правильный вопрос: не «приходили ли мы вообще», а «спрашивали ли мы
+   * про ЭТОТ выключатель».
+   */
+  private const val APPLIED_PREFIX = "vibe.promo.applied."
+
+  /** Ключи, для которых умолчание ещё не применялось. Чистый шов: состояние внутрь, работа наружу. */
+  fun keysToApply(all: List<String>, applied: (String) -> Boolean): List<String> = all.filterNot(applied)
+
+  fun appliedKeyOf(key: String): String = APPLIED_PREFIX + key
+
   fun isEnabled(): Boolean = enabledFrom(PropertiesComponent.getInstance().getValue(PLATFORM_KEY))
 
   /** Pure seam for tests: the platform stores "disabled", we show "enabled"; absent = our default (off). */
@@ -46,7 +64,11 @@ object VibePromoSettings {
 
   fun setEnabled(enabled: Boolean) {
     val props = PropertiesComponent.getInstance()
-    SILENCED_KEYS.forEach { props.setValue(it, !enabled) }
+    SILENCED_KEYS.forEach {
+      props.setValue(it, !enabled)
+      // Человек высказался про все поверхности сразу — умолчание им больше не управляет.
+      props.setValue(appliedKeyOf(it), true)
+    }
     props.setValue(DECIDED_KEY, true)
   }
 
@@ -57,8 +79,16 @@ object VibePromoSettings {
    */
   fun applyDefaultOnce() {
     val props = PropertiesComponent.getInstance()
-    if (props.getBoolean(DECIDED_KEY)) return
-    SILENCED_KEYS.forEach { props.setValue(it, true) }
+    // Ключ, о котором мы ещё не спрашивали, гасится даже если про остальные человек уже решил:
+    // новая поверхность рекламы — новый вопрос, а не повод считать его заданным.
+    val pending = keysToApply(SILENCED_KEYS) { key ->
+      props.getBoolean(appliedKeyOf(key)) || (props.getBoolean(DECIDED_KEY) && key == PLATFORM_KEY)
+    }
+    if (pending.isEmpty()) return
+    pending.forEach {
+      props.setValue(it, true)
+      props.setValue(appliedKeyOf(it), true)
+    }
     props.setValue(DECIDED_KEY, true)
   }
 }
