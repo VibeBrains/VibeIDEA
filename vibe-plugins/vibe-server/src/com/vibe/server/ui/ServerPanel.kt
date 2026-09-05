@@ -8,6 +8,7 @@ import com.intellij.ui.components.JBScrollPane
 import com.intellij.ui.components.JBThinOverlappingScrollBar
 import com.intellij.util.ui.JBUI
 import com.vibe.server.PortConflict
+import com.vibe.server.DevServerDetect
 import com.vibe.server.PreviewUrl
 import com.vibe.server.ServerEntry
 import com.vibe.server.ServerRunner
@@ -36,6 +37,12 @@ class ServerPanel(private val project: Project) : JPanel(BorderLayout()) {
     font = Font(Font.MONOSPACED, Font.PLAIN, 11)
   }
   private var entries: List<ServerEntry> = emptyList()
+
+  /** Есть ли `.vibe/servers.json`: без него список — догадка, и говорить об этом надо вслух. */
+  private var guessed: Boolean = false
+
+  /** Адреса, напечатанные самими серверами: по ним открывается превью, когда порт не объявлен. */
+  private val printedUrls = HashMap<String, String>()
   private val status = LinkedHashMap<String, Pair<ServerStatus, String?>>()
   private val runner = ServerRunner(
     projectBase = project.basePath ?: ".",
@@ -43,7 +50,12 @@ class ServerPanel(private val project: Project) : JPanel(BorderLayout()) {
       status[id] = st to reason
       refreshList()
     },
-    onLog = { id, line -> appendLog("[$id] $line") },
+    onLog = { id, line ->
+      appendLog("[$id] $line")
+      // Адрес берём у самого сервера: угаданный порт однажды укажет на чужой сервис, а дев-сервер
+      // печатает свой (и меняет его сам, когда порт занят).
+      if (id !in printedUrls) DevServerDetect.urlFrom(line)?.let { printedUrls[id] = it }
+    },
     onPortConflict = { entry, port, owners -> askPortConflict(entry, port, owners) },
   )
 
@@ -85,6 +97,10 @@ class ServerPanel(private val project: Project) : JPanel(BorderLayout()) {
     // а открыть его было нечем, хотя браузер в IDE есть (панель «Дизайн»).
     val preview = JButton(t("servers.action.preview"))
     preview.addActionListener { openPreview() }
+    // «Создать файл» — из догадки, а не из пустого шаблона: человек уже описал свой запуск в
+    // package.json, и просить его переписать это руками значит требовать работы за уже сделанную.
+    val create = JButton(t("servers.action.createFile"))
+    create.addActionListener { createFile() }
     startAll.addActionListener { pooled { runner.startAll(entries) } }
     stopAll.addActionListener { pooled { runner.stopAll(entries) } }
     startOne.addActionListener {
@@ -96,7 +112,7 @@ class ServerPanel(private val project: Project) : JPanel(BorderLayout()) {
     }
     reload.addActionListener { reload() }
     val buttons = JPanel(FlowLayout(FlowLayout.LEFT)).apply {
-      add(startAll); add(stopAll); add(startOne); add(preview); add(reload)
+      add(startAll); add(stopAll); add(startOne); add(preview); add(reload); add(create)
     }
     add(buttons, BorderLayout.NORTH)
     // Тонкие скроллы — как во всём нашем UI (решение владельца). Обёртки VibeScroll здесь нет:
@@ -120,6 +136,11 @@ class ServerPanel(private val project: Project) : JPanel(BorderLayout()) {
     val idx = list.selectedIndex
     if (idx < 0 || idx >= entries.size) { appendLog(t("servers.preview.noSelection")); return }
     val entry = entries[idx]
+    printedUrls[entry.id]?.let { printed ->
+      if (com.vibe.agent.preview.PreviewOpener.open(project, printed)) appendLog(t("servers.preview.opened", "url" to printed))
+      else appendLog(t("servers.preview.noBrowser", "url" to printed))
+      return
+    }
     when (val address = PreviewUrl.of(entry)) {
       is PreviewUrl.Address.Refused -> appendLog(when (address.refusal) {
         PreviewUrl.Refusal.NO_PORT -> t("servers.preview.noPort", "id" to entry.id)
@@ -140,10 +161,70 @@ class ServerPanel(private val project: Project) : JPanel(BorderLayout()) {
 
   private fun reload() {
     entries = ServersFile.load(project.basePath) { appendLog("[servers.json] $it") }
+    guessed = entries.isEmpty()
+    if (guessed) {
+      // Догадка НЕ подмешивается к описанному стеку: появился файл — показываем только его,
+      // иначе придуманная запись молча соседствовала бы с написанной руками.
+      val detected = detect()
+      if (detected != null) {
+        entries = listOf(detected)
+        appendLog(t("servers.detected", "command" to detected.command))
+      }
+    }
     // keep live statuses of same ids across re-reads (contract)
     status.keys.retainAll(entries.map { it.id }.toSet())
     if (entries.isEmpty()) appendLog(t("servers.empty"))
     refreshList()
+  }
+
+  /** Догадка о дев-сервере по файлам проекта. */
+  private fun detect(): ServerEntry? {
+    val base = project.basePath ?: return null
+    val root = java.nio.file.Path.of(base)
+    val packageJson = runCatching { java.nio.file.Files.readString(root.resolve("package.json")) }.getOrNull()
+    val files = runCatching {
+      java.nio.file.Files.list(root).use { stream -> stream.map { it.fileName.toString() }.toList() }
+    }.getOrDefault(emptyList())
+    return DevServerDetect.detect(packageJson, files)
+  }
+
+  /**
+   * Записывает `.vibe/servers.json` по догадке и открывает его.
+   *
+   * Существующий файл не трогаем: перезапись чужого описания стека — потеря работы, которую никто
+   * не просил стирать.
+   */
+  private fun createFile() {
+    val base = project.basePath
+    if (base == null) { appendLog(t("servers.create.noProject")); return }
+    val file = java.nio.file.Path.of(base, ".vibe", "servers.json")
+    if (java.nio.file.Files.exists(file)) { appendLog(t("servers.create.exists")); return }
+    val detected = detect()
+    if (detected == null) { appendLog(t("servers.create.nothingDetected")); return }
+    val text = """
+      {
+        "version": 1,
+        "servers": [
+          {
+            "id": "${'$'}{detected.id}",
+            "command": "${'$'}{detected.command}",
+            "readyCheck": "log",
+            "readyPattern": "${'$'}{DevServerDetect.READY_PATTERN.replace("\\", "\\\\")}",
+            "readyTimeoutMs": ${'$'}{detected.readyTimeoutMs}
+          }
+        ]
+      }
+    """.trimIndent() + "\n"
+    val written = runCatching {
+      java.nio.file.Files.createDirectories(file.parent)
+      java.nio.file.Files.writeString(file, text)
+    }.isSuccess
+    if (!written) { appendLog(t("servers.create.failed")); return }
+    appendLog(t("servers.create.done", "path" to ".vibe/servers.json"))
+    reload()
+    com.intellij.openapi.vfs.LocalFileSystem.getInstance().refreshAndFindFileByPath(file.toString())?.let {
+      com.intellij.openapi.fileEditor.FileEditorManager.getInstance(project).openFile(it, true)
+    }
   }
 
   private fun refreshList() {
@@ -152,7 +233,8 @@ class ServerPanel(private val project: Project) : JPanel(BorderLayout()) {
       for (e in entries) {
         val (st, reason) = status[e.id] ?: (ServerStatus.IDLE to null)
         val port = e.port?.let { " :$it" } ?: ""
-        listModel.addElement("${st.name.lowercase().padEnd(8)} ${e.id}$port [${e.kind}]${reason?.let { " — $it" } ?: ""}")
+        val mark = if (guessed) " " + t("servers.guessed") else ""
+        listModel.addElement("${st.name.lowercase().padEnd(8)} ${e.id}$port [${e.kind}]$mark${reason?.let { " — $it" } ?: ""}")
       }
     }
   }
