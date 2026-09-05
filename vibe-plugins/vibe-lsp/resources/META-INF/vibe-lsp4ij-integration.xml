@@ -3,7 +3,13 @@
     <server id="vibeVtsls" name="TypeScript (vtsls)" factoryClass="com.vibe.lsp.VtslsServerFactory">
       <description>TypeScript/JavaScript language server (vtsls, wraps the VSCode TS extension)</description>
     </server>
-    <fileNamePatternMapping patterns="*.ts;*.tsx;*.mts;*.cts;*.js;*.jsx;*.mjs;*.cjs" serverId="vibeVtsls" languageId="typescript"/>
+    <!-- languageId РЕШАЕТ, как tsserver разбирает файл: под «typescript» синтаксис JSX запрещён,
+         и каждый тег .tsx превращается в ошибку «'>' expected» — сотня ошибок в здоровом файле.
+         Поэтому шаблоны разведены по четырём идентификаторам, как это делает VS Code. -->
+    <fileNamePatternMapping patterns="*.ts;*.mts;*.cts" serverId="vibeVtsls" languageId="typescript"/>
+    <fileNamePatternMapping patterns="*.tsx" serverId="vibeVtsls" languageId="typescriptreact"/>
+    <fileNamePatternMapping patterns="*.js;*.mjs;*.cjs" serverId="vibeVtsls" languageId="javascript"/>
+    <fileNamePatternMapping patterns="*.jsx" serverId="vibeVtsls" languageId="javascriptreact"/>
     <!-- Один вход на *.php: движок (Phpactor или Intelephense) выбирается в настройках, а два
          зарегистрированных сервера на одном шаблоне запустились бы оба и удвоили подсказки. -->
     <server id="vibePhp" name="PHP" factoryClass="com.vibe.lsp.PhpServerFactory">
@@ -19,7 +25,14 @@
     <server id="vibeEslint" name="ESLint" factoryClass="com.vibe.lsp.EslintServerFactory">
       <description>ESLint language server: the project's own rules in the editor</description>
     </server>
-    <fileNamePatternMapping patterns="*.ts;*.tsx;*.js;*.jsx;*.mjs;*.cjs;*.vue;*.svelte" serverId="vibeEslint" languageId="javascript"/>
+    <!-- Та же причина, что у vtsls: ESLint выбирает парсер по languageId, и «javascript» на .tsx
+         означает разбор TSX парсером JavaScript. -->
+    <fileNamePatternMapping patterns="*.js;*.mjs;*.cjs" serverId="vibeEslint" languageId="javascript"/>
+    <fileNamePatternMapping patterns="*.jsx" serverId="vibeEslint" languageId="javascriptreact"/>
+    <fileNamePatternMapping patterns="*.ts" serverId="vibeEslint" languageId="typescript"/>
+    <fileNamePatternMapping patterns="*.tsx" serverId="vibeEslint" languageId="typescriptreact"/>
+    <fileNamePatternMapping patterns="*.vue" serverId="vibeEslint" languageId="vue"/>
+    <fileNamePatternMapping patterns="*.svelte" serverId="vibeEslint" languageId="svelte"/>
 
     <!-- Отладчики. Точка расширения помечена у LSP4IJ как экспериментальная: две тонкие фабрики —
          осознанная цена за «отладка одним действием» вместо JSON руками. -->
