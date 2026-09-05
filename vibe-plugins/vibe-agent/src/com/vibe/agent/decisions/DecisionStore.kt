@@ -68,6 +68,16 @@ class DecisionStore(private val project: Project) {
     }.getOrNull()
   }
 
+  /** Решения в папке, которых нет в индексе: по индексу ходят все, по папке — никто. */
+  fun orphans(): List<String> {
+    val base = project.basePath ?: return emptyList()
+    val dir = Path.of(base, folder())
+    val files = runCatching {
+      Files.list(dir).use { stream -> stream.map { it.fileName.toString() }.toList() }
+    }.getOrDefault(emptyList())
+    return com.vibe.agent.ingest.CorpusIntegrity.orphans(files, entries().map { it.path }, DecisionRecord.INDEX)
+  }
+
   private fun load(): Cached? {
     val base = project.basePath ?: return null
     for (candidate in CANDIDATES) {

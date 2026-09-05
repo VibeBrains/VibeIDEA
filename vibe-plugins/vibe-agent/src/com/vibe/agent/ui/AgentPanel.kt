@@ -2448,7 +2448,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
       systemLine(t("knowledge.found", "paths" to withPaths.joinToString { it.entry.path }))
       result = com.vibe.agent.knowledge.Librarian.promptBlock(withPaths, t("knowledge.header")) + "\n\n" + result
     }
-    return prependDecisions(result, userText)
+    return prependDecisions(prependInbox(result, userText), userText)
   }
 
   /**
@@ -2458,6 +2458,22 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
    * отвергнуто и почему. Агент, не видевший второго, предложит отвергнутое — вежливо, подробно и
    * за ваши токены.
    */
+  /**
+   * Документы, положенные в корпус снаружи.
+   *
+   * Без этого «положить в корпус» кладёт документ, который никто не находит: агент про него не
+   * знает, а человек знал бы и без папки. Подаются путями — договор на двенадцать страниц в
+   * промпте вытеснил бы саму задачу.
+   */
+  private fun prependInbox(prompt: String, userText: String): String {
+    val entries = com.vibe.agent.ingest.IngestStore.getInstance(project).entries()
+    if (entries.isEmpty()) return prompt
+    val hits = com.vibe.agent.knowledge.Librarian.find(entries, userText)
+    if (hits.isEmpty()) return prompt
+    systemLine(t("ingest.found", "paths" to hits.joinToString { it.entry.path }))
+    return com.vibe.agent.knowledge.Librarian.promptBlock(hits, t("ingest.header")) + "\n\n" + prompt
+  }
+
   private fun prependDecisions(prompt: String, userText: String): String {
     val entries = com.vibe.agent.decisions.DecisionStore.getInstance(project).entries()
     if (entries.isEmpty()) return prompt

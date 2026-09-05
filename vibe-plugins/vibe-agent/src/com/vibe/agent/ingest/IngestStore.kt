@@ -24,6 +24,30 @@ class IngestStore(private val project: Project) {
     }.getOrNull()
   }
 
+  /** Записи индекса входящего; путь — от корня проекта, как ждёт агент. */
+  fun entries(): List<com.vibe.agent.knowledge.Librarian.Entry> {
+    val base = project.basePath ?: return emptyList()
+    val index = Path.of(base, Ingest.FOLDER, Ingest.INDEX)
+    val text = runCatching { Files.readString(index) }.getOrNull() ?: return emptyList()
+    return com.vibe.agent.knowledge.Librarian.parseIndex(text)
+      .map { it.copy(path = Ingest.FOLDER + "/" + it.path) }
+  }
+
+  /**
+   * Документы в папке, которых нет в индексе.
+   *
+   * Такой документ не существует для всех, кроме того, кто его положил: библиотекарь ходит по
+   * индексу, а не по папке. Файл появляется мимо индекса легко — его кладут руками.
+   */
+  fun orphans(): List<String> {
+    val base = project.basePath ?: return emptyList()
+    val dir = Path.of(base, Ingest.FOLDER)
+    val files = runCatching {
+      Files.list(dir).use { stream -> stream.map { it.fileName.toString() }.toList() }
+    }.getOrDefault(emptyList())
+    return CorpusIntegrity.orphans(files, entries().map { it.path }, Ingest.INDEX)
+  }
+
   companion object {
     fun getInstance(project: Project): IngestStore = project.getService(IngestStore::class.java)
   }

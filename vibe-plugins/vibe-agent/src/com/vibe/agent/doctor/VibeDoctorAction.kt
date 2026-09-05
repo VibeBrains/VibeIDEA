@@ -176,6 +176,26 @@ class VibeDoctorAction : AnAction({ t("doctor.action") }) {
     lines.add(VibeDiagnosis.Line(t("doctor.line.knowledge"),
                                  if (knowledge.isEmpty()) VibeDiagnosis.State.WARN else VibeDiagnosis.State.OK,
                                  knowledge.size.toString()))
+    // Корпус: решения и входящее. Пусто — это WARN, а не ошибка: проект может их не вести, но
+    // молчать об этом нельзя — «агент не знает наших решений» выглядит как поломка агента.
+    val store = com.vibe.agent.decisions.DecisionStore.getInstance(project)
+    val decisions = store.entries()
+    val lost = store.orphans()
+    lines.add(VibeDiagnosis.Line(
+      t("doctor.line.decisions"),
+      if (decisions.isEmpty() || lost.isNotEmpty()) VibeDiagnosis.State.WARN else VibeDiagnosis.State.OK,
+      when {
+        lost.isNotEmpty() -> t("doctor.detail.orphans", "files" to lost.joinToString())
+        decisions.isEmpty() -> t("doctor.detail.noDecisions")
+        else -> decisions.size.toString()
+      }))
+
+    val inbox = com.vibe.agent.ingest.IngestStore.getInstance(project)
+    val orphans = inbox.orphans()
+    lines.add(VibeDiagnosis.Line(t("doctor.line.inbox"),
+                                 if (orphans.isEmpty()) VibeDiagnosis.State.OK else VibeDiagnosis.State.WARN,
+                                 if (orphans.isEmpty()) inbox.entries().size.toString()
+                                 else t("doctor.detail.orphans", "files" to orphans.joinToString())))
     return VibeDiagnosis.Report(lines)
   }
 
