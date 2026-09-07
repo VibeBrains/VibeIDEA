@@ -112,6 +112,9 @@
               text="Токен Telegram-бота" description="Мост в Telegram: свой бот, токен в защищённом хранилище"/>
       <action id="Vibe.UiKitMap" class="com.vibe.agent.design.VibeUiKitMapAction"
               text="Снять карту построенного" description="Токены, классы и компоненты проекта в .vibe/design/uiKit.md"/>
+      <action id="Vibe.AgentRegistry" class="com.vibe.agent.acp.VibeAgentRegistryAction"
+              text="Каталог ACP-агентов"
+              description="Что появилось в общем реестре агентов протокола; ничего не устанавливает"/>
       <action id="Vibe.Features" class="com.vibe.agent.features.VibeFeaturesAction"
               text="Возможности VibeIDEA"
               description="Что уже встроено и где это включается — списком, с именами действий"/>

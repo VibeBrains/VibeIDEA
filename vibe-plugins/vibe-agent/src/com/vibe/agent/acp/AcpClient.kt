@@ -43,6 +43,14 @@ class AcpClient(
     fun onModeChanged(modeId: String) {}
     /** Called on the reader thread; must return the permission outcome (closed dialog = refusal). */
     fun onRequestPermission(params: JsonObject): JsonElement
+
+    /**
+     * `elicitation/create`: агент просит ДАННЫЕ, а не разрешение (ACP, стабилизировано 22.07.2026).
+     *
+     * Умолчание — вежливый отказ, а не исключение: клиент, который не умеет показать форму, обязан
+     * сказать об этом протоколом, иначе агент ждёт ответа, которого не будет.
+     */
+    fun onElicit(params: JsonObject): JsonElement = Elicitation.response(Elicitation.Outcome.DECLINE)
     fun onReadTextFile(params: JsonObject): JsonElement
     fun onWriteTextFile(params: JsonObject): JsonElement
     // Standard ACP terminal/… (for agents that delegate execution). Default = not supported.
@@ -310,6 +318,8 @@ class AcpClient(
     when (method) {
       "terminal/wait_for_exit" -> return respondAsync(id, "vibe-acp-terminal-wait") { handler.onWaitForTerminalExit(params) }
       "session/request_permission" -> return respondAsync(id, "vibe-acp-permission") { handler.onRequestPermission(params) }
+      // Форма блокирует на модальном диалоге ровно так же, как разрешение, — значит, вне потока чтения.
+      Elicitation.METHOD -> return respondAsync(id, "vibe-acp-elicit") { handler.onElicit(params) }
       "terminal/create" -> return respondAsync(id, "vibe-acp-terminal-create") { handler.onCreateTerminal(params) }
       "fs/write_text_file" -> return respondAsync(id, "vibe-acp-fs-write") { handler.onWriteTextFile(params) }
     }

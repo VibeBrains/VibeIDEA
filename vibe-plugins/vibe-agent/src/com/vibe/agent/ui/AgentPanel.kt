@@ -3935,6 +3935,70 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     ))
   }
 
+  /**
+   * `elicitation/create`: агент просит данные — форму или переход по адресу.
+   *
+   * Вопрос человеку, значит тот же звук, что и у разрешения: он ушёл, а ход стоит и ждёт его.
+   * URL-режим спрашивает отдельно и словами — увод во внешний браузер по просьбе чужого агента
+   * это действие наружу, и молча его делать нельзя.
+   */
+  override fun onElicit(params: JsonObject): JsonElement {
+    com.vibe.agent.sound.VibeSoundService.getInstance()
+      .play(com.vibe.agent.sound.SoundPolicy.Event.AWAITING_PERMISSION, project)
+    val request = com.vibe.agent.acp.Elicitation.parse(params)
+    return when (request.mode) {
+      com.vibe.agent.acp.Elicitation.Mode.FORM -> {
+        var values: Map<String, String> = emptyMap()
+        var accepted = false
+        ApplicationManager.getApplication().invokeAndWait {
+          val dialog = com.vibe.agent.acp.ElicitationDialog(project, request)
+          accepted = dialog.showAndGet()
+          if (accepted) values = dialog.values()
+        }
+        if (!accepted) {
+          systemLine(t("elicit.declined"))
+          com.vibe.agent.acp.Elicitation.response(com.vibe.agent.acp.Elicitation.Outcome.DECLINE)
+        }
+        else {
+          systemLine(t("elicit.sent", "fields" to values.keys.joinToString()))
+          com.vibe.agent.acp.Elicitation.response(
+            com.vibe.agent.acp.Elicitation.Outcome.ACCEPT, values, request.fields)
+        }
+      }
+      com.vibe.agent.acp.Elicitation.Mode.URL -> {
+        val url = request.url
+        if (url.isNullOrBlank()) {
+          systemLine(t("elicit.unsupported"))
+          return com.vibe.agent.acp.Elicitation.response(com.vibe.agent.acp.Elicitation.Outcome.DECLINE)
+        }
+        var open = false
+        ApplicationManager.getApplication().invokeAndWait {
+          open = com.intellij.openapi.ui.Messages.showYesNoDialog(
+            project,
+            t("elicit.url.body", "message" to (request.message ?: ""), "url" to url),
+            t("elicit.url.title"),
+            t("elicit.url.open"),
+            t("elicit.url.decline"),
+            com.intellij.icons.AllIcons.General.QuestionDialog,
+          ) == com.intellij.openapi.ui.Messages.YES
+        }
+        if (!open) {
+          systemLine(t("elicit.declined"))
+          com.vibe.agent.acp.Elicitation.response(com.vibe.agent.acp.Elicitation.Outcome.DECLINE)
+        }
+        else {
+          com.intellij.ide.BrowserUtil.browse(url)
+          // В URL-режиме данных у нас нет: согласие — это и есть весь ответ.
+          com.vibe.agent.acp.Elicitation.response(com.vibe.agent.acp.Elicitation.Outcome.ACCEPT)
+        }
+      }
+      com.vibe.agent.acp.Elicitation.Mode.UNKNOWN -> {
+        systemLine(t("elicit.unsupported"))
+        com.vibe.agent.acp.Elicitation.response(com.vibe.agent.acp.Elicitation.Outcome.DECLINE)
+      }
+    }
+  }
+
   override fun onRequestPermission(params: JsonObject): JsonElement {
     // The most important of the three events: here a person is needed RIGHT NOW, and they left.
     com.vibe.agent.sound.VibeSoundService.getInstance()
