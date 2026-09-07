@@ -54,6 +54,7 @@ object VibeDefaults {
     "requests.example.http" to "requests.example.http",
     // Provider catalog: auto-loaded by ProvidersService (unlike the *.example.jsonc seeds),
     // `active` is the toggle — owner's decision №24. One file per provider.
+    "patrols.example.jsonc" to "patrols.example.jsonc",
     "providers/README.md" to "providers/README.md",
     "providers/_template-openai-compatible.jsonc" to "providers/_template-openai-compatible.jsonc",
     "providers/alibaba-coding-plan.jsonc" to "providers/alibaba-coding-plan.jsonc",

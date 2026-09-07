@@ -33,6 +33,7 @@
 - [manuals/modelQuirksSpec.md](manuals/modelQuirksSpec.md) — спека `.vibe/modelQuirks.json`: что конкретная модель отказывается принимать (самодостаточная, для LLM).
 - [manuals/designSpec.md](manuals/designSpec.md) — спека дизайн-контекста `.vibe/design/` (4 файла; самодостаточная, для LLM).
 - [manuals/hooksSpec.md](manuals/hooksSpec.md) — спека `.vibe/hooks.json`: хуки проекта вокруг работы агента (самодостаточная, для LLM).
+- [manuals/patrolsSpec.md](manuals/patrolsSpec.md) — спека дежурных проверок `.vibe/patrols.json`: дешёвая проба по расписанию решает, звать ли модель (самодостаточная, для LLM).
 - [manuals/decisionsSpec.md](manuals/decisionsSpec.md) — спека журнала решений `docs/decisions/`: что записывать, где лежит, как его видит агент (самодостаточная, для LLM).
 - [manuals/inboxSpec.md](manuals/inboxSpec.md) — спека входящего `docs/inbox/`: внешний документ в корпусе проекта, шапка происхождения, границы.
 - [manuals/auditSpec.md](manuals/auditSpec.md) — спека журнала `.vibe/audit.jsonl`: формат записей аудита агента (для парсеров/дашбордов).

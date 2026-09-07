@@ -75,6 +75,14 @@ data class AuditEvent(
     const val ELICITATION = "elicitation"
 
     /**
+     * Дежурная проверка нашла повод.
+     *
+     * Пишется ПРИЧИНА (какая проба и с каким кодом), а не факт: проверка, о которой нельзя
+     * спросить «почему она сработала», через неделю выключается целиком.
+     */
+    const val PATROL = "patrol"
+
+    /**
      * A secret was substituted into something that then ran.
      *
      * The NAME is recorded and never the value: when an incident is being unpicked, the first
