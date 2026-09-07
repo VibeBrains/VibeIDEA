@@ -80,7 +80,21 @@ for entry in "${ENTRIES[@]}"; do
   FILES+=("$PATH_")
 done
 NOW_COMMIT=$(git rev-parse HEAD)
-[ "$NOW_COMMIT" = "$COMMIT" ] || { echo "✖ HEAD ($NOW_COMMIT) не тот коммит, что проверен в фазе 1 ($COMMIT)"; fail=1; }
+if [ "$NOW_COMMIT" != "$COMMIT" ]; then
+  # Единственное допустимое расхождение: коммиты канала обновлений, которые ПО ПРАВИЛУ пишутся в
+  # фазе 2, то есть уже после штампа. Они не меняют ни строчки в продукте — `updates.xml` в
+  # дистрибутив не попадает, — поэтому «HEAD ушёл вперёд» здесь не означает «собрано другое».
+  # Проверяем это фактом, а не доверием: между штампом и HEAD не должно быть тронуто ничего, кроме
+  # самого файла канала.
+  CHANGED=$(git diff --name-only "$COMMIT" "$NOW_COMMIT" | sort -u)
+  if [ "$CHANGED" = "updates/updates.xml" ] && git merge-base --is-ancestor "$COMMIT" "$NOW_COMMIT"; then
+    echo "  HEAD впереди штампа на коммит канала обновлений — продукт тот же"
+  else
+    echo "✖ HEAD ($NOW_COMMIT) не тот коммит, что проверен в фазе 1 ($COMMIT)"
+    [ -n "$CHANGED" ] && echo "  тронуто между ними: $(echo "$CHANGED" | tr '\n' ' ')"
+    fail=1
+  fi
+fi
 [ -z "$(git status --porcelain | head -1)" ] || { echo "✖ рабочее дерево грязное: публиковать надо ровно проверенное"; fail=1; }
 if ! git rev-parse "$VERSION" >/dev/null 2>&1; then
   echo "✖ тега $VERSION нет — поставьте его на проверенный коммит"
