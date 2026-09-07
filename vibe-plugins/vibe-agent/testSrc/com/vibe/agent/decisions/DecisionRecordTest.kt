@@ -3,6 +3,7 @@ package com.vibe.agent.decisions
 
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
@@ -77,5 +78,30 @@ class DecisionRecordTest {
     assertEquals(DecisionRecord.Refusal.NO_QUESTION, DecisionRecord.validate(decision(question = " ")))
     assertEquals(DecisionRecord.Refusal.NO_CHOICE, DecisionRecord.validate(decision(chosen = "")))
     assertEquals(DecisionRecord.Refusal.NO_REASON, DecisionRecord.validate(decision(why = "")))
+  }
+
+  @Test
+  fun `решение отменяется решением, а не правкой старого`() {
+    val text = DecisionRecord.render(decision(number = 12).copy(supersedes = 7))
+    assertTrue("**Заменяет решение:** 7" in text)
+    val index = DecisionRecord.appendToIndex(null, decision(), "Решения проекта")
+    val marked = DecisionRecord.markSuperseded(index, supersededNumber = 7, byNumber = 12)
+    assertTrue(marked.lines().any { it.contains(DecisionRecord.SUPERSEDED_MARK) && it.contains("12") }, marked)
+    // Файл старого решения не трогаем: он свидетельство того, что и почему решили тогда.
+    assertTrue(DecisionRecord.render(decision()).contains("## Почему"))
+  }
+
+  @Test
+  fun `помеченная строка перестаёт считаться действующей`() {
+    val line = DecisionRecord.indexLine(decision())
+    assertTrue(DecisionRecord.isActive(line))
+    assertFalse(DecisionRecord.isActive(line + " " + DecisionRecord.SUPERSEDED_MARK + " 12"))
+  }
+
+  @Test
+  fun `повторная пометка не удваивается`() {
+    val index = DecisionRecord.appendToIndex(null, decision(), "Решения проекта")
+    val once = DecisionRecord.markSuperseded(index, 7, 12)
+    assertEquals(once, DecisionRecord.markSuperseded(once, 7, 13), "решение отменяют один раз")
   }
 }

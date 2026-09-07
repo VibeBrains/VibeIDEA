@@ -29,6 +29,7 @@ class VibeMcpTools(private val projectProvider: () -> Project? = { ProjectManage
       McpProtocol.TOOL_PATH -> path(project, arguments)
       McpProtocol.TOOL_PROJECT -> projectInfo(project)
       McpProtocol.TOOL_RUN -> run(arguments)
+      McpProtocol.TOOL_CORPUS_SEARCH -> corpusSearch(project, arguments)
       McpProtocol.TOOL_DECISIONS_SEARCH -> decisionsSearch(project, arguments)
       McpProtocol.TOOL_DECISIONS_RECORD -> decisionsRecord(project, arguments)
       else -> McpServer.Tools.Result("неизвестный инструмент: $name", isError = true)
@@ -41,6 +42,33 @@ class VibeMcpTools(private val projectProvider: () -> Project? = { ProjectManage
    * Тем же поиском, что и у библиотекаря: два ранжирования одного корпуса разошлись бы, и агент
    * получал бы разные ответы на один вопрос в зависимости от того, каким путём спросил.
    */
+  /**
+   * Весь корпус одним запросом.
+   *
+   * Три источника (знания, решения, входящее) живут в разных папках, но вопрос у агента один:
+   * «что здесь уже записано по теме». Три отдельных инструмента заставляли бы его звать их по
+   * очереди и склеивать ответы — то есть делать нашу работу за наши же токены.
+   *
+   * Пометка источника обязательна: запись знаний говорит, как устроено, решение — что уже
+   * отвергнуто, документ — чужой текст, который мы не писали. Смешать их значит потерять
+   * единственное, чем они различаются.
+   */
+  private fun corpusSearch(project: Project, arguments: JsonObject): McpServer.Tools.Result {
+    val query = string(arguments, "query") ?: return McpServer.Tools.Result("нужен аргумент query", isError = true)
+    val sources = listOf(
+      "знание" to com.vibe.agent.knowledge.KnowledgeIndex.getInstance(project).entries(),
+      "решение" to com.vibe.agent.decisions.DecisionStore.getInstance(project).entries(),
+      "документ" to com.vibe.agent.ingest.IngestStore.getInstance(project).entries(),
+    )
+    val lines = sources.flatMap { (kind, entries) ->
+      com.vibe.agent.knowledge.Librarian.find(entries, query).map { hit ->
+        "- [$kind] ${hit.entry.path} — ${hit.entry.description}"
+      }
+    }
+    if (lines.isEmpty()) return McpServer.Tools.Result("По этой теме в корпусе проекта ничего не записано")
+    return McpServer.Tools.Result(lines.joinToString("\n"))
+  }
+
   private fun decisionsSearch(project: Project, arguments: JsonObject): McpServer.Tools.Result {
     val query = string(arguments, "query") ?: return McpServer.Tools.Result("нужен аргумент query", isError = true)
     val entries = com.vibe.agent.decisions.DecisionStore.getInstance(project).entries()
@@ -60,6 +88,7 @@ class VibeMcpTools(private val projectProvider: () -> Project? = { ProjectManage
       question = question,
       chosen = chosen,
       rejected = string(arguments, "rejected").orEmpty(),
+      supersedes = arguments["supersedes"]?.jsonPrimitive?.contentOrNull?.trim()?.toIntOrNull(),
       why = why,
       date = java.time.LocalDate.now().toString(),
     )

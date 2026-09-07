@@ -3,6 +3,7 @@ package com.vibe.agent.ingest
 
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
@@ -55,5 +56,21 @@ class IngestTest {
   @Test
   fun `заголовок из имени файла читается по-человечески`() {
     assertEquals("отчёт за квартал", Ingest.titleFromFileName("отчёт_за-квартал.pdf"))
+  }
+
+  @Test
+  fun `одинаковый заголовок не затирает чужой документ`() {
+    val name = Ingest.uniqueFileName(source(), listOf("dogovor-s-podryadchikom.md"))
+    assertEquals("dogovor-s-podryadchikom-2.md", name)
+    // И строка индекса обязана вести на РЕАЛЬНОЕ имя, иначе она указывает на чужой документ.
+    assertTrue(Ingest.indexLine(source(), name).contains("(dogovor-s-podryadchikom-2.md)"))
+  }
+
+  @Test
+  fun `повторный исходник узнаётся по происхождению`() {
+    val index = Ingest.appendToIndex(null, source(), "Входящее")
+    assertTrue(Ingest.alreadyHere(index, "/Users/me/Downloads/contract.pdf"))
+    assertFalse(Ingest.alreadyHere(index, "/Users/me/Downloads/другой.pdf"))
+    assertFalse(Ingest.alreadyHere(null, "/Users/me/Downloads/contract.pdf"))
   }
 }

@@ -24,7 +24,20 @@ class DecisionStore(private val project: Project) {
   @Volatile private var cached: Cached? = null
 
   /** Записи индекса решений; путь в них — от корня проекта, как ждёт агент. */
+  /**
+   * Действующие решения проекта.
+   *
+   * Заменённые не отдаются: подсказать агенту отменённое решение хуже, чем не подсказать ничего —
+   * он предложит то, от чего проект уже отказался, и будет прав по нашим же данным.
+   */
   fun entries(): List<Librarian.Entry> {
+    val loaded = load() ?: return emptyList()
+    return loaded.entries.filter { DecisionRecord.isActive(it.description) }
+      .map { it.copy(path = loaded.folder + "/" + it.path) }
+  }
+
+  /** Все решения, включая заменённые, — для отчётов и диагностики. */
+  fun allEntries(): List<Librarian.Entry> {
     val loaded = load() ?: return emptyList()
     return loaded.entries.map { it.copy(path = loaded.folder + "/" + it.path) }
   }
@@ -61,7 +74,12 @@ class DecisionStore(private val project: Project) {
       val name = DecisionRecord.fileName(decision)
       Files.writeString(dir.resolve(name), DecisionRecord.render(decision))
       val index = dir.resolve(DecisionRecord.INDEX)
-      val existing = runCatching { Files.readString(index) }.getOrNull()
+      var existing = runCatching { Files.readString(index) }.getOrNull()
+      // Заменённое решение помечается в индексе ДО добавления нового: иначе пометка сядет на
+      // строку, которой ещё нет, если номера совпали.
+      decision.supersedes?.let { old ->
+        existing = existing?.let { DecisionRecord.markSuperseded(it, old, decision.number) }
+      }
       Files.writeString(index, DecisionRecord.appendToIndex(existing, decision, indexHeader))
       cached = null
       "$folder/$name"

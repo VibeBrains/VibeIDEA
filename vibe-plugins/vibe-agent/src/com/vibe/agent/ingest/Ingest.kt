@@ -39,8 +39,27 @@ object Ingest {
     else -> null
   }
 
-  fun fileName(source: Source): String =
-    com.vibe.agent.decisions.DecisionRecord.slug(source.title) + ".md"
+  fun fileName(source: Source): String = com.vibe.agent.util.Slug.of(source.title) + ".md"
+
+  /**
+   * Имя, не затирающее уже лежащий документ.
+   *
+   * Два документа с одинаковым заголовком давали одно имя, и второй молча затирал первый — при том
+   * что в индексе появлялись обе строки, то есть корпус выглядел полным. Найдено ревизией
+   * 07.09.2026.
+   */
+  fun uniqueFileName(source: Source, taken: Collection<String>): String =
+    com.vibe.agent.util.Slug.unique(fileName(source), taken)
+
+  /**
+   * Тот же исходник уже в корпусе?
+   *
+   * Сравниваем по происхождению, а не по заголовку: один и тот же файл кладут повторно чаще, чем
+   * два разных с одинаковым названием, и во второй раз человек хочет услышать «он уже здесь», а не
+   * получить копию.
+   */
+  fun alreadyHere(indexText: String?, origin: String): Boolean =
+    indexText?.lineSequence()?.any { it.startsWith("- [") && it.contains(origin) } == true
 
   /**
    * Документ с шапкой: заголовок, откуда и когда.
@@ -59,13 +78,18 @@ object Ingest {
     appendLine(source.text.trim())
   }
 
-  /** Строка индекса: без неё документа не существует — его никто не найдёт. */
-  fun indexLine(source: Source): String =
-    "- [${source.title.trim()}](${fileName(source)}) — ${source.origin}, ${source.date}"
+  /**
+   * Строка индекса: без неё документа не существует — его никто не найдёт.
+   *
+   * Имя файла приходит аргументом, а не вычисляется заново: при совпадении заголовков реальное имя
+   * получает суффикс, и вычисленное указывало бы на чужой документ.
+   */
+  fun indexLine(source: Source, fileName: String = fileName(source)): String =
+    "- [${source.title.trim()}]($fileName) — ${source.origin}, ${source.date}"
 
-  fun appendToIndex(existing: String?, source: Source, header: String): String {
+  fun appendToIndex(existing: String?, source: Source, header: String, fileName: String = fileName(source)): String {
     val body = existing?.trimEnd().orEmpty().ifEmpty { "# $header" }
-    return body + "\n" + indexLine(source) + "\n"
+    return body + "\n" + indexLine(source, fileName) + "\n"
   }
 
   /** Заголовок из имени файла, когда его больше взять неоткуда. */

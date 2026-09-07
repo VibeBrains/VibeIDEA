@@ -70,7 +70,16 @@ class IngestAction : AnAction({ t("ingest.action") }) {
       }, t("ingest.action"))
       return
     }
-    val path = IngestStore.getInstance(project).write(source, t("ingest.index.header"))
+    val store = IngestStore.getInstance(project)
+    // Тот же файл, положенный второй раз, чаще всего повтор, а не намерение: спрашиваем, вместо
+    // того чтобы молча заводить копию.
+    if (store.alreadyHere(source.origin)) {
+      val again = Messages.showYesNoDialog(
+        project, t("ingest.duplicate.body", "origin" to source.origin), t("ingest.action"),
+        t("ingest.duplicate.again"), t("common.cancel"), null)
+      if (again != Messages.YES) return
+    }
+    val path = store.write(source, t("ingest.index.header"))
     if (path == null) {
       Messages.showErrorDialog(project, t("ingest.writeFailed", "folder" to Ingest.FOLDER), t("ingest.action"))
       return

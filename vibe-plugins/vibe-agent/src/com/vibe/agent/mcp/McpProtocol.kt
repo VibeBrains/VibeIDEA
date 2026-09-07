@@ -79,6 +79,7 @@ object McpProtocol {
   const val TOOL_RUN = "vibe_run_agent"
   const val TOOL_DECISIONS_SEARCH = "vibe_decisions_search"
   const val TOOL_DECISIONS_RECORD = "vibe_decisions_record"
+  const val TOOL_CORPUS_SEARCH = "vibe_corpus_search"
 
   /**
    * The tools, in a fixed order — the 2026 revision asks for a deterministic listing so clients can
@@ -133,6 +134,13 @@ object McpProtocol {
       schema = stringArg("task", "Что сделать. Формулировка уходит агенту как сообщение пользователя"),
     ),
     Tool(
+      name = TOOL_CORPUS_SEARCH,
+      title = "Что проект уже записал по теме",
+      description = "Один поиск по всему корпусу проекта: база знаний, принятые решения и внешние документы. " +
+                    "Возвращает пути и описания — читать файлы решает сам агент, целиком они дороже задачи.",
+      schema = stringArg("query", "Тема или вопрос"),
+    ),
+    Tool(
       name = TOOL_DECISIONS_SEARCH,
       title = "Что уже решено по теме",
       description = "Принятые решения проекта по теме запроса: номер, вопрос и путь файла. " +
@@ -151,6 +159,10 @@ object McpProtocol {
           putJsonObject("chosen") { put("type", "string"); put("description", "Что выбрали") }
           putJsonObject("rejected") { put("type", "string"); put("description", "Что рассмотрели и не взяли") }
           putJsonObject("why") { put("type", "string"); put("description", "Почему именно так") }
+          putJsonObject("supersedes") {
+            put("type", "string")
+            put("description", "Номер решения, которое это отменяет. Журнал не переписывают: старое решение остаётся, но помечается заменённым")
+          }
         }
         putJsonArray("required") {
           add(kotlinx.serialization.json.JsonPrimitive("question"))

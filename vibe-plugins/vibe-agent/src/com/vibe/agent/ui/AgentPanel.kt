@@ -3955,6 +3955,10 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
           accepted = dialog.showAndGet()
           if (accepted) values = dialog.values()
         }
+        // В журнал — ИМЕНА полей и исход, никогда значения: в форму вводят и токены тоже.
+        audit?.append(AuditEvent(System.currentTimeMillis(), AuditEvent.Action.ELICITATION, ok = accepted,
+                                 actor = agentActor(),
+                                 meta = mapOf("mode" to "form", "fields" to request.fields.joinToString { it.name })))
         if (!accepted) {
           systemLine(t("elicit.declined"))
           com.vibe.agent.acp.Elicitation.response(com.vibe.agent.acp.Elicitation.Outcome.DECLINE)
@@ -3982,6 +3986,9 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
             com.intellij.icons.AllIcons.General.QuestionDialog,
           ) == com.intellij.openapi.ui.Messages.YES
         }
+        // Уход во внешний браузер — действие наружу, и в журнале ему место наравне с правкой файла.
+        audit?.append(AuditEvent(System.currentTimeMillis(), AuditEvent.Action.ELICITATION, ok = open,
+                                 actor = agentActor(), meta = mapOf("mode" to "url", "url" to url)))
         if (!open) {
           systemLine(t("elicit.declined"))
           com.vibe.agent.acp.Elicitation.response(com.vibe.agent.acp.Elicitation.Outcome.DECLINE)

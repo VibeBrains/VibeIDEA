@@ -9,17 +9,29 @@ import java.nio.file.Path
 /** Запись входящего документа на диск: файл и обязательная строка индекса. */
 @Service(Service.Level.PROJECT)
 class IngestStore(private val project: Project) {
+  /** Уже лежит ли в корпусе документ из этого источника. */
+  fun alreadyHere(origin: String): Boolean {
+    val base = project.basePath ?: return false
+    val index = runCatching { Files.readString(Path.of(base, Ingest.FOLDER, Ingest.INDEX)) }.getOrNull()
+    return Ingest.alreadyHere(index, origin)
+  }
+
   /** @return путь записанного файла от корня проекта, или null, если писать не удалось. */
   fun write(source: Ingest.Source, indexHeader: String): String? {
     val base = project.basePath ?: return null
     val dir = Path.of(base, Ingest.FOLDER)
     return runCatching {
       Files.createDirectories(dir)
-      val name = Ingest.fileName(source)
+      // Имя выбирается с оглядкой на то, что уже лежит: одинаковый заголовок больше не затирает
+      // чужой документ молча.
+      val taken = runCatching {
+        Files.list(dir).use { stream -> stream.map { it.fileName.toString() }.toList() }
+      }.getOrDefault(emptyList())
+      val name = Ingest.uniqueFileName(source, taken)
       Files.writeString(dir.resolve(name), Ingest.render(source))
       val index = dir.resolve(Ingest.INDEX)
       val existing = runCatching { Files.readString(index) }.getOrNull()
-      Files.writeString(index, Ingest.appendToIndex(existing, source, indexHeader))
+      Files.writeString(index, Ingest.appendToIndex(existing, source, indexHeader, name))
       Ingest.FOLDER + "/" + name
     }.getOrNull()
   }

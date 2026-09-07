@@ -77,6 +77,9 @@ private class DecisionDialog(
   private val whyField = JBTextArea(why, 4, 40)
   private val linksField = JBTextField("", 40)
 
+  /** Номер отменяемого решения: журнал не переписывают, его продолжают. */
+  private val supersedesField = JBTextField("", 8)
+
   init {
     title = t("decisions.dialog.title", "number" to number)
     setOKButtonText(t("decisions.dialog.ok"))
@@ -89,6 +92,7 @@ private class DecisionDialog(
     .addLabeledComponent(t("decisions.field.rejected"), VibeScroll.pane(rejectedField))
     .addLabeledComponent(t("decisions.field.why"), VibeScroll.pane(whyField))
     .addLabeledComponent(t("decisions.field.links"), linksField)
+    .addLabeledComponent(t("decisions.field.supersedes"), supersedesField)
     .addComponent(JBLabel("<html>" + t("decisions.dialog.hint") + "</html>").apply {
       foreground = com.intellij.ui.JBColor.GRAY
     })
@@ -106,5 +110,7 @@ private class DecisionDialog(
     why = whyField.text.trim(),
     date = java.time.LocalDate.now().toString(),
     links = linksField.text.split(',').map { it.trim() }.filter { it.isNotEmpty() },
+    // Мусор в поле — это «не сказано»: номер решения либо есть, либо его нет.
+    supersedes = supersedesField.text.trim().toIntOrNull(),
   )
 }

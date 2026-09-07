@@ -34,6 +34,14 @@ object DecisionRecord {
     val date: String,
     /** Ссылки на код, записи знаний, задачи. */
     val links: List<String> = emptyList(),
+    /**
+     * Номер решения, которое это заменяет.
+     *
+     * Журнал не переписывают: решение отменяют новым решением со ссылкой на старое — так устроен
+     * любой честный журнал, и так мы записали правило в спеку. Без поля это правило оставалось
+     * пожеланием: заменённое решение выглядело действующим, и агент честно предлагал отменённое.
+     */
+    val supersedes: Int? = null,
   )
 
   /** Почему решение нельзя записать — кодом; фразу собирает интерфейс. */
@@ -58,29 +66,26 @@ object DecisionRecord {
     "%04d-%s.md".format(decision.number, slug(decision.question))
 
   /**
-   * Slug из заголовка: латиница, цифры и дефисы.
+   * Slug из заголовка — общими правилами (`util.Slug`).
    *
-   * Кириллица транслитерируется, а не выбрасывается: иначе русский вопрос дал бы файл `0007-.md`,
-   * и все решения проекта отличались бы только номером.
+   * Транслитерация жила здесь, а входящее звало её отсюда: пакет документов зависел от пакета
+   * решений ради одной функции. Ревизия 07.09.2026 вынесла её в общее место.
    */
-  fun slug(text: String, maxLength: Int = 48): String {
-    val builder = StringBuilder()
-    for (char in text.lowercase()) {
-      val piece = TRANSLIT[char] ?: when {
-        char.isDigit() || char in 'a'..'z' -> char.toString()
-        else -> "-"
-      }
-      builder.append(piece)
-    }
-    return builder.toString().split("-").filter { it.isNotEmpty() }.joinToString("-").take(maxLength).trim('-')
-      .ifEmpty { "decision" }
-  }
+  fun slug(text: String, maxLength: Int = com.vibe.agent.util.Slug.MAX_LENGTH): String =
+    com.vibe.agent.util.Slug.of(text, maxLength, fallback = "decision")
+
+  /** Пометка в заголовке индекса заменённого решения: его видно, но оно больше не действует. */
+  const val SUPERSEDED_MARK = "[заменено]"
 
   /** Текст файла решения. */
   fun render(decision: Decision): String = buildString {
     appendLine("# ${decision.number}. ${decision.question}")
     appendLine()
     appendLine("**Дата:** ${decision.date}")
+    decision.supersedes?.let {
+      appendLine()
+      appendLine("**Заменяет решение:** $it")
+    }
     appendLine()
     appendLine("## Решение")
     appendLine()
@@ -117,6 +122,22 @@ object DecisionRecord {
     return body + "\n" + indexLine(decision) + "\n"
   }
 
+  /**
+   * Индекс, где строка заменённого решения помечена.
+   *
+   * Пометка ставится в индексе, а не в файле старого решения: файл — свидетельство того, что и
+   * почему решили тогда, и переписывать его задним числом значит терять историю. Индекс же читают
+   * и человек, и библиотекарь, и им нужен ответ «действует ли это сейчас».
+   */
+  fun markSuperseded(indexText: String, supersededNumber: Int, byNumber: Int): String =
+    indexText.lineSequence().joinToString("\n") { line ->
+      val prefix = "- [$supersededNumber."
+      if (line.startsWith(prefix) && SUPERSEDED_MARK !in line) "$line $SUPERSEDED_MARK $byNumber" else line
+    }
+
+  /** Действует ли решение по строке индекса. */
+  fun isActive(indexLine: String): Boolean = SUPERSEDED_MARK !in indexLine
+
   /** Следующий номер по уже существующим именам файлов. */
   fun nextNumber(fileNames: List<String>): Int =
     (fileNames.mapNotNull { it.substringBefore('-').trim().toIntOrNull() }.maxOrNull() ?: 0) + 1
@@ -127,10 +148,4 @@ object DecisionRecord {
     return if (end > 0) clean.take(end) else clean.take(160)
   }
 
-  private val TRANSLIT: Map<Char, String> = buildMap {
-    val from = "абвгдеёжзийклмнопрстуфхцчшщъыьэюя"
-    val to = listOf("a","b","v","g","d","e","e","zh","z","i","y","k","l","m","n","o","p","r","s","t",
-                    "u","f","h","c","ch","sh","sch","","y","","e","yu","ya")
-    from.forEachIndexed { index, char -> put(char, to[index]) }
-  }
 }

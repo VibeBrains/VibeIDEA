@@ -65,6 +65,16 @@ data class AuditEvent(
     const val TERMINAL = "terminal"
 
     /**
+     * Агент попросил у человека данные (`elicitation/create`) — и что тот ответил.
+     *
+     * Отдельно от `permission`, потому что это другой вопрос: разрешение отвечает «да/нет» на
+     * действие, а здесь в ход уезжает ЗНАЧЕНИЕ, которое человек ввёл руками. При разборе «почему
+     * агент сделал это» первым делом спрашивают, чем он руководствовался, — имена введённых полей
+     * и есть ответ. Значения не пишем: в форму вводят и токены тоже.
+     */
+    const val ELICITATION = "elicitation"
+
+    /**
      * A secret was substituted into something that then ran.
      *
      * The NAME is recorded and never the value: when an incident is being unpicked, the first
