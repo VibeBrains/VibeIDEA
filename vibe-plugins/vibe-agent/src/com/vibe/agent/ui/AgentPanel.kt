@@ -2816,6 +2816,9 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
           systemLine(t("retry.waiting", "attempt" to attempt, "seconds" to (delayMs / 1000),
                        "reason" to (reason ?: "")))
         },
+        // Мысль модели идёт в тот же сворачиваемый блок, что и мысль ACP-агента: у прямого LLM
+        // рассуждение выглядело молчанием, потому что показывать его было некуда.
+        onThought = { appendThought(it) },
       ) { delta -> appendAgentText(delta) }
       // What the provider itself reported, and the price the owner of the key wrote down. Both may
       // be absent — then the accounting falls back to the old estimate, and says so by omission.

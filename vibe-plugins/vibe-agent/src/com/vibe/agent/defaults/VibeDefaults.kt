@@ -59,6 +59,7 @@ object VibeDefaults {
     "providers/alibaba-coding-plan.jsonc" to "providers/alibaba-coding-plan.jsonc",
     "providers/anthropic.jsonc" to "providers/anthropic.jsonc",
     "providers/deepseek.jsonc" to "providers/deepseek.jsonc",
+    "providers/google-gemini.jsonc" to "providers/google-gemini.jsonc",
     "providers/kimi.jsonc" to "providers/kimi.jsonc",
     "providers/meta-muse.jsonc" to "providers/meta-muse.jsonc",
     "providers/minimax.jsonc" to "providers/minimax.jsonc",

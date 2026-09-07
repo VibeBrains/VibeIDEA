@@ -13,6 +13,33 @@ package com.vibe.agent.providers
  * after something that changes every turn caches a prefix that never repeats.
  */
 object PromptCache {
+  /** Пятиминутный кэш — умолчание вендора; часовой дороже в записи и оправдан не всем. */
+  const val TTL_5M = "5m"
+  const val TTL_1H = "1h"
+
+  /**
+   * Бета-заголовок, без которого часовой кэш не включается.
+   *
+   * Имя с датой — так его назвал вендор; наше «похожее» имя означало бы молчаливый откат к пяти
+   * минутам по цене часовой записи.
+   */
+  const val EXTENDED_TTL_BETA = "extended-cache-ttl-2025-04-11"
+
+  /**
+   * Значение `ttl` для маркера, или null — тогда маркер идёт без него (пять минут по умолчанию).
+   *
+   * Чужое написание не пропускаем: `"1 hour"` в конфиге дало бы отказ вендора на каждом запросе,
+   * а неизвестное значение честнее считать несказанным.
+   */
+  fun ttlOf(raw: String?): String? = when (raw?.trim()?.lowercase()) {
+    TTL_1H, "1hour", "hour" -> TTL_1H
+    TTL_5M, "5min", "default", null, "" -> null
+    else -> null
+  }
+
+  /** Нужен ли бета-заголовок для этого запроса. */
+  fun needsExtendedBeta(raw: String?): Boolean = ttlOf(raw) == TTL_1H
+
   /** Below this the cached prefix is not worth its own bookkeeping. */
   const val MIN_CACHEABLE_CHARS = 2_000
 

@@ -63,8 +63,12 @@ object CodeGraphBuilder {
     val psiManager = PsiManager.getInstance(project)
     val todoHelper = PsiTodoSearchHelper.getInstance(project)
     return files.mapNotNull { vf ->
-      ReadAction.compute<GraphNode?, RuntimeException> {
-        val psi = psiManager.findFile(vf) ?: return@compute GraphNode(rel(base, vf), emptyList(), emptyList(), emptyList())
+      // nonBlocking, а не ReadAction.compute: разбор графа идёт по всем файлам проекта и легко
+      // занимает секунды, а неотменяемая read action на фоновом потоке всё это время держит
+      // write action — то есть набор текста в редакторе. Платформа объявила compute устаревшим
+      // ровно за это (2026.1).
+      ReadAction.nonBlocking<GraphNode?> {
+        val psi = psiManager.findFile(vf) ?: return@nonBlocking GraphNode(rel(base, vf), emptyList(), emptyList(), emptyList())
         val u = psi.toUElementOfType<UFile>()
         val symbols = u?.classes?.map { it.qualifiedName ?: it.javaPsi.name ?: "?" } ?: emptyList()
         val imports = u?.imports?.mapNotNull { it.importReference?.asSourceString() } ?: emptyList()
@@ -72,7 +76,7 @@ object CodeGraphBuilder {
           item.textRange?.let { r -> psi.text?.substring(r.startOffset, minOf(r.endOffset, r.startOffset + 160))?.lineSequence()?.firstOrNull() }
         }
         GraphNode(rel(base, vf), symbols, imports, todos)
-      }
+      }.executeSynchronously()
     }
   }
 

@@ -63,13 +63,13 @@ internal object LlmMessages {
    * the same on the next turn, so the provider may bill it as a cache hit. Marked on the message
    * rather than on the whole request because that is where the boundary actually is.
    */
-  fun anthropic(m: ChatMessage, cacheable: Boolean = false): JsonObject = buildJsonObject {
+  fun anthropic(m: ChatMessage, cacheable: Boolean = false, ttl: String? = null): JsonObject = buildJsonObject {
     put("role", m.role)
     if (m.images.isEmpty() && !cacheable) put("content", m.text)
     else if (m.images.isEmpty()) put("content", JsonArray(listOf(buildJsonObject {
       put("type", "text")
       put("text", m.text)
-      put("cache_control", buildJsonObject { put("type", "ephemeral") })
+      put("cache_control", cacheControl(ttl))
     })))
     else put("content", JsonArray(buildList {
       m.images.forEach { img ->
@@ -85,9 +85,15 @@ internal object LlmMessages {
       if (m.text.isNotBlank()) add(buildJsonObject {
         put("type", "text")
         put("text", m.text)
-        if (cacheable) put("cache_control", buildJsonObject { put("type", "ephemeral") })
+        if (cacheable) put("cache_control", cacheControl(ttl))
       })
     }))
+  }
+
+  /** Маркер кэша: `ttl` пишется только когда он есть — вендор по умолчанию даёт пять минут. */
+  fun cacheControl(ttl: String?): JsonObject = buildJsonObject {
+    put("type", "ephemeral")
+    PromptCache.ttlOf(ttl)?.let { put("ttl", it) }
   }
 
   /** gemini: "parts" is [{text}] plus one {inlineData:{mimeType,data}} per image; assistant role becomes "model". */
@@ -154,8 +160,18 @@ class LlmClient(
     isCancelled: () -> Boolean = { false },
     /** Told when a wait starts, so the chat can say «жду провайдера» instead of looking frozen. */
     onWaiting: (attempt: Int, delayMs: Long, reason: String?) -> Unit = { _, _, _ -> },
+    /**
+     * Рассуждение модели, если провод его присылает.
+     *
+     * Отдельным колбэком, а не подмешиванием в ответ: мысль и ответ живут в разных местах ленты,
+     * и склеенные они дают текст, который нельзя ни свернуть, ни скопировать как ответ. По
+     * умолчанию — в никуда: у большинства вызовов (инлайн-правка, мост в Telegram) места для
+     * мысли нет вовсе.
+     */
+    onThought: (String) -> Unit = {},
     onDelta: (String) -> Unit,
   ) {
+    this.thought = onThought
     this.cancelled = isCancelled
     lastUsage = TokenUsage.NONE
     // The offline promise is kept HERE, at the single door out: a check in the UI would be a
@@ -291,10 +307,11 @@ class LlmClient(
     if (key != null && provider.entry.auth.type != "query") builder.header("x-goog-api-key", key)
     val request = builder.POST(HttpRequest.BodyPublishers.ofString(body.toString())).build()
     streamSse(request) { data ->
-      val text = json.parseToJsonElement(data).jsonObject["candidates"]?.jsonArray?.firstOrNull()
-        ?.jsonObject?.get("content")?.jsonObject?.get("parts")?.jsonArray?.firstOrNull()
-        ?.jsonObject?.get("text")?.jsonPrimitive?.contentOrNull
-      if (text != null) onDelta(text)
+      val event = json.parseToJsonElement(data).jsonObject
+      // У Gemini мысль и ответ лежат в одном массиве частей и различаются пометкой `thought`:
+      // раньше бралась ПЕРВАЯ часть, то есть при включённых рассуждениях мысль уезжала в ответ.
+      ReasoningStream.fromGeminiEvent(event)?.let { thought(it) }
+      ReasoningStream.answerFromGeminiEvent(event)?.let { onDelta(it) }
     }
   }
 
@@ -333,6 +350,8 @@ class LlmClient(
       if (data == "[DONE]") return@streamSse
       val chunk = json.parseToJsonElement(data).jsonObject
       TokenUsage.fromOpenAiChunk(chunk)?.let { lastUsage = lastUsage.merge(it) }
+      // reasoning_content — как его называют китайские OpenAI-совместимые эндпоинты (DeepSeek, GLM).
+      ReasoningStream.fromOpenAiChunk(chunk)?.let { thought(it) }
       val delta = chunk["choices"]?.jsonArray?.firstOrNull()
         ?.jsonObject?.get("delta")?.jsonObject?.get("content")?.jsonPrimitive?.contentOrNull
       if (delta != null) onDelta(delta)
@@ -357,7 +376,7 @@ class LlmClient(
           put("system", JsonArray(listOf(buildJsonObject {
             put("type", "text")
             put("text", system)
-            put("cache_control", buildJsonObject { put("type", "ephemeral") })
+            put("cache_control", LlmMessages.cacheControl(model.cacheTtl))
           })))
         }
         else put("system", system)
@@ -367,7 +386,7 @@ class LlmClient(
       val wire = messages.filter { it.role != "system" }
       val boundary = PromptCache.cacheBoundary(wire)
       put("messages", JsonArray(wire.mapIndexed { index, message ->
-        LlmMessages.anthropic(message, cacheable = index == boundary)
+        LlmMessages.anthropic(message, cacheable = index == boundary, ttl = model.cacheTtl)
       }))
     }.let { withReasoning(it, "anthropic", model) }
       // Quirks were applied on the OpenAI path only, which left the Anthropic-compatible endpoints
@@ -376,6 +395,8 @@ class LlmClient(
       model.extraBody)
     val request = requestBuilder(provider, "messages")
       .header("anthropic-version", "2023-06-01")
+      // Без бета-заголовка вендор молча оставит пять минут — по цене часовой записи.
+      .apply { if (PromptCache.needsExtendedBeta(model.cacheTtl)) header("anthropic-beta", PromptCache.EXTENDED_TTL_BETA) }
       .POST(HttpRequest.BodyPublishers.ofString(body.toString()))
       .build()
     streamSse(request) { data ->
@@ -383,6 +404,9 @@ class LlmClient(
       // Input, cache reads and cache writes arrive at `message_start`; the output count at
       // `message_delta`. One reader for both, because both put it under `usage`.
       TokenUsage.fromAnthropicEvent(obj)?.let { lastUsage = lastUsage.merge(it) }
+      // Рассуждение приезжает тем же событием, но другой дельтой: без этой ветки модель молчала
+      // ровно столько, сколько думала, и это выглядело как зависание.
+      ReasoningStream.fromAnthropicEvent(obj)?.let { thought(it) }
       if (obj["type"]?.jsonPrimitive?.contentOrNull == "content_block_delta") {
         val text = obj["delta"]?.jsonObject?.get("text")?.jsonPrimitive?.contentOrNull
         if (text != null) onDelta(text)
@@ -422,6 +446,9 @@ class LlmClient(
    * Reasoning fields are merged the same way as model extras, and BEFORE them: a model that spells
    * its own thinking field differently must be able to override ours from `extraBody`.
    */
+  /** Куда отдавать рассуждение текущего запроса. Сбрасывается на каждый вызов [chat]. */
+  private var thought: (String) -> Unit = {}
+
   private fun withReasoning(body: JsonObject, protocol: String, model: ModelEntry): JsonObject {
     val level = ReasoningMode.levelOf(com.vibe.agent.settings.VibeAgentSettings.reasoningLevel)
     val fields = ReasoningMode.bodyFields(protocol, level, model.maxOutputTokens ?: DEFAULT_MAX_OUTPUT_TOKENS)

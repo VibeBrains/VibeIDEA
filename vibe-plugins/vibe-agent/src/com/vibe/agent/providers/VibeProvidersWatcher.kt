@@ -7,7 +7,7 @@ import com.intellij.openapi.project.Project
 import com.intellij.openapi.startup.ProjectActivity
 import com.intellij.openapi.vfs.LocalFileSystem
 import com.intellij.openapi.vfs.VirtualFileManager
-import com.intellij.openapi.vfs.newvfs.BulkFileListener
+import com.intellij.openapi.vfs.newvfs.BulkFileListenerBackgroundable
 import com.intellij.openapi.vfs.newvfs.events.VFileEvent
 import com.intellij.util.Alarm
 import java.nio.file.Path
@@ -38,7 +38,9 @@ class VibeProvidersWatcher(private val project: Project) : Disposable {
     globalWatch = lfs.addRootToWatch(globalVibe, true)
     // Force the dir into the VFS so change events have a node to attach to.
     lfs.refreshAndFindFileByPath(globalVibe)
-    project.messageBus.connect(this).subscribe(VirtualFileManager.VFS_CHANGES, object : BulkFileListener {
+    // Слушаем фоновую тему (2026.1): проверка путей идёт по КАЖДОМУ файловому событию проекта, и
+    // на EDT это ровно та задержка интерфейса, ради которой платформа завела VFS_CHANGES_BG.
+    project.messageBus.connect(this).subscribe(VirtualFileManager.VFS_CHANGES_BG, object : BulkFileListenerBackgroundable {
       override fun after(events: List<VFileEvent>) {
         val relevant = events.any { ProvidersWatchPaths.matches(it.path, project.basePath, home) }
         if (!relevant) return

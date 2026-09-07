@@ -69,6 +69,14 @@ data class ModelEntry(
    * старой цене и выглядит достоверным. Разбор — [PriceValidity].
    */
   val priceValidUntil: String? = null,
+  /**
+   * Срок жизни кэша промпта: `5m` (умолчание вендора) или `1h`.
+   *
+   * Часовой кэш существует ровно для нашего сценария — длинная сессия с паузами больше пяти минут
+   * (ревью, ожидание CI). Он дороже в записи ($20 против $12.50 за 1M у Fable 5.1), поэтому
+   * включается осознанно, а не нами за пользователя.
+   */
+  val cacheTtl: String? = null,
 )
 
 data class AuthSpec(val type: String = "bearer", val name: String? = null)
@@ -198,6 +206,7 @@ object ProvidersFile {
         note = mo["note"]?.jsonPrimitive?.contentOrNull,
         sunsetDate = mo["sunsetDate"]?.jsonPrimitive?.contentOrNull,
         priceValidUntil = mo["priceValidUntil"]?.jsonPrimitive?.contentOrNull,
+        cacheTtl = mo["cacheTtl"]?.jsonPrimitive?.contentOrNull,
       )
     } ?: emptyList()
     return ProviderEntry(
@@ -257,6 +266,7 @@ object ProvidersFile {
       // Same rule as the rest: a layer that said nothing about the price does not erase it.
       pricing = over.pricing ?: base.pricing,
       priceValidUntil = over.priceValidUntil ?: base.priceValidUntil,
+      cacheTtl = over.cacheTtl ?: base.cacheTtl,
       // Same rule as every other optional field: silence inherits, a written value overrides.
       protocol = over.protocol ?: base.protocol,
     )

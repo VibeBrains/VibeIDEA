@@ -49,13 +49,12 @@ internal class IdeFileOps(
     }
     val line = params["line"]?.jsonPrimitive?.intOrNull
     val limit = params["limit"]?.jsonPrimitive?.intOrNull
-    var text: String? = null
-    ApplicationManager.getApplication().runReadAction {
+    // nonBlocking вместо runReadAction: агент читает файлы пачками с фонового потока, и каждая
+    // неотменяемая read action в этот момент блокирует правку в редакторе (устарело в 2026.1).
+    val text = com.intellij.openapi.application.ReadAction.nonBlocking<String?> {
       val vFile = LocalFileSystem.getInstance().findFileByNioFile(Path.of(path))
-      if (vFile != null) {
-        text = FileDocumentManager.getInstance().getDocument(vFile)?.text
-      }
-    }
+      if (vFile == null) null else FileDocumentManager.getInstance().getDocument(vFile)?.text
+    }.executeSynchronously()
     var content = text ?: Files.readString(Path.of(path))
     if (line != null || limit != null) {
       var lines = content.lines()
@@ -132,11 +131,10 @@ internal class IdeFileOps(
   }
 
   private fun readCurrentText(path: Path): String {
-    var text: String? = null
-    ApplicationManager.getApplication().runReadAction {
+    val text = com.intellij.openapi.application.ReadAction.nonBlocking<String?> {
       val vFile = LocalFileSystem.getInstance().findFileByNioFile(path)
-      if (vFile != null) text = FileDocumentManager.getInstance().getDocument(vFile)?.text
-    }
+      if (vFile == null) null else FileDocumentManager.getInstance().getDocument(vFile)?.text
+    }.executeSynchronously()
     return text ?: runCatching { Files.readString(path) }.getOrDefault("")
   }
 }
