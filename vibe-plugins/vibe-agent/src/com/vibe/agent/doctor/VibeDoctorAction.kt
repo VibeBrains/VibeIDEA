@@ -116,6 +116,27 @@ class VibeDoctorAction : AnAction({ t("doctor.action") }) {
       },
     ))
 
+    // Дежурные проверки: битая запись молчит так же, как её отсутствие, — и это надо различать.
+    val patrolText = base?.let { runCatching { Files.readString(Path.of(it, com.vibe.agent.patrol.Patrol.FILE)) }.getOrNull() }
+    val patrols = com.vibe.agent.patrol.Patrol.parse(patrolText)
+    lines.add(VibeDiagnosis.Line(
+      t("doctor.line.patrols"),
+      when {
+        patrolText == null -> VibeDiagnosis.State.OK
+        patrols.problems.isNotEmpty() -> VibeDiagnosis.State.WARN
+        else -> VibeDiagnosis.State.OK
+      },
+      when {
+        patrolText == null -> t("doctor.detail.patrolsNone")
+        patrols.problems.isNotEmpty() -> t("doctor.detail.patrolsBroken",
+                                           "count" to patrols.problems.size,
+                                           "where" to patrols.problems.first().where)
+        else -> t("doctor.detail.patrolsOk",
+                  "total" to patrols.entries.size,
+                  "active" to patrols.entries.count { it.active })
+      },
+    ))
+
     // Окно контекста: провайдер и конфиг говорят разное — и это никто не замечал.
     val windows = com.vibe.agent.providers.ClaimedContext.notices(
       providers, com.vibe.agent.providers.ClaimedContextRegistry.all())

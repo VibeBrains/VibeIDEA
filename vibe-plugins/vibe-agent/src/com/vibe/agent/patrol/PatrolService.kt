@@ -38,6 +38,27 @@ class PatrolService(private val project: Project) : Disposable {
     alarm.addRequest({ runCatching { tick() }; schedule() }, TICK_MS)
   }
 
+  /**
+   * Прогнать все проверки немедленно — иначе первую настройку проверяют ожиданием.
+   *
+   * Расписание при этом не сбрасывается: ручной прогон отвечает на вопрос «работает ли моя проба»,
+   * а не подменяет дежурство.
+   */
+  fun runNow(): List<String> {
+    val base = project.basePath ?: return emptyList()
+    val text = runCatching { Files.readString(Path.of(base, Patrol.FILE)) }.getOrNull() ?: return emptyList()
+    val found = ArrayList<String>()
+    for (entry in Patrol.parse(text).entries) {
+      if (!entry.active) continue
+      val code = runProbe(base, entry)
+      if (Patrol.foundWork(code)) {
+        found.add(entry.name())
+        report(entry, code)
+      }
+    }
+    return found
+  }
+
   private fun tick() {
     val base = project.basePath ?: return
     val text = runCatching { Files.readString(Path.of(base, Patrol.FILE)) }.getOrNull() ?: return
@@ -98,7 +119,9 @@ class PatrolService(private val project: Project) : Disposable {
 
   override fun dispose() = Unit
 
-  private companion object {
+  companion object {
+    fun getInstance(project: Project): PatrolService = project.getService(PatrolService::class.java)
+
     /** Проверяем расписание раз в минуту: интервал самой проверки задаёт человек. */
     const val TICK_MS = 60_000L
     const val PROBE_TIMEOUT_SECONDS = 30L
