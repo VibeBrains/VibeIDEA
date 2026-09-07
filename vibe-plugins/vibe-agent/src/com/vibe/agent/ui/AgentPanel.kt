@@ -2837,6 +2837,12 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
       // A rejected payload must not poison every later request in this thread.
       turnThreadId?.let { if (history.dropImagesFromLastUser(it)) systemLine(t("chat.imagesDropped")) }
       systemLine(t("chat.error", "reason" to e.message))
+      // Отказ провайдера и петля выглядят одинаково — оборванный ход, — а решения противоположные:
+      // первое стоит продолжить, когда провайдер вернётся, второе повторять нельзя.
+      val cause = com.vibe.agent.safety.StopCause.of(
+        stoppedByUser = false, breakerTripped = false,
+        failureMessage = e.message, finishedCleanly = false)
+      if (com.vibe.agent.safety.StopCause.resumable(cause)) systemLine(t("stop.resumable"))
     }
     finally {
       finishTurn()
@@ -3113,7 +3119,44 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     val agent = agents.firstOrNull() ?: run { systemLine(t("pipeline.needsAgent", "path" to AcpConfig.configPath())); return }
     val names = pipelines.map { t("pipeline.choice", "name" to it.name, "count" to it.steps.size) }
     val choice = Messages.showDialog(project, t("pipeline.choosePrompt"), t("pipeline.chooseTitle"), names.toTypedArray(), 0, Messages.getQuestionIcon())
-    if (choice >= 0) runPipeline(pipelines[choice], (target as? ChatTarget.Agent)?.config ?: agent)
+    if (choice < 0) return
+    val chosen = pipelines[choice]
+    // Смета ДО запуска: потолки расхода срабатывают уже на середине прогона, а разница между одним
+    // ходом и шестью ролями видна только тому, кто за неё однажды заплатил.
+    if (!confirmEstimate(chosen)) return
+    runPipeline(chosen, (target as? ChatTarget.Agent)?.config ?: agent)
+  }
+
+  /**
+   * Показывает смету прогона и спрашивает.
+   *
+   * Смета считается по СВОЕМУ журналу расхода: сколько эта роль стоила у вас в прошлый раз. Роль,
+   * которую ещё не гоняли, называется отдельно и в сумму не входит — подменить её средним по чужим
+   * ролям значит соврать с точностью до порядка («explore» и «qa» отличаются в разы».
+   */
+  private fun confirmEstimate(pipeline: com.vibe.agent.pipelines.Pipeline): Boolean {
+    val model = (target as? ChatTarget.Model)?.model
+    val estimate = com.vibe.agent.budget.RunEstimate.of(
+      steps = pipeline.steps.map { it.role },
+      // Месяц истории: смета по вчерашнему дню зависела бы от того, гоняли ли вчера эту роль.
+      entries = com.vibe.agent.budget.VibeSpendService.getInstance().entries(com.vibe.agent.budget.SpendLedger.MONTH_MS),
+      pricePerMillionInput = model?.pricing?.input,
+      currency = model?.pricing?.currency,
+    )
+    // Нечего показывать — нечего и спрашивать: пустая смета это лишний диалог, а не осторожность.
+    if (estimate.tokens == 0L && estimate.unknownRoles.size == estimate.totalSteps) return true
+    val money = estimate.cost?.let { " ≈ %.2f %s".format(it, estimate.currency.orEmpty()) }.orEmpty()
+    val unknown = if (estimate.partial) "\n" + t("estimate.unknown", "roles" to estimate.unknownRoles.joinToString()) else ""
+    val answer = Messages.showYesNoDialog(
+      project,
+      t("estimate.body", "name" to pipeline.name, "steps" to estimate.totalSteps,
+        "tokens" to "%,d".format(estimate.tokens), "money" to money) + unknown,
+      t("estimate.title"),
+      t("estimate.run"),
+      t("common.cancel"),
+      Messages.getQuestionIcon(),
+    )
+    return answer == Messages.YES
   }
 
   private fun runPipeline(pipeline: com.vibe.agent.pipelines.Pipeline, agent: AgentServerConfig) {
