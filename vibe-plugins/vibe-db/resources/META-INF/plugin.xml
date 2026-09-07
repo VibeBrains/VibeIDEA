@@ -12,6 +12,11 @@
   <depends>com.vibe.agent</depends>
 
   <extensions defaultExtensionNs="com.intellij">
+    <!-- Подсветка SQL в консоли базы. Регистрируем только фабрику подсветки: разбора в PSI у нас
+         нет и не нужно — грамматику SQL пришлось бы поддерживать на пяти диалектах ради того, что
+         уже делают SqlStatements и SqlCompletion. -->
+    <lang.syntaxHighlighterFactory language="VibeSql" implementationClass="com.vibe.db.SqlSyntaxHighlighterFactory"/>
+
     <toolWindow id="VibeDb" anchor="right" icon="/icons/vibeDb.svg"
                 factoryClass="com.vibe.db.ui.VibeDbToolWindowFactory" doNotActivateOnStart="true"/>
     <applicationConfigurable parentId="com.vibe.settings" displayName="Базы данных" id="com.vibe.db.settings"

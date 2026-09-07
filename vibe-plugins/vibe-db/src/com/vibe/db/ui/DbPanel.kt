@@ -64,17 +64,21 @@ class DbPanel(private val project: Project) : JPanel(BorderLayout()) {
       }
     })
   }
-  private val console = JTextArea().apply {
-    font = com.intellij.util.ui.JBFont.create(java.awt.Font(java.awt.Font.MONOSPACED, java.awt.Font.PLAIN, 12))
+  /**
+   * Консоль запросов — редактор платформы, а не текстовое поле.
+   *
+   * Community не несёт поддержки SQL вовсе, поэтому запрос был чёрным текстом: в нём не отличались
+   * ключевое слово, строка и комментарий — а глаз находит ошибку до запуска именно по ним.
+   * `LanguageTextField` на нашем языке `VibeSql` даёт подсветку, выделение парных скобок и
+   * настройки шрифта редактора бесплатно; своё рисование подсветки поверх `JTextArea` пришлось бы
+   * поддерживать вместе с темой.
+   */
+  private val console = com.intellij.ui.LanguageTextField(
+    com.vibe.db.SqlLanguage, project, "", false,
+  ).apply {
     border = JBUI.Borders.empty(6)
-    rows = 5
-    // Ctrl+Space — тот же жест, что и везде в IDE: подсказка должна вызываться привычно, иначе о
-    // ней узнают из документации, то есть никогда.
-    registerKeyboardAction(
-      { suggestCompletion() },
-      javax.swing.KeyStroke.getKeyStroke(java.awt.event.KeyEvent.VK_SPACE, java.awt.event.InputEvent.CTRL_DOWN_MASK),
-      javax.swing.JComponent.WHEN_FOCUSED,
-    )
+    setOneLineMode(false)
+    preferredSize = Dimension(0, CONSOLE_HEIGHT)
   }
   private val results = object : JBTable() {
     /**
@@ -193,8 +197,20 @@ class DbPanel(private val project: Project) : JPanel(BorderLayout()) {
       add(VibeScroll.pane(tree), BorderLayout.CENTER)
       preferredSize = Dimension(280, 0)
     }
+    // Ctrl+Space — тот же жест, что и везде в IDE. Локальным шорткатом, а не KeyListener:
+    // в редакторе платформы нажатия сначала проходят через её же диспетчер, и слушатель на
+    // компоненте до них просто не доходит (тот же урок, что с меню «@» в композере).
+    object : com.intellij.openapi.actionSystem.AnAction() {
+      override fun actionPerformed(e: com.intellij.openapi.actionSystem.AnActionEvent) = suggestCompletion()
+    }.registerCustomShortcutSet(
+      com.intellij.openapi.actionSystem.CustomShortcutSet(
+        javax.swing.KeyStroke.getKeyStroke(java.awt.event.KeyEvent.VK_SPACE, java.awt.event.InputEvent.CTRL_DOWN_MASK)),
+      console,
+    )
     val consolePanel = JPanel(BorderLayout()).apply {
-      add(VibeScroll.pane(console), BorderLayout.CENTER)
+      // Своей обёртки-скролла у редактора не нужно: он прокручивается сам, а вторая рамка дала бы
+      // две полосы на одном поле.
+      add(console, BorderLayout.CENTER)
       add(JPanel(FlowLayout(FlowLayout.LEFT, 6, 2)).apply {
         add(JButton(t("db.run"), AllIcons.Actions.Execute).apply { addActionListener { runConsole() } })
         add(exportButton)
@@ -423,9 +439,7 @@ class DbPanel(private val project: Project) : JPanel(BorderLayout()) {
 
   private fun runConsole() {
     val statements = SqlStatements.split(console.text)
-    val line = console.caretPosition.let { position ->
-      console.text.take(position).count { it == '\n' }
-    }
+    val line = caretOffset().let { position -> console.text.take(position).count { it == '\n' } }
     val statement = SqlStatements.statementAt(statements, line) ?: statements.firstOrNull() ?: return
     // Изменяющий оператор спрашивает подтверждение: «выполнить» под курсором легко нажать
     // случайно, а DELETE без WHERE отменить нельзя ничем.
@@ -546,7 +560,7 @@ class DbPanel(private val project: Project) : JPanel(BorderLayout()) {
    * в базу по нажатию клавиши. Столбцы нечитанной таблицы дочитываются один раз, в фоне.
    */
   private fun suggestCompletion() {
-    val caret = console.caretPosition
+    val caret = caretOffset()
     val suggestions = com.vibe.db.SqlCompletion.suggest(console.text, caret, schemas) { table ->
       columnsCache[table] ?: emptyList()
     }
@@ -563,8 +577,10 @@ class DbPanel(private val project: Project) : JPanel(BorderLayout()) {
       .setRenderer(com.intellij.ui.SimpleListCellRenderer.create("") { "\${it.text}   \${it.detail}" })
       .setTitle(t("db.completion.title"))
       .setItemChosenCallback { chosen ->
-        console.document.remove(caret - prefix.length, prefix.length)
-        console.document.insertString(caret - prefix.length, chosen.text, null)
+        // Правка документа редактора идёт только под write action, иначе платформа падает.
+        com.intellij.openapi.command.WriteCommandAction.runWriteCommandAction(project) {
+          console.document.replaceString(caret - prefix.length, caret, chosen.text)
+        }
       }
       .createPopup()
       .showInBestPositionFor(com.intellij.ide.DataManager.getInstance().getDataContext(console))
@@ -656,9 +672,15 @@ class DbPanel(private val project: Project) : JPanel(BorderLayout()) {
     execute(sql, DbCatalog.Table(target.schema, table, DbCatalog.Kind.TABLE))
   }
 
+  /** Позиция курсора в консоли; у редактора платформы она живёт не там, где у текстового поля. */
+  private fun caretOffset(): Int = console.editor?.caretModel?.offset ?: console.text.length
+
   private companion object {
     /** Запас на отступы ячейки: без него текст упирается в границу столбца. */
     const val COLUMN_PADDING = 12
+
+    /** Высота консоли: примерно пять строк, как было у текстового поля. */
+    const val CONSOLE_HEIGHT = 110
   }
 
   private fun fail(text: String) {
