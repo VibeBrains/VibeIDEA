@@ -87,11 +87,16 @@ if [ "$NOW_COMMIT" != "$COMMIT" ]; then
   # Проверяем это фактом, а не доверием: между штампом и HEAD не должно быть тронуто ничего, кроме
   # самого файла канала.
   CHANGED=$(git diff --name-only "$COMMIT" "$NOW_COMMIT" | sort -u)
-  if [ "$CHANGED" = "updates/updates.xml" ] && git merge-base --is-ancestor "$COMMIT" "$NOW_COMMIT"; then
-    echo "  HEAD впереди штампа на коммит канала обновлений — продукт тот же"
+  # Что фаза 2 пишет ПО ПРАВИЛУ и что физически не может изменить собранное: канал обновлений,
+  # заметки с подписью поддержки (их текст выбирается после того, как владелец пощупал сборку) и
+  # сами релизные скрипты. Ни один из этих файлов не попадает в дистрибутив, а подмену полезной
+  # нагрузки ловит отдельная сверка sha256 с штампом.
+  OUTSIDE=$(printf '%s\n' "$CHANGED" | grep -v -E '^(updates/updates\.xml|docs/|vibe-plugins/tools/release[A-Za-z]*\.sh)' || true)
+  if [ -z "$OUTSIDE" ] && [ -n "$CHANGED" ] && git merge-base --is-ancestor "$COMMIT" "$NOW_COMMIT"; then
+    echo "  HEAD впереди штампа на коммиты фазы 2 (канал, заметки, релизные скрипты) — продукт тот же"
   else
     echo "✖ HEAD ($NOW_COMMIT) не тот коммит, что проверен в фазе 1 ($COMMIT)"
-    [ -n "$CHANGED" ] && echo "  тронуто между ними: $(echo "$CHANGED" | tr '\n' ' ')"
+    [ -n "$OUTSIDE" ] && echo "  после штампа тронут продукт: $(echo "$OUTSIDE" | tr '\n' ' ')"
     fail=1
   fi
 fi
