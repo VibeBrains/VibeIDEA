@@ -62,8 +62,20 @@ BUILD_NUMBER=$(grep -o '"buildNumber" *: *"[^"]*"' "$INFO_JSON" | sed 's/.*: *"/
 case "$BUILD_NUMBER" in
   *SNAPSHOT*) echo "✖ номер сборки $BUILD_NUMBER — SNAPSHOT: релиз обязан нести настоящий номер (см. VibeBuildNumber)"; exit 1 ;;
 esac
-grep -q "number=\"$BUILD_NUMBER\" version=\"${VERSION#v}\"" updates/updates.xml 2>/dev/null \
-  || { echo "✖ updates/updates.xml не содержит сборку $BUILD_NUMBER / ${VERSION#v}: выполните ./vibe-plugins/tools/releaseUpdatesXml.sh $VERSION и закоммитьте"; exit 1; }
+# Релиз собирается ИЗ main — правило одно на оба продукта VibeBrains (у VibeIDE оно записано
+# прецедентом v1.5.2–v1.5.4: чинили одну платформу, а в «фикс-релиз» с main уехали невыпущенные
+# фичи). Собранное из next штампуется коммитом, которого в релизной ветке ещё нет, и «выпущено»
+# перестаёт значить «лежит в main».
+BRANCH=$(git rev-parse --abbrev-ref HEAD)
+[ "$BRANCH" = "main" ] || {
+  echo "✖ фаза 1 идёт из ветки $BRANCH, а релизы собираются из main."
+  echo "  Сначала: git checkout main && git merge --ff-only next — потом сборка и штамп."
+  exit 1
+}
+
+# updates.xml здесь НЕ требуется: он пишется в фазе 2, непосредственно перед публикацией.
+# Иначе канал обновлений объявляет версию, релиза которой ещё нет, и установленная IDE ведёт
+# человека на страницу 404 — ровно в том окне, ради которого фазы и разделены.
 
 # Грязное дерево означает, что собранное и лежащее в git — разные вещи, и штамп соврал бы о коммите.
 DIRTY=$(git status --porcelain | head -1)
@@ -83,8 +95,10 @@ if git rev-parse -q --verify "$VERSION^{commit}" >/dev/null 2>&1 && [ "$(git rev
 fi
 STAMP=$ARTIFACTS/release-stamp.json
 {
-  printf '{\n  "version": "%s",\n  "commit": "%s",\n  "packagingOnly": %s,\n  "productFix": "%s",\n  "os": "%s",\n  "files": [\n' \
-    "$VERSION" "$COMMIT" "$PACKAGING_ONLY" "$FIX_REASON" "$OS"
+  # buildNumber попадает в штамп ради фазы 2: там канал обновлений сверяется с ТЕМ ЖЕ номером,
+  # который прошёл гейт дистрибутива, а не с тем, что окажется в дереве через час.
+  printf '{\n  "version": "%s",\n  "commit": "%s",\n  "buildNumber": "%s",\n  "packagingOnly": %s,\n  "productFix": "%s",\n  "os": "%s",\n  "files": [\n' \
+    "$VERSION" "$COMMIT" "$BUILD_NUMBER" "$PACKAGING_ONLY" "$FIX_REASON" "$OS"
   for i in "${!FILES[@]}"; do
     f="${FILES[$i]}"
     sha=$(shasum -a 256 "$f" | awk '{print $1}')

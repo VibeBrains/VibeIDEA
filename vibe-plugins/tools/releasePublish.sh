@@ -25,6 +25,8 @@ STAMP=$ARTIFACTS/release-stamp.json
 [ -f "$STAMP" ] || { echo "✖ нет штампа $STAMP — сначала фаза 1 (releaseStamp.sh)"; exit 1; }
 [ -n "$NOTES" ] && [ -f "$NOTES" ] || { echo "✖ укажите файл заметок к релизу"; exit 1; }
 
+# Канал обновлений пишется В ФАЗЕ 2: до публикации объявлять версию нельзя — установленная IDE
+# поведёт человека на страницу релиза, которой ещё нет.
 read -r VERSION COMMIT PACKAGING_ONLY <<<"$("$PYTHON" -c "
 import json;d=json.load(open('$STAMP'));print(d['version'],d['commit'],str(d.get('packagingOnly',False)).lower())
 ")"
@@ -32,6 +34,20 @@ import json;d=json.load(open('$STAMP'));print(d['version'],d['commit'],str(d.get
 PRODUCT_FIX=$("$PYTHON" -c "
 import json;print(json.load(open('$STAMP')).get('productFix',''))
 ")
+# Канал обновлений: файл обязан описывать выпускаемую сборку и лежать в коммите ветки main.
+# Проверка здесь, а не в штампе, потому что писать его раньше нельзя — установленная IDE прочитала
+# бы объявление о версии, страницы релиза которой ещё нет.
+BUILD_NUMBER=$("$PYTHON" -c "
+import json;print(json.load(open('$STAMP')).get('buildNumber',''))
+")
+if [ -n "$BUILD_NUMBER" ]; then
+  grep -q "number=\"$BUILD_NUMBER\" version=\"${VERSION#v}\"" updates/updates.xml 2>/dev/null || {
+    echo "✖ updates/updates.xml не описывает сборку $BUILD_NUMBER / ${VERSION#v}."
+    echo "  Выполните ./vibe-plugins/tools/releaseUpdatesXml.sh $VERSION, закоммитьте в main и повторите."
+    exit 1
+  }
+fi
+
 # Одна строка на файл: «имя sha256».
 #
 # Читаем циклом, а не mapfile: в macOS штатный bash — 3.2, где mapfile не существует, и релиз
