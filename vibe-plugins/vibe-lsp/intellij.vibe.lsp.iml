@@ -15,7 +15,7 @@
     <orderEntry type="module" module-name="intellij.platform.util" />
     <orderEntry type="module" module-name="intellij.platform.extensions" />
     <orderEntry type="library" scope="PROVIDED" name="vibe-lsp4ij" level="project" />
-    <orderEntry type="library" scope="PROVIDED" name="gson" level="project" />
-    <orderEntry type="library" scope="PROVIDED" name="lsp4j" level="project" />
+    <orderEntry type="module" module-name="intellij.libraries.gson" />
+    <orderEntry type="module" module-name="intellij.libraries.eclipse.lsp4j" />
   </component>
 </module>
