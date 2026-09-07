@@ -157,7 +157,7 @@ done < <(grep -rl 'com.intellij.openapi.options.Configurable\|: Configurable' "
 # 9. Идентификаторы панелей: только ASCII и только из VibeToolWindows.
 #    Идентификатор уезжает в .idea/workspace.xml и в раскладку окон — русская буква там ломается
 #    при смене кодировки, а литерал, написанный руками в пятом файле, однажды разойдётся с XML.
-python3 - "$root" <<'PYIDS' || status=1
+"$PYTHON" - "$root" <<'PYIDS' || status=1
 import glob, io, os, re, sys
 root = sys.argv[1]
 declared = set(re.findall(r'"(Vibe[A-Za-z]*)"',
@@ -200,7 +200,7 @@ PYIDS
 #     именем, и уведомление уедет мимо настроек, где человек его отключал. Список расширений в
 #     plugin.xml и в коде тоже обязан совпадать — иначе тип файла зарегистрируется, а действие не
 #     сработает (или наоборот).
-python3 - "$root" <<'PYFACTS' || status=1
+"$PYTHON" - "$root" <<'PYFACTS' || status=1
 import glob, io, os, re, sys
 root = sys.argv[1]
 problems = []

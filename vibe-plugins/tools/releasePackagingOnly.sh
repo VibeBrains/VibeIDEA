@@ -45,7 +45,11 @@ git merge-base --is-ancestor "$TAG_COMMIT" "$COMMIT" || {
 # продукт, и их здесь нет намеренно. Скрипт загрузки набора серверов допускается, но только без
 # смены версий и хешей внутри него (проверка ниже — на случай, если пин снова окажется в теле
 # скрипта): как он распаковывает архив — упаковка, какую версию сервера везёт — продукт.
-ALLOWED='^(build/|vibeidea-customization/|vibe-plugins/tools/|vibe-plugins/deps/download\.sh$|docs/|updates/|[^/]+\.md$)'
+# Корневые точки входа сборки и `.gitattributes` — тоже упаковка: они решают, КАК собирается и как
+# выкладывается дерево, но сами в дистрибутив не едут ни одним байтом. Добавлены 04.09.2026, когда
+# первый живой прогон `vibeidea-build.bat` показал, что он не работал вовсе (LF-переводы строк), а
+# чинится это правилом в `.gitattributes`.
+ALLOWED='^(build/|vibeidea-customization/|vibe-plugins/tools/|vibe-plugins/deps/download\.(sh|ps1)$|docs/|updates/|vibeidea-build\.(sh|bat)$|getPlugins\.(sh|bat)$|\.gitattributes$|[^/]+\.md$)'
 CHANGED=$(git diff --name-only "$TAG_COMMIT" "$COMMIT")
 OUTSIDE=$(printf '%s\n' "$CHANGED" | grep -Ev "$ALLOWED" || true)
 if [ -n "$OUTSIDE" ] && [ "$MODE" != "--product-fix" ]; then

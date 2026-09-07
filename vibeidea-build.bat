@@ -1,5 +1,8 @@
 @echo off
 setlocal
+rem UTF-8 in the console: this file is stored as UTF-8 (as everything in the repo), and without
+rem the switch cmd prints its Russian messages as mojibake in the default OEM code page.
+chcp 65001 >nul
 
 rem Одна команда, собирающая артефакты VibeIDEA на Windows.
 rem
