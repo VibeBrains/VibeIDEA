@@ -43,6 +43,16 @@ class VibeSpendReportAction : AnAction({ t("spend.action") }) {
       }
       appendLine()
       appendLine(t("spend.note"))
+      // Цена с истёкшим сроком продолжает считаться — считать по старой честнее, чем не считать
+      // вовсе, — но отчёт обязан сказать, что сумма построена на цене, которую пора перепроверить.
+      val providers = com.vibe.agent.providers.ProvidersService.load(e.project?.basePath) { }
+      val stale = com.vibe.agent.providers.PriceValidity.notices(providers, java.time.LocalDate.now())
+        .filter { it.state == com.vibe.agent.providers.PriceValidity.State.EXPIRED }
+      if (stale.isNotEmpty()) {
+        appendLine(t("spend.priceExpired",
+                     "model" to (stale.first().providerId + "/" + stale.first().modelId),
+                     "count" to stale.size))
+      }
     }
     Messages.showInfoMessage(e.project, report, t("spend.title"))
   }

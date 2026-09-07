@@ -62,6 +62,13 @@ data class ModelEntry(
    * is an announcement that turns into a surprise on the day.
    */
   val sunsetDate: String? = null,
+  /**
+   * До какой даты цена выше верна (ISO, `2026-09-09`).
+   *
+   * Промо-цены кончаются по расписанию и вдвое; без срока учёт расхода продолжает считаться по
+   * старой цене и выглядит достоверным. Разбор — [PriceValidity].
+   */
+  val priceValidUntil: String? = null,
 )
 
 data class AuthSpec(val type: String = "bearer", val name: String? = null)
@@ -190,6 +197,7 @@ object ProvidersFile {
         vision = mo["vision"]?.jsonPrimitive?.booleanOrNull,
         note = mo["note"]?.jsonPrimitive?.contentOrNull,
         sunsetDate = mo["sunsetDate"]?.jsonPrimitive?.contentOrNull,
+        priceValidUntil = mo["priceValidUntil"]?.jsonPrimitive?.contentOrNull,
       )
     } ?: emptyList()
     return ProviderEntry(
@@ -248,6 +256,7 @@ object ProvidersFile {
       vision = over.vision ?: base.vision,
       // Same rule as the rest: a layer that said nothing about the price does not erase it.
       pricing = over.pricing ?: base.pricing,
+      priceValidUntil = over.priceValidUntil ?: base.priceValidUntil,
       // Same rule as every other optional field: silence inherits, a written value overrides.
       protocol = over.protocol ?: base.protocol,
     )

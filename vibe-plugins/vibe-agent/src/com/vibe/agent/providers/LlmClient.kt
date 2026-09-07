@@ -232,6 +232,9 @@ class LlmClient(
     val response = http.send(builder.build(), HttpResponse.BodyHandlers.ofString())
     if (response.statusCode() !in 200..299) throw RuntimeException("HTTP " + response.statusCode())
     val root = json.parseToJsonElement(response.body()).jsonObject
+    // Заодно запоминаем, какое окно провайдер приписывает своим моделям: второй поход в сеть ради
+    // одной цифры был бы расточительством, а расхождение с конфигом надо кому-то заметить.
+    ClaimedContextRegistry.record(entry.id, ClaimedContext.parse(root))
     val arr = root["data"]?.jsonArray ?: root["models"]?.jsonArray ?: return emptyList()
     return arr.mapNotNull { el ->
       val o = el.jsonObject

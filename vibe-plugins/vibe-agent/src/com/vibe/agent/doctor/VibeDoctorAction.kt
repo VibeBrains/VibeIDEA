@@ -116,6 +116,53 @@ class VibeDoctorAction : AnAction({ t("doctor.action") }) {
       },
     ))
 
+    // Окно контекста: провайдер и конфиг говорят разное — и это никто не замечал.
+    val windows = com.vibe.agent.providers.ClaimedContext.notices(
+      providers, com.vibe.agent.providers.ClaimedContextRegistry.all())
+    lines.add(VibeDiagnosis.Line(
+      t("doctor.line.contextWindow"),
+      when {
+        com.vibe.agent.providers.ClaimedContextRegistry.isEmpty() -> VibeDiagnosis.State.OK
+        windows.isEmpty() -> VibeDiagnosis.State.OK
+        else -> VibeDiagnosis.State.WARN
+      },
+      when {
+        com.vibe.agent.providers.ClaimedContextRegistry.isEmpty() -> t("doctor.detail.contextNotChecked")
+        windows.isEmpty() -> t("doctor.detail.contextAgree")
+        else -> {
+          val first = windows.first()
+          t("doctor.detail.contextMismatch",
+            "model" to (first.providerId + "/" + first.modelId),
+            "configured" to first.configured,
+            "claimed" to first.claimed,
+            "count" to windows.size)
+        }
+      },
+    ))
+
+    // Срок годности цены: цену пишет человек, и протухает она молча — весь учёт расхода
+    // продолжает считаться по ней и выглядит достоверным.
+    val prices = com.vibe.agent.providers.PriceValidity.notices(providers, today)
+    val expired = prices.filter { it.state == com.vibe.agent.providers.PriceValidity.State.EXPIRED }
+    val expiring = prices.filter { it.state == com.vibe.agent.providers.PriceValidity.State.SOON }
+    lines.add(VibeDiagnosis.Line(
+      t("doctor.line.priceValidity"),
+      when {
+        expired.isNotEmpty() -> VibeDiagnosis.State.WARN
+        expiring.isNotEmpty() -> VibeDiagnosis.State.WARN
+        else -> VibeDiagnosis.State.OK
+      },
+      when {
+        expired.isNotEmpty() -> t("doctor.detail.priceExpired",
+                                  "model" to (expired.first().providerId + "/" + expired.first().modelId),
+                                  "count" to expired.size)
+        expiring.isNotEmpty() -> t("doctor.detail.priceExpiring",
+                                   "model" to (expiring.first().providerId + "/" + expiring.first().modelId),
+                                   "days" to expiring.first().daysLeft, "count" to expiring.size)
+        else -> t("doctor.detail.priceValidityNone")
+      },
+    ))
+
     val chain = com.vibe.agent.resilience.FailoverPlan.parseChain(com.vibe.agent.settings.VibeAgentSettings.failoverChain)
     lines.add(VibeDiagnosis.Line(
       t("doctor.line.failover"),
