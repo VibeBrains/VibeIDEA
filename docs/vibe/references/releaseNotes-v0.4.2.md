@@ -113,6 +113,26 @@ shasum -a 256 VibeIDEA-0.4.2-aarch64.dmg
 **Что нужно на машине:** PHP 8.1+ и Node 18+. Для отладки PHP — Xdebug. Для базы — драйвер JDBC,
 его скачает кнопка в панели «БД».
 
+**Windows (x64):** `VibeIDEA-0.4.2.exe` — обычный инсталлятор; или `VibeIDEA-0.4.2.win.zip` —
+распаковать куда угодно и запустить `bin\idea64.exe`.
+
+Сборка **не подписана**: SmartScreen покажет «Система Windows защитила ваш компьютер» —
+**«Подробнее»** → **«Выполнить в любом случае»**. Касперский может удалить `idea64.exe` по
+поведению (`PDM:Trojan.Win32.Generic`): это детект неподписанного новичка, а не находка в файле.
+
+Проверить, что скачался наш файл (PowerShell):
+
+```powershell
+Get-FileHash VibeIDEA-0.4.2.exe -Algorithm SHA256
+# a389f32018cadbf791a6b68adcfc9964df6835cf8a3ceaa08ce3a8325e587d99
+Get-FileHash VibeIDEA-0.4.2.win.zip -Algorithm SHA256
+# 1c62488fbf72884ae993f7808efa9bd2706b8cde19290fef220b6ecc85ece40b
+```
+
+Требования те же, что у macOS: Node 18+ для TypeScript, CSS, ESLint и обоих адаптеров отладки;
+PHP 8.1+ и Xdebug — для PHP. Встроенный PHP-сервер на Windows запускается — проверено запуском
+собранного дистрибутива.
+
 **Обновление с 0.4.1:** ставится поверх, настройки сохраняются. **Плотный интерфейс включится сам**
 — выключается в View → Appearance → Compact Mode.
 
