@@ -1718,5 +1718,8 @@
   "pipeline.stepSkippedByGate": "{header} пропущен: предыдущий шаг принят гейтом",
   "chat.permission.trifecta": "⚠️ За этот ход агент прочитал файлы проекта, получил текст не от вас и теперь открывает канал наружу ({channel}). По отдельности это обычная работа, вместе — способ вынести данные.\n\n{title}",
   "trace.contextTax": "контекстный налог: за {turns} ход(ов) вход {input} токенов против выхода {output}; в среднем {perTurn} на ход",
-  "trace.contextTaxRatio": "Это {ratio}× напоминания на единицу работы."
+  "trace.contextTaxRatio": "Это {ratio}× напоминания на единицу работы.",
+  "pipeline.limit.tokens": "потолок шага «{role}»: выбраны {limit} токенов — шаг прекращён",
+  "pipeline.limit.steps": "потолок шага «{role}»: {limit} вызовов инструментов — шаг прекращён",
+  "pipeline.stepCapped": "{header} прекращён своим потолком"
 }

@@ -223,6 +223,15 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
   /** Set when a turn ran an edit/command tool: its writes may be invisible to the client (agent-internal Bash). */
   @Volatile private var turnHadMutatingTool = false
 
+  /** Потолки шага пайплайна, пока он идёт; null — идёт обычный ход, потолков нет. */
+  @Volatile private var stepLimits: com.vibe.agent.pipelines.PipelineStep? = null
+
+  /** Вызовы инструментов текущего шага — считаются, только когда у шага есть потолок. */
+  private val stepToolCalls = java.util.concurrent.atomic.AtomicInteger(0)
+
+  /** Шаг прекращён своим потолком: отличает его от остановки человеком и от отказа агента. */
+  @Volatile private var stepLimitHit: com.vibe.agent.pipelines.StepLimits.Verdict? = null
+
   /** Признаки «трифекты», накопленные за текущий ход; разбор — [com.vibe.agent.guard.Trifecta]. */
   private val turnSignals = java.util.concurrent.ConcurrentHashMap.newKeySet<com.vibe.agent.guard.Trifecta.Signal>()
   /** Did the turn end in anything other than a normal finish? The autopilot refuses to resume such a turn. */
@@ -3250,6 +3259,42 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
   }
 
   /**
+   * Потолки шага: прекращает шаг, выбравший свои токены или свои вызовы инструментов.
+   *
+   * Зовётся из двух точек потока агента — `usage_update` (токены) и `tool_call` (вызовы), — поэтому
+   * оба числа необязательны: каждая точка знает своё. Считается только у шага, который потолок
+   * назвал: у остальных это была бы работа ради нуля на каждом кадре.
+   *
+   * Прекращение — это `session/cancel` агенту, тот же механизм, что у кнопки «Стоп». Отличает их
+   * [stepLimitHit]: иначе шаг, остановленный своим же потолком, отчитался бы как остановленный
+   * человеком, и в ленте это выглядело бы как чужое вмешательство.
+   */
+  private fun enforceStepLimits(usedTokens: Long? = null, toolCalls: Int? = null) {
+    val step = stepLimits ?: return
+    if (stepLimitHit != null) return // потолок уже сработал, второй раз отменять нечего
+    val verdict = com.vibe.agent.pipelines.StepLimits.check(
+      usedTokens = usedTokens ?: 0L,
+      toolCalls = toolCalls ?: stepToolCalls.get(),
+      maxTokens = step.maxTokens,
+      maxSteps = step.maxSteps,
+    )
+    if (verdict == com.vibe.agent.pipelines.StepLimits.Verdict.OK) return
+    stepLimitHit = verdict
+    systemLine(when (verdict) {
+      com.vibe.agent.pipelines.StepLimits.Verdict.TOKENS ->
+        t("pipeline.limit.tokens", "role" to step.role, "limit" to "%,d".format(step.maxTokens ?: 0))
+      else ->
+        t("pipeline.limit.steps", "role" to step.role, "limit" to (step.maxSteps ?: 0))
+    })
+    audit?.append(AuditEvent(System.currentTimeMillis(), AuditEvent.Action.CIRCUIT_BREAKER_OPENED, ok = false,
+                             actor = agentActor(),
+                             meta = mapOf("reason" to verdict.name, "role" to step.role)))
+    // Off the EDT по той же причине, что и у «Стоп»: send() синхронизирован и может ждать записи.
+    val c = client ?: return
+    ApplicationManager.getApplication().executeOnPooledThread { runCatching { c.cancel() } }
+  }
+
+  /**
    * Гейт приёмки шага: хук `pipelineStepEnd` решает, годится ли черновик.
    *
    * Возвращает null, когда гейта нет, — и это не то же самое, что «принят»: без проверки принимать
@@ -3383,6 +3428,11 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
             currentRole = step.role
             changedPaths.clear()
             stepBuffer = StringBuilder()
+            // Потолки ставятся ДО запроса и снимаются в finally: считать их у обычного хода
+            // было бы работой ради нуля на каждом кадре потока.
+            stepLimits = step.takeIf { com.vibe.agent.pipelines.StepLimits.any(it) }
+            stepToolCalls.set(0)
+            stepLimitHit = null
             val startedAt = System.currentTimeMillis()
             // Шаг со своей моделью идёт прямым запросом к провайдеру, мимо агента: у него нет
             // инструментов, и он ни на что не влияет, кроме собственного ответа. Разбор — в
@@ -3400,7 +3450,10 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
                               step.model ?: t("pipeline.stepLabel", "index" to (i + 1)))
             if (stop == STOP_CANCELLED) {
               failed = true
-              systemLine(t("pipeline.stepStopped", "header" to header))
+              // Свой потолок и рука человека дают одинаковый stopReason, а значат разное: первое —
+              // сработавшее правило пайплайна, второе — чужое вмешательство в него.
+              systemLine(if (stepLimitHit != null) t("pipeline.stepCapped", "header" to header)
+                         else t("pipeline.stepStopped", "header" to header))
               return@forEachIndexed
             }
             val summaryText = stepBuffer?.toString().orEmpty()
@@ -3416,6 +3469,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
           }
           finally {
             stepBuffer = null
+            stepLimits = null
             // The role dies with its step: an ordinary chat inheriting «ревьюер» rights would be a
             // restriction appearing from nowhere, which is worse than no restriction at all.
             currentRole = null
@@ -3926,6 +3980,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
       }
       "usage_update" -> onUsageUpdate(u)
       "tool_call" -> {
+        enforceStepLimits(toolCalls = stepToolCalls.incrementAndGet())
         val call = toolCalls.onToolCall(u)
         if (call != null) {
           auditToolCall(AuditEvent.Action.TOOL_CALL_START, call); harvestMutation(call); noteLoop(call)
@@ -4015,6 +4070,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
         warn = pct >= USAGE_WARN_PCT,
       )
     }
+    enforceStepLimits(usedTokens = used)
     noteWindowFill(used, size)
     // Recorded per role: a single total says the month cost money, a split by role says WHICH
     // role burned it, and only the second is something one can act on.
