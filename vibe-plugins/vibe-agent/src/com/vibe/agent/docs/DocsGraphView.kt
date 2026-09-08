@@ -4,82 +4,100 @@ package com.vibe.agent.docs
 import com.intellij.ui.JBColor
 import com.intellij.util.ui.JBUI
 import com.intellij.util.ui.UIUtil
+import java.awt.Color
 import java.awt.Cursor
-import java.awt.Dimension
 import java.awt.Graphics
 import java.awt.Graphics2D
+import java.awt.Point
 import java.awt.RenderingHints
 import java.awt.event.MouseAdapter
 import java.awt.event.MouseEvent
 import javax.swing.JComponent
+import javax.swing.Timer
 
 /**
- * The documentation drawn as a map: layers by distance from the entry point, orphans in a band of
- * their own at the bottom.
+ * Рисование графа: холст, цикл кадров, область просмотра и мышь.
  *
- * Painting only — every decision about WHERE things go lives in [DocsGraphLayout], which is why
- * this class has no arithmetic worth testing and the layout has no Swing worth mocking.
+ * Физики здесь нет ни строки — она в [DocsForceLayout], и это разделение главное: считать силы без
+ * окна можно в тесте, а рендер переписать, не трогая проверенный счёт.
+ *
+ * Цикл останавливается по энергии (см. [DocsForceLayout.REST_ENERGY]): вечная анимация греет
+ * ноутбук и дёргает картинку, которая уже сложилась.
  */
 class DocsGraphView(private val onOpen: (String) -> Unit) : JComponent() {
   private var graph: DocsGraphLayout.Graph = DocsGraphLayout.Graph(emptyList(), emptyList(), 0, 0)
-  private var hovered: DocsGraphLayout.Node? = null
+  private var layout: DocsForceLayout? = null
+  private var hovered: Int = -1
 
-  /** Масштаб и сдвиг рисунка; счёт — в [DocsGraphZoom], здесь только состояние и рисование. */
   private var scale = 1.0
   private var offsetX = 0
   private var offsetY = 0
-
-  /** Вписать при первом показе, но НЕ при каждом обновлении: иначе зум сбрасывался бы под руками. */
   private var fitted = false
 
-  /** Точка последнего нажатия для панорамирования; null — тянут не за фон. */
-  private var dragFrom: java.awt.Point? = null
+  /** Откуда начали тащить — фон или узел; порог в пикселях отличает клик от перетаскивания. */
+  private var pressAt: Point? = null
+  private var dragging = false
+  private var draggedNode = -1
 
-  /** Подсвеченные поиском пути; пусто — поиска нет и приглушать нечего. */
   private var highlighted: Set<String> = emptySet()
+
+  /** Кадры симуляции. Таймер, а не поток: рисование живёт на EDT, и считать надо там же. */
+  private val timer = Timer(FRAME_MS) { frame() }
 
   init {
     isOpaque = false
     val mouse = object : MouseAdapter() {
       override fun mousePressed(e: MouseEvent) {
-        // Тянем только за фон: нажатие на узел — это будущий клик по документу.
-        dragFrom = if (nodeAt(e.x, e.y) == null) e.point else null
-      }
-
-      override fun mouseReleased(e: MouseEvent) {
-        dragFrom = null
+        pressAt = e.point
+        dragging = false
+        draggedNode = nodeAt(e.x, e.y)
+        // Узел под курсором прикалывается: симуляция не должна двигать то, что тащит человек.
+        if (draggedNode >= 0) layout?.pin(draggedNode)
       }
 
       override fun mouseDragged(e: MouseEvent) {
-        val from = dragFrom ?: return
-        offsetX += e.x - from.x
-        offsetY += e.y - from.y
-        dragFrom = e.point
-        repaint()
-      }
-
-      override fun mouseMoved(e: MouseEvent) {
-        val node = nodeAt(e.x, e.y)
-        if (node !== hovered) {
-          hovered = node
-          cursor = if (node != null) Cursor.getPredefinedCursor(Cursor.HAND_CURSOR) else Cursor.getDefaultCursor()
+        val from = pressAt ?: return
+        if (!dragging && Math.abs(e.x - from.x) + Math.abs(e.y - from.y) < DRAG_THRESHOLD) return
+        dragging = true
+        if (draggedNode >= 0) {
+          layout?.moveTo(draggedNode, toGraphX(e.x), toGraphY(e.y))
+          wake()
+        }
+        else {
+          offsetX += e.x - from.x
+          offsetY += e.y - from.y
+          pressAt = e.point
           repaint()
         }
       }
 
-      override fun mouseClicked(e: MouseEvent) {
-        nodeAt(e.x, e.y)?.let { onOpen(it.path) }
+      override fun mouseReleased(e: MouseEvent) {
+        // Клик отличается от перетаскивания порогом: иначе каждый клик слегка сдвигает узел.
+        if (!dragging && draggedNode >= 0) graph.nodes.getOrNull(draggedNode)?.let { onOpen(it.path) }
+        layout?.unpin()
+        pressAt = null
+        dragging = false
+        draggedNode = -1
+      }
+
+      override fun mouseMoved(e: MouseEvent) {
+        val node = nodeAt(e.x, e.y)
+        if (node != hovered) {
+          hovered = node
+          cursor = if (node >= 0) Cursor.getPredefinedCursor(Cursor.HAND_CURSOR) else Cursor.getDefaultCursor()
+          toolTipText = graph.nodes.getOrNull(node)?.let { it.title + "   " + it.path }
+          repaint()
+        }
       }
 
       override fun mouseExited(e: MouseEvent) {
-        hovered = null
+        hovered = -1
         repaint()
       }
     }
     addMouseListener(mouse)
     addMouseMotionListener(mouse)
-    // Колесо — зум, а не прокрутка: прокручивать нечего, граф не документ. Точка под курсором
-    // остаётся на месте (см. DocsGraphZoom.zoomAt), иначе рисунок убегает от мыши.
+    // Колесо — зум К ПОЗИЦИИ КУРСОРА: зум к центру экрана уводит из-под мыши то, на что смотрят.
     addMouseWheelListener { e ->
       val old = scale
       val next = DocsGraphZoom.clamp(
@@ -91,27 +109,52 @@ class DocsGraphView(private val onOpen: (String) -> Unit) : JComponent() {
         repaint()
       }
     }
+    timer.isRepeats = true
   }
 
-  /** Вписать граф в окно целиком и поставить по центру. */
+  fun show(graph: DocsGraphLayout.Graph) {
+    this.graph = graph
+    this.layout = DocsForceLayout(graph)
+    highlighted = emptySet()
+    hovered = -1
+    fitted = false
+    wake()
+  }
+
+  /** Будит цикл: после перетаскивания или новой раскладки картинка обязана досложиться. */
+  private fun wake() {
+    if (!timer.isRunning) timer.start()
+  }
+
+  private fun frame() {
+    val energy = layout?.step() ?: 0.0
+    if (!fitted && energy < DocsForceLayout.REST_ENERGY * FIT_ENERGY_FACTOR) fitToScreen()
+    if (energy < DocsForceLayout.REST_ENERGY) {
+      timer.stop()
+      if (!fitted) fitToScreen()
+    }
+    repaint()
+  }
+
+  /** Вписать всё нарисованное в окно с полями. */
   fun fitToScreen() {
-    val w = JBUI.scale(graph.width)
-    val h = JBUI.scale(graph.height)
-    if (w <= 0 || h <= 0 || width <= 0 || height <= 0) return
-    scale = DocsGraphZoom.fit(w, h, width, height, JBUI.scale(DocsGraphZoom.FIT_MARGIN))
-    val (x, y) = DocsGraphZoom.center(w, h, width, height, scale)
-    offsetX = x
-    offsetY = y
+    val current = layout ?: return
+    if (graph.nodes.isEmpty() || width <= 0 || height <= 0) return
+    var minX = Double.MAX_VALUE; var minY = Double.MAX_VALUE
+    var maxX = -Double.MAX_VALUE; var maxY = -Double.MAX_VALUE
+    for (i in graph.nodes.indices) {
+      minX = minOf(minX, current.positionX(i)); maxX = maxOf(maxX, current.positionX(i))
+      minY = minOf(minY, current.positionY(i)); maxY = maxOf(maxY, current.positionY(i))
+    }
+    val graphWidth = (maxX - minX).coerceAtLeast(1.0)
+    val graphHeight = (maxY - minY).coerceAtLeast(1.0)
+    scale = DocsGraphZoom.fit(graphWidth.toInt(), graphHeight.toInt(), width, height, JBUI.scale(DocsGraphZoom.FIT_MARGIN))
+    offsetX = (width / 2 - (minX + maxX) / 2 * scale).toInt()
+    offsetY = (height / 2 - (minY + maxY) / 2 * scale).toInt()
     fitted = true
     repaint()
   }
 
-  /**
-   * Подсветка по поиску: найденное остаётся ярким, остальное гаснет.
-   *
-   * Не фильтр: узел, выброшенный из рисунка, уносит с собой свои связи, и граф начинает врать про
-   * связность ровно тогда, когда его об этом спрашивают.
-   */
   fun highlight(query: String) {
     val needle = query.trim().lowercase()
     highlighted = if (needle.isEmpty()) emptySet()
@@ -120,88 +163,66 @@ class DocsGraphView(private val onOpen: (String) -> Unit) : JComponent() {
     repaint()
   }
 
-  /** Сколько узлов подсвечено сейчас — для строки состояния над графом. */
   fun highlightedCount(): Int = highlighted.size
 
-  fun show(graph: DocsGraphLayout.Graph) {
-    this.graph = graph
-    preferredSize = Dimension(JBUI.scale(graph.width), JBUI.scale(graph.height))
-    highlighted = emptySet()
-    revalidate()
-    // Первый показ вписывает сам: граф, открытый в углу окна и наполовину за краем, человек
-    // сначала ловит мышью и только потом читает.
-    if (!fitted) javax.swing.SwingUtilities.invokeLater { fitToScreen() }
-    repaint()
-  }
+  private fun toGraphX(screen: Int): Double = (screen - offsetX) / scale
+  private fun toGraphY(screen: Int): Double = (screen - offsetY) / scale
 
-  /** Экранная точка → координаты рисунка: обратно к тому, в чём считан layout. */
-  private fun nodeAt(screenX: Int, screenY: Int): DocsGraphLayout.Node? {
-    val px = ((screenX - offsetX) / scale).toInt()
-    val py = ((screenY - offsetY) / scale).toInt()
-    return nodeAtGraph(px, py)
-  }
-
-  /**
-   * Попадание — по кругу, с запасом на подпись под ним.
-   *
-   * Запас не прихоть: круг радиусом семь пикселей мышью не поймать, а подпись — это тот же узел,
-   * и человек целится именно в неё.
-   */
-  private fun nodeAtGraph(px: Int, py: Int): DocsGraphLayout.Node? = graph.nodes.firstOrNull { node ->
-    val cx = JBUI.scale(node.x)
-    val cy = JBUI.scale(node.y)
-    val reach = JBUI.scale(node.radius + HIT_PADDING)
-    val labelBottom = cy + JBUI.scale(node.radius + LABEL_GAP + LABEL_HEIGHT)
-    val insideCircle = (px - cx) * (px - cx) + (py - cy) * (py - cy) <= reach * reach
-    val insideLabel = py in cy..labelBottom && Math.abs(px - cx) <= JBUI.scale(DocsGraphLayout.NODE_WIDTH / 2)
-    insideCircle || insideLabel
+  /** Индекс узла под точкой экрана, или −1. Радиус берётся с запасом: круг в пять пикселей не поймать. */
+  private fun nodeAt(screenX: Int, screenY: Int): Int {
+    val current = layout ?: return -1
+    val gx = toGraphX(screenX)
+    val gy = toGraphY(screenY)
+    for (i in graph.nodes.indices.reversed()) {
+      val r = DocsForceLayout.radiusOf(graph.nodes[i].degree) + HIT_PADDING
+      val dx = gx - current.positionX(i)
+      val dy = gy - current.positionY(i)
+      if (dx * dx + dy * dy <= r * r) return i
+    }
+    return -1
   }
 
   override fun paintComponent(g: Graphics) {
+    val current = layout ?: return
     val g2 = g.create() as Graphics2D
     try {
       g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON)
-      // Зум и сдвиг — одной трансформацией: пересчитывать каждую координату вручную значит
-      // однажды забыть про одну из них, и рисунок разъедется по частям.
       g2.translate(offsetX, offsetY)
       g2.scale(scale, scale)
-      val byPath = graph.nodes.associateBy { it.path }
+
+      val index = graph.nodes.withIndex().associate { (i, node) -> node.path to i }
       g2.color = EDGE
       for (edge in graph.edges) {
-        val from = byPath[edge.from] ?: continue
-        val to = byPath[edge.to] ?: continue
-        // Линия между ЦЕНТРАМИ: узел теперь точка, и линия, упирающаяся в край прямоугольника,
-        // рисовала бы связь не туда.
-        g2.drawLine(JBUI.scale(from.x), JBUI.scale(from.y), JBUI.scale(to.x), JBUI.scale(to.y))
+        val a = index[edge.from] ?: continue
+        val b = index[edge.to] ?: continue
+        g2.drawLine(current.positionX(a).toInt(), current.positionY(a).toInt(),
+                    current.positionX(b).toInt(), current.positionY(b).toInt())
       }
-      for (node in graph.nodes) {
+
+      // Подписи на мелком масштабе — только у крупных узлов: тридцать подписей поверх друг друга
+      // не читаются, а рисовать их на каждом кадре ещё и дорого.
+      val labelDegree = if (scale < LABEL_SCALE) topDegreeThreshold() else 0
+
+      for (i in graph.nodes.indices) {
+        val node = graph.nodes[i]
         val dimmed = highlighted.isNotEmpty() && node.path !in highlighted
         g2.composite = java.awt.AlphaComposite.getInstance(
           java.awt.AlphaComposite.SRC_OVER, if (dimmed) DIM_ALPHA else 1f)
-        val cx = JBUI.scale(node.x)
-        val cy = JBUI.scale(node.y)
-        val r = JBUI.scale(node.radius)
-        // Цвет говорит, ПОЧЕМУ узел заслуживает внимания, и никогда не говорит этого один: те же
-        // пометки есть словами в дереве слева, поэтому ничто не познаётся только цветом.
-        g2.color = when {
-          !node.reachable -> ORPHAN_FILL
-          node.brokenLinks > 0 -> BROKEN_FILL
-          node === hovered -> HOVER_FILL
-          node.layer == 0 -> ENTRY_FILL
-          else -> FILL
-        }
-        g2.fillOval(cx - r, cy - r, r * 2, r * 2)
-        if (node === hovered) {
-          g2.color = HOVER_RING
-          g2.drawOval(cx - r - JBUI.scale(3), cy - r - JBUI.scale(3), (r + JBUI.scale(3)) * 2, (r + JBUI.scale(3)) * 2)
-        }
-        // Подпись ПОД кругом и по центру: подпись сбоку у радиальной раскладки наезжает на соседа
-        // с той стороны, где узлов гуще.
+        val cx = current.positionX(i)
+        val cy = current.positionY(i)
+        val r = DocsForceLayout.radiusOf(node.degree)
+        g2.color = fillOf(node)
+        g2.fillOval((cx - r).toInt(), (cy - r).toInt(), (r * 2).toInt(), (r * 2).toInt())
+        // Обводка — то, что отличает круг от пятна на тёмном фоне и от соседа того же цвета.
+        g2.color = if (i == hovered) HOVER_RING else BORDER
+        g2.drawOval((cx - r).toInt(), (cy - r).toInt(), (r * 2).toInt(), (r * 2).toInt())
+
+        if (node.degree < labelDegree && i != hovered) continue
         g2.color = TEXT
         val metrics = g2.fontMetrics
-        val label = node.title + if (node.brokenLinks > 0) "  ⚠" + node.brokenLinks else ""
-        val text = shorten(label, metrics.stringWidth(label), JBUI.scale(DocsGraphLayout.NODE_WIDTH), metrics.charWidth('m'))
-        g2.drawString(text, cx - metrics.stringWidth(text) / 2, cy + r + JBUI.scale(LABEL_GAP) + metrics.ascent)
+        val label = shorten(node.name, metrics)
+        g2.drawString(label, (cx - metrics.stringWidth(label) / 2.0).toInt(),
+                      (cy + r).toInt() + JBUI.scale(LABEL_GAP) + metrics.ascent)
       }
     }
     finally {
@@ -209,34 +230,58 @@ class DocsGraphView(private val onOpen: (String) -> Unit) : JComponent() {
     }
   }
 
-  /** Cuts to the width available; an ellipsis is honest, a label spilling over a neighbour is not. */
-  private fun shorten(text: String, textWidth: Int, available: Int, charWidth: Int): String {
-    if (textWidth <= available || charWidth <= 0) return text
-    val fits = (available / charWidth - 1).coerceAtLeast(1)
-    return if (fits >= text.length) text else text.take(fits) + "…"
+  /** Степень, начиная с которой узел подписывается на мелком масштабе. */
+  private fun topDegreeThreshold(): Int {
+    val degrees = graph.nodes.map { it.degree }.sortedDescending()
+    if (degrees.size <= LABELS_WHEN_SMALL) return 0
+    return degrees[LABELS_WHEN_SMALL - 1].coerceAtLeast(1)
   }
 
-  private companion object {
-    /** Насколько гаснет ненайденное поиском: видно, что оно есть, но глаз за него не цепляется. */
-    const val DIM_ALPHA = 0.25f
+  /**
+   * Обрезка по последнему пробелу и не короче [MIN_LABEL_CHARS].
+   *
+   * «Партнёрки легаль…» не опознаётся: имя, обрезанное посреди слова, приходится доугадывать, а
+   * подпись существует ровно для того, чтобы не гадать.
+   */
+  private fun shorten(text: String, metrics: java.awt.FontMetrics): String {
+    if (text.length <= MIN_LABEL_CHARS) return text
+    val cut = text.take(MIN_LABEL_CHARS)
+    val space = cut.lastIndexOf(' ')
+    return if (space > MIN_LABEL_CHARS / 2) cut.substring(0, space) + "…" else cut + "…"
+  }
 
-    /** Отступ подписи от круга и её высота — для попадания мышью и расчёта полотна. */
-    const val LABEL_GAP = 6
-    const val LABEL_HEIGHT = 14
+  private fun fillOf(node: DocsGraphLayout.Node): Color = when {
+    // Состояние важнее принадлежности: битую ссылку и потерянный документ ищут глазами первыми,
+    // ради них граф чаще всего и открывают.
+    !node.reachable -> ORPHAN_FILL
+    node.brokenLinks > 0 -> BROKEN_FILL
+    else -> DocsGraphPalette.colorOf(node.category)
+  }
 
-    /** Запас вокруг круга: узел радиусом семь пикселей мышью иначе не поймать. */
-    const val HIT_PADDING = 6
+  companion object {
+    private const val FRAME_MS = 16
+    private const val DRAG_THRESHOLD = 3
+    private const val HIT_PADDING = 6.0
+    private const val LABEL_GAP = 4
+    private const val DIM_ALPHA = 0.25f
 
-    val ENTRY_FILL: JBColor get() = JBColor.namedColor("Vibe.Docs.entryNode", JBColor(0x3574F0, 0x548AF7))
+    /** Ниже этого масштаба подписываются только крупные узлы. */
+    private const val LABEL_SCALE = 0.75
+
+    /** Сколько подписей оставить на мелком масштабе. */
+    private const val LABELS_WHEN_SMALL = 8
+
+    /** Минимальная длина подписи: короче она перестаёт опознаваться. */
+    private const val MIN_LABEL_CHARS = 28
+
+    /** Вписываем, как только движение почти улеглось, — не дожидаясь полной остановки. */
+    private const val FIT_ENERGY_FACTOR = 6.0
+
+    val EDGE: JBColor get() = JBColor.namedColor("Vibe.Docs.edge", JBColor.GRAY)
+    val BORDER: JBColor get() = JBColor.namedColor("Vibe.Docs.nodeBorder", JBColor.GRAY)
+    val TEXT: JBColor get() = JBColor.namedColor("Vibe.Docs.nodeForeground", UIUtil.getLabelForeground())
+    val ORPHAN_FILL: JBColor get() = JBColor.namedColor("Vibe.Docs.orphanNode", JBColor(0xC27D04, 0xD6AE58))
     val BROKEN_FILL: JBColor get() = JBColor.namedColor("Vibe.Docs.brokenNode", JBColor(0xDB3B4B, 0xDB5C5C))
     val HOVER_RING: JBColor get() = JBColor.namedColor("Vibe.Docs.hoverRing", JBColor(0x3574F0, 0x548AF7))
-
-    val FILL: JBColor get() = JBColor.namedColor("Vibe.Docs.nodeBackground", UIUtil.getPanelBackground())
-    val HOVER_FILL: JBColor get() = JBColor.namedColor("Vibe.Docs.nodeHoverBackground", UIUtil.getListSelectionBackground(false))
-    val ORPHAN_FILL: JBColor get() = JBColor.namedColor("Vibe.Docs.orphanBackground", UIUtil.getPanelBackground())
-    val BORDER: JBColor get() = JBColor.namedColor("Vibe.Docs.nodeBorder", JBColor.GRAY)
-    val BROKEN_BORDER: JBColor get() = JBColor.namedColor("Vibe.Docs.brokenBorder", JBColor.RED)
-    val EDGE: JBColor get() = JBColor.namedColor("Vibe.Docs.edge", JBColor.GRAY)
-    val TEXT: JBColor get() = JBColor.namedColor("Vibe.Docs.nodeForeground", JBColor.foreground())
   }
 }

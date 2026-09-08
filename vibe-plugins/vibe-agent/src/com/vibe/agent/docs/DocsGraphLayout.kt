@@ -24,14 +24,25 @@ object DocsGraphLayout {
     /** Distance from the entry point in links; unreachable documents get [ORPHAN_LAYER]. */
     val layer: Int,
     val column: Int,
-    /** Центр круга, а не левый верхний угол: узел — точка, и всё считается от неё. */
-    val x: Int,
-    val y: Int,
-    /** Радиус круга: чем больше ссылок сходится в документе, тем он крупнее. */
-    val radius: Int,
+    /**
+     * Степень — число связей узла. Ею определяются и масса в раскладке, и радиус круга: узел, на
+     * который сходится половина ссылок проекта, обязан отличаться от листа не только положением.
+     */
+    val degree: Int,
+    /**
+     * Верхняя папка документа (`knowledge`, `manuals`, пусто у корневых) — по ней берётся цвет.
+     *
+     * Именно папка, а не состояние: цвет отвечает на вопрос «из какой это части документации»,
+     * который задают глазами, а состояние («битая», «недостижимый») называется отдельными цветами
+     * и словами в дереве слева.
+     */
+    val category: String,
     val reachable: Boolean,
     val brokenLinks: Int,
-  )
+  ) {
+    /** Короткое имя для подписи: заголовок «Документация VibeReel» на графе не читается. */
+    val name: String get() = path.substringAfterLast('/').removeSuffix(".md")
+  }
 
   /** An edge between two documents that both exist; a broken link is a property of its source. */
   data class Edge(val from: String, val to: String)
@@ -75,79 +86,54 @@ object DocsGraphLayout {
     val kept = ordered.map { it.path }.toSet()
 
     val byLayer = ordered.groupBy { depths[it.path] ?: ORPHAN_LAYER }
-    // Слои нумеруются плотно: пустая глубина в середине оставила бы пустое кольцо, а сироты
-    // становятся кольцом сразу за последним достижимым, а не «на бесконечности».
     val layerOrder = byLayer.keys.sorted()
     val ringOf = layerOrder.withIndex().associate { (index, layer) -> layer to index }
-
-    // Входящие ссылки считаются заранее: радиус узла — про то, сколько на него ссылаются, а не
-    // про то, сколько ссылается он сам. Страница, на которую ведут все, и есть центр внимания.
-    val incoming = HashMap<String, Int>()
-    for (doc in ordered) {
-      for (link in doc.outgoing) {
-        if (!link.broken) incoming[link.to] = (incoming[link.to] ?: 0) + 1
-      }
-    }
-
-    fun radiusOf(path: String): Int =
-      (NODE_RADIUS + (incoming[path] ?: 0) * RADIUS_PER_LINK).coerceAtMost(MAX_RADIUS)
-
-    // Радиус кольца растёт так, чтобы узлам на нём хватало места: у длины окружности есть предел,
-    // и двадцать документов на первом кольце иначе слиплись бы в дугу.
-    fun ringRadius(ring: Int, count: Int): Int {
-      if (ring == 0) return 0
-      val byGap = ring * RING_GAP
-      val byCount = (count * (NODE_WIDTH / 2 + COLUMN_GAP) / (2 * Math.PI)).toInt()
-      return maxOf(byGap, byCount)
-    }
-
-    val placed = ArrayList<Node>(ordered.size)
-    var maxReach = 0
-    for (layer in layerOrder) {
-      val row = byLayer.getValue(layer)
-      val ring = ringOf.getValue(layer)
-      val radius = if (layer == ORPHAN_LAYER) {
-        // Сироты — снаружи всего достижимого, чтобы их отдельность была видна, а не вычислялась.
-        maxReach + ORPHAN_RING_GAP
-      }
-      else ringRadius(ring, row.size)
-      maxReach = maxOf(maxReach, radius)
-      row.forEachIndexed { column, doc ->
-        // Угол считается от количества узлов НА ЭТОМ кольце: так они распределены ровно, а
-        // соседние кольца не выстраиваются в спицы, которые глаз читает как связи.
-        val angle = if (row.size <= 1) 0.0
-                    else 2 * Math.PI * column / row.size + ring * ANGLE_OFFSET
-        placed.add(
-          Node(
-            path = doc.path,
-            title = doc.title,
-            layer = layer,
-            column = column,
-            x = (radius * Math.cos(angle)).toInt(),
-            y = (radius * Math.sin(angle)).toInt(),
-            radius = radiusOf(doc.path),
-            reachable = doc.path in analysis.reachable,
-            brokenLinks = doc.outgoing.count { it.broken },
-          )
-        )
-      }
-    }
-
-    // Координаты считались от центра; полотно — это их описанный прямоугольник плюс поле на
-    // подпись под самым нижним узлом.
-    val span = (placed.maxOfOrNull { maxOf(Math.abs(it.x), Math.abs(it.y)) } ?: 0) + NODE_WIDTH / 2 + MARGIN
-    val nodes = placed.map { it.copy(x = it.x + span, y = it.y + span) }
 
     val edges = ordered.flatMap { doc ->
       doc.outgoing.filter { !it.broken && it.to in kept && it.to != doc.path }.map { Edge(doc.path, it.to) }
     }.distinct()
 
-    val side = span * 2
-    return Graph(nodes, edges, side, side)
+    // Степень считается по НЕОРИЕНТИРОВАННЫМ связям: для раскладки и для размера узла неважно,
+    // кто на кого сослался, важно, сколько нитей его держит.
+    val degree = HashMap<String, Int>()
+    for (edge in edges) {
+      degree[edge.from] = (degree[edge.from] ?: 0) + 1
+      degree[edge.to] = (degree[edge.to] ?: 0) + 1
+    }
+
+    val nodes = ordered.map { doc ->
+      val layer = depths[doc.path] ?: ORPHAN_LAYER
+      Node(
+        path = doc.path,
+        title = doc.title,
+        layer = layer,
+        column = byLayer.getValue(layer).indexOf(doc),
+        degree = degree[doc.path] ?: 0,
+        category = categoryOf(doc.path, entryPoint),
+        reachable = doc.path in analysis.reachable,
+        brokenLinks = doc.outgoing.count { it.broken },
+      )
+    }
+
+    // Размеров полотна больше нет: координаты считает [DocsForceLayout], и полотно у него своё —
+    // оно меняется на каждом шаге симуляции, поэтому «ширина графа» перестала быть свойством
+    // модели. Ноль здесь честнее выдуманного числа.
+    return Graph(nodes, edges, 0, 0)
   }
 
-  /** Сдвиг угла на каждое следующее кольцо: без него узлы выстраиваются в спицы. */
-  private const val ANGLE_OFFSET = 0.35
+  /**
+   * Категория — верхняя папка ВНУТРИ папки документации.
+   *
+   * `docs/knowledge/ai/x.md` → `knowledge`, `docs/README.md` → пусто. Считается от пути входа,
+   * потому что корень документации у каждого проекта свой, а «docs» в имени категории одинаков у
+   * всех и цвет по нему ничего не различал бы.
+   */
+  fun categoryOf(path: String, entryPoint: String): String {
+    val root = entryPoint.substringBeforeLast('/', "")
+    val rest = if (root.isNotEmpty() && path.startsWith("$root/")) path.removePrefix("$root/") else path
+    val slash = rest.indexOf('/')
+    return if (slash < 0) "" else rest.substring(0, slash)
+  }
 
   /** How many documents the drawing left out, so the panel can say so instead of implying nothing. */
   fun droppedCount(analysis: DocsIndex.Analysis, maxNodes: Int = 120): Int =

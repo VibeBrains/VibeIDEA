@@ -27,46 +27,30 @@ class DocsGraphLayoutTest {
     assertTrue("docs/orphan.md" !in depths, "сироту не достичь по ссылкам — глубины у неё нет")
   }
 
-  /** Расстояние от центра рисунка: раскладка кольцевая, и «дальше» считается от входа. */
-  private fun DocsGraphLayout.Node.distanceFromCenter(graph: DocsGraphLayout.Graph): Double {
-    val cx = graph.width / 2.0
-    val cy = graph.height / 2.0
-    return Math.hypot(x - cx, y - cy)
-  }
-
   @Test
-  fun `сироты живут своим кольцом снаружи всего достижимого`() {
+  fun `степень считается по связям в обе стороны`() {
+    // По ней раскладка берёт массу, а рисование — радиус: узел, который держат три нити, не
+    // должен выглядеть как лист, куда никто не ведёт.
     val graph = DocsGraphLayout.layout(analysis)
+    val entry = assertNotNull(graph.nodes.firstOrNull { it.path == "README.md" })
     val orphan = assertNotNull(graph.nodes.firstOrNull { it.path == "docs/orphan.md" })
-    assertTrue(!orphan.reachable)
-    val farthestReachable = graph.nodes.filter { it.reachable }.maxOf { it.distanceFromCenter(graph) }
-    assertTrue(orphan.distanceFromCenter(graph) > farthestReachable,
-               "сирота должна быть снаружи всего достижимого, а не вперемешку с ним")
+    assertEquals(2, entry.degree, "вход ссылается на два документа")
+    assertEquals(0, orphan.degree, "сироту не держит ничто")
   }
 
   @Test
-  fun `вход стоит в центре`() {
-    // Кольца считаются ОТ него: вход, сдвинутый с центра, превратил бы кольца в дуги.
-    val graph = DocsGraphLayout.layout(analysis)
-    val entry = assertNotNull(graph.nodes.firstOrNull { it.layer == 0 })
-    assertTrue(entry.distanceFromCenter(graph) < 1.0, "вход обязан стоять в центре рисунка")
+  fun `категория — верхняя папка внутри папки документации`() {
+    // По ней берётся цвет; «docs» в имени категории одинаков у всех и не различал бы ничего.
+    assertEquals("knowledge", DocsGraphLayout.categoryOf("docs/knowledge/ai/x.md", "docs/README.md"))
+    assertEquals("", DocsGraphLayout.categoryOf("docs/README.md", "docs/README.md"))
+    assertEquals("manuals", DocsGraphLayout.categoryOf("manuals/deploy.md", "README.md"))
   }
 
   @Test
-  fun `узел тем крупнее, чем чаще на него ссылаются`() {
-    // Размер — единственное, что отличает страницу, на которую ведут все, от страницы-листа.
+  fun `короткое имя узла — имя файла без расширения`() {
+    // Заголовок «Документация VibeReel» на графе не читается, а имя файла опознаётся сразу.
     val graph = DocsGraphLayout.layout(analysis)
-    val linked = graph.nodes.filter { it.reachable && it.layer > 0 }
-    val orphan = assertNotNull(graph.nodes.firstOrNull { !it.reachable })
-    assertTrue(linked.any { it.radius >= orphan.radius }, "на достижимые ссылаются, на сироту нет")
-    assertTrue(graph.nodes.all { it.radius <= DocsGraphLayout.MAX_RADIUS }, "радиус ограничен сверху")
-  }
-
-  @Test
-  fun `узлы не накладываются друг на друга`() {
-    val graph = DocsGraphLayout.layout(analysis)
-    val positions = graph.nodes.map { it.x to it.y }
-    assertEquals(positions.size, positions.toSet().size, "две страницы в одной точке — потерянная страница")
+    assertEquals("guide", assertNotNull(graph.nodes.firstOrNull { it.path == "docs/guide.md" }).name)
   }
 
   @Test
@@ -99,15 +83,10 @@ class DocsGraphLayoutTest {
     val empty = DocsIndex.analyse(emptyMap())
     val graph = DocsGraphLayout.layout(empty)
     assertTrue(graph.nodes.isEmpty() && graph.edges.isEmpty())
-    assertTrue(graph.width > 0 && graph.height > 0)
+    // Размера полотна у модели больше нет и быть не может: координаты считает силовая раскладка,
+    // и границы рисунка меняются на каждом шаге симуляции. Ноль здесь честнее выдуманного числа.
+    assertEquals(0, graph.width)
+    assertEquals(0, graph.height)
   }
 
-  @Test
-  fun `полотно вмещает все круги целиком`() {
-    val graph = DocsGraphLayout.layout(analysis)
-    assertTrue(graph.nodes.all { it.x - it.radius >= 0 && it.y - it.radius >= 0 },
-               "узел за левым или верхним краем полотна не будет виден")
-    assertTrue(graph.nodes.all { it.x + it.radius <= graph.width && it.y + it.radius <= graph.height },
-               "узел за правым или нижним краем полотна не будет виден")
-  }
 }
