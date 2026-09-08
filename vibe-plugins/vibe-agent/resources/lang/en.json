@@ -1750,5 +1750,7 @@
   "docs.graph.counts": "{docs} documents · {links} links · {unreachable} unreachable · {broken} broken links",
   "docs.graph.found": "found: {count}",
   "db.console.tab": "DB console",
-  "http.response.tab": "HTTP response"
+  "http.response.tab": "HTTP response",
+  "cache.cold": "the prompt cache went cold: after a {minutes} min pause the context is sent again at full input price. Writing a new cache pays off from request {pays} in a row",
+  "cache.expiring": "the prompt cache is alive for {seconds}s more — a message after that re-reads the whole context"
 }

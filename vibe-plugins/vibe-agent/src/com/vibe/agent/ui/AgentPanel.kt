@@ -2949,6 +2949,10 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
                      "total" to lastWireLines.size))
       }
       lastWireLines = lines
+      // Кэш протухает по часам, а не по действиям: пауза дороже, чем кажется, и сказать об этом
+      // надо ДО траты, а не показать её в отчёте после.
+      warnAboutCache(t.model)
+      lastLlmTurnStartedAtMs = System.currentTimeMillis()
       llmClient.chat(
         resolved, t.model, wire, { llmCancel.get() },
         onWaiting = { attempt, delayMs, reason ->
@@ -2987,6 +2991,29 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     }
     finally {
       finishTurn()
+    }
+  }
+
+  /**
+   * Говорит, во что обойдётся этот ход из-за паузы, и когда окупится запись кэша.
+   *
+   * Три состояния — три разных сообщения, и «ещё не писали» намеренно отделено от «протух»: во
+   * втором случае человек только что заплатил за перечитывание всего контекста, и знать об этом
+   * он должен по имени, а не по счёту в конце недели.
+   */
+  private fun warnAboutCache(model: ModelEntry) {
+    val now = System.currentTimeMillis()
+    val ttl = model.cacheTtl
+    when (com.vibe.agent.providers.CacheWindow.state(lastLlmTurnStartedAtMs, ttl, now)) {
+      com.vibe.agent.providers.CacheWindow.State.COLD ->
+        systemLine(t("cache.cold", "minutes" to (now - lastLlmTurnStartedAtMs) / 60_000,
+                     "pays" to com.vibe.agent.providers.CacheWindow.paysOffFromRequest(model.pricing, ttl)))
+      com.vibe.agent.providers.CacheWindow.State.EXPIRING ->
+        systemLine(t("cache.expiring",
+                     "seconds" to com.vibe.agent.providers.CacheWindow.leftMs(lastLlmTurnStartedAtMs, ttl, now) / 1000))
+      // Тёплый кэш молчит: строка на каждом ходе о том, что всё хорошо, перестаёт читаться, и
+      // вместе с ней перестанет читаться та, что про потерю.
+      else -> {}
     }
   }
 
@@ -4247,6 +4274,14 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
   @Volatile private var lastWireLines: List<com.vibe.agent.history.WirePrefix.Line> = emptyList()
 
   /** What the provider reported for the turn that just finished, and the price to apply to it. */
+  /**
+   * Начало прошлого хода прямого LLM-чата — по нему считается, жив ли ещё промпт-кэш.
+   *
+   * Именно НАЧАЛО: запись в кэш происходит, когда запрос уходит, и таймер тикает, пока модель
+   * думает. Ход, отвечавший четыре минуты, оставляет от пятиминутного кэша одну.
+   */
+  @Volatile private var lastLlmTurnStartedAtMs: Long = 0
+
   @Volatile private var lastTurnUsage: com.vibe.agent.providers.TokenUsage = com.vibe.agent.providers.TokenUsage.NONE
 
   /**

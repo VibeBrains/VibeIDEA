@@ -1750,5 +1750,7 @@
   "docs.graph.counts": "{docs} документов · {links} связей · {unreachable} недостижимых · {broken} битых ссылок",
   "docs.graph.found": "найдено: {count}",
   "db.console.tab": "Консоль БД",
-  "http.response.tab": "Ответ HTTP"
+  "http.response.tab": "Ответ HTTP",
+  "cache.cold": "промпт-кэш остыл: пауза {minutes} мин — контекст уходит модели заново, по полной цене входа. Запись нового кэша окупится с {pays}-го запроса подряд",
+  "cache.expiring": "промпт-кэш живёт ещё {seconds} с — следующее сообщение после этого перечитает весь контекст заново"
 }
