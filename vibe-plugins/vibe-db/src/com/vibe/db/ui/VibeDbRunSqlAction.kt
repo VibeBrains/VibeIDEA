@@ -29,11 +29,9 @@ class VibeDbRunSqlAction : AnAction({ t("db.action.runSql") }) {
   override fun actionPerformed(e: AnActionEvent) {
     val project = e.project ?: return
     val statement = statementAtCaret(e) ?: return
-    val window = ToolWindowManager.getInstance(project).getToolWindow(TOOL_WINDOW) ?: return
-    window.activate {
-      val panel = window.contentManager.contents.firstNotNullOfOrNull { it.component as? DbPanel } ?: return@activate
-      panel.runFromEditor(statement.text)
-    }
+    // Запрос из файла .sql выполняется там же, где и всё остальное, — в консоли по центру:
+    // два места с результатом означали бы два разных ответа на вопрос «что вернула база».
+    DbWorkbench.getInstance(project).openConsole()?.runFromEditor(statement.text)
   }
 
   private fun statementAtCaret(e: AnActionEvent): SqlStatements.Statement? {

@@ -17,8 +17,11 @@
          уже делают SqlStatements и SqlCompletion. -->
     <lang.syntaxHighlighterFactory language="VibeSql" implementationClass="com.vibe.db.SqlSyntaxHighlighterFactory"/>
 
-    <toolWindow id="VibeDb" anchor="right" icon="/icons/vibeDb.svg"
-                factoryClass="com.vibe.db.ui.VibeDbToolWindowFactory" doNotActivateOnStart="true"/>
+    <!-- Слева и видима с самого начала (решение владельца 08.09.2026): панель отвечает за
+         навигацию по базе, а результат живёт вкладкой в центре. -->
+    <toolWindow id="VibeDb" anchor="left" icon="/icons/vibeDb.svg"
+                factoryClass="com.vibe.db.ui.VibeDbToolWindowFactory"/>
+    <fileEditorProvider implementation="com.vibe.db.ui.DbConsoleEditorProvider"/>
     <applicationConfigurable parentId="com.vibe.settings" displayName="Базы данных" id="com.vibe.db.settings"
                              instance="com.vibe.db.ui.VibeDbConfigurable"/>
     <notificationGroup id="Vibe Database" displayType="BALLOON"/>
