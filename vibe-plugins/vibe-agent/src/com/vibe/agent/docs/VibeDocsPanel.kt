@@ -8,7 +8,7 @@ import com.intellij.openapi.fileEditor.FileEditorManager
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.vfs.LocalFileSystem
 import com.intellij.ui.components.JBLabel
-import com.intellij.ui.components.JBList
+import com.intellij.ui.treeStructure.Tree
 import com.intellij.util.ui.JBUI
 import com.vibe.agent.i18n.VibeI18n.t
 import com.vibe.agent.settings.VibeAgentSettings
@@ -16,9 +16,10 @@ import com.vibe.agent.ui.VibeScroll
 import java.awt.BorderLayout
 import java.nio.file.Files
 import java.nio.file.Path
-import javax.swing.DefaultListModel
 import javax.swing.JPanel
-import javax.swing.ListSelectionModel
+import javax.swing.tree.DefaultMutableTreeNode
+import javax.swing.tree.DefaultTreeModel
+import javax.swing.tree.TreeSelectionModel
 
 /**
  * Documents of the project, with the two facts a folder cannot show: what is unreachable from the
@@ -28,17 +29,20 @@ import javax.swing.ListSelectionModel
  * a mature project, and a panel that re-reads them on every repaint is a panel people close.
  */
 class VibeDocsPanel(private val project: Project) : JPanel(BorderLayout()) {
-  private val model = DefaultListModel<Row>()
-  private val list = JBList(model).apply { selectionMode = ListSelectionModel.SINGLE_SELECTION }
+  private val root = DefaultMutableTreeNode()
+  private val model = DefaultTreeModel(root)
+  private val tree = Tree(model).apply {
+    isRootVisible = false
+    showsRootHandles = true
+    selectionModel.selectionMode = TreeSelectionModel.SINGLE_TREE_SELECTION
+    cellRenderer = DocsTreeRenderer()
+  }
   private val summary = JBLabel().apply { border = JBUI.Borders.empty(4, 8) }
   private val graphView = DocsGraphView { openDocument(it) }
   private val cards = JPanel(java.awt.CardLayout())
   private var showingGraph = false
 
-  /** One line of the list: the mark says WHY the document is worth attention. */
-  private data class Row(val path: String, val label: String) {
-    override fun toString(): String = label
-  }
+
 
   init {
     border = JBUI.Borders.empty(4)
@@ -56,13 +60,14 @@ class VibeDocsPanel(private val project: Project) : JPanel(BorderLayout()) {
       }, java.awt.BorderLayout.EAST)
     }
     add(header, BorderLayout.NORTH)
-    cards.add(VibeScroll.pane(list), CARD_LIST)
+    cards.add(VibeScroll.pane(tree), CARD_LIST)
     cards.add(VibeScroll.pane(graphView), CARD_GRAPH)
     add(cards, BorderLayout.CENTER)
-    list.addListSelectionListener {
-      if (it.valueIsAdjusting) return@addListSelectionListener
-      val row = list.selectedValue ?: return@addListSelectionListener
-      openDocument(row.path)
+    // Открываем по ВЫБОРУ, а не по двойному щелчку: панель заменяет дерево проекта слева, и там
+    // одиночный щелчок уже открывает файл — две разные привычки в соседних вкладках хуже одной.
+    tree.addTreeSelectionListener {
+      val selected = tree.lastSelectedPathComponent as? DefaultMutableTreeNode ?: return@addTreeSelectionListener
+      (selected.userObject as? DocsRow)?.node?.path?.let { openDocument(it) }
     }
     reload()
   }
@@ -83,17 +88,25 @@ class VibeDocsPanel(private val project: Project) : JPanel(BorderLayout()) {
       val files = com.vibe.agent.context.ProjectFiles.read(project, setOf("md", "mdx"))
         .filterKeys { prefix.isEmpty() || it.startsWith("$prefix/") }
       val analysis = DocsIndex.analyse(files)
-      ApplicationManager.getApplication().invokeLater {
-        model.clear()
-        for (doc in analysis.docs) {
-          val marks = buildList {
+      val items = analysis.docs.map { doc ->
+        DocsTree.Item(
+          path = doc.path,
+          title = doc.title,
+          marks = buildList {
             if (doc.path !in analysis.reachable) add(t("docs.mark.unreachable"))
             val broken = doc.outgoing.count { it.broken }
             if (broken > 0) add(t("docs.mark.broken", "count" to broken))
-          }
-          val suffix = if (marks.isEmpty()) "" else "   — " + marks.joinToString(", ")
-          model.addElement(Row(doc.path, doc.title + "   " + doc.path + suffix))
-        }
+          },
+        )
+      }
+      val nodes = DocsTree.build(items, root = prefix)
+      ApplicationManager.getApplication().invokeLater {
+        root.removeAllChildren()
+        nodes.forEach { root.add(toSwing(it)) }
+        model.reload()
+        // Раскрыто целиком: документация — это десятки файлов, а не тысячи, и свёрнутое дерево
+        // отвечало бы «папок пять» на вопрос «где что лежит».
+        for (i in 0 until tree.rowCount) tree.expandRow(i)
         graphView.show(DocsGraphLayout.layout(analysis))
         val dropped = DocsGraphLayout.droppedCount(analysis)
         summary.text = t("docs.summary", "docs" to analysis.docs.size,
@@ -106,11 +119,62 @@ class VibeDocsPanel(private val project: Project) : JPanel(BorderLayout()) {
   }
 
 
+  private fun toSwing(node: DocsTree.Node): DefaultMutableTreeNode =
+    DefaultMutableTreeNode(DocsRow(node)).also { swing -> node.children.forEach { swing.add(toSwing(it)) } }
+
   private fun openDocument(relative: String) {
     val base = project.basePath ?: return
     val file = LocalFileSystem.getInstance().findFileByNioFile(Path.of(base, relative)) ?: return
     FileEditorManager.getInstance(project).openFile(file, true)
   }
+}
+
+/**
+ * Строка дерева: имя, а рядом — то, ради чего панель существует.
+ *
+ * Заголовок документа приглушён намеренно: имя файла ищут глазами, заголовок читают, когда уже
+ * нашли. Пометки («недостижим», «битых ссылок N») выделены цветом внимания — это единственное, чего
+ * не покажет дерево проекта, и ради чего сюда приходят.
+ *
+ * У свёрнутой папки показывается счётчик проблем поддерева: иначе ветка молчит ровно о том, что
+ * внутри есть на что посмотреть.
+ */
+private class DocsTreeRenderer : com.intellij.ui.ColoredTreeCellRenderer() {
+  override fun customizeCellRenderer(
+    tree: javax.swing.JTree, value: Any?, selected: Boolean,
+    expanded: Boolean, leaf: Boolean, row: Int, hasFocus: Boolean,
+  ) {
+    val node = ((value as? DefaultMutableTreeNode)?.userObject as? DocsRow)?.node ?: return
+    if (node.isFolder) {
+      icon = com.intellij.icons.AllIcons.Nodes.Folder
+      append(node.name)
+      if (node.problems > 0 && !expanded) {
+        append("  " + node.problems, com.intellij.ui.SimpleTextAttributes(
+          com.intellij.ui.SimpleTextAttributes.STYLE_PLAIN, PROBLEM))
+      }
+      return
+    }
+    icon = com.intellij.icons.AllIcons.FileTypes.Text
+    append(node.name)
+    if (node.title.isNotBlank() && node.title != node.name) {
+      append("  " + node.title, com.intellij.ui.SimpleTextAttributes.GRAYED_ATTRIBUTES)
+    }
+    if (node.marks.isNotEmpty()) {
+      append("  " + node.marks.joinToString(", "), com.intellij.ui.SimpleTextAttributes(
+        com.intellij.ui.SimpleTextAttributes.STYLE_PLAIN, PROBLEM))
+    }
+  }
+
+  private companion object {
+    /** Цвет внимания — токеном темы: вшитый красный переживёт любую перекраску (правило владельца). */
+    val PROBLEM: com.intellij.ui.JBColor
+      get() = com.intellij.ui.JBColor.namedColor("Vibe.Docs.problemForeground", com.intellij.ui.JBColor.RED)
+  }
+}
+
+/** Полезная нагрузка узла: папке путь не нужен, у листа он и есть документ. */
+private data class DocsRow(val node: DocsTree.Node) {
+  override fun toString(): String = node.name
 }
 
 private const val CARD_LIST = "list"

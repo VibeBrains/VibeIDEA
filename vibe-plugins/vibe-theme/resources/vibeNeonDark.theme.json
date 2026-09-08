@@ -106,6 +106,7 @@
         "orphanBackground": "#2A2320",
         "nodeBorder": "#2A2D36",
         "brokenBorder": "#FF6B5A",
+        "problemForeground": "#FF6B5A",
         "edge": "NeonCyanDim",
         "nodeForeground": "#E6E8EF"
       },
