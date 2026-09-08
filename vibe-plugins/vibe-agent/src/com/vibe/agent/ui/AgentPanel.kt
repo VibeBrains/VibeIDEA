@@ -222,6 +222,9 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
   private val announcedContextLevels = java.util.Collections.synchronizedSet(HashSet<String>())
   /** Set when a turn ran an edit/command tool: its writes may be invisible to the client (agent-internal Bash). */
   @Volatile private var turnHadMutatingTool = false
+
+  /** Признаки «трифекты», накопленные за текущий ход; разбор — [com.vibe.agent.guard.Trifecta]. */
+  private val turnSignals = java.util.concurrent.ConcurrentHashMap.newKeySet<com.vibe.agent.guard.Trifecta.Signal>()
   /** Did the turn end in anything other than a normal finish? The autopilot refuses to resume such a turn. */
   @Volatile private var turnEndedBadly = false
   /** What travelled in this turn's context, for the per-file spend estimate. */
@@ -316,6 +319,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
   })
   private val modelPicker = ModelPicker({ selectTarget(it) }, { openSettings() })
   private val modePicker = ModePicker { modeId -> switchMode(modeId) }
+  private val configPicker = com.vibe.agent.ui.composer.ConfigOptionsPicker { id, value -> switchConfigOption(id, value) }
   private val historyCallbacks = object : ThreadListPanel.Callbacks {
     override fun onOpen(threadId: String) = activateThread(threadId)
     override fun onOpenAtMessage(threadId: String, messageIndex: Int) = openThreadAt(threadId, messageIndex)
@@ -346,6 +350,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
   init {
     border = JBUI.Borders.empty(4)
     composer.addPill(modePicker.pill)
+    composer.addPill(configPicker.pill)
     composer.addPill(modelPicker.pill)
     composer.addPill(PillButton(icon = AllIcons.Actions.RunAll) { choosePipeline() }.apply { toolTipText = t("chat.pipelinePill") })
     composer.addPill(PillButton(icon = AllIcons.General.Settings) { openSettings() }.apply { toolTipText = t("chat.settingsPill") })
@@ -549,16 +554,18 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
       is ChatTarget.Agent -> {
         VibeChatSettings.rememberChoice(project, "acp:${t.config.name}", null)
         val c = client?.takeIf { clientConfig == t.config && it.isAlive }
-        modePicker.setModes(c?.modes)
+        modePicker.setModes(c?.modes); configPicker.setOptions(c?.configOptions)
         composer.setImagesAllowed(c?.capabilities?.image != false, NO_IMAGE_AGENT)
       }
       is ChatTarget.Model -> {
         VibeChatSettings.rememberChoice(project, "llm:${t.provider.id}", t.model.id)
         modePicker.setModes(null)
+        configPicker.setOptions(null)
         composer.setImagesAllowed(t.model.vision != false, com.vibe.agent.i18n.VibeI18n.t("chat.model.noVision", "model" to t.model.name))
       }
       null -> {
         modePicker.setModes(null)
+        configPicker.setOptions(null)
         composer.setImagesAllowed(true, null)
       }
     }
@@ -579,13 +586,39 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
       try {
         c.setMode(modeId).whenComplete { _, error ->
           if (error != null) systemLine(t("chat.modeNotSwitched", "reason" to error.message))
-          SwingUtilities.invokeLater { modePicker.setModes(c.modes) }
+          SwingUtilities.invokeLater { modePicker.setModes(c.modes); configPicker.setOptions(c.configOptions) }
         }
       }
       catch (e: Exception) {
         systemLine(t("chat.modeNotSwitched", "reason" to e.message))
       }
     }
+  }
+
+  /**
+   * Flips one boolean session option of the agent.
+   *
+   * The picker is redrawn from what the AGENT reported back, not from what was asked for: the
+   * answer carries the whole set, and an option that silently refused to change would otherwise
+   * keep showing the value we wanted rather than the one in force.
+   */
+  private fun switchConfigOption(configId: String, value: Boolean) {
+    val c = client ?: return
+    ApplicationManager.getApplication().executeOnPooledThread {
+      try {
+        c.setConfigOption(configId, value).whenComplete { _, error ->
+          if (error != null) systemLine(t("chat.configNotSwitched", "reason" to error.message))
+          SwingUtilities.invokeLater { configPicker.setOptions(c.configOptions) }
+        }
+      }
+      catch (e: Exception) {
+        systemLine(t("chat.configNotSwitched", "reason" to e.message))
+      }
+    }
+  }
+
+  override fun onConfigOptionsChanged(options: List<com.vibe.agent.acp.SessionConfigOption>) {
+    SwingUtilities.invokeLater { configPicker.setOptions(options) }
   }
 
   // --- turns ---
@@ -780,6 +813,19 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
         console.append("\n\n" + t("trace.batches",
                                   "batches" to com.vibe.agent.trace.TurnTrace.toolBatches(events).size,
                                   "average" to String.format(java.util.Locale.ROOT, "%.1f", average)))
+      }
+      // Контекстный налог: во что разговору обошлось повторное напоминание контекста. Считается
+      // по числам провайдера, поэтому появляется только там, где он их присылает.
+      val tax = com.vibe.agent.budget.ContextTax.of(threadUsages.toList(), lastTurnPricing)
+      if (tax.turns > 0) {
+        console.append("\n\n" + t("trace.contextTax",
+                                   "turns" to tax.turns,
+                                   "input" to "%,d".format(tax.inputTokens + tax.cacheReadTokens),
+                                   "output" to "%,d".format(tax.outputTokens),
+                                   "perTurn" to "%,d".format(tax.perTurn)))
+        tax.ratio?.let {
+          console.append(" " + t("trace.contextTaxRatio", "ratio" to String.format(java.util.Locale.ROOT, "%.1f", it)))
+        }
       }
       messages.add(console)
       revalidateScroll()
@@ -2509,11 +2555,18 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     terminalConsoles.clear()
     changedPaths.clear()
     turnHadMutatingTool = false
+    turnSignals.clear()
+    // Ход, начатый не человеком за этой клавиатурой (входящий HTTP API, мост, дежурная проверка,
+    // пайплайн), несёт текст, которого никто не читал глазами.
+    if (turnActor != com.vibe.agent.audit.AuditActor.HUMAN) {
+      turnSignals.add(com.vibe.agent.guard.Trifecta.Signal.UNTRUSTED_CONTENT)
+    }
     // thoughtsBlock is EDT-owned (created/read in appendThought's invokeLater) — reset it there, not here.
     audit?.append(AuditEvent(System.currentTimeMillis(), AuditEvent.Action.PROMPT, ok = true, actor = turnActor,
       model = "acp/${t.config.name}", meta = mapOf("chars" to text.length.toString())))
     SwingUtilities.invokeLater {
       modePicker.setModes(c.modes)
+      configPicker.setOptions(c.configOptions)
       composer.setImagesAllowed(c.capabilities?.image != false, NO_IMAGE_AGENT)
     }
     if (images.isNotEmpty() && c.capabilities?.image != true) systemLine(t("chat.noImagesAgent"))
@@ -3033,6 +3086,43 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     updateLanding()
   }
 
+  /**
+   * Переподключение внешнего агента без перезапуска IDE.
+   *
+   * Соединение с чужим процессом рвётся способами, которых у нас нет: процесс жив, а сессия
+   * потеряна; адаптер перезапустил дочерний CLI; ушла сеть у агента, работающего по сети. До
+   * сих пор единственным лечением был перезапуск всей IDE, потому что сессия открывается по пути
+   * хода — то есть проверить, вылечилось ли, можно было только оплаченным сообщением модели.
+   *
+   * Здесь соединение закрывается и открывается заново явно: старый процесс убивается, новый
+   * поднимается и делает рукопожатие, а результат виден строкой в ленте — без единого запроса к
+   * модели. Режимы сессии сбрасываются: у новой сессии свои.
+   *
+   * Возвращает false, если переподключать нечего (агент ни разу не запускался).
+   */
+  fun reconnectAgent(): Boolean {
+    val config = synchronized(clientLock) {
+      if (disposed) return false
+      val config = clientConfig ?: return false
+      client?.stop()
+      client = null
+      clientConfig = null
+      config
+    }
+    SwingUtilities.invokeLater { modePicker.setModes(null); configPicker.setOptions(null) }
+    systemLine(t("chat.reconnecting"))
+    // Рукопожатие блокирует до ответа чужого процесса — не на EDT.
+    com.intellij.openapi.application.ApplicationManager.getApplication().executeOnPooledThread {
+      try {
+        ensureClient(config)
+      }
+      catch (e: Exception) {
+        systemLine(t("chat.reconnectFailed", "reason" to (e.message ?: e.javaClass.simpleName)))
+      }
+    }
+    return true
+  }
+
   /** Entry point for the palette action «История чата» and the «история ▾» pill. */
   fun openHistoryPopup() {
     HistoryPopup.show(project, historyPill, this, { activateThread(it) }, { id, index -> openThreadAt(id, index) })
@@ -3159,6 +3249,78 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     return answer == Messages.YES
   }
 
+  /**
+   * Гейт приёмки шага: хук `pipelineStepEnd` решает, годится ли черновик.
+   *
+   * Возвращает null, когда гейта нет, — и это не то же самое, что «принят»: без проверки принимать
+   * нечем, поэтому шаги эскалации в таком пайплайне выполняются все. Отказ гейта здесь не
+   * останавливает прогон: он ровно наоборот — включает следующий, более дорогой шаг.
+   */
+  private fun runStepGate(
+    pipeline: com.vibe.agent.pipelines.Pipeline,
+    step: com.vibe.agent.pipelines.PipelineStep,
+    index: Int,
+    answer: String,
+  ): Boolean? {
+    val context = buildJsonObject {
+      put("pipeline", pipeline.id)
+      put("step", index + 1)
+      put("role", step.role)
+      step.model?.let { put("model", it) }
+      // Ответ шага, обрезанный: гейту нужен вердикт по содержанию, а не весь транскрипт в stdin.
+      put("answer", answer.take(GATE_ANSWER_CHARS))
+    }
+    // Спрашивается ДО запуска: гейт, разрешивший шаг молча (код 0, пустой вывод), по одному лишь
+    // решению неотличим от отсутствующего гейта — а это противоположные ответы.
+    if (!hooks.has(HookEvent.PIPELINE_STEP_END)) return null
+    val decision = hooks.run(HookEvent.PIPELINE_STEP_END, null, null, changedPaths.toList(), context)
+    // Сломанный гейт (любой код кроме 0 и 2, таймаут) принять не может: считаем, что гейта не было.
+    if (decision.brokenHooks.isNotEmpty() && !decision.flagged) return null
+    audit?.append(AuditEvent(System.currentTimeMillis(), AuditEvent.Action.HOOK, ok = !decision.flagged,
+                             actor = agentActor(),
+                             meta = mapOf("event" to HookEvent.PIPELINE_STEP_END.wire,
+                                          "pipeline" to pipeline.id, "step" to (index + 1).toString())))
+    return if (decision.flagged) {
+      systemLine(t("pipeline.gate.rejected", "reason" to (decision.agentMessage ?: "")))
+      false
+    }
+    else {
+      systemLine(t("pipeline.gate.accepted"))
+      true
+    }
+  }
+
+  /**
+   * Один шаг пайплайна на СВОЕЙ модели — прямым запросом к провайдеру, без ACP-агента.
+   *
+   * Разговор не ведётся: модель получает ровно текст шага (роль, задача, приёмка, итог прошлого
+   * шага) и отвечает текстом. Истории треда здесь нет намеренно — шаг обязан судить о том, что ему
+   * дали, а не о том, что человек обсуждал в этом чате час назад.
+   *
+   * Расход шага учитывается там же, где расход обычного хода: иначе каскад «дешёвая модель, потом
+   * дорогая» нельзя было бы сравнить с одной дорогой — а он ради этого сравнения и существует.
+   */
+  private fun runModelStep(providerId: String, modelId: String, prompt: String) {
+    val provider = providers.firstOrNull { it.id == providerId }
+      ?: throw IllegalStateException(t("pipeline.step.noProvider", "id" to providerId))
+    val model = provider.models.firstOrNull { it.id == modelId }
+      ?: ModelEntry(id = modelId) // модели нет в каталоге — это ещё не повод не спросить о ней
+    val resolved = ProvidersService.resolve(provider, project.basePath) { systemLine("[providers] $it") }
+      ?: throw IllegalStateException(com.vibe.agent.i18n.VibeI18n.t("chat.provider.noBaseUrl", "id" to providerId))
+    if (resolved.apiKey == null && !resolved.isLocal) {
+      throw IllegalStateException(com.vibe.agent.i18n.VibeI18n.t("chat.provider.noKey", "id" to providerId))
+    }
+    llmClient.chat(
+      resolved, model, listOf(ChatMessage(role = "user", text = prompt)), { llmCancel.get() },
+      onWaiting = { attempt, delayMs, reason ->
+        systemLine(t("retry.waiting", "attempt" to attempt, "seconds" to (delayMs / 1000), "reason" to (reason ?: "")))
+      },
+      onThought = { appendThought(it) },
+    ) { delta -> appendAgentText(delta) }
+    lastTurnUsage = llmClient.lastUsage()
+    lastTurnPricing = model.pricing
+  }
+
   private fun runPipeline(pipeline: com.vibe.agent.pipelines.Pipeline, agent: AgentServerConfig) {
     if (!history.tryBeginTurn(currentThreadId)) {
       systemLine(t("chat.threadBusy"))
@@ -3177,6 +3339,9 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
       val artifacts = LinkedHashSet<String>()
       var lastSummary: String? = null
       var failed = false
+      // Принял ли гейт последний проверенный шаг. Null — гейта нет вовсе: тогда «эскалация»
+      // ничего не значит и шаг выполняется как обычный.
+      var lastGateAccepted: Boolean? = null
       // Unattended work goes into the ledger: a pipeline runs for minutes with nobody watching,
       // and if the window dies mid-way the only trace left is this record.
       val territory = com.vibe.agent.runs.TerritoryGuess.prefixes(pipeline.steps.joinToString("\n") { it.task })
@@ -3195,6 +3360,11 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
             systemLine(t("pipeline.stepSkipped", "header" to header))
             return@forEachIndexed
           }
+          // Шаг эскалации нужен ровно тогда, когда предыдущий черновик НЕ приняли.
+          if (step.escalation && lastGateAccepted == true) {
+            systemLine(t("pipeline.stepSkippedByGate", "header" to header))
+            return@forEachIndexed
+          }
           if (roleBudgetExceeded(step.role)) {
             failed = true
             return@forEachIndexed
@@ -3210,14 +3380,24 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
             }
           }
           try {
-            val c = ensureClient(agent)
             currentRole = step.role
             changedPaths.clear()
             stepBuffer = StringBuilder()
             val startedAt = System.currentTimeMillis()
-            val result = c.prompt(prompt).get()
-            val stop = result?.jsonObject?.get("stopReason")?.jsonPrimitive?.contentOrNull
-            finishAgentBubble((System.currentTimeMillis() - startedAt) / 1000.0, t("pipeline.stepLabel", "index" to (i + 1)))
+            // Шаг со своей моделью идёт прямым запросом к провайдеру, мимо агента: у него нет
+            // инструментов, и он ни на что не влияет, кроме собственного ответа. Разбор — в
+            // [runModelStep]; загрузчик пайплайнов уже не пустил сюда пишущую роль.
+            val stop = if (step.model != null && step.provider != null) {
+              runModelStep(step.provider, step.model, prompt)
+              null
+            }
+            else {
+              val c = ensureClient(agent)
+              val result = c.prompt(prompt).get()
+              result?.jsonObject?.get("stopReason")?.jsonPrimitive?.contentOrNull
+            }
+            finishAgentBubble((System.currentTimeMillis() - startedAt) / 1000.0,
+                              step.model ?: t("pipeline.stepLabel", "index" to (i + 1)))
             if (stop == STOP_CANCELLED) {
               failed = true
               systemLine(t("pipeline.stepStopped", "header" to header))
@@ -3228,6 +3408,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
             artifacts.addAll(changedPaths)
             runs.progress(runId, steps = i + 1, changedFiles = artifacts.size)
             systemLine(t("pipeline.stepDone", "header" to header, "files" to changedPaths.size))
+            lastGateAccepted = runStepGate(pipeline, step, i, summaryText)
           }
           catch (e: Exception) {
             failed = true
@@ -3631,6 +3812,10 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
         systemLine(t("spend.cacheSaved", "saved" to "%.2f".format(saved),
                      "tokens" to "%,d".format(usage.cacheReadTokens)))
       }
+      if (usage.known) {
+        threadUsages.add(usage)
+        while (threadUsages.size > MAX_TRACKED_TURNS) threadUsages.removeAt(0)
+      }
       lastTurnUsage = com.vibe.agent.providers.TokenUsage.NONE
       lastTurnPricing = null
       sessionTokens.addAndGet(counted)
@@ -3875,6 +4060,14 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
 
   /** What the provider reported for the turn that just finished, and the price to apply to it. */
   @Volatile private var lastTurnUsage: com.vibe.agent.providers.TokenUsage = com.vibe.agent.providers.TokenUsage.NONE
+
+  /**
+   * Расход ходов текущего разговора — для «контекстного налога» в `/trace`.
+   *
+   * Живёт в памяти окна и не переживает перезапуск: вопрос «во что мне обходится ЭТОТ разговор»
+   * задают по ходу дела, а на длинную дистанцию отвечает журнал расхода.
+   */
+  private val threadUsages = java.util.Collections.synchronizedList(ArrayList<com.vibe.agent.providers.TokenUsage>())
   @Volatile private var lastTurnPricing: com.vibe.agent.providers.ModelPricing? = null
   private val lastTurnCurrency: String get() = lastTurnPricing?.currency ?: com.vibe.agent.providers.ModelPricing.DEFAULT_CURRENCY
 
@@ -3985,6 +4178,18 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
    * URL-режим спрашивает отдельно и словами — увод во внешний браузер по просьбе чужого агента
    * это действие наружу, и молча его делать нельзя.
    */
+  /**
+   * `elicitation/complete`: внешний вход закончился, ход поехал дальше.
+   *
+   * Человек в этот момент смотрит в браузер, а не в IDE, поэтому строка в ленте — единственный
+   * способ узнать, что возвращаться уже можно. Ответа нотификация не ждёт.
+   */
+  override fun onElicitComplete(params: JsonObject) {
+    systemLine(t("elicit.url.completed"))
+    audit?.append(AuditEvent(System.currentTimeMillis(), AuditEvent.Action.ELICITATION, ok = true,
+                             actor = agentActor(), meta = mapOf("mode" to "url", "event" to "complete")))
+  }
+
   override fun onElicit(params: JsonObject): JsonElement {
     com.vibe.agent.sound.VibeSoundService.getInstance()
       .play(com.vibe.agent.sound.SoundPolicy.Event.AWAITING_PERMISSION, project)
@@ -4066,9 +4271,17 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     // Deterministic destructive-command warning for the agent's own command tools (Claude runs Bash itself).
     val command = hookParams?.get("command")?.jsonPrimitive?.contentOrNull
     val destructive = command?.let { ShellSafetyAnalyzer.analyzeLine(it) }
-    val dialogText = if (destructive != null)
+    // Трифекта: канал наружу — третий признак. Считается ДО диалога, чтобы человек увидел
+    // предупреждение в том же вопросе, а не после того, как разрешил.
+    val outbound = command?.let { com.vibe.agent.guard.Trifecta.outboundInLine(it) }
+    if (outbound != null) turnSignals.add(com.vibe.agent.guard.Trifecta.Signal.OUTBOUND_CHANNEL)
+    val trifecta = com.vibe.agent.guard.Trifecta.complete(turnSignals)
+    val base = if (destructive != null)
       t("chat.permission.destructive", "reasons" to destructive.reasons.joinToString(", "), "command" to command.take(DESTRUCTIVE_PREVIEW_LEN), "title" to title)
     else title
+    // Три признака за один ход названы человеку словами: по отдельности каждый законен, и молча
+    // разрешённое здесь — единственное место, где утечка выглядит как обычная работа.
+    val dialogText = if (trifecta) t("chat.permission.trifecta", "channel" to (outbound ?: ""), "title" to base) else base
     val options = params["options"]?.jsonArray?.map { it.jsonObject } ?: emptyList()
     val chosen = askOnEdt {
       val names = options.map { it["name"]?.jsonPrimitive?.contentOrNull ?: it.getValue("optionId").jsonPrimitive.content }
@@ -4077,7 +4290,8 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
       if (choice >= 0) options[choice].getValue("optionId").jsonPrimitive.content else null
     }
     audit?.append(AuditEvent(System.currentTimeMillis(), AuditEvent.Action.PERMISSION, ok = chosen != null, actor = com.vibe.agent.audit.AuditActor.HUMAN,
-      meta = mapOf("title" to title.take(120), "outcome" to if (chosen != null) "selected" else "cancelled")))
+      meta = mapOf("title" to title.take(120), "outcome" to if (chosen != null) "selected" else "cancelled") +
+        (if (trifecta) mapOf("trifecta" to (outbound ?: "")) else emptyMap())))
     return buildJsonObject {
       put("outcome", buildJsonObject {
         if (chosen != null) {
@@ -4092,7 +4306,11 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     }
   }
 
-  override fun onReadTextFile(params: JsonObject): JsonElement = fileOps.readTextFile(params)
+  override fun onReadTextFile(params: JsonObject): JsonElement {
+    // Прочитанный файл проекта — приватные данные: один из трёх признаков трифекты.
+    turnSignals.add(com.vibe.agent.guard.Trifecta.Signal.PRIVATE_DATA)
+    return fileOps.readTextFile(params)
+  }
 
   override fun onWriteTextFile(params: JsonObject): JsonElement {
     val path = params["path"]?.jsonPrimitive?.contentOrNull
@@ -4131,6 +4349,11 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     val cwd = params["cwd"]?.jsonPrimitive?.contentOrNull
     // Never unbounded: fall back to a cap when the agent omits outputByteLimit.
     val outputByteLimit = params["outputByteLimit"]?.jsonPrimitive?.longOrNull ?: VibeAgentSettings.DEFAULT_TERMINAL_OUTPUT_BYTE_LIMIT
+    // Канал наружу считается и здесь: агент, делегирующий запуск нам, открывает его тем же
+    // способом, что и агент, запускающий команды сам.
+    if (com.vibe.agent.guard.Trifecta.outboundReason(command, args) != null) {
+      turnSignals.add(com.vibe.agent.guard.Trifecta.Signal.OUTBOUND_CHANNEL)
+    }
     // Destructive-command gate: same deterministic classifier as VibeIDE, asked before execution.
     val verdict = ShellSafetyAnalyzer.analyzeLine((listOf(command) + args).joinToString(" "))
     if (verdict != null) {
@@ -4207,7 +4430,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
   override fun onProtocolLog(line: String) = systemLine(line)
 
   override fun onModeChanged(modeId: String) {
-    SwingUtilities.invokeLater { modePicker.setModes(client?.modes) }
+    SwingUtilities.invokeLater { modePicker.setModes(client?.modes); configPicker.setOptions(client?.configOptions) }
   }
 
   override fun onProcessExit(client: AcpClient, code: Int) {
@@ -4218,7 +4441,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
       clientConfig = null
     }
     systemLine(t("chat.processExited", "code" to code))
-    SwingUtilities.invokeLater { modePicker.setModes(null) }
+    SwingUtilities.invokeLater { modePicker.setModes(null); configPicker.setOptions(null) }
     // No finishTurn() here: an idle agent's death must not end an unrelated (e.g. LLM) turn.
     // A turn that WAS talking to this process ends through its failed request futures.
   }
@@ -4229,6 +4452,12 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
 
     /** Вопрос — это заголовок; всё длиннее в заголовок и не поместится. */
     const val DECISION_QUESTION_CHARS = 200
+
+    /** Сколько ходов помнит счётчик контекстного налога: разговор длиннее — это уже журнал расхода. */
+    const val MAX_TRACKED_TURNS = 200
+
+    /** Сколько ответа шага уходит гейту: вердикт выносится по сути, а не по всему транскрипту. */
+    const val GATE_ANSWER_CHARS = 4000
 
     const val SILENCE_CHECK_MS = 30_000
     const val OUTPUT_COMMAND = "/output"

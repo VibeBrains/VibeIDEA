@@ -33,7 +33,7 @@
               "properties": {
                 "role": {
                   "type": "string",
-                  "description": "Роль шага. Судящие роли (code-reviewer, security, qa, explore, planner) не пишут файлы.",
+                  "description": "Роль шага. Судящие роли (code-reviewer, critic, security, qa, explore, planner) не пишут файлы — только им можно задать свою модель.",
                   "enum": [
                     "explore",
                     "implement-step",
@@ -44,6 +44,7 @@
                     "frontend-dev",
                     "backend-dev",
                     "code-reviewer",
+                    "critic",
                     "qa",
                     "security"
                   ]
@@ -54,6 +55,18 @@
                 "acceptance": {
                   "type": "string",
                   "description": "Критерий готовности шага."
+                },
+                "provider": {
+                  "type": "string",
+                  "description": "Провайдер из реестра: шаг пойдёт прямым запросом к модели, минуя ACP-агента. Задаётся только вместе с model и только для судящих ролей."
+                },
+                "model": {
+                  "type": "string",
+                  "description": "Модель этого шага. У такого шага нет инструментов и нет доступа к файлам."
+                },
+                "escalation": {
+                  "type": "boolean",
+                  "description": "Шаг нужен, только если гейт pipelineStepEnd не принял предыдущий."
                 },
                 "continueOnFailure": {
                   "type": "boolean"

@@ -20,7 +20,18 @@ import kotlinx.serialization.json.longOrNull
 enum class HookEvent(val wire: String) {
   PRE_TOOL_USE("preToolUse"),
   POST_TOOL_USE("postToolUse"),
-  TURN_END("turnEnd");
+  TURN_END("turnEnd"),
+
+  /**
+   * `pipelineStepEnd` — гейт приёмки между шагами пайплайна.
+   *
+   * Существует ради каскада «дешёвая модель, потом дорогая»: смысл каскада в том, что дорогой шаг
+   * выполняется НЕ ВСЕГДА, а решает это не модель и не мы, а проверка, которую пишет владелец
+   * проекта — сборка, тесты, линтер, собственный скрипт. Отказ (код 2) читается здесь не как
+   * «остановись», а как «черновик не принят»: шаги, помеченные `escalation`, после него нужны.
+   * Приёмка (код 0) их пропускает — ровно это и есть экономия.
+   */
+  PIPELINE_STEP_END("pipelineStepEnd");
 
   companion object {
     fun fromWire(s: String?): HookEvent? = entries.firstOrNull { it.wire == s }
@@ -30,7 +41,7 @@ enum class HookEvent(val wire: String) {
 data class Hook(
   val event: HookEvent,
   val command: String,
-  /** Exact tool names; empty = any tool. Ignored for [HookEvent.TURN_END]. */
+  /** Exact tool names; empty = any tool. Ignored for [HookEvent.TURN_END] and [HookEvent.PIPELINE_STEP_END]. */
   val tools: List<String>,
   val timeoutMs: Long,
   val label: String?,
@@ -40,6 +51,9 @@ data class Hook(
 }
 
 object HookConfig {
+  /** События, у которых нет отдельного инструмента: фильтр по именам инструментов к ним не применим. */
+  val EVENTS_WITHOUT_TOOLS: Set<HookEvent> = setOf(HookEvent.TURN_END, HookEvent.PIPELINE_STEP_END)
+
   const val DEFAULT_TIMEOUT_MS = 30_000L
   const val MAX_TIMEOUT_MS = 300_000L
 
@@ -75,7 +89,7 @@ object HookConfig {
         continue
       }
       var tools = (hookObj["tools"] as? JsonArray).orEmptyList().mapNotNull { it.jsonPrimitive.contentOrNull }
-      if (event == HookEvent.TURN_END && tools.isNotEmpty()) {
+      if (event in EVENTS_WITHOUT_TOOLS && tools.isNotEmpty()) {
         onWarning(t("hooks.warn.turnEndTools", "hook" to (hookObj["label"]?.jsonPrimitive?.contentOrNull ?: command)))
         tools = emptyList()
       }
@@ -94,7 +108,7 @@ object HookConfig {
 
   /** Hooks for one event×tool, in file order. Empty [tools] matches any tool. */
   fun hooksFor(hooks: List<Hook>, event: HookEvent, tool: String?): List<Hook> =
-    hooks.filter { it.event == event && (event == HookEvent.TURN_END || it.tools.isEmpty() || (tool != null && tool in it.tools)) }
+    hooks.filter { it.event == event && (event in EVENTS_WITHOUT_TOOLS || it.tools.isEmpty() || (tool != null && tool in it.tools)) }
 
   private fun JsonArray?.orEmptyList(): List<kotlinx.serialization.json.JsonElement> = this ?: emptyList()
 }

@@ -5,6 +5,7 @@ import java.time.LocalDate
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 /** Срок годности цены: протухшая цена продолжает считаться, но обязана быть названной. */
@@ -57,5 +58,24 @@ class PriceValidityTest {
     )), today)
     assertEquals(listOf("вчера", "завтра", "далёкая"), notices.map { it.modelId })
     assertEquals(PriceValidity.State.EXPIRED, notices.first().state)
+  }
+
+  @Test
+  fun `цена после срока называет множитель подорожания`() {
+    val now = ModelPricing(input = 0.075, output = 0.25)
+    val after = ModelPricing(input = 0.15, output = 0.50)
+    assertEquals(2.0, PriceValidity.inputFactor(now, after)!!, 1e-9)
+    // Половины пары мало: сравнивать не с чем, и выдумывать число нельзя.
+    assertNull(PriceValidity.inputFactor(now, null))
+    assertNull(PriceValidity.inputFactor(null, after))
+    // Нулевая цена — это «не сказано», а не «бесплатно»: делить на неё значит соврать.
+    assertNull(PriceValidity.inputFactor(ModelPricing(), after))
+  }
+
+  @Test
+  fun `предупреждение несёт цену после срока`() {
+    val model = model(until = "2026-09-09").copy(priceAfter = ModelPricing(input = 0.15, output = 0.50))
+    val notice = PriceValidity.notices(listOf(provider(model)), today).single()
+    assertEquals(0.15, notice.after!!.input, 1e-9)
   }
 }

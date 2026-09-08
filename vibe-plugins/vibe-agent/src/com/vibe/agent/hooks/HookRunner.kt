@@ -47,14 +47,33 @@ class HookRunner(private val project: Project, private val onWarning: (String) -
   // The hooks example is seeded by VibeDefaults together with the rest of `.vibe/`
   // (owner's decision 2026-08-28: unconditional environment seeding, VibeIDE model).
 
-  fun run(event: HookEvent, tool: String?, params: JsonObject?, changedFiles: List<String>): HookDecision {
+  /**
+   * Есть ли включённый хук на это событие.
+   *
+   * Нужно там, где «хук промолчал» и «хука нет» — разные ответы: гейт приёмки, разрешивший шаг
+   * молча (код 0, пустой stdout), неотличим от отсутствующего гейта по одному лишь решению.
+   */
+  fun has(event: HookEvent): Boolean {
+    if (!VibeAgentSettings.hooksEnabled) return false
+    if (!TrustedProjects.isProjectTrusted(project)) return false
+    return runCatching { HookConfig.hooksFor(load(), event, null).isNotEmpty() }.getOrDefault(false)
+  }
+
+  fun run(
+    event: HookEvent,
+    tool: String?,
+    params: JsonObject?,
+    changedFiles: List<String>,
+    /** Extra facts about THIS event, merged into the payload as-is (pipeline step, its answer). */
+    context: JsonObject? = null,
+  ): HookDecision {
     return try {
       if (!VibeAgentSettings.hooksEnabled) return NOTHING
       if (!TrustedProjects.isProjectTrusted(project)) return NOTHING
       val cwd = base ?: return NOTHING
       val hooks = HookConfig.hooksFor(load(), event, tool)
       if (hooks.isEmpty()) return NOTHING
-      val payload = buildPayload(event, tool, params, cwd, changedFiles)
+      val payload = buildPayload(event, tool, params, cwd, changedFiles, context)
       val results = ArrayList<HookResult>()
       for (hook in hooks) {
         val result = execute(hook, payload, cwd)
@@ -90,20 +109,33 @@ class HookRunner(private val project: Project, private val onWarning: (String) -
     return cached
   }
 
-  private fun buildPayload(event: HookEvent, tool: String?, params: JsonObject?, cwd: String, changedFiles: List<String>): String =
+  private fun buildPayload(
+    event: HookEvent,
+    tool: String?,
+    params: JsonObject?,
+    cwd: String,
+    changedFiles: List<String>,
+    context: JsonObject?,
+  ): String =
     buildJsonObject {
       put("event", event.wire)
       tool?.let { put("tool", it) }
       params?.let { put("params", it) }
       put("cwd", cwd)
-      if (event == HookEvent.TURN_END) put("changedFiles", JsonArray(changedFiles.map { JsonPrimitive(it) }))
+      if (event == HookEvent.TURN_END || event == HookEvent.PIPELINE_STEP_END) {
+        put("changedFiles", JsonArray(changedFiles.map { JsonPrimitive(it) }))
+      }
+      // Верхним уровнем, а не вложенным объектом: хук читает payload построчно через jq, и лишний
+      // уровень означает лишний путь в каждом скрипте.
+      context?.forEach { (key, value) -> put(key, value) }
     }.toString()
 
   private fun execute(hook: Hook, payload: String, cwd: String): HookResult {
     val pb = ProcessBuilder(ProcessSupport.shellCommand(hook.command))
     pb.directory(java.io.File(cwd))
     pb.environment()["VIBE_HOOK_EVENT"] = hook.event.wire
-    pb.environment()["VIBE_HOOK_TOOL"] = if (hook.event == HookEvent.TURN_END) "" else (hook.tools.firstOrNull() ?: "")
+    pb.environment()["VIBE_HOOK_TOOL"] =
+      if (hook.event in HookConfig.EVENTS_WITHOUT_TOOLS) "" else (hook.tools.firstOrNull() ?: "")
     return try {
       val process = pb.start()
       // Drain both pipes CONCURRENTLY, or a process that fills the stderr buffer while we read stdout

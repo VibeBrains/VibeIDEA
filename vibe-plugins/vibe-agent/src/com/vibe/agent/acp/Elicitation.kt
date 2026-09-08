@@ -30,6 +30,20 @@ import kotlinx.serialization.json.put
 object Elicitation {
   const val METHOD = "elicitation/create"
 
+  /**
+   * `elicitation/complete` — нотификация: агент говорит, что URL-режим завершён.
+   *
+   * Нужна ровно потому, что в URL-режиме ответ клиента («открываю») отправляется СРАЗУ, а сам
+   * вход человек проходит во внешнем браузере — и когда он туда уходит, IDE перестаёт понимать,
+   * ждать ли ещё. Без этой нотификации URL-запрос не закрывается никогда: снаружи это выглядит
+   * как зависший агент.
+   */
+  const val COMPLETE_METHOD = "elicitation/complete"
+
+  /** Идентификатор завершённого URL-запроса; null — агент его не назвал. */
+  fun completedId(params: JsonObject): String? =
+    params["elicitationId"]?.jsonPrimitive?.contentOrNull?.takeIf { it.isNotBlank() }
+
   /** Исходы по спеке: согласился, отказался, закрыл не выбрав. */
   enum class Outcome { ACCEPT, DECLINE, CANCEL }
 

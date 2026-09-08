@@ -20,7 +20,8 @@
             "enum": [
               "preToolUse",
               "postToolUse",
-              "turnEnd"
+              "turnEnd",
+              "pipelineStepEnd"
             ]
           },
           "command": {
@@ -34,7 +35,7 @@
             "items": {
               "type": "string"
             },
-            "description": "Только для preToolUse/postToolUse: у turnEnd поле игнорируется."
+            "description": "Только для preToolUse/postToolUse: у turnEnd и pipelineStepEnd поле игнорируется."
           },
           "timeoutMs": {
             "type": "integer",

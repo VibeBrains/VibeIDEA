@@ -32,6 +32,9 @@ object RoleRights {
     "security" to READ_AND_RUN,
     "qa" to READ_AND_RUN,
     "planner" to READ_ONLY,
+    // Критик судит чужой черновик и ничего не запускает: он часто живёт на своей модели, у которой
+    // ни файлов, ни терминала нет в принципе — права здесь описывают то же самое для ACP-ветки.
+    "critic" to READ_ONLY,
     "designer" to FULL,
     "frontend-dev" to FULL,
     "backend-dev" to FULL,

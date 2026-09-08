@@ -97,6 +97,16 @@ object ModelQuirks {
       "minimax: top_k and stop_sequences are ignored by the Anthropic-compatible endpoint",
     ),
     Rule(
+      // GPT-6 Astra, documented by the vendor on the day it shipped: `temperature`, `top_p` and
+      // `logprobs` must be dropped, and the answer limit is named `max_completion_tokens` on
+      // chat/completions. Tool calling on this model lives only in the Responses API, which this
+      // client does not speak — no quirk can express that, so the seed says it in words instead.
+      // Source: developers.openai.com/api/docs/guides/latest-model (checked 2026-09-08).
+      Regex("^gpt-6"),
+      setOf(Quirk.NO_SAMPLING, Quirk.MAX_COMPLETION_TOKENS),
+      "gpt-6: the model sets its own sampling, and the answer limit is named differently",
+    ),
+    Rule(
       Regex("^gpt-5"),
       setOf(Quirk.NO_SAMPLING, Quirk.MAX_COMPLETION_TOKENS),
       "gpt-5: the model sets its own sampling, and the answer limit is named differently",

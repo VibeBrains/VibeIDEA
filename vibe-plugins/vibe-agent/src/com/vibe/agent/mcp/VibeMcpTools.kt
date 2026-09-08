@@ -30,6 +30,7 @@ class VibeMcpTools(private val projectProvider: () -> Project? = { ProjectManage
       McpProtocol.TOOL_PROJECT -> projectInfo(project)
       McpProtocol.TOOL_RUN -> run(arguments)
       McpProtocol.TOOL_CORPUS_SEARCH -> corpusSearch(project, arguments)
+      McpProtocol.TOOL_SYMBOL_USAGES -> symbolUsages(project, arguments)
       McpProtocol.TOOL_DECISIONS_SEARCH -> decisionsSearch(project, arguments)
       McpProtocol.TOOL_DECISIONS_RECORD -> decisionsRecord(project, arguments)
       else -> McpServer.Tools.Result("неизвестный инструмент: $name", isError = true)
@@ -97,6 +98,51 @@ class VibeMcpTools(private val projectProvider: () -> Project? = { ProjectManage
     return McpServer.Tools.Result("Решение ${decision.number} записано: $path")
   }
 
+  /**
+   * Где встречается имя — по индексу слов IDE.
+   *
+   * Ради этого инструмента граф импортов и существовал наполовину: он отвечает «какие файлы
+   * связаны», но не «где именно живёт эта функция». Без такого ответа агент делает единственное,
+   * что ему остаётся, — читает файлы целиком и тащит их в контекст каждого следующего хода; это и
+   * есть та статья расхода, которая потом удивляет в счёте.
+   *
+   * Индекс слов честно не разбирает синтаксис: совпадение в комментарии он не отличает от вызова.
+   * Это сказано в описании инструмента, потому что инструмент, обещающий «вызовы» и отдающий
+   * совпадения, хуже инструмента, обещающего совпадения.
+   */
+  private fun symbolUsages(project: Project, arguments: JsonObject): McpServer.Tools.Result {
+    val name = string(arguments, "name")?.trim()
+    if (name.isNullOrEmpty()) return McpServer.Tools.Result("нужен аргумент name", isError = true)
+    val limit = (arguments["limit"]?.jsonPrimitive?.contentOrNull?.toIntOrNull() ?: DEFAULT_USAGE_LIMIT)
+      .coerceIn(1, MAX_USAGE_LIMIT)
+    val base = project.basePath
+    val found = ArrayList<String>()
+    // TextOccurenceProcessor, а не Processor: индекс слов отдаёт СОВПАДЕНИЕ (элемент плюс смещение
+    // внутри него), и его собственный интерфейс — единственный, который helper принимает.
+    val processor = com.intellij.psi.search.TextOccurenceProcessor { element, _ ->
+      val file = element.containingFile?.virtualFile ?: return@TextOccurenceProcessor true
+      val document = com.intellij.psi.PsiDocumentManager.getInstance(project)
+        .getDocument(element.containingFile) ?: return@TextOccurenceProcessor true
+      val line = document.getLineNumber(element.textOffset)
+      val text = document.getText(
+        com.intellij.openapi.util.TextRange(document.getLineStartOffset(line), document.getLineEndOffset(line)))
+      val path = base?.let { com.intellij.openapi.util.io.FileUtil.getRelativePath(it, file.path, '/') } ?: file.path
+      found.add("$path:${line + 1}: ${text.trim().take(LINE_CHARS)}")
+      found.size < limit
+    }
+    com.intellij.openapi.application.ReadAction.run<RuntimeException> {
+      com.intellij.psi.search.PsiSearchHelper.getInstance(project).processElementsWithWord(
+        processor,
+        com.intellij.psi.search.GlobalSearchScope.projectScope(project),
+        name,
+        com.intellij.psi.search.UsageSearchContext.ANY,
+        true,
+      )
+    }
+    if (found.isEmpty()) return McpServer.Tools.Result("нигде не встречается: $name")
+    return McpServer.Tools.Result(found.joinToString("\n"))
+  }
+
   private fun string(arguments: JsonObject, key: String): String? =
     arguments[key]?.jsonPrimitive?.contentOrNull?.trim()?.takeIf { it.isNotEmpty() }
 
@@ -159,5 +205,15 @@ class VibeMcpTools(private val projectProvider: () -> Project? = { ProjectManage
         onSuccess = { McpServer.Tools.Result("Задача передана агенту, сессия: $it") },
         onFailure = { McpServer.Tools.Result(it.message ?: "не удалось передать задачу", isError = true) },
       )
+  }
+
+  private companion object {
+    const val DEFAULT_USAGE_LIMIT = 50
+
+    /** Потолок: ответ инструмента уходит в контекст модели, и «все совпадения» там не нужны никому. */
+    const val MAX_USAGE_LIMIT = 200
+
+    /** Длинная строка в ответе — это минифицированный файл; смысла в ней нет, а токены есть. */
+    const val LINE_CHARS = 200
   }
 }

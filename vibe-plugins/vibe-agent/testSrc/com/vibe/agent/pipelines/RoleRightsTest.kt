@@ -59,6 +59,6 @@ class RoleRightsTest {
 
   @Test
   fun `the read-only list is exactly the roles that judge`() {
-    assertEquals(listOf("code-reviewer", "explore", "planner", "qa", "security"), RoleRights.readOnlyRoles())
+    assertEquals(listOf("code-reviewer", "critic", "explore", "planner", "qa", "security"), RoleRights.readOnlyRoles())
   }
 }

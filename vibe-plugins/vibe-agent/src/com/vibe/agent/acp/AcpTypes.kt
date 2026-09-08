@@ -18,6 +18,21 @@ data class SessionMode(
   val description: String?,
 )
 
+/**
+ * One boolean configuration option of the session (ACP, stabilised 2026-07-06).
+ *
+ * Modes answer «what is the agent allowed to do right now»; a config option answers «how should it
+ * behave while it does it» — and only the agent knows which ones it has. Only the boolean type is
+ * modelled: it is the one the protocol stabilised, and a switch we cannot render is worse than a
+ * switch we do not claim to have.
+ */
+data class SessionConfigOption(
+  val id: String,
+  val name: String,
+  val description: String?,
+  val value: Boolean,
+)
+
 /** Session modes block of the `session/new` result. */
 data class SessionModes(
   val currentModeId: String,

@@ -80,6 +80,7 @@ object McpProtocol {
   const val TOOL_DECISIONS_SEARCH = "vibe_decisions_search"
   const val TOOL_DECISIONS_RECORD = "vibe_decisions_record"
   const val TOOL_CORPUS_SEARCH = "vibe_corpus_search"
+  const val TOOL_SYMBOL_USAGES = "vibe_symbol_usages"
 
   /**
    * The tools, in a fixed order — the 2026 revision asks for a deterministic listing so clients can
@@ -118,6 +119,23 @@ object McpProtocol {
           add(kotlinx.serialization.json.JsonPrimitive("from"))
           add(kotlinx.serialization.json.JsonPrimitive("to"))
         }
+      },
+    ),
+    Tool(
+      name = TOOL_SYMBOL_USAGES,
+      title = "Где используется имя",
+      description = "Места, где встречается идентификатор, — по индексу слов IDE, а не перебором файлов. " +
+                    "Возвращает путь, номер строки и саму строку: этого хватает, чтобы решить, какой файл " +
+                    "читать целиком, и не читать остальные. Совпадения в комментариях и строках тоже " +
+                    "возвращаются — индекс слов не разбирает синтаксис, и обратное было бы обещанием, " +
+                    "которого он не даёт.",
+      schema = buildJsonObject {
+        put("type", "object")
+        putJsonObject("properties") {
+          putJsonObject("name") { put("type", "string"); put("description", "Идентификатор целиком, например resolveExtends") }
+          putJsonObject("limit") { put("type", "integer"); put("description", "Сколько мест вернуть, по умолчанию 50") }
+        }
+        putJsonArray("required") { add(kotlinx.serialization.json.JsonPrimitive("name")) }
       },
     ),
     Tool(

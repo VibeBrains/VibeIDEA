@@ -58,7 +58,29 @@ object PriceValidity {
    */
   fun isExpired(model: ModelEntry, today: LocalDate): Boolean = state(model.priceValidUntil, today) == State.EXPIRED
 
-  data class Notice(val providerId: String, val modelId: String, val state: State, val daysLeft: Long)
+  data class Notice(
+    val providerId: String,
+    val modelId: String,
+    val state: State,
+    val daysLeft: Long,
+    /** Цена после срока, если человек её записал: решение принимают по ней, а не по факту срока. */
+    val after: ModelPricing? = null,
+  )
+
+  /**
+   * Во сколько раз дорожает вход, когда срок кончится, — по объявленной цене «после».
+   *
+   * Множитель, а не разность: подорожание вдвое и вдесятеро требуют разных решений, а разность
+   * в долларах за миллион токенов ни о чём не говорит человеку, не помнящему исходную цену.
+   * Считается по входу: именно он растёт в агентном цикле, где контекст перечитывается.
+   * Null — цены «после» нет либо сравнивать не с чем (одна из двух цен не названа).
+   */
+  fun inputFactor(now: ModelPricing?, after: ModelPricing?): Double? {
+    val from = now?.input ?: return null
+    val to = after?.input ?: return null
+    if (from <= 0.0 || to <= 0.0) return null
+    return to / from
+  }
 
   /** Модели, чью цену пора перепроверить, — ближайшие первыми. */
   fun notices(providers: List<ProviderEntry>, today: LocalDate): List<Notice> =
@@ -68,7 +90,7 @@ object PriceValidity {
         if (model.pricing?.stated != true) return@mapNotNull null
         val state = state(model.priceValidUntil, today)
         if (state == State.NONE) return@mapNotNull null
-        Notice(provider.id, model.id, state, daysLeft(model.priceValidUntil, today) ?: 0)
+        Notice(provider.id, model.id, state, daysLeft(model.priceValidUntil, today) ?: 0, model.priceAfter)
       }
     }.sortedBy { it.daysLeft }
 }

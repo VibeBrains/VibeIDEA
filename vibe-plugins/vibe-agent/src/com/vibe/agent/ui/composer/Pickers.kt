@@ -9,6 +9,7 @@ import com.intellij.ui.ColoredListCellRenderer
 import com.intellij.ui.SimpleTextAttributes
 import com.intellij.util.ui.EmptyIcon
 import com.vibe.agent.acp.AgentServerConfig
+import com.vibe.agent.acp.SessionConfigOption
 import com.vibe.agent.acp.SessionModes
 import com.vibe.agent.providers.ModelEntry
 import com.vibe.agent.providers.ProviderEntry
@@ -131,6 +132,47 @@ class ModePicker(private val onChoose: (modeId: String) -> Unit) {
         }
       })
       .setItemChosenCallback { mode -> onChoose(mode.id) }
+      .createPopup()
+      .also { com.vibe.agent.ui.VibeScroll.thinAllIn(it.content) }
+      .showUnderneathOf(pill)
+  }
+}
+
+/**
+ * «Настройки ▾» pill: boolean configuration switches the agent advertises for this session.
+ *
+ * A separate pill from «Режим ▾» on purpose: a mode is one choice out of several and shows the
+ * chosen one in its caption, while these are independent switches whose captions belong to the
+ * agent. Hidden whenever the agent offers none — most do, and an always-present empty menu reads
+ * as a broken feature.
+ *
+ * The list is never edited locally: the click reports the wanted value, and the caller redraws
+ * from what the agent answered.
+ */
+class ConfigOptionsPicker(private val onToggle: (configId: String, value: Boolean) -> Unit) {
+  private var options: List<SessionConfigOption> = emptyList()
+  val pill = PillButton(text = "", dropdown = true) { show() }.apply { isVisible = false }
+
+  fun setOptions(options: List<SessionConfigOption>?) {
+    this.options = options.orEmpty()
+    pill.isVisible = this.options.isNotEmpty()
+    val on = this.options.count { it.value }
+    pill.text = t("picker.config.label", "on" to on, "total" to this.options.size)
+    pill.toolTipText = t("picker.config.tooltip")
+    pill.revalidate()
+  }
+
+  private fun show() {
+    if (options.isEmpty()) return
+    JBPopupFactory.getInstance().createPopupChooserBuilder(options)
+      .setRenderer(object : ColoredListCellRenderer<SessionConfigOption>() {
+        override fun customizeCellRenderer(list: JList<out SessionConfigOption>, value: SessionConfigOption, index: Int, isSelected: Boolean, hasFocus: Boolean) {
+          icon = if (value.value) AllIcons.Actions.Checked else EmptyIcon.ICON_16
+          append(value.name)
+          value.description?.let { append("  $it", SimpleTextAttributes.GRAYED_ATTRIBUTES) }
+        }
+      })
+      .setItemChosenCallback { option -> onToggle(option.id, !option.value) }
       .createPopup()
       .also { com.vibe.agent.ui.VibeScroll.thinAllIn(it.content) }
       .showUnderneathOf(pill)

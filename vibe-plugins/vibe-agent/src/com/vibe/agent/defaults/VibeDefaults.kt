@@ -59,6 +59,7 @@ object VibeDefaults {
     "providers/_template-openai-compatible.jsonc" to "providers/_template-openai-compatible.jsonc",
     "providers/alibaba-coding-plan.jsonc" to "providers/alibaba-coding-plan.jsonc",
     "providers/anthropic.jsonc" to "providers/anthropic.jsonc",
+    "providers/arbr.jsonc" to "providers/arbr.jsonc",
     "providers/deepseek.jsonc" to "providers/deepseek.jsonc",
     "providers/google-gemini.jsonc" to "providers/google-gemini.jsonc",
     "providers/kimi.jsonc" to "providers/kimi.jsonc",

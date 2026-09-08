@@ -59,8 +59,13 @@ object HookOutcome {
     val broken = results.filter { it.verdict == HookVerdict.BROKEN }.map { it.hook.name() }
     val refuse = results.firstOrNull { it.verdict == HookVerdict.REFUSE }
     val notes = results.filter { it.verdict == HookVerdict.NOTE }.mapNotNull { it.message }
-    val header = if (event == HookEvent.PRE_TOOL_USE) t("hooks.header.blocked")
-                 else t("hooks.header.flagged")
+    val header = when (event) {
+      HookEvent.PRE_TOOL_USE -> t("hooks.header.blocked")
+      // Отказ гейта — не блокировка: он говорит «черновик не принят», а что с этим делать,
+      // решает пайплайн (эскалация), а не механизм хуков.
+      HookEvent.PIPELINE_STEP_END -> t("hooks.header.notAccepted")
+      else -> t("hooks.header.flagged")
+    }
     return when {
       refuse != null -> HookDecision(
         blocked = event == HookEvent.PRE_TOOL_USE,

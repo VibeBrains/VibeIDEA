@@ -70,6 +70,17 @@ data class ModelEntry(
    */
   val priceValidUntil: String? = null,
   /**
+   * Цена, которая наступит после [priceValidUntil], — тот же формат, что и `pricing`.
+   *
+   * Решение принимают не по «цена протухла», а по второму числу: удвоение и удесятерение
+   * требуют разных действий, а строка «срок вышел» одинакова для обоих. Вендоры объявляют
+   * новую цену вместе с датой (Gemini 3.8 Flash: $0.75/$3.75 до 31.12.2026, затем ровно
+   * вдвое), поэтому записать её есть куда и есть откуда.
+   *
+   * Расход по ней НЕ считается никогда: это будущее, а счёт — про сегодня.
+   */
+  val priceAfter: ModelPricing? = null,
+  /**
    * Срок жизни кэша промпта: `5m` (умолчание вендора) или `1h`.
    *
    * Часовой кэш существует ровно для нашего сценария — длинная сессия с паузами больше пяти минут
@@ -138,6 +149,22 @@ object ProvidersFile {
     return Regex(",(\\s*[}\\]])").replace(sb.toString(), "$1")
   }
 
+  /**
+   * A price block, or null when it is absent or says nothing.
+   *
+   * Shared by `pricing` and `priceAfter` on purpose: two readers of the same shape drift, and the
+   * future price would end up accepting fields today's price rejects.
+   */
+  private fun parsePricing(pr: JsonObject?): ModelPricing? = pr?.let {
+    ModelPricing(
+      input = it["input"]?.jsonPrimitive?.doubleOrNull ?: 0.0,
+      output = it["output"]?.jsonPrimitive?.doubleOrNull ?: 0.0,
+      cacheRead = it["cacheRead"]?.jsonPrimitive?.doubleOrNull ?: 0.0,
+      cacheWrite = it["cacheWrite"]?.jsonPrimitive?.doubleOrNull ?: 0.0,
+      currency = it["currency"]?.jsonPrimitive?.contentOrNull ?: ModelPricing.DEFAULT_CURRENCY,
+    ).takeIf { p -> p.stated }
+  }
+
   fun parse(text: String, source: String = "providers.json", onWarning: (String) -> Unit): List<ProviderEntry> {
     val root = json.parseToJsonElement(stripJsonc(text)).jsonObject
     val providers = root["providers"]?.jsonArray ?: run {
@@ -192,21 +219,14 @@ object ProvidersFile {
         topK = mo["topK"]?.jsonPrimitive?.intOrNull,
         extraBody = mo["extraBody"] as? JsonObject,
         protocol = mo["protocol"]?.jsonPrimitive?.contentOrNull,
-        pricing = (mo["pricing"] as? JsonObject)?.let { pr ->
-          ModelPricing(
-            input = pr["input"]?.jsonPrimitive?.doubleOrNull ?: 0.0,
-            output = pr["output"]?.jsonPrimitive?.doubleOrNull ?: 0.0,
-            cacheRead = pr["cacheRead"]?.jsonPrimitive?.doubleOrNull ?: 0.0,
-            cacheWrite = pr["cacheWrite"]?.jsonPrimitive?.doubleOrNull ?: 0.0,
-            currency = pr["currency"]?.jsonPrimitive?.contentOrNull ?: ModelPricing.DEFAULT_CURRENCY,
-          ).takeIf { it.stated }
-        },
+        pricing = parsePricing(mo["pricing"] as? JsonObject),
         fim = mo["fim"]?.jsonPrimitive?.booleanOrNull ?: false,
         vision = mo["vision"]?.jsonPrimitive?.booleanOrNull,
         note = mo["note"]?.jsonPrimitive?.contentOrNull,
         sunsetDate = mo["sunsetDate"]?.jsonPrimitive?.contentOrNull,
         priceValidUntil = mo["priceValidUntil"]?.jsonPrimitive?.contentOrNull,
         cacheTtl = mo["cacheTtl"]?.jsonPrimitive?.contentOrNull,
+        priceAfter = parsePricing(mo["priceAfter"] as? JsonObject),
       )
     } ?: emptyList()
     return ProviderEntry(
@@ -267,6 +287,7 @@ object ProvidersFile {
       pricing = over.pricing ?: base.pricing,
       priceValidUntil = over.priceValidUntil ?: base.priceValidUntil,
       cacheTtl = over.cacheTtl ?: base.cacheTtl,
+      priceAfter = over.priceAfter ?: base.priceAfter,
       // Same rule as every other optional field: silence inherits, a written value overrides.
       protocol = over.protocol ?: base.protocol,
     )

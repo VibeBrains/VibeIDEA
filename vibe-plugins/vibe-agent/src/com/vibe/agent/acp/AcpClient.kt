@@ -41,6 +41,8 @@ class AcpClient(
     fun onSessionUpdate(update: JsonObject)
     /** Agent switched the session mode (`current_mode_update`); called on the reader thread before [onSessionUpdate]. */
     fun onModeChanged(modeId: String) {}
+    /** The agent changed its own configuration switches; the list is the whole current set. */
+    fun onConfigOptionsChanged(options: List<SessionConfigOption>) {}
     /** Called on the reader thread; must return the permission outcome (closed dialog = refusal). */
     fun onRequestPermission(params: JsonObject): JsonElement
 
@@ -51,6 +53,9 @@ class AcpClient(
      * сказать об этом протоколом, иначе агент ждёт ответа, которого не будет.
      */
     fun onElicit(params: JsonObject): JsonElement = Elicitation.response(Elicitation.Outcome.DECLINE)
+
+    /** `elicitation/complete`: URL-режим завершён на стороне агента. Нотификация — ответа не ждут. */
+    fun onElicitComplete(params: JsonObject) {}
     fun onReadTextFile(params: JsonObject): JsonElement
     fun onWriteTextFile(params: JsonObject): JsonElement
     // Standard ACP terminal/… (for agents that delegate execution). Default = not supported.
@@ -145,7 +150,7 @@ class AcpClient(
 
   fun initializeAndOpenSession(): CompletableFuture<String> {
     val init = buildJsonObject {
-      put("protocolVersion", 1)
+      put("protocolVersion", PROTOCOL_VERSION)
       put("clientCapabilities", buildJsonObject {
         put("fs", buildJsonObject {
           put("readTextFile", true)
@@ -153,6 +158,20 @@ class AcpClient(
         })
         // Standard terminal/… execution: only when the user allows agents to run commands via us.
         if (advertiseTerminalExec) put("terminal", true)
+        // Elicitation must be ANNOUNCED, not merely handled: by the spec an agent sends
+        // `elicitation/create` only to a client that declared it, so a client that implements the
+        // dialogs and stays silent here never receives a single request. Both modes are listed
+        // because both are implemented — form as a dialog, url as an ask-then-open.
+        // An empty object means «supported»; absence means «not».
+        // Boolean session config options (stabilised 2026-07-06) are opt-in for v1 clients: an
+        // agent offers none of them unless the client says here that it can render them.
+        put("session", buildJsonObject {
+          put("configOptions", buildJsonObject { put("boolean", buildJsonObject { }) })
+        })
+        put("elicitation", buildJsonObject {
+          put("form", buildJsonObject { })
+          put("url", buildJsonObject { })
+        })
         // Claude adapter streams Bash output to us via _meta.terminal_output (read-only display, always on).
         put("_meta", buildJsonObject { put("terminal_output", true) })
       })
@@ -167,6 +186,7 @@ class AcpClient(
       val obj = result.jsonObject
       val id = obj.getValue("sessionId").jsonPrimitive.content
       modes = parseModes(obj)
+      configOptions = parseConfigOptions(obj)
       sessionId = id
       id
     }
@@ -180,6 +200,31 @@ class AcpClient(
       put("sessionId", sid)
       put("prompt", JsonArray(blocks.map { it.toJson() }))
     })
+  }
+
+  /**
+   * Boolean configuration options of the session, as the agent last reported them.
+   *
+   * The agent owns this list: it names the switches, their captions and their current values, and
+   * every answer to `session/set_config_option` carries the whole set back. We never keep our own
+   * idea of what is on — a switch remembered locally is a switch that lies after the agent
+   * changes it for its own reasons.
+   */
+  @Volatile var configOptions: List<SessionConfigOption> = emptyList()
+    private set
+
+  /** Flips one boolean option; the agent answers with the full, current set. */
+  fun setConfigOption(configId: String, value: Boolean): CompletableFuture<Unit> {
+    val sid = checkNotNull(sessionId) { "no session" }
+    return request("session/set_config_option", buildJsonObject {
+      put("sessionId", sid)
+      put("configId", configId)
+      put("type", "boolean")
+      put("value", value)
+    }).thenApply { result ->
+      (result as? JsonObject)?.let { configOptions = parseConfigOptions(it) }
+      Unit
+    }
   }
 
   /** Switches the session mode; [modes] is updated once the agent acknowledges. */
@@ -218,6 +263,26 @@ class AcpClient(
     }
     return SessionModes(currentModeId = current, available = available)
   }
+
+  /**
+   * Boolean options out of a `session/new` result, a `set_config_option` answer or an update.
+   *
+   * Anything that is not a boolean option is dropped rather than shown as text: the protocol has
+   * other types, and a switch drawn for something that is not a switch sets the wrong value.
+   */
+  private fun parseConfigOptions(source: JsonObject): List<SessionConfigOption> =
+    (source["configOptions"] as? JsonArray).orEmpty().mapNotNull { entry ->
+      val option = entry as? JsonObject ?: return@mapNotNull null
+      val id = option["id"]?.stringOrNull() ?: return@mapNotNull null
+      if (option["type"]?.stringOrNull() != CONFIG_TYPE_BOOLEAN) return@mapNotNull null
+      val value = (option["value"] as? JsonPrimitive)?.booleanOrNull ?: return@mapNotNull null
+      SessionConfigOption(
+        id = id,
+        name = option["name"]?.stringOrNull() ?: id,
+        description = option["description"]?.stringOrNull(),
+        value = value,
+      )
+    }
 
   private fun JsonElement.stringOrNull(): String? = (this as? JsonPrimitive)?.contentOrNull
 
@@ -280,8 +345,11 @@ class AcpClient(
           val params = msg["params"] as? JsonObject
           when {
             method != null && id != null -> respond(id, method, params ?: JsonObject(emptyMap()))
-            method != null -> if (method == "session/update") { if (params != null) onSessionUpdateNotification(params) }
-                              else handler.onProtocolLog(t("acp.log.notification", "method" to method))
+            method != null -> when {
+              method == "session/update" -> if (params != null) onSessionUpdateNotification(params)
+              method == Elicitation.COMPLETE_METHOD -> handler.onElicitComplete(params ?: JsonObject(emptyMap()))
+              else -> handler.onProtocolLog(t("acp.log.notification", "method" to method))
+            }
             id != null -> {
               val future = pending.remove(id) ?: return@forEachLine
               val error = msg["error"]
@@ -302,6 +370,10 @@ class AcpClient(
 
   private fun onSessionUpdateNotification(params: JsonObject) {
     val update = params["update"] as? JsonObject
+    if (update?.get("sessionUpdate")?.stringOrNull() == UPDATE_CONFIG_OPTIONS) {
+      configOptions = parseConfigOptions(update)
+      handler.onConfigOptionsChanged(configOptions)
+    }
     if (update?.get("sessionUpdate")?.stringOrNull() == UPDATE_CURRENT_MODE) {
       val modeId = update["currentModeId"]?.stringOrNull()
       if (modeId != null) {
@@ -371,7 +443,23 @@ class AcpClient(
   }
 
   companion object {
+    /**
+     * Версия ACP, на которой мы разговариваем.
+     *
+     * Отдельной константой, потому что версия — это ось, а не число в теле одного запроса. У
+     * протокола опубликован черновик v2 (20.07.2026), и он ломает почти всё, что мы используем:
+     * capabilities сливаются в один объект, режимы сессии исчезают как отдельный API и переезжают
+     * в configOptions, `session/load` заменяется на `session/resume`, `tool_call` и его обновление
+     * становятся одним upsert, клиентские ФС и терминал убираются. Автоматической конверсии
+     * v1↔v2 не планируется — только согласование версии при инициализации.
+     *
+     * Поэтому v1 остаётся рабочей целью (решение №50), а место, где версия называется, — одно.
+     */
+    const val PROTOCOL_VERSION = 1
+
     private const val UPDATE_CURRENT_MODE = "current_mode_update"
+    private const val UPDATE_CONFIG_OPTIONS = "config_options_update"
+    private const val CONFIG_TYPE_BOOLEAN = "boolean"
 
     private val EXTRA_PATH: String = listOf(
       System.getProperty("user.home") + "/.local/bin",

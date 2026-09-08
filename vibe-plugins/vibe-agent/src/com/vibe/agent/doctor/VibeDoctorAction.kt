@@ -177,9 +177,19 @@ class VibeDoctorAction : AnAction({ t("doctor.action") }) {
         expired.isNotEmpty() -> t("doctor.detail.priceExpired",
                                   "model" to (expired.first().providerId + "/" + expired.first().modelId),
                                   "count" to expired.size)
-        expiring.isNotEmpty() -> t("doctor.detail.priceExpiring",
-                                   "model" to (expiring.first().providerId + "/" + expiring.first().modelId),
-                                   "days" to expiring.first().daysLeft, "count" to expiring.size)
+        expiring.isNotEmpty() -> {
+          val soon = expiring.first()
+          val line = t("doctor.detail.priceExpiring",
+                       "model" to (soon.providerId + "/" + soon.modelId),
+                       "days" to soon.daysLeft, "count" to expiring.size)
+          // Множитель называется отдельной фразой: решение принимают по нему, а не по дате.
+          val model = providers.firstOrNull { it.id == soon.providerId }
+            ?.models?.firstOrNull { it.id == soon.modelId }
+          val factor = com.vibe.agent.providers.PriceValidity.inputFactor(model?.pricing, soon.after)
+          if (factor == null) line
+          else line + " " + t("doctor.detail.priceAfter",
+                              "factor" to String.format(java.util.Locale.ROOT, "%.1f", factor))
+        }
         else -> t("doctor.detail.priceValidityNone")
       },
     ))

@@ -122,6 +122,9 @@
       <action id="Vibe.Features" class="com.vibe.agent.features.VibeFeaturesAction"
               text="Возможности VibeIDEA"
               description="Что уже встроено и где это включается — списком, с именами действий"/>
+      <action id="Vibe.ReconnectAgent" class="com.vibe.agent.acp.VibeReconnectAgentAction"
+              text="Переподключить агента"
+              description="Поднять соединение с внешним ACP-агентом заново, не перезапуская IDE"/>
       <action id="Vibe.Doctor" class="com.vibe.agent.doctor.VibeDoctorAction"
               text="Диагностика" description="Один отчёт: сборка, провайдеры, конфиги, режимы, индексы"/>
       <action id="Vibe.DesignDoctor" class="com.vibe.agent.design.VibeDesignDoctorAction"
