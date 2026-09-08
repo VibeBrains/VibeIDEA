@@ -14,5 +14,6 @@
     <toolWindow id="VibeServer" anchor="bottom" icon="/icons/vibeServer.svg"
                 factoryClass="com.vibe.server.ui.VibeServerToolWindowFactory"/>
     <notificationGroup id="Vibe Server" displayType="BALLOON"/>
+    <postStartupActivity implementation="com.vibe.server.AutoStartStartup"/>
   </extensions>
 </idea-plugin>

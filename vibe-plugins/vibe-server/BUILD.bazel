@@ -32,6 +32,8 @@ jvm_library(
         "//platform/ide-core",
         "//platform/util:util-ui",
         "//platform/core-ui",
+        # Гейт доверия проекту (TrustedProjects) — автозапуск чужих команд без него невозможен.
+        "//platform/platform-impl:ide-impl",
     ],
 )
 

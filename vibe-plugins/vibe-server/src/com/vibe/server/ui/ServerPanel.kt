@@ -246,6 +246,21 @@ class ServerPanel(private val project: Project) : JPanel(BorderLayout()) {
     }
   }
 
+  /**
+   * Автозапуск: поднять записи, попросившие его, вместе с их зависимостями.
+   *
+   * Идёт через тот же раннер и тот же план волн, что и кнопка «Запустить всё»: второй путь запуска
+   * однажды разошёлся бы с первым в порядке или в проверках готовности. Зависимости добавляет
+   * [ServersFile.selectWithDependencies] — запись с `autoStart` бесполезна без того, чего она ждёт.
+   */
+  fun startAutoStart() {
+    val wanted = com.vibe.server.AutoStartPolicy.wanted(entries)
+    if (wanted.isEmpty()) return
+    appendLog(t("servers.autoStart.starting", "count" to wanted.size))
+    val withDeps = wanted.flatMap { com.vibe.server.ServersFile.selectWithDependencies(entries, it.id) }.distinct()
+    pooled { runner.startAll(withDeps) }
+  }
+
   private fun pooled(body: () -> Unit) {
     ApplicationManager.getApplication().executeOnPooledThread(body)
   }

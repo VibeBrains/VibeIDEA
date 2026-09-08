@@ -1721,5 +1721,9 @@
   "trace.contextTaxRatio": "That is {ratio}x of reminding per unit of work.",
   "pipeline.limit.tokens": "the \"{role}\" step hit its ceiling of {limit} tokens and was stopped",
   "pipeline.limit.steps": "the \"{role}\" step hit its ceiling of {limit} tool calls and was stopped",
-  "pipeline.stepCapped": "{header} was stopped by its own ceiling"
+  "pipeline.stepCapped": "{header} was stopped by its own ceiling",
+  "servers.autoStart.ask": "This project asks to start its stack on open ({count} entr.). Start it in this project?",
+  "servers.autoStart.yes": "Start it",
+  "servers.autoStart.no": "Do not start",
+  "servers.autoStart.starting": "auto-start: bringing up {count} entr. and their dependencies"
 }

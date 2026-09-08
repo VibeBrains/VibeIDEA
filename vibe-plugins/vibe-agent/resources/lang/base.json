@@ -1721,5 +1721,9 @@
   "trace.contextTaxRatio": "Это {ratio}× напоминания на единицу работы.",
   "pipeline.limit.tokens": "потолок шага «{role}»: выбраны {limit} токенов — шаг прекращён",
   "pipeline.limit.steps": "потолок шага «{role}»: {limit} вызовов инструментов — шаг прекращён",
-  "pipeline.stepCapped": "{header} прекращён своим потолком"
+  "pipeline.stepCapped": "{header} прекращён своим потолком",
+  "servers.autoStart.ask": "Проект просит поднимать свой стек при открытии ({count} запис.). Запускать в этом проекте?",
+  "servers.autoStart.yes": "Запускать",
+  "servers.autoStart.no": "Не запускать",
+  "servers.autoStart.starting": "автозапуск: поднимаю {count} запис. и их зависимости"
 }
