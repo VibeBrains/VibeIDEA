@@ -43,6 +43,14 @@ class AcpClient(
     fun onModeChanged(modeId: String) {}
     /** The agent changed its own configuration switches; the list is the whole current set. */
     fun onConfigOptionsChanged(options: List<SessionConfigOption>) {}
+
+    /**
+     * Запись MCP-сервера IDE для этой сессии, или null.
+     *
+     * Спрашивается у клиента, а не решается здесь: доступность зависит от настроек IDE и токена,
+     * а этот класс — транспорт, и знать о настройках ему незачем.
+     */
+    fun ideToolsFor(agentSupportsHttp: Boolean): Map<String, Any>? = null
     /** Called on the reader thread; must return the permission outcome (closed dialog = refusal). */
     fun onRequestPermission(params: JsonObject): JsonElement
 
@@ -148,6 +156,22 @@ class AcpClient(
     for (id in ids) pending.remove(id)?.completeExceptionally(IllegalStateException(reason))
   }
 
+  /** Одна запись MCP-сервера, собранная снаружи (карта → JSON без ещё одной модели данных). */
+  @Suppress("UNCHECKED_CAST")
+  private fun toJson(value: Any?): JsonElement = when (value) {
+    is Map<*, *> -> buildJsonObject { value.forEach { (k, v) -> put(k.toString(), toJson(v)) } }
+    is List<*> -> JsonArray(value.map { toJson(it) })
+    is Boolean -> JsonPrimitive(value)
+    is Number -> JsonPrimitive(value)
+    else -> JsonPrimitive(value?.toString().orEmpty())
+  }
+
+  /**
+   * Что предложить агенту из инструментов IDE — считается ПОСЛЕ `initialize`, потому что зависит
+   * от объявленных им возможностей. Null — предлагать нечего или некому.
+   */
+  private var ideTools: Map<String, Any>? = null
+
   fun initializeAndOpenSession(): CompletableFuture<String> {
     val init = buildJsonObject {
       put("protocolVersion", PROTOCOL_VERSION)
@@ -178,9 +202,13 @@ class AcpClient(
     }
     return request("initialize", init).thenCompose { initResult ->
       capabilities = parseCapabilities(initResult)
+      ideTools = handler.ideToolsFor(capabilities?.mcpHttp == true)
       request("session/new", buildJsonObject {
         put("cwd", workingDir ?: System.getProperty("user.home"))
-        put("mcpServers", JsonArray(emptyList()))
+        // Инструменты самой IDE предлагаются агенту, которого IDE и запустила: без этого он
+        // работает в проекте, не видя ни графа импортов, ни поиска по корпусу, ни журнала решений.
+        // Решение о том, можно ли, принимает [IdeToolsOffer]; здесь только форма запроса.
+        put("mcpServers", JsonArray(ideTools?.let { listOf(toJson(it)) } ?: emptyList()))
       })
     }.thenApply { result ->
       val obj = result.jsonObject
@@ -242,10 +270,13 @@ class AcpClient(
   // Lenient parsing: a missing or malformed field never fails the handshake, it just reads as "unsupported".
   private fun parseCapabilities(initResult: JsonElement): AgentCapabilities {
     val obj = initResult as? JsonObject ?: return AgentCapabilities(image = false, embeddedContext = false)
-    val prompt = (obj["agentCapabilities"] as? JsonObject)?.get("promptCapabilities") as? JsonObject
+    val agent = obj["agentCapabilities"] as? JsonObject
+    val prompt = agent?.get("promptCapabilities") as? JsonObject
+    val mcp = agent?.get("mcpCapabilities") as? JsonObject
     return AgentCapabilities(
       image = prompt?.get("image").booleanOrFalse(),
       embeddedContext = prompt?.get("embeddedContext").booleanOrFalse(),
+      mcpHttp = mcp?.get("http").booleanOrFalse(),
     )
   }
 

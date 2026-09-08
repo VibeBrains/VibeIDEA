@@ -1725,5 +1725,12 @@
   "servers.autoStart.ask": "This project asks to start its stack on open ({count} entr.). Start it in this project?",
   "servers.autoStart.yes": "Start it",
   "servers.autoStart.no": "Do not start",
-  "servers.autoStart.starting": "auto-start: bringing up {count} entr. and their dependencies"
+  "servers.autoStart.starting": "auto-start: bringing up {count} entr. and their dependencies",
+  "mcp.offer.done": "the agent was offered the IDE tools: the import graph, corpus search, decisions, symbol usages",
+  "mcp.offer.apiOff": "the IDE tools were not offered: the HTTP API is off (Settings → Tools → VibeIDEA → Agent)",
+  "mcp.offer.agentCannot": "the IDE tools were not offered: the agent did not declare HTTP MCP support",
+  "mcp.offer.noToken": "the IDE tools were not offered: there is no API token (Tools → \"VibeIDEA: show the API token\")",
+  "doctor.line.ideTools": "the IDE tools for the agent",
+  "doctor.detail.ideToolsOn": "the MCP server is up on 127.0.0.1:{port} — the agent gets them when a session opens, if it speaks HTTP MCP",
+  "doctor.detail.ideToolsOff": "the HTTP API is off, so the agent works without the import graph, corpus search and the decision log"
 }

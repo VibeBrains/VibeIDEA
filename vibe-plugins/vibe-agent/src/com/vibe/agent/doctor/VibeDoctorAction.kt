@@ -210,6 +210,17 @@ class VibeDoctorAction : AnAction({ t("doctor.action") }) {
       },
     ))
 
+    // Видит ли агент, запущенный В IDE, инструменты самой IDE. Раньше ответ был «нет, никогда», и
+    // об этом нельзя было узнать: пустой список серверов уезжал молча.
+    val apiService = com.vibe.agent.http.VibeHttpApiService.getInstance()
+    val apiRunning = apiService.isRunning
+    lines.add(VibeDiagnosis.Line(
+      t("doctor.line.ideTools"),
+      if (apiRunning) VibeDiagnosis.State.OK else VibeDiagnosis.State.ABSENT,
+      if (apiRunning) t("doctor.detail.ideToolsOn", "port" to apiService.port)
+      else t("doctor.detail.ideToolsOff"),
+    ))
+
     lines.add(VibeDiagnosis.Line(t("doctor.line.acp"),
                                  if (acp) VibeDiagnosis.State.OK else VibeDiagnosis.State.WARN,
                                  if (acp) ".vibe/acp.json" else t("doctor.detail.acpDefault")))

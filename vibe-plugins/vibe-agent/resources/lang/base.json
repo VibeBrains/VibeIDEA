@@ -1725,5 +1725,12 @@
   "servers.autoStart.ask": "Проект просит поднимать свой стек при открытии ({count} запис.). Запускать в этом проекте?",
   "servers.autoStart.yes": "Запускать",
   "servers.autoStart.no": "Не запускать",
-  "servers.autoStart.starting": "автозапуск: поднимаю {count} запис. и их зависимости"
+  "servers.autoStart.starting": "автозапуск: поднимаю {count} запис. и их зависимости",
+  "mcp.offer.done": "агенту предложены инструменты IDE: граф импортов, поиск по корпусу, решения, где встречается имя",
+  "mcp.offer.apiOff": "инструменты IDE агенту не предложены: HTTP API выключен (Settings → Tools → VibeIDEA → Агент)",
+  "mcp.offer.agentCannot": "инструменты IDE агенту не предложены: он не заявил поддержку MCP по HTTP",
+  "mcp.offer.noToken": "инструменты IDE агенту не предложены: нет токена API (Tools → «VibeIDEA: показать токен API»)",
+  "doctor.line.ideTools": "инструменты IDE для агента",
+  "doctor.detail.ideToolsOn": "MCP-сервер поднят на 127.0.0.1:{port} — агент получит их при открытии сессии, если умеет MCP по HTTP",
+  "doctor.detail.ideToolsOff": "HTTP API выключен, поэтому агент работает без графа импортов, поиска по корпусу и журнала решений"
 }

@@ -626,6 +626,30 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     }
   }
 
+  /**
+   * Инструменты IDE — агенту, которого IDE запустила.
+   *
+   * Предлагаются, только когда MCP-сервер УЖЕ поднят: он живёт на том же входе, что HTTP API, а тот
+   * выключен по умолчанию осознанно. Включать его за пользователя ради удобства агента значит
+   * менять его решение о безопасности.
+   *
+   * Причина отказа называется в ленте один раз за сессию: молчание здесь неотличимо от «работает»,
+   * а разница — целый набор инструментов, которого агент не видит.
+   */
+  override fun ideToolsFor(agentSupportsHttp: Boolean): Map<String, Any>? {
+    val service = com.vibe.agent.http.VibeHttpApiService.getInstance()
+    val token = runCatching { com.vibe.agent.http.VibeApiToken.peek() }.getOrNull()
+    val offer = com.vibe.agent.mcp.IdeToolsOffer.httpServer(
+      running = service.isRunning, port = service.port, token = token, agentSupportsHttp = agentSupportsHttp)
+    systemLine(when (com.vibe.agent.mcp.IdeToolsOffer.reason(service.isRunning, token, agentSupportsHttp)) {
+      com.vibe.agent.mcp.IdeToolsOffer.Reason.OFFERED -> t("mcp.offer.done")
+      com.vibe.agent.mcp.IdeToolsOffer.Reason.API_OFF -> t("mcp.offer.apiOff")
+      com.vibe.agent.mcp.IdeToolsOffer.Reason.AGENT_CANNOT_HTTP -> t("mcp.offer.agentCannot")
+      com.vibe.agent.mcp.IdeToolsOffer.Reason.NO_TOKEN -> t("mcp.offer.noToken")
+    })
+    return offer
+  }
+
   override fun onConfigOptionsChanged(options: List<com.vibe.agent.acp.SessionConfigOption>) {
     SwingUtilities.invokeLater { configPicker.setOptions(options) }
   }

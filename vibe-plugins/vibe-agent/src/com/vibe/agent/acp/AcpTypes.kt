@@ -9,6 +9,14 @@ import kotlinx.serialization.json.put
 data class AgentCapabilities(
   val image: Boolean,
   val embeddedContext: Boolean,
+  /**
+   * Agent accepts HTTP MCP servers (`agentCapabilities.mcpCapabilities.http`).
+   *
+   * Asked rather than assumed because the spec requires it: a client must verify this before it
+   * sends an HTTP server, and an agent that does not know the variant fails to parse `session/new`
+   * altogether — the session dies for a convenience it never asked for.
+   */
+  val mcpHttp: Boolean = false,
 )
 
 /** One entry of `availableModes` in the `session/new` result. */
