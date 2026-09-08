@@ -60,6 +60,38 @@ object Trifecta {
     return null
   }
 
+  /**
+   * Инструменты агента, которыми он читает приватное САМ, мимо клиента.
+   *
+   * `PRIVATE_DATA` ловился только на `fs/read_text_file` — то есть когда файл читает IDE по просьбе
+   * агента. Но крупные агенты (Claude Code в первую очередь) читают файлы своими инструментами, и
+   * до нас доходит не чтение, а запрос разрешения на него: признак не появлялся никогда, а
+   * предупреждение обещало срабатывать. Обещание, которое сбывается реже написанного, хуже
+   * отсутствующего — на него рассчитывают.
+   *
+   * Имена собраны по факту, а не угаданы: так называются инструменты у Claude Code и Codex.
+   * Регистр не важен, точное совпадение — чтобы `WriteFile` не считался чтением.
+   */
+  private val READING_TOOLS = setOf(
+    "read", "read_file", "readfile", "read_text_file", "view", "cat",
+    "grep", "search", "search_files", "glob", "list_files", "ls", "codebase_search",
+  )
+
+  /**
+   * Аргументы, выдающие чтение файла инструментом, чьё имя нам незнакомо.
+   *
+   * Инструменты у каждого агента свои и переименовываются без предупреждения, а вот путь к файлу
+   * в аргументах называется одинаково у всех — по нему и узнаём.
+   */
+  private val PATH_ARGS = setOf("path", "file_path", "filepath", "file", "paths", "pattern")
+
+  /** Читает ли этот вызов приватные данные проекта. Имя ИЛИ аргументы — достаточно одного. */
+  fun readsPrivateData(toolName: String?, argumentNames: Collection<String>): Boolean {
+    val name = toolName?.trim()?.lowercase()
+    if (name != null && name in READING_TOOLS) return true
+    return argumentNames.any { it.trim().lowercase() in PATH_ARGS }
+  }
+
   /** Разбирает командную строку тем же способом, что и анализатор разрушительных команд. */
   fun outboundInLine(line: String): String? =
     ShellSafetyAnalyzer.splitSegments(line).firstNotNullOfOrNull { outboundReason(it.first, it.second) }

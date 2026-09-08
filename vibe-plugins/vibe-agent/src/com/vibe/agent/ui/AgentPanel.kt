@@ -3402,13 +3402,35 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     if (resolved.apiKey == null && !resolved.isLocal) {
       throw IllegalStateException(com.vibe.agent.i18n.VibeI18n.t("chat.provider.noKey", "id" to providerId))
     }
+    // Потолок токенов у шага на своей модели.
+    //
+    // Прямой запрос не сообщает расход по ходу — числа приходят только в конце, — поэтому здесь
+    // считается ОЦЕНКА по объёму: сам запрос плюс всё, что уже пришло в ответе. Это меньше, чем
+    // умеет ACP-ветка, и это сказано в спеке прямым текстом: потолок бережёт от убежавшего ответа,
+    // а не отмеряет токены точно. Молчать о разнице нельзя — потолок, который «вроде есть»,
+    // тратит деньги ровно там, где его поставили, чтобы не тратить.
+    val ceiling = stepLimits?.maxTokens?.takeIf { it > 0 }?.toLong()
+    val spent = java.util.concurrent.atomic.AtomicLong(
+      if (ceiling == null) 0L else com.vibe.agent.context.ContextBudget.estimateTokens(prompt))
     llmClient.chat(
-      resolved, model, listOf(ChatMessage(role = "user", text = prompt)), { llmCancel.get() },
+      resolved, model, listOf(ChatMessage(role = "user", text = prompt)),
+      {
+        llmCancel.get() || (ceiling != null && spent.get() > ceiling).also {
+          if (it && stepLimitHit == null) {
+            stepLimitHit = com.vibe.agent.pipelines.StepLimits.Verdict.TOKENS
+            systemLine(t("pipeline.limit.tokensEstimated", "role" to (stepLimits?.role ?: ""),
+                         "limit" to "%,d".format(ceiling)))
+          }
+        }
+      },
       onWaiting = { attempt, delayMs, reason ->
         systemLine(t("retry.waiting", "attempt" to attempt, "seconds" to (delayMs / 1000), "reason" to (reason ?: "")))
       },
       onThought = { appendThought(it) },
-    ) { delta -> appendAgentText(delta) }
+    ) { delta ->
+      if (ceiling != null) spent.addAndGet(com.vibe.agent.context.ContextBudget.estimateTokens(delta))
+      appendAgentText(delta)
+    }
     lastTurnUsage = llmClient.lastUsage()
     lastTurnPricing = model.pricing
   }
@@ -4389,6 +4411,11 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     // Deterministic destructive-command warning for the agent's own command tools (Claude runs Bash itself).
     val command = hookParams?.get("command")?.jsonPrimitive?.contentOrNull
     val destructive = command?.let { ShellSafetyAnalyzer.analyzeLine(it) }
+    // Трифекта: чтение приватного собственным инструментом агента. До нас доходит не само чтение,
+    // а просьба разрешить его, — и это единственное место, где такое чтение вообще видно.
+    if (com.vibe.agent.guard.Trifecta.readsPrivateData(hookTool, hookParams?.keys.orEmpty())) {
+      turnSignals.add(com.vibe.agent.guard.Trifecta.Signal.PRIVATE_DATA)
+    }
     // Трифекта: канал наружу — третий признак. Считается ДО диалога, чтобы человек увидел
     // предупреждение в том же вопросе, а не после того, как разрешил.
     val outbound = command?.let { com.vibe.agent.guard.Trifecta.outboundInLine(it) }

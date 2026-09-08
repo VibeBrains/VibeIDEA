@@ -1732,5 +1732,6 @@
   "mcp.offer.noToken": "the IDE tools were not offered: there is no API token (Tools → \"VibeIDEA: show the API token\")",
   "doctor.line.ideTools": "the IDE tools for the agent",
   "doctor.detail.ideToolsOn": "the MCP server is up on 127.0.0.1:{port} — the agent gets them when a session opens, if it speaks HTTP MCP",
-  "doctor.detail.ideToolsOff": "the HTTP API is off, so the agent works without the import graph, corpus search and the decision log"
+  "doctor.detail.ideToolsOff": "the HTTP API is off, so the agent works without the import graph, corpus search and the decision log",
+  "pipeline.limit.tokensEstimated": "the \"{role}\" step hit its estimated ceiling of {limit} tokens and was stopped (with its own model the spend is only an estimate)"
 }
