@@ -1739,5 +1739,6 @@
   "cascade.gated": "The gate ruled {count} time(s).",
   "cascade.share": "Escalation was needed in {escalation}% of cases; the draft was accepted in {accepted}%.",
   "cascade.skipped": "Expensive steps not run: {count}.",
-  "cascade.savingsHint": "Savings = skipped steps x (strong model price - cheap model price), minus re-feeding the context to the expensive step. The latter shows up in /spend for this chat and is usually forgotten. Prices come from your own entries in .vibe/providers/ - the IDE has no price table of its own."
+  "cascade.savingsHint": "Savings = skipped steps x (strong model price - cheap model price), minus re-feeding the context to the expensive step. The latter shows up in /spend for this chat and is usually forgotten. Prices come from your own entries in .vibe/providers/ - the IDE has no price table of its own.",
+  "docs.hint.unlinkedIndex": "The entry seems to LIST the documents ({count} of them) rather than link them: \"{entry}\" mentions them by name, while reachability is counted by links. Wrap the names in markdown links — that is one edit, not lost documents."
 }

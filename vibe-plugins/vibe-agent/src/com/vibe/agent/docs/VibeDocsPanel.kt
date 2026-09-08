@@ -38,6 +38,13 @@ class VibeDocsPanel(private val project: Project) : JPanel(BorderLayout()) {
     cellRenderer = DocsTreeRenderer()
   }
   private val summary = JBLabel().apply { border = JBUI.Borders.empty(4, 8) }
+
+  /** Подсказка о «перечислено, но не связано»; пустая — скрыта, чтобы не занимать строку зря. */
+  private val hint = JBLabel().apply {
+    border = JBUI.Borders.empty(0, 8, 4, 8)
+    isVisible = false
+    foreground = com.intellij.ui.JBColor.namedColor("Vibe.Docs.hintForeground", com.intellij.ui.JBColor.GRAY)
+  }
   private val graphView = DocsGraphView { openDocument(it) }
   private val cards = JPanel(java.awt.CardLayout())
   private var showingGraph = false
@@ -59,7 +66,11 @@ class VibeDocsPanel(private val project: Project) : JPanel(BorderLayout()) {
         add(com.intellij.ui.components.ActionLink(t("docs.refresh")) { reload() })
       }, java.awt.BorderLayout.EAST)
     }
-    add(header, BorderLayout.NORTH)
+    add(JPanel(java.awt.BorderLayout()).apply {
+      isOpaque = false
+      add(header, java.awt.BorderLayout.NORTH)
+      add(hint, java.awt.BorderLayout.SOUTH)
+    }, BorderLayout.NORTH)
     cards.add(VibeScroll.pane(tree), CARD_LIST)
     cards.add(VibeScroll.pane(graphView), CARD_GRAPH)
     add(cards, BorderLayout.CENTER)
@@ -100,6 +111,12 @@ class VibeDocsPanel(private val project: Project) : JPanel(BorderLayout()) {
         )
       }
       val nodes = DocsTree.build(items, root = prefix)
+      // «Недостижимо: 30» бывает правдой и при этом бесполезным числом: индекс есть, но он
+      // перечисляет файлы списком, а не ссылками. Это одна правка, а не тридцать потерь.
+      val entry = analysis.docs.firstOrNull { it.path.endsWith("/" + DocsIndex.ENTRY_POINT) || it.path == DocsIndex.ENTRY_POINT }?.path
+        ?: analysis.docs.firstOrNull()?.path
+      val mentioned = entry?.let { DocsHints.mentionedButNotLinked(files, analysis, it) }.orEmpty()
+      val unlinkedIndex = DocsHints.looksLikeUnlinkedIndex(mentioned, analysis.unreachable.size)
       ApplicationManager.getApplication().invokeLater {
         root.removeAllChildren()
         nodes.forEach { root.add(toSwing(it)) }
@@ -114,6 +131,10 @@ class VibeDocsPanel(private val project: Project) : JPanel(BorderLayout()) {
           // Saying what the drawing left out: a picture that quietly stops at the limit reads as
           // «это всё», which is exactly the claim it cannot make.
           (if (dropped > 0) "   " + t("docs.graph.dropped", "count" to dropped) else "")
+        // Сказано словами и отдельной строкой: цифра выше остаётся честной, но человеку нужен не
+        // приговор документации, а имя того, что чинить.
+        hint.text = if (unlinkedIndex) t("docs.hint.unlinkedIndex", "count" to mentioned.size, "entry" to (entry ?: "")) else ""
+        hint.isVisible = unlinkedIndex
       }
     }
   }
