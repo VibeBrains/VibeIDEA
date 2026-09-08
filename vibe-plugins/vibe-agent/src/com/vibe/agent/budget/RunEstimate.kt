@@ -61,7 +61,7 @@ object RunEstimate {
     val known = steps.filter { costs.containsKey(it) }
     val unknown = steps.filterNot { costs.containsKey(it) }.distinct()
     val tokens = known.sumOf { costs.getValue(it).avgTokens }
-    val cost = pricePerMillionInput?.takeIf { it > 0 && tokens > 0 }?.let { tokens * it / MILLION }
+    val cost = pricePerMillionInput?.takeIf { it > 0 && tokens > 0 }?.let { tokens * it / com.vibe.agent.providers.ModelPricing.MILLION }
     return Estimate(
       tokens = tokens,
       cost = cost,
@@ -72,5 +72,4 @@ object RunEstimate {
     )
   }
 
-  private const val MILLION = 1_000_000.0
 }

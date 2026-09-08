@@ -24,6 +24,17 @@ object HttpApiPolicy {
   const val PROTOCOL_VERSION = 1
   const val MAX_BODY_BYTES = 1_000_000
 
+  /**
+   * Пути входа, названные ОДИН раз.
+   *
+   * Не украшение: адрес MCP-сервера теперь собирает ещё и клиент — IDE предлагает его агенту,
+   * которого сама запустила. Две копии строки `/mcp` разойдутся молча, и агент получит 404 на
+   * инструмент, который IDE считает поднятым.
+   */
+  const val PATH_HEALTH = "/health"
+  const val PATH_RUN = "/run"
+  const val PATH_MCP = "/mcp"
+
   /** What the transport layer must tell the policy about a request. */
   data class Request(
     val method: String,
@@ -88,11 +99,11 @@ object HttpApiPolicy {
     if (request.bodyLength > MAX_BODY_BYTES) return Decision.Refuse(413, "тело больше $MAX_BODY_BYTES байт")
 
     return when {
-      request.method == "GET" && request.path == "/health" -> Decision.Health
-      request.method == "POST" && request.path == "/run" -> parseRun(request.body)
+      request.method == "GET" && request.path == PATH_HEALTH -> Decision.Health
+      request.method == "POST" && request.path == PATH_RUN -> parseRun(request.body)
       // The MCP endpoint deliberately lives beside /run rather than replacing it: the VibeIDE
       // contract for /health and /run is carried over verbatim and scripts depend on it.
-      request.method == "POST" && request.path == "/mcp" -> Decision.Mcp(request.body, request.mcpMethod)
+      request.method == "POST" && request.path == PATH_MCP -> Decision.Mcp(request.body, request.mcpMethod)
       else -> Decision.Refuse(404, "известны только GET /health, POST /run и POST /mcp")
     }
   }

@@ -328,6 +328,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
       handleMapCommand(message) -> true
       handleRulesCommand(message) -> true
       handleSpendCommand(message) -> true
+      handleCascadeCommand(message) -> true
       sessionCeilingReached(message.text) -> false
       spendCeilingReached() -> false
       handleWatchCommand(message) -> true
@@ -824,6 +825,47 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
       }
       SwingUtilities.invokeLater {
         val console = TerminalConsole(t("spend.title"))
+        console.append(text)
+        messages.add(console)
+        revalidateScroll()
+      }
+    }
+    return true
+  }
+
+  /**
+   * `/cascade` — окупается ли каскад.
+   *
+   * Каскад имеет смысл ровно настолько, насколько РЕДКО срабатывает эскалация, и пока это число
+   * никто не показывает, «дешёвая модель с гейтом» держится на вере — том же основании, что и
+   * чужие обещания «−67% стоимости». Считается по журналу, который и так пишется.
+   */
+  private fun handleCascadeCommand(message: ComposedMessage): Boolean {
+    if (message.text.trim() != CASCADE_COMMAND) return false
+    userBubble(message.text.trim())
+    ApplicationManager.getApplication().executeOnPooledThread {
+      val lines = audit?.readRecent(CASCADE_JOURNAL_LINES).orEmpty()
+      val report = com.vibe.agent.pipelines.CascadeStats.of(com.vibe.agent.pipelines.CascadeStats.parse(lines))
+      val text = buildString {
+        if (report.gated == 0) {
+          // Пустой отчёт объясняет, чего не хватает: гейта в hooks.json или самих прогонов.
+          appendLine(t("cascade.none"))
+        }
+        else {
+          appendLine(t("cascade.gated", "count" to report.gated))
+          report.escalationShare?.let {
+            appendLine(t("cascade.share",
+                         "escalation" to "%.0f".format(it * 100),
+                         "accepted" to "%.0f".format((1 - it) * 100)))
+          }
+          appendLine(t("cascade.skipped", "count" to report.skipped))
+          appendLine()
+          // Деньги — только по названным ценам (правило №40: своей таблицы цен у нас нет).
+          appendLine(t("cascade.savingsHint"))
+        }
+      }
+      SwingUtilities.invokeLater {
+        val console = TerminalConsole(t("cascade.title"))
         console.append(text)
         messages.add(console)
         revalidateScroll()
@@ -3486,6 +3528,12 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
           lastGateAccepted = null
           if (step.escalation && accepted == true) {
             systemLine(t("pipeline.stepSkippedByGate", "header" to header))
+            // Пропуск пишется в журнал наравне с вердиктом гейта: без него окупаемость каскада
+            // нечем считать — видно «сколько раз приняли», но не «сколько дорогого не запустили».
+            audit?.append(AuditEvent(System.currentTimeMillis(), AuditEvent.Action.HOOK, ok = true,
+                                     actor = agentActor(),
+                                     meta = mapOf("event" to CASCADE_SKIP, "pipeline" to pipeline.id,
+                                                  "step" to (i + 1).toString(), "role" to step.role)))
             return@forEachIndexed
           }
           if (roleBudgetExceeded(step.role)) {
@@ -4597,6 +4645,14 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
 
     /** Вопрос — это заголовок; всё длиннее в заголовок и не поместится. */
     const val DECISION_QUESTION_CHARS = 200
+
+    const val CASCADE_COMMAND = "/cascade"
+
+    /** Сколько строк журнала читаем на отчёт: каскад — про недавнее, а не про всю историю проекта. */
+    const val CASCADE_JOURNAL_LINES = 5_000
+
+    /** Метка пропуска шага эскалации в журнале: по ней считается окупаемость каскада. */
+    const val CASCADE_SKIP = "pipelineEscalationSkipped"
 
     /** Сколько ходов помнит счётчик контекстного налога: разговор длиннее — это уже журнал расхода. */
     const val MAX_TRACKED_TURNS = 200

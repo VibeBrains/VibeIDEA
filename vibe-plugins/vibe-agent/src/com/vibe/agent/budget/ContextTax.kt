@@ -51,16 +51,16 @@ object ContextTax {
     val input = known.sumOf { it.inputTokens }
     val cacheRead = known.sumOf { it.cacheReadTokens }
     val output = known.sumOf { it.outputTokens }
-    val priced = pricing?.takeIf { it.stated }
+    // Цена считается ТЕМ ЖЕ кодом, что и везде: своя формула здесь разошлась бы с отчётом о расходе
+    // ровно в тот день, когда у вендора появится ещё одна ставка (так уже было с чтением кэша).
+    // Вход и выход подаются раздельными «ходами», потому что вопрос налога — про их отношение.
     return Report(
       turns = known.size,
       inputTokens = input,
       cacheReadTokens = cacheRead,
       outputTokens = output,
-      inputCost = priced?.let { it.input * input / MILLION + it.cacheRead * cacheRead / MILLION },
-      outputCost = priced?.let { it.output * output / MILLION },
+      inputCost = pricing?.costOf(TokenUsage(inputTokens = input, cacheReadTokens = cacheRead)),
+      outputCost = pricing?.costOf(TokenUsage(outputTokens = output)),
     )
   }
-
-  private const val MILLION = 1_000_000.0
 }

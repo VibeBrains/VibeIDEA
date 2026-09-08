@@ -1733,5 +1733,11 @@
   "doctor.line.ideTools": "the IDE tools for the agent",
   "doctor.detail.ideToolsOn": "the MCP server is up on 127.0.0.1:{port} — the agent gets them when a session opens, if it speaks HTTP MCP",
   "doctor.detail.ideToolsOff": "the HTTP API is off, so the agent works without the import graph, corpus search and the decision log",
-  "pipeline.limit.tokensEstimated": "the \"{role}\" step hit its estimated ceiling of {limit} tokens and was stopped (with its own model the spend is only an estimate)"
+  "pipeline.limit.tokensEstimated": "the \"{role}\" step hit its estimated ceiling of {limit} tokens and was stopped (with its own model the spend is only an estimate)",
+  "cascade.title": "Cascade: does it pay off",
+  "cascade.none": "The acceptance gate has not ruled once. A cascade needs two things: a step with \"escalation\": true in .vibe/pipelines.json and a \"pipelineStepEnd\" hook in .vibe/hooks.json that decides whether the draft is accepted.",
+  "cascade.gated": "The gate ruled {count} time(s).",
+  "cascade.share": "Escalation was needed in {escalation}% of cases; the draft was accepted in {accepted}%.",
+  "cascade.skipped": "Expensive steps not run: {count}.",
+  "cascade.savingsHint": "Savings = skipped steps x (strong model price - cheap model price), minus re-feeding the context to the expensive step. The latter shows up in /spend for this chat and is usually forgotten. Prices come from your own entries in .vibe/providers/ - the IDE has no price table of its own."
 }

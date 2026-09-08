@@ -25,6 +25,9 @@ object IdeToolsOffer {
   /** Имя сервера в глазах агента; по нему он называет инструменты в своих сообщениях. */
   const val NAME = "vibeidea"
 
+  /** Только петля: слушать наружу вход не умеет, и адрес обязан это повторять. */
+  private const val LOOPBACK = "127.0.0.1"
+
   /**
    * Запись MCP-сервера для `session/new`, или null — если предлагать нечего или некому.
    *
@@ -45,7 +48,9 @@ object IdeToolsOffer {
     return mapOf(
       "type" to "http",
       "name" to NAME,
-      "url" to "http://127.0.0.1:$port/mcp",
+      // Путь берётся у политики входа, а не пишется второй раз: разойдясь, копии дали бы агенту
+      // адрес, на котором никто не отвечает, — и выглядело бы это как «инструменты сломаны».
+      "url" to "http://$LOOPBACK:$port${com.vibe.agent.http.HttpApiPolicy.PATH_MCP}",
       "headers" to listOf(mapOf("name" to "Authorization", "value" to "Bearer $bearer")),
     )
   }
