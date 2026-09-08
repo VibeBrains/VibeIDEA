@@ -31,6 +31,8 @@
 ./vibe-plugins/tools/checkVibeI18n.sh      # каталог строк + храповик по литералам
 ./vibe-plugins/tools/checkVibeBranding.sh  # чужой брендинг в наших файлах
 ./vibe-plugins/tools/checkVibeDocs.sh      # запись без строки в индексе, битая ссылка, мануал вне дерева
+./vibe-plugins/tools/checkVibeModules.sh   # .iml и BUILD.bazel: ссылка на несуществующий модуль или библиотеку
+./vibe-plugins/tools/checkVibeConfigFields.sh # настройка из файла пользователя без единого потребителя
 ./bazel.cmd test //vibe-plugins/vibe-agent:vibe-agent_test
 ./vibe-plugins/tools/checkVibeDist.sh      # ПОСЛЕ сборки инсталлятора: плагины в индексе, серверы запускаются
 ./vibe-plugins/tools/checkUpstreamLag.sh   # отставание базы от upstream/master (в CI — раз в неделю)
