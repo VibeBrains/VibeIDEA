@@ -124,6 +124,38 @@ if missing:
 print("  список возможностей: упомянуто действий %d, все объявлены" % len(mentioned))
 PYTOUR
 
+# Справка ВНУТРИ сборки — копия docs/vibe (симлинк в дистрибутиве стал бы битой ссылкой). Копия
+# расходится молча: тест HelpBundleTest проверял наличие файлов и длину, но не совпадение, и
+# 08.09.2026 пользователь читал бы в собранной IDE, что потолки шага «пока не применяются», хотя
+# продукт их уже применял. Расхождение копии с источником — такое же враньё, как мёртвое поле.
+"$PYTHON" - <<'PYHELP' || fail=1
+import io, os, sys
+
+pairs = [('docs/vibe/functional.md', 'vibe-plugins/vibe-agent/resources/help/functional.md'),
+         ('docs/vibe/agentsGuide.md', 'vibe-plugins/vibe-agent/resources/help/agentsGuide.md')]
+manuals = 'docs/vibe/manuals'
+for name in sorted(os.listdir(manuals)):
+    if name.endswith('.md'):
+        pairs.append((os.path.join(manuals, name),
+                      'vibe-plugins/vibe-agent/resources/help/manuals/' + name))
+
+drifted = []
+for source, copy in pairs:
+    if not os.path.isfile(copy):
+        drifted.append(copy + ' (нет в сборке)')
+        continue
+    if io.open(source, encoding='utf-8').read() != io.open(copy, encoding='utf-8').read():
+        drifted.append(copy)
+
+if drifted:
+    print("✖ справка в сборке разошлась с docs/vibe:")
+    for item in drifted:
+        print("   ", item)
+    print("  Почините одной командой: ./vibe-plugins/tools/syncHelp.sh")
+    sys.exit(1)
+print("  справка в сборке: %d файлов, все совпадают с docs/vibe" % len(pairs))
+PYHELP
+
 if [ "$fail" -ne 0 ]; then
   say "Гейт документации: ПРОВАЛЕН"
   exit 1

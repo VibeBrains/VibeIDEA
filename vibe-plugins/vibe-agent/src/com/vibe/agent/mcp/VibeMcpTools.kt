@@ -119,16 +119,25 @@ class VibeMcpTools(private val projectProvider: () -> Project? = { ProjectManage
     val found = ArrayList<String>()
     // TextOccurenceProcessor, а не Processor: индекс слов отдаёт СОВПАДЕНИЕ (элемент плюс смещение
     // внутри него), и его собственный интерфейс — единственный, который helper принимает.
-    val processor = com.intellij.psi.search.TextOccurenceProcessor { element, _ ->
+    val processor = com.intellij.psi.search.TextOccurenceProcessor { element, offsetInElement ->
       val file = element.containingFile?.virtualFile ?: return@TextOccurenceProcessor true
       val document = com.intellij.psi.PsiDocumentManager.getInstance(project)
         .getDocument(element.containingFile) ?: return@TextOccurenceProcessor true
-      val line = document.getLineNumber(element.textOffset)
+      // Смещение внутри элемента обязательно: комментарий или многострочный литерал — ОДИН
+      // элемент, и без него совпадение из его середины уехало бы с номером первой строки, где
+      // искомого имени нет вовсе. Инструмент прямо обещает совпадения в комментариях и строках.
+      val line = document.getLineNumber(element.textRange.startOffset + offsetInElement)
       val text = document.getText(
         com.intellij.openapi.util.TextRange(document.getLineStartOffset(line), document.getLineEndOffset(line)))
       val path = base?.let { com.intellij.openapi.util.io.FileUtil.getRelativePath(it, file.path, '/') } ?: file.path
       found.add("$path:${line + 1}: ${text.trim().take(LINE_CHARS)}")
       found.size < limit
+    }
+    // Индекс слов существует не всегда: во время индексации поиск бросает IndexNotReadyException,
+    // и агент получил бы вместо ответа текст исключения — вывод «инструмент сломан» он делает один
+    // раз и навсегда. Состояние называется словами, а повтор предлагается явно.
+    if (com.intellij.openapi.project.DumbService.isDumb(project)) {
+      return McpServer.Tools.Result("IDE индексирует проект — поиск по имени будет доступен, когда индексация закончится", isError = true)
     }
     com.intellij.openapi.application.ReadAction.run<RuntimeException> {
       com.intellij.psi.search.PsiSearchHelper.getInstance(project).processElementsWithWord(

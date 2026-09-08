@@ -146,6 +146,8 @@ class AcpClient(
     sessionId = null
     capabilities = null
     modes = null
+    // Тумблеры принадлежат сессии: у мёртвого клиента их нет, как нет и режимов.
+    configOptions = emptyList()
     failPending("agent stopped")
   }
 
@@ -250,7 +252,10 @@ class AcpClient(
       put("type", "boolean")
       put("value", value)
     }).thenApply { result ->
-      (result as? JsonObject)?.let { configOptions = parseConfigOptions(it) }
+      // Только когда набор ДЕЙСТВИТЕЛЬНО пришёл: агент, ответивший «ок» без поля, не должен
+      // выглядеть как агент, отобравший все свои тумблеры.
+      val answered = result as? JsonObject
+      if (answered?.get("configOptions") != null) configOptions = parseConfigOptions(answered)
       Unit
     }
   }

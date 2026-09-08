@@ -229,6 +229,16 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
   /** Вызовы инструментов текущего шага — считаются, только когда у шага есть потолок. */
   private val stepToolCalls = java.util.concurrent.atomic.AtomicInteger(0)
 
+  /**
+   * Заполнение окна на начало шага — точка отсчёта для его потолка токенов.
+   *
+   * ACP сообщает в `usage_update` заполнение окна ВСЕЙ сессии, а не расход шага. Сравнивать потолок
+   * шага прямо с этим числом значит срезать третий шаг за то, что наговорили первые два (и любой
+   * шаг сразу — если пайплайн запущен в уже поговорившем треде), причём в ленте это выглядело бы
+   * как честно сработавшее правило. Отсчёт берётся с первого сообщения окна внутри шага.
+   */
+  @Volatile private var stepTokensBase: Long = -1L
+
   /** Шаг прекращён своим потолком: отличает его от остановки человеком и от отказа агента. */
   @Volatile private var stepLimitHit: com.vibe.agent.pipelines.StepLimits.Verdict? = null
 
@@ -1311,6 +1321,9 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     metricBaseline = null
     usedMeter.reset()
     costMeter.reset()
+    // Контекстный налог — про ЭТОТ разговор: числа прошлого в новом чате отвечают на вопрос,
+    // которого никто не задавал, и выглядят при этом достоверно.
+    threadUsages.clear()
   }
 
   /**
@@ -2962,6 +2975,12 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
       throw IllegalStateException(t("chat.handshakeTimeout", "seconds" to handshakeSec, "path" to AcpConfig.configPath()))
     }
     systemLine(t("chat.sessionOpen") + (fresh.modes?.let { m -> t("chat.modeSuffix", "mode" to (m.available.firstOrNull { it.id == m.currentModeId }?.name ?: m.currentModeId)) } ?: ""))
+    // Пилюли режима и тумблеров — по СВЕЖЕЙ сессии, здесь, а не на пути хода: после
+    // переподключения они иначе остаются пустыми до следующего оплаченного сообщения.
+    SwingUtilities.invokeLater {
+      modePicker.setModes(fresh.modes)
+      configPicker.setOptions(fresh.configOptions)
+    }
     // A fresh session starts a fresh context — drop the stale usage chip until the agent reports anew.
     SwingUtilities.invokeLater { composer.setUsage(null, null, warn = false) }
     return fresh
@@ -3296,8 +3315,12 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
   private fun enforceStepLimits(usedTokens: Long? = null, toolCalls: Int? = null) {
     val step = stepLimits ?: return
     if (stepLimitHit != null) return // потолок уже сработал, второй раз отменять нечего
+    // Первое сообщение окна внутри шага задаёт точку отсчёта: дальше считается ПРИРОСТ.
+    if (usedTokens != null && stepTokensBase < 0) stepTokensBase = usedTokens
+    val spentInStep = if (usedTokens == null || stepTokensBase < 0) 0L
+                      else (usedTokens - stepTokensBase).coerceAtLeast(0L)
     val verdict = com.vibe.agent.pipelines.StepLimits.check(
-      usedTokens = usedTokens ?: 0L,
+      usedTokens = spentInStep,
       toolCalls = toolCalls ?: stepToolCalls.get(),
       maxTokens = step.maxTokens,
       maxSteps = step.maxSteps,
@@ -3405,6 +3428,10 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     markConversationStarted()
     history.append(currentThreadId, ChatMessageRecord(Role.USER, t("pipeline.userLine", "name" to pipeline.name, "count" to pipeline.steps.size), at = nowIso()))
     ApplicationManager.getApplication().executeOnPooledThread {
+      // Прошлое нажатие «Стоп» живёт в этом флаге до следующего хода, а шаг на своей модели
+      // спрашивает его на каждом чанке: без сброса такой шаг умирал бы мгновенно, причём ТОЛЬКО
+      // он — шаги через ACP работали бы, и отказ выглядел бы как «модель не отвечает».
+      llmCancel.set(false)
       val artifacts = LinkedHashSet<String>()
       var lastSummary: String? = null
       var failed = false
@@ -3430,7 +3457,12 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
             return@forEachIndexed
           }
           // Шаг эскалации нужен ровно тогда, когда предыдущий черновик НЕ приняли.
-          if (step.escalation && lastGateAccepted == true) {
+          val accepted = lastGateAccepted
+          // Ответ гейта относится к ОДНОМУ шагу — тому, который он проверил. Оставить его жить
+          // дальше значит однажды пропустить эскалацию из-за приёмки позапрошлого шага, между
+          // которыми был упавший: гасим сразу после использования, заново ставит только гейт.
+          lastGateAccepted = null
+          if (step.escalation && accepted == true) {
             systemLine(t("pipeline.stepSkippedByGate", "header" to header))
             return@forEachIndexed
           }
@@ -3454,9 +3486,15 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
             stepBuffer = StringBuilder()
             // Потолки ставятся ДО запроса и снимаются в finally: считать их у обычного хода
             // было бы работой ради нуля на каждом кадре потока.
+            // Признаки трифекты живут по шагу: копиться сквозь весь прогон они не должны, а сам
+            // прогон недоверенный по определению — за клавиатурой никого, текст шага пишет файл.
+            // Обычный ход выставляет то же самое в startTurn, куда пайплайн не заходит.
+            turnSignals.clear()
+            turnSignals.add(com.vibe.agent.guard.Trifecta.Signal.UNTRUSTED_CONTENT)
             stepLimits = step.takeIf { com.vibe.agent.pipelines.StepLimits.any(it) }
             stepToolCalls.set(0)
             stepLimitHit = null
+            stepTokensBase = -1L
             val startedAt = System.currentTimeMillis()
             // Шаг со своей моделью идёт прямым запросом к провайдеру, мимо агента: у него нет
             // инструментов, и он ни на что не влияет, кроме собственного ответа. Разбор — в

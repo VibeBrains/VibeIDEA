@@ -114,7 +114,12 @@ object McpServer {
         // A tool that fails is NOT a JSON-RPC error: the call was valid and the model must see what
         // went wrong to decide what to do next. Protocol errors are for malformed requests.
         val result = runCatching { tools.call(name, arguments) }
-          .getOrElse { Tools.Result(it.message ?: it.javaClass.simpleName, isError = true) }
+          .getOrElse { failure ->
+            // Отмену платформы ловить нельзя: это не отказ инструмента, а требование прекратить
+            // работу, и превращённая в текст ответа она оставляет за собой отменённое вычисление.
+            if (failure is com.intellij.openapi.progress.ProcessCanceledException) throw failure
+            Tools.Result(failure.message ?: failure.javaClass.simpleName, isError = true)
+          }
         Answer(resultBody(id, serverVersion) {
           putJsonArray("content") {
             add(buildJsonObject { put("type", "text"); put("text", result.text) })
