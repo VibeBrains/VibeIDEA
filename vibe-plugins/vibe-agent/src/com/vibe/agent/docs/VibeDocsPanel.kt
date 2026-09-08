@@ -45,9 +45,19 @@ class VibeDocsPanel(private val project: Project) : JPanel(BorderLayout()) {
     isVisible = false
     foreground = com.intellij.ui.JBColor.namedColor("Vibe.Docs.hintForeground", com.intellij.ui.JBColor.GRAY)
   }
-  private val graphView = DocsGraphView { openDocument(it) }
-  private val cards = JPanel(java.awt.CardLayout())
-  private var showingGraph = false
+  /**
+   * Граф открывается вкладкой в ЦЕНТРЕ, а не внутри этой панели.
+   *
+   * В колонке шириной с дерево проекта граф из тридцати узлов — это четыре подписи и обрывок
+   * линии. Рисунку нужно место; боковой панели остаётся то, ради чего в неё и приходят: где что
+   * лежит и что с этим не так.
+   */
+  private fun openGraph() {
+    val existing = com.intellij.openapi.fileEditor.FileEditorManager.getInstance(project).openFiles
+      .firstOrNull { it is DocsGraphVirtualFile }
+    val file = existing ?: DocsGraphVirtualFile()
+    com.intellij.openapi.fileEditor.FileEditorManager.getInstance(project).openFile(file, true)
+  }
 
 
 
@@ -58,22 +68,17 @@ class VibeDocsPanel(private val project: Project) : JPanel(BorderLayout()) {
       add(summary, java.awt.BorderLayout.CENTER)
       // The panel used to read the tree only when it was opened: after writing a document one had
       // to close and reopen it to see the link stop being broken.
-      add(JPanel(java.awt.FlowLayout(java.awt.FlowLayout.RIGHT, 8, 0)).apply {
-        isOpaque = false
-        // A list answers «что есть» and hides the shape: thirty tidy files and thirty files with
-        // four orphans look identical in a list and nothing alike on a map.
-        add(com.intellij.ui.components.ActionLink(t("docs.view.graph")) { toggleView(it.source as com.intellij.ui.components.ActionLink) })
-        add(com.intellij.ui.components.ActionLink(t("docs.refresh")) { reload() })
-      }, java.awt.BorderLayout.EAST)
+      // Значки с подсказками, а не ссылки: в панели IDE это ДЕЙСТВИЯ, а подчёркнутый синий текст
+      // обещает переход по ссылке и занимает place втрое больше. Тулбар платформы даёт заодно
+      // штатные тултипы, состояние нажатия и одинаковые отступы со всеми панелями IDE.
+      add(toolbar(), java.awt.BorderLayout.EAST)
     }
     add(JPanel(java.awt.BorderLayout()).apply {
       isOpaque = false
       add(header, java.awt.BorderLayout.NORTH)
       add(hint, java.awt.BorderLayout.SOUTH)
     }, BorderLayout.NORTH)
-    cards.add(VibeScroll.pane(tree), CARD_LIST)
-    cards.add(VibeScroll.pane(graphView), CARD_GRAPH)
-    add(cards, BorderLayout.CENTER)
+    add(VibeScroll.pane(tree), BorderLayout.CENTER)
     // Открываем по ВЫБОРУ, а не по двойному щелчку: панель заменяет дерево проекта слева, и там
     // одиночный щелчок уже открывает файл — две разные привычки в соседних вкладках хуже одной.
     tree.addTreeSelectionListener {
@@ -83,10 +88,40 @@ class VibeDocsPanel(private val project: Project) : JPanel(BorderLayout()) {
     reload()
   }
 
-  private fun toggleView(link: com.intellij.ui.components.ActionLink) {
-    showingGraph = !showingGraph
-    link.text = if (showingGraph) t("docs.view.list") else t("docs.view.graph")
-    (cards.layout as java.awt.CardLayout).show(cards, if (showingGraph) CARD_GRAPH else CARD_LIST)
+  /**
+   * Панель значков: граф ↔ список, обновить, свернуть и развернуть дерево.
+   *
+   * Переключатель вида — `ToggleAction`: он показывает СОСТОЯНИЕ (сейчас граф или список), а
+   * кнопка с меняющейся подписью заставляла человека читать текст, чтобы понять, где он.
+   */
+  private fun toolbar(): javax.swing.JComponent {
+    val group = com.intellij.openapi.actionSystem.DefaultActionGroup()
+    group.add(object : com.intellij.openapi.project.DumbAwareAction(
+      { t("docs.view.graph") }, { t("docs.view.graph.tooltip") }, com.intellij.icons.AllIcons.Graph.Layout) {
+      override fun actionPerformed(e: com.intellij.openapi.actionSystem.AnActionEvent) = openGraph()
+    })
+    group.add(object : com.intellij.openapi.project.DumbAwareAction(
+      { t("docs.refresh") }, { t("docs.refresh.tooltip") }, com.intellij.icons.AllIcons.Actions.Refresh) {
+      override fun actionPerformed(e: com.intellij.openapi.actionSystem.AnActionEvent) = reload()
+    })
+    group.add(object : com.intellij.openapi.project.DumbAwareAction(
+      { t("docs.expandAll") }, { t("docs.expandAll") }, com.intellij.icons.AllIcons.Actions.Expandall) {
+      override fun actionPerformed(e: com.intellij.openapi.actionSystem.AnActionEvent) {
+        var i = 0
+        while (i < tree.rowCount) { tree.expandRow(i); i++ }
+      }
+    })
+    group.add(object : com.intellij.openapi.project.DumbAwareAction(
+      { t("docs.collapseAll") }, { t("docs.collapseAll") }, com.intellij.icons.AllIcons.Actions.Collapseall) {
+      override fun actionPerformed(e: com.intellij.openapi.actionSystem.AnActionEvent) {
+        for (i in tree.rowCount - 1 downTo 0) tree.collapseRow(i)
+      }
+    })
+    val bar = com.intellij.openapi.actionSystem.ActionManager.getInstance()
+      .createActionToolbar("VibeDocs", group, true)
+    bar.targetComponent = this
+    bar.component.isOpaque = false
+    return bar.component
   }
 
   fun reload() {
@@ -124,13 +159,8 @@ class VibeDocsPanel(private val project: Project) : JPanel(BorderLayout()) {
         // Раскрыто целиком: документация — это десятки файлов, а не тысячи, и свёрнутое дерево
         // отвечало бы «папок пять» на вопрос «где что лежит».
         for (i in 0 until tree.rowCount) tree.expandRow(i)
-        graphView.show(DocsGraphLayout.layout(analysis))
-        val dropped = DocsGraphLayout.droppedCount(analysis)
         summary.text = t("docs.summary", "docs" to analysis.docs.size,
-                         "unreachable" to analysis.unreachable.size, "broken" to analysis.brokenLinks.size) +
-          // Saying what the drawing left out: a picture that quietly stops at the limit reads as
-          // «это всё», which is exactly the claim it cannot make.
-          (if (dropped > 0) "   " + t("docs.graph.dropped", "count" to dropped) else "")
+                         "unreachable" to analysis.unreachable.size, "broken" to analysis.brokenLinks.size)
         // Сказано словами и отдельной строкой: цифра выше остаётся честной, но человеку нужен не
         // приговор документации, а имя того, что чинить.
         hint.text = if (unlinkedIndex) t("docs.hint.unlinkedIndex", "count" to mentioned.size, "entry" to (entry ?: "")) else ""
@@ -175,7 +205,11 @@ private class DocsTreeRenderer : com.intellij.ui.ColoredTreeCellRenderer() {
       }
       return
     }
-    icon = com.intellij.icons.AllIcons.FileTypes.Text
+    // Значок берём у типа файла, а не рисуем свой: markdown в IDE уже имеет узнаваемый значок, и
+    // человек находит документ по нему быстрее, чем по подписи.
+    icon = node.path?.let {
+      com.intellij.openapi.fileTypes.FileTypeManager.getInstance().getFileTypeByFileName(it.substringAfterLast('/')).icon
+    } ?: com.intellij.icons.AllIcons.FileTypes.Text
     append(node.name)
     if (node.title.isNotBlank() && node.title != node.name) {
       append("  " + node.title, com.intellij.ui.SimpleTextAttributes.GRAYED_ATTRIBUTES)
@@ -197,9 +231,6 @@ private class DocsTreeRenderer : com.intellij.ui.ColoredTreeCellRenderer() {
 private data class DocsRow(val node: DocsTree.Node) {
   override fun toString(): String = node.name
 }
-
-private const val CARD_LIST = "list"
-private const val CARD_GRAPH = "graph"
 
 class VibeDocsToolWindowFactory : com.intellij.openapi.wm.ToolWindowFactory, com.intellij.openapi.project.DumbAware {
   /** Подпись — из каталога строк: идентификатор панели ASCII и не переводится, имя переводится. */

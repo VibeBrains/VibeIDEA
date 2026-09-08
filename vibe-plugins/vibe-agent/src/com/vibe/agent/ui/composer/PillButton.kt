@@ -28,6 +28,15 @@ class PillButton(
   icon: Icon? = null,
   private val dropdown: Boolean = false,
   private val accent: Boolean = false,
+  /**
+   * Кнопка с постоянной рамкой — для действий в шапках панелей.
+   *
+   * Там раньше стояли ссылки платформы: подчёркивание при наведении, синий текст, ноль намёка на
+   * то, что это кнопка. По стандарту HTML так и выглядит ссылка — но в панели IDE это не ссылка,
+   * а действие, и выглядеть оно должно действием. Рамка вполсилы (половина прозрачности от цвета
+   * текста) даёт границу, не перетягивая внимание с содержимого панели.
+   */
+  private val outlined: Boolean = false,
   private val onClick: (PillButton) -> Unit,
 ) : JLabel() {
   private var hover = false
@@ -71,6 +80,12 @@ class PillButton(
         g2.color = bg
         g2.fillRoundRect(0, 0, width, height, arc, arc)
       }
+      if (outlined) {
+        // Рамка поверх заливки: при наведении видно и подложку, и границу — кнопка не «прыгает»
+        // формой, меняется только цвет, а это и есть внятная индикация.
+        g2.color = if (hover) OUTLINE_HOVER else OUTLINE
+        g2.drawRoundRect(0, 0, width - 1, height - 1, arc, arc)
+      }
       else if (accent) {
         // Disabled send: an outline only, so the (gray) arrow stays readable.
         g2.color = DISABLED_ACCENT
@@ -101,5 +116,9 @@ class PillButton(
     val ACCENT_HOVER: Color = JBColor.namedColor("Vibe.Composer.accentHover", JBColor(0x2B64D6, 0x4A84F5))
     val ACCENT_FG: Color = JBColor.namedColor("Vibe.Composer.accentForeground", JBColor(0xFFFFFF, 0x16171B))
     val DISABLED_ACCENT: Color = JBColor.namedColor("Vibe.Composer.accentDisabled", JBColor(0xC9D4EA, 0x4A5068))
+
+    /** Рамка обычной кнопки — вполсилы, чтобы обозначить границу и не спорить с содержимым панели. */
+    val OUTLINE: Color = JBColor.namedColor("Vibe.Composer.pillBorder", JBColor(0x9AA0AC, 0x4A5068))
+    val OUTLINE_HOVER: Color = JBColor.namedColor("Vibe.Composer.pillBorderHover", JBColor(0x3574F0, 0x548AF7))
   }
 }

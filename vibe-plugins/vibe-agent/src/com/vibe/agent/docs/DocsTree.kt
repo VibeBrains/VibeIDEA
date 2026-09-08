@@ -56,7 +56,10 @@ object DocsTree {
     for (item in items) {
       val rest = item.path.removePrefix(prefix)
       val slash = rest.indexOf('/')
-      if (slash < 0) here.add(Node(rest, item.path, item.title, item.marks, problems = item.marks.size))
+      // Имя без расширения: в дереве документов ВСЁ — markdown, и «.md» тридцать раз подряд не
+      // сообщает ничего, а место занимает. Тип несёт значок. `.mdx` оставляем видимым: это другой
+      // формат, и делать два разных одинаковыми на вид — врать глазу.
+      if (slash < 0) here.add(Node(rest.removeSuffix(".md"), item.path, item.title, item.marks, problems = item.marks.size))
       else folders.getOrPut(rest.substring(0, slash)) { ArrayList() }.add(item)
     }
     val nodes = folders.map { (name, inside) ->

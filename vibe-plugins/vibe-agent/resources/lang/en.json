@@ -1452,7 +1452,6 @@
   "design.rule.focusContrast.message": "the focus ring is at {ratio} contrast, at least {min} is needed",
   "design.rule.focusContrast.why": "to someone navigating by keyboard an invisible ring is the same as a removed one: nothing on the screen answers «where am I»",
   "docs.view.graph": "graph",
-  "docs.view.list": "list",
   "docs.graph.dropped": "the map is not complete: {count} hidden",
   "runs.territoryBusy": "another run is already working in the same folders ({prefixes}): {goals}. Two edits of one file drift apart silently — decide whether to wait or to start.",
   "autopilot.title": "Autopilot",
@@ -1740,5 +1739,14 @@
   "cascade.share": "Escalation was needed in {escalation}% of cases; the draft was accepted in {accepted}%.",
   "cascade.skipped": "Expensive steps not run: {count}.",
   "cascade.savingsHint": "Savings = skipped steps x (strong model price - cheap model price), minus re-feeding the context to the expensive step. The latter shows up in /spend for this chat and is usually forgotten. Prices come from your own entries in .vibe/providers/ - the IDE has no price table of its own.",
-  "docs.hint.unlinkedIndex": "The entry seems to LIST the documents ({count} of them) rather than link them: \"{entry}\" mentions them by name, while reachability is counted by links. Wrap the names in markdown links — that is one edit, not lost documents."
+  "docs.hint.unlinkedIndex": "The entry seems to LIST the documents ({count} of them) rather than link them: \"{entry}\" mentions them by name, while reachability is counted by links. Wrap the names in markdown links — that is one edit, not lost documents.",
+  "docs.view.graph.tooltip": "The document graph: who links to whom",
+  "docs.refresh.tooltip": "Re-read the documents from disk",
+  "docs.expandAll": "Expand all",
+  "docs.collapseAll": "Collapse all",
+  "docs.graph.tab": "Document graph",
+  "docs.graph.fit": "Fit to screen",
+  "docs.graph.search": "Search by name…",
+  "docs.graph.counts": "{docs} documents · {links} links · {unreachable} unreachable · {broken} broken links",
+  "docs.graph.found": "found: {count}"
 }

@@ -17,8 +17,8 @@ class DocsTreeTest {
       item("docs/manuals/deploy.md"),
       item("docs/manuals/devSetup.md"),
     ))
-    assertEquals(listOf("manuals", "README.md"), nodes.map { it.name }, "папки выше файлов")
-    assertEquals(listOf("deploy.md", "devSetup.md"), nodes.first().children.map { it.name })
+    assertEquals(listOf("manuals", "README"), nodes.map { it.name }, "папки выше файлов")
+    assertEquals(listOf("deploy", "devSetup"), nodes.first().children.map { it.name }, "расширение .md в подписи не нужно — тип несёт значок")
     assertTrue(nodes.first().isFolder)
     assertEquals("docs/manuals/deploy.md", nodes.first().children.first().path)
   }
@@ -28,7 +28,7 @@ class DocsTreeTest {
     // knowledge → ai → один файл: три уровня отступа ради одного пути ничего не сообщают.
     val nodes = DocsTree.build(root = "docs", items = listOf(item("docs/knowledge/ai/structuredOutput.md")))
     assertEquals(listOf("knowledge/ai"), nodes.map { it.name })
-    assertEquals(listOf("structuredOutput.md"), nodes.first().children.map { it.name })
+    assertEquals(listOf("structuredOutput"), nodes.first().children.map { it.name })
   }
 
   @Test
@@ -63,7 +63,7 @@ class DocsTreeTest {
   fun `корневая папка документации узлом не показывается`() {
     // Она одинакова у всех документов: узел «docs» тратил бы уровень отступа и не сообщал ничего.
     val nodes = DocsTree.build(listOf(item("docs/README.md")), root = "docs")
-    assertEquals(listOf("README.md"), nodes.map { it.name })
+    assertEquals(listOf("README"), nodes.map { it.name })
     assertEquals("docs/README.md", nodes.first().path, "путь остаётся полным — по нему открывается файл")
   }
 
@@ -72,6 +72,13 @@ class DocsTreeTest {
     val one = DocsTree.build(root = "docs", items = listOf(item("docs/b.md"), item("docs/a.md"), item("docs/x/y.md")))
     val two = DocsTree.build(root = "docs", items = listOf(item("docs/x/y.md"), item("docs/a.md"), item("docs/b.md")))
     assertEquals(one.map { it.name }, two.map { it.name })
-    assertEquals(listOf("x", "a.md", "b.md"), one.map { it.name })
+    assertEquals(listOf("x", "a", "b"), one.map { it.name })
+  }
+
+  @Test
+  fun `mdx остаётся видимым`() {
+    // Два разных формата не должны выглядеть одинаково: скрытое расширение соврало бы глазу.
+    val nodes = DocsTree.build(listOf(item("docs/page.mdx"), item("docs/plain.md")), root = "docs")
+    assertEquals(listOf("page.mdx", "plain"), nodes.map { it.name })
   }
 }

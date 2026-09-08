@@ -26,6 +26,9 @@
                 icon="/icons/vibeAudit.svg" doNotActivateOnStart="true"/>
     <!-- Слева, рядом с деревом проекта (решение владельца 08.09.2026): панель отвечает на тот же
          вопрос «где что лежит», что и Project, и на другой стороне экрана человек их не сравнивает. -->
+    <!-- Граф — вкладкой в ЦЕНТРЕ: боковая панель отвечает за действия и навигацию, центр за
+         результат, с которым работают (концепция владельца 08.09.2026). -->
+    <fileEditorProvider implementation="com.vibe.agent.docs.DocsGraphEditorProvider"/>
     <toolWindow id="VibeDocs" anchor="left" factoryClass="com.vibe.agent.docs.VibeDocsToolWindowFactory"
                 icon="/icons/vibeDocs.svg" doNotActivateOnStart="true"/>
     <toolWindow id="VibeRuns" anchor="bottom" factoryClass="com.vibe.agent.runs.VibeRunsToolWindowFactory"

@@ -94,6 +94,8 @@
         "accentHover": "#33ECFF",
         "accentForeground": "DeepBg",
         "accentDisabled": "#3A4A52",
+        "pillBorder": "#3A4050",
+        "pillBorderHover": "NeonCyan",
         "queueBackground": "#3A3220",
         "queueBorder": "#6B5A2E",
         "queueForeground": "#F2E6C4",

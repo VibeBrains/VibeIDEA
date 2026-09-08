@@ -24,9 +24,40 @@ class DocsGraphView(private val onOpen: (String) -> Unit) : JComponent() {
   private var graph: DocsGraphLayout.Graph = DocsGraphLayout.Graph(emptyList(), emptyList(), 0, 0)
   private var hovered: DocsGraphLayout.Node? = null
 
+  /** Масштаб и сдвиг рисунка; счёт — в [DocsGraphZoom], здесь только состояние и рисование. */
+  private var scale = 1.0
+  private var offsetX = 0
+  private var offsetY = 0
+
+  /** Вписать при первом показе, но НЕ при каждом обновлении: иначе зум сбрасывался бы под руками. */
+  private var fitted = false
+
+  /** Точка последнего нажатия для панорамирования; null — тянут не за фон. */
+  private var dragFrom: java.awt.Point? = null
+
+  /** Подсвеченные поиском пути; пусто — поиска нет и приглушать нечего. */
+  private var highlighted: Set<String> = emptySet()
+
   init {
     isOpaque = false
     val mouse = object : MouseAdapter() {
+      override fun mousePressed(e: MouseEvent) {
+        // Тянем только за фон: нажатие на узел — это будущий клик по документу.
+        dragFrom = if (nodeAt(e.x, e.y) == null) e.point else null
+      }
+
+      override fun mouseReleased(e: MouseEvent) {
+        dragFrom = null
+      }
+
+      override fun mouseDragged(e: MouseEvent) {
+        val from = dragFrom ?: return
+        offsetX += e.x - from.x
+        offsetY += e.y - from.y
+        dragFrom = e.point
+        repaint()
+      }
+
       override fun mouseMoved(e: MouseEvent) {
         val node = nodeAt(e.x, e.y)
         if (node !== hovered) {
@@ -47,16 +78,70 @@ class DocsGraphView(private val onOpen: (String) -> Unit) : JComponent() {
     }
     addMouseListener(mouse)
     addMouseMotionListener(mouse)
+    // Колесо — зум, а не прокрутка: прокручивать нечего, граф не документ. Точка под курсором
+    // остаётся на месте (см. DocsGraphZoom.zoomAt), иначе рисунок убегает от мыши.
+    addMouseWheelListener { e ->
+      val old = scale
+      val next = DocsGraphZoom.clamp(
+        if (e.wheelRotation < 0) old * DocsGraphZoom.WHEEL_STEP else old / DocsGraphZoom.WHEEL_STEP)
+      if (next != old) {
+        offsetX = DocsGraphZoom.zoomAt(offsetX, e.x, old, next)
+        offsetY = DocsGraphZoom.zoomAt(offsetY, e.y, old, next)
+        scale = next
+        repaint()
+      }
+    }
   }
+
+  /** Вписать граф в окно целиком и поставить по центру. */
+  fun fitToScreen() {
+    val w = JBUI.scale(graph.width)
+    val h = JBUI.scale(graph.height)
+    if (w <= 0 || h <= 0 || width <= 0 || height <= 0) return
+    scale = DocsGraphZoom.fit(w, h, width, height, JBUI.scale(DocsGraphZoom.FIT_MARGIN))
+    val (x, y) = DocsGraphZoom.center(w, h, width, height, scale)
+    offsetX = x
+    offsetY = y
+    fitted = true
+    repaint()
+  }
+
+  /**
+   * Подсветка по поиску: найденное остаётся ярким, остальное гаснет.
+   *
+   * Не фильтр: узел, выброшенный из рисунка, уносит с собой свои связи, и граф начинает врать про
+   * связность ровно тогда, когда его об этом спрашивают.
+   */
+  fun highlight(query: String) {
+    val needle = query.trim().lowercase()
+    highlighted = if (needle.isEmpty()) emptySet()
+    else graph.nodes.filter { it.title.lowercase().contains(needle) || it.path.lowercase().contains(needle) }
+      .map { it.path }.toSet()
+    repaint()
+  }
+
+  /** Сколько узлов подсвечено сейчас — для строки состояния над графом. */
+  fun highlightedCount(): Int = highlighted.size
 
   fun show(graph: DocsGraphLayout.Graph) {
     this.graph = graph
     preferredSize = Dimension(JBUI.scale(graph.width), JBUI.scale(graph.height))
+    highlighted = emptySet()
     revalidate()
+    // Первый показ вписывает сам: граф, открытый в углу окна и наполовину за краем, человек
+    // сначала ловит мышью и только потом читает.
+    if (!fitted) javax.swing.SwingUtilities.invokeLater { fitToScreen() }
     repaint()
   }
 
-  private fun nodeAt(px: Int, py: Int): DocsGraphLayout.Node? = graph.nodes.firstOrNull { node ->
+  /** Экранная точка → координаты рисунка: обратно к тому, в чём считан layout. */
+  private fun nodeAt(screenX: Int, screenY: Int): DocsGraphLayout.Node? {
+    val px = ((screenX - offsetX) / scale).toInt()
+    val py = ((screenY - offsetY) / scale).toInt()
+    return nodeAtGraph(px, py)
+  }
+
+  private fun nodeAtGraph(px: Int, py: Int): DocsGraphLayout.Node? = graph.nodes.firstOrNull { node ->
     px >= JBUI.scale(node.x) && px <= JBUI.scale(node.x + DocsGraphLayout.NODE_WIDTH) &&
     py >= JBUI.scale(node.y) && py <= JBUI.scale(node.y + DocsGraphLayout.NODE_HEIGHT)
   }
@@ -65,6 +150,10 @@ class DocsGraphView(private val onOpen: (String) -> Unit) : JComponent() {
     val g2 = g.create() as Graphics2D
     try {
       g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON)
+      // Зум и сдвиг — одной трансформацией: пересчитывать каждую координату вручную значит
+      // однажды забыть про одну из них, и рисунок разъедется по частям.
+      g2.translate(offsetX, offsetY)
+      g2.scale(scale, scale)
       val byPath = graph.nodes.associateBy { it.path }
       g2.color = EDGE
       for (edge in graph.edges) {
@@ -76,6 +165,11 @@ class DocsGraphView(private val onOpen: (String) -> Unit) : JComponent() {
         )
       }
       for (node in graph.nodes) {
+        // Найденное поиском остаётся ярким, остальное гаснет прозрачностью. Не убираем ничего:
+        // выброшенный узел уносит свои связи, и граф начинает врать про связность.
+        val dimmed = highlighted.isNotEmpty() && node.path !in highlighted
+        g2.composite = java.awt.AlphaComposite.getInstance(
+          java.awt.AlphaComposite.SRC_OVER, if (dimmed) DIM_ALPHA else 1f)
         val x = JBUI.scale(node.x)
         val y = JBUI.scale(node.y)
         val w = JBUI.scale(DocsGraphLayout.NODE_WIDTH)
@@ -112,6 +206,9 @@ class DocsGraphView(private val onOpen: (String) -> Unit) : JComponent() {
   }
 
   private companion object {
+    /** Насколько гаснет ненайденное поиском: видно, что оно есть, но глаз за него не цепляется. */
+    const val DIM_ALPHA = 0.25f
+
     val FILL: JBColor get() = JBColor.namedColor("Vibe.Docs.nodeBackground", UIUtil.getPanelBackground())
     val HOVER_FILL: JBColor get() = JBColor.namedColor("Vibe.Docs.nodeHoverBackground", UIUtil.getListSelectionBackground(false))
     val ORPHAN_FILL: JBColor get() = JBColor.namedColor("Vibe.Docs.orphanBackground", UIUtil.getPanelBackground())
