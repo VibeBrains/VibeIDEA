@@ -1749,5 +1749,6 @@
   "docs.graph.search": "Search by name…",
   "docs.graph.counts": "{docs} documents · {links} links · {unreachable} unreachable · {broken} broken links",
   "docs.graph.found": "found: {count}",
-  "db.console.tab": "DB console"
+  "db.console.tab": "DB console",
+  "http.response.tab": "HTTP response"
 }

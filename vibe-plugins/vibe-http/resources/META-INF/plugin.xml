@@ -19,8 +19,11 @@
     <codeInsight.lineMarkerProvider language="VibeHttp" implementationClass="com.vibe.http.ui.HttpRunLineMarker"/>
     <completion.contributor language="VibeHttp" implementationClass="com.vibe.http.ui.HttpVariableCompletion"/>
     <annotator language="VibeHttp" implementationClass="com.vibe.http.ui.HttpVariableAnnotator"/>
-    <toolWindow id="VibeHttp" anchor="right" icon="/icons/vibeHttp.svg"
-                factoryClass="com.vibe.http.ui.VibeHttpToolWindowFactory" doNotActivateOnStart="true"/>
+    <!-- Слева и видима с самого начала (решение владельца 08.09.2026): список запросов — это
+         навигация, а ответ читают в центре. -->
+    <toolWindow id="VibeHttp" anchor="left" icon="/icons/vibeHttp.svg"
+                factoryClass="com.vibe.http.ui.VibeHttpToolWindowFactory"/>
+    <fileEditorProvider implementation="com.vibe.http.ui.HttpResponseEditorProvider"/>
     <applicationConfigurable parentId="com.vibe.settings" displayName="HTTP-клиент" id="com.vibe.http.settings"
                              instance="com.vibe.http.ui.VibeHttpConfigurable"/>
     <notificationGroup id="Vibe HTTP" displayType="BALLOON"/>

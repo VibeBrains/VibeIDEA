@@ -76,70 +76,13 @@ class HttpPanel(private val project: Project) : JPanel(BorderLayout()) {
       else t("http.copied") + "  ·  " + t("http.unresolved", "names" to unresolved.joinToString { "{{${it.name}}}" })
     }
   }
+  /**
+   * Строка состояния СПИСКА: «отправляю», «файл не найден», сводка прогона всех запросов.
+   *
+   * Не дубль той, что в центре: там пишут про ответ (код, время, размер), здесь — про ход дела.
+   * Человек, нажавший «выполнить», должен видеть подтверждение нажатия там же, где нажал.
+   */
   private val statusLine = JBLabel(" ").apply { border = JBUI.Borders.empty(4, 8) }
-  private val bodyView = area()
-  private val headersView = area()
-  private val historyView = area()
-  private val cookiesView = area()
-
-  /**
-   * Вкладка «Cookies» — банка кук, а не отдельный ответ.
-   *
-   * Поэтому она обновляется по показу и по кнопке, а не по отправке: куку кладёт один запрос, а
-   * мешает она следующему, и смотрят сюда именно тогда, когда «почему-то 401».
-   */
-  private val cookiesPanel = JPanel(BorderLayout()).apply {
-    add(VibeScroll.pane(cookiesView), BorderLayout.CENTER)
-    add(JPanel(java.awt.FlowLayout(java.awt.FlowLayout.LEFT, 6, 2)).apply {
-      add(JButton(t("http.cookies.refresh"), AllIcons.Actions.Refresh).apply { addActionListener { showCookies() } })
-      add(JButton(t("http.cookies.clear"), AllIcons.Actions.GC).apply { addActionListener { clearCookies() } })
-    }, BorderLayout.SOUTH)
-  }
-
-  private val tabs = JBTabbedPane().apply {
-    addTab(t("http.tab.body"), VibeScroll.pane(bodyView))
-    addTab(t("http.tab.headers"), VibeScroll.pane(headersView))
-    addTab(t("http.tab.history"), VibeScroll.pane(historyView))
-    addTab(t("http.tab.cookies"), cookiesPanel)
-    addChangeListener { if (selectedComponent === cookiesPanel) showCookies() }
-  }
-
-  /**
-   * Показывает куки, которые сейчас поедут в запросы.
-   *
-   * Значение сокращается: чтобы понять, что сессия есть, полный токен не нужен, а панель с полным
-   * токеном однажды попадёт на скриншот в тикете.
-   */
-  private fun showCookies() {
-    val now = System.currentTimeMillis()
-    val cookies = VibeHttpService.getInstance(project).cookies().filter { com.vibe.http.Cookies.isAlive(it, now) }
-    cookiesView.text = if (cookies.isEmpty()) t("http.cookies.empty")
-    else cookies.sortedWith(compareBy({ it.domain }, { it.name })).joinToString("\n") { cookie ->
-      t("http.cookies.line",
-        "name" to cookie.name,
-        "value" to com.vibe.http.Cookies.shorten(cookie.value),
-        "domain" to cookie.domain,
-        "path" to cookie.path,
-        "expires" to (cookie.expiresAtEpochMs?.let { java.time.Instant.ofEpochMilli(it).toString() } ?: t("http.cookies.session")))
-    }
-    cookiesView.caretPosition = 0
-  }
-
-  private fun clearCookies() {
-    VibeHttpService.getInstance(project).clearCookies()
-    showCookies()
-    statusLine.foreground = JBColor.foreground()
-    statusLine.text = t("http.cookies.cleared")
-  }
-
-  /**
-   * История ответов проекта. В памяти панели, а не на диске: в ответах токены и персональные
-   * данные, и писать их в файлы без спроса нельзя.
-   */
-  private var history: List<com.vibe.http.HttpHistory.Entry> = emptyList()
-
-  /** Последний отправленный запрос — по нему история узнаёт, чья это запись. */
-  private var lastRequest: HttpRequestFile.Request? = null
 
   /** Путь файла, из которого взяты запросы, — по нему ищутся окружения и относительные тела. */
   private var currentDir: Path? = null
@@ -162,19 +105,9 @@ class HttpPanel(private val project: Project) : JPanel(BorderLayout()) {
         add(JButton(t("http.reload"), AllIcons.Actions.Refresh).apply { addActionListener { reload() } })
       }, BorderLayout.WEST)
     }
-    val left = JPanel(BorderLayout()).apply {
-      add(VibeScroll.pane(list), BorderLayout.CENTER)
-      preferredSize = Dimension(260, 0)
-    }
-    val right = JPanel(BorderLayout()).apply {
-      add(statusLine, BorderLayout.NORTH)
-      add(tabs, BorderLayout.CENTER)
-    }
     add(top, BorderLayout.NORTH)
-    add(com.intellij.ui.OnePixelSplitter(false, 0.32f).apply {
-      firstComponent = left
-      secondComponent = right
-    }, BorderLayout.CENTER)
+    add(VibeScroll.pane(list), BorderLayout.CENTER)
+    add(statusLine, BorderLayout.SOUTH)
     reload()
   }
 
@@ -191,14 +124,6 @@ class HttpPanel(private val project: Project) : JPanel(BorderLayout()) {
     }
   }
 
-  private fun area() = JTextArea().apply {
-    isEditable = false
-    lineWrap = false
-    font = com.intellij.util.ui.JBFont.create(java.awt.Font(java.awt.Font.MONOSPACED, java.awt.Font.PLAIN, 12))
-    border = JBUI.Borders.empty(6)
-  }
-
-  /** Перечитывает открытый файл: список запросов и окружения берутся из него. */
   fun reload() {
     val editor: Editor? = FileEditorManager.getInstance(project).selectedTextEditor
     val file = FileEditorManager.getInstance(project).selectedFiles.firstOrNull()
@@ -250,32 +175,16 @@ class HttpPanel(private val project: Project) : JPanel(BorderLayout()) {
   /** Выполняет запрос и показывает ответ; вызывается и из действия в редакторе. */
   fun run(request: HttpRequestFile.Request) {
     val (applied, unresolved) = HttpVariables.apply(request, variables()) { dynamic(it) }
-    lastRequest = applied
     statusLine.foreground = JBColor.foreground()
     statusLine.text = t("http.sending", "request" to applied.title)
     val dir = currentDir
+    // Ответ показывается в центре — там его читают. Вкладка открывается ДО отправки, чтобы
+    // человек видел, куда смотреть, пока запрос идёт.
+    val response = HttpWorkbench.getInstance(project).openResponse()
     ApplicationManager.getApplication().executeOnPooledThread {
       val result = VibeHttpService.getInstance(project).send(applied, dir)
-      onUi { show(result, unresolved) }
+      onUi { response?.show(result, unresolved, applied) }
     }
-  }
-
-  /** Слово к числу подбирает интерфейс: единицы — такой же переводимый текст, как всё остальное. */
-  private fun size(bytes: Long): String {
-    val size = HttpExchange.size(bytes)
-    val value = if (size.unit == HttpExchange.SizeUnit.BYTES) size.value.toLong().toString()
-                else String.format("%.1f", size.value)
-    return when (size.unit) {
-      HttpExchange.SizeUnit.BYTES -> t("http.size.bytes", "value" to value)
-      HttpExchange.SizeUnit.KIB -> t("http.size.kib", "value" to value)
-      HttpExchange.SizeUnit.MIB -> t("http.size.mib", "value" to value)
-    }
-  }
-
-  private fun duration(ms: Long): String {
-    val duration = HttpExchange.duration(ms)
-    return if (duration.inSeconds) t("http.time.seconds", "value" to String.format("%.1f", duration.value))
-    else t("http.time.ms", "value" to duration.value.toLong().toString())
   }
 
   /**
@@ -324,11 +233,11 @@ class HttpPanel(private val project: Project) : JPanel(BorderLayout()) {
         else JBColor.namedColor("Vibe.Http.error", JBColor(0xDB3B4B, 0xDB5C5C))
         statusLine.text = t("http.runAll.done", "ok" to summary.ok, "total" to summary.total,
                             "ms" to summary.totalMs)
-        // Упавшие называем поимённо в теле ответа: сводка без имён заставляет гонять по одному
-        // заново — ровно то, от чего прогон и избавляет.
-        bodyView.text = if (summary.failed.isEmpty()) t("http.runAll.allOk")
-        else t("http.runAll.failedList") + "\n" + summary.failed.joinToString("\n") { "  • " + it }
-        bodyView.caretPosition = 0
+        // Упавшие называем поимённо — и в той же панели, где читают ответы: сводка без имён
+        // заставляет гонять по одному заново, ровно то, от чего прогон и избавляет.
+        HttpWorkbench.getInstance(project).openResponse()?.showText(
+          if (summary.failed.isEmpty()) t("http.runAll.allOk")
+          else t("http.runAll.failedList") + "\n" + summary.failed.joinToString("\n") { "  • " + it })
       }
     }
   }
@@ -341,72 +250,4 @@ class HttpPanel(private val project: Project) : JPanel(BorderLayout()) {
     else -> null
   }
 
-  private fun show(result: VibeHttpService.Result, unresolved: List<HttpVariables.Unresolved>) {
-    when (result) {
-      is VibeHttpService.Result.Done -> {
-        val response = result.response
-        statusLine.foreground = when (HttpExchange.outcome(response.status)) {
-          HttpExchange.Outcome.SUCCESS -> JBColor.namedColor("Vibe.Http.success", JBColor(0x208A3C, 0x57965C))
-          HttpExchange.Outcome.REDIRECT -> JBColor.namedColor("Vibe.Http.redirect", JBColor(0xC27D04, 0xD6AE58))
-          else -> JBColor.namedColor("Vibe.Http.error", JBColor(0xDB3B4B, 0xDB5C5C))
-        }
-        statusLine.text = t(
-          "http.status",
-          "status" to response.status,
-          "time" to duration(response.durationMs),
-          "size" to size(response.sizeBytes),
-        )
-        bodyView.text = if (HttpExchange.looksLikeJson(response)) HttpExchange.prettyJson(response.body) else response.body
-        bodyView.caretPosition = 0
-        headersView.text = response.headers.joinToString("\n") { "${it.name}: ${it.value}" }
-        remember(response)
-      }
-      is VibeHttpService.Result.Refused -> {
-        statusLine.foreground = JBColor.namedColor("Vibe.Http.error", JBColor(0xDB3B4B, 0xDB5C5C))
-        statusLine.text = when (result.refusal.reason) {
-          com.vibe.http.HttpCall.Reason.UNRESOLVED_VARIABLE -> t("http.refused.variable", "name" to result.refusal.detail)
-          com.vibe.http.HttpCall.Reason.NO_SCHEME -> t("http.refused.scheme", "target" to result.refusal.detail)
-          com.vibe.http.HttpCall.Reason.BAD_TARGET -> t("http.refused.target", "target" to result.refusal.detail)
-          com.vibe.http.HttpCall.Reason.BODY_FILE_MISSING -> t("http.refused.bodyFile", "path" to result.refusal.detail)
-        }
-      }
-      is VibeHttpService.Result.Failed -> {
-        statusLine.foreground = JBColor.namedColor("Vibe.Http.error", JBColor(0xDB3B4B, 0xDB5C5C))
-        statusLine.text = t("http.failed", "reason" to result.message)
-      }
-    }
-    // Неподставленные переменные называем ОТДЕЛЬНО и после ответа: сервер мог ответить и на кривой
-    // адрес, и тогда «200 OK» без этой строки означал бы, что всё в порядке.
-    if (unresolved.isNotEmpty()) {
-      statusLine.text = statusLine.text + "  ·  " + t("http.unresolved", "names" to unresolved.joinToString { "{{${it.name}}}" })
-    }
-  }
-
-  /**
-   * Кладёт ответ в историю и показывает её.
-   *
-   * Отдельной строкой сообщается ТОЛЬКО изменение против прошлого раза: «всё как вчера» на каждом
-   * прогоне приучает не читать эту строку вовсе, а «вчера работало» — единственный вопрос, ради
-   * которого в историю и заглядывают.
-   */
-  private fun remember(response: HttpExchange.Response) {
-    val request = lastRequest ?: return
-    history = com.vibe.http.HttpHistory.add(history, com.vibe.http.HttpHistory.Entry(
-      requestTitle = request.title, method = request.method, target = request.target,
-      status = response.status, durationMs = response.durationMs, sizeBytes = response.sizeBytes,
-      body = response.body, atEpochMs = System.currentTimeMillis(),
-    ))
-    val mine = com.vibe.http.HttpHistory.of(history, request.title, request.method, request.target)
-    val stamp = java.time.format.DateTimeFormatter.ofPattern("HH:mm:ss")
-    historyView.text = mine.joinToString("\n") { entry ->
-      val time = java.time.Instant.ofEpochMilli(entry.atEpochMs).atZone(java.time.ZoneId.systemDefault()).format(stamp)
-      t("http.history.line", "time" to time, "status" to entry.status,
-        "ms" to entry.durationMs, "size" to size(entry.sizeBytes))
-    }
-    historyView.caretPosition = 0
-    com.vibe.http.HttpHistory.changeAgainstPrevious(mine, object : com.vibe.http.HttpHistory.Labels {
-      override fun statusChanged(before: Int, now: Int) = t("http.history.statusChanged", "before" to before, "now" to now)
-      override fun bodyChanged(comparedWith: Int) = t("http.history.bodyChanged")
-    })?.let { statusLine.text = statusLine.text + "  ·  " + it }
-  }
 }

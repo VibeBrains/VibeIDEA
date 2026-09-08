@@ -1749,5 +1749,6 @@
   "docs.graph.search": "Поиск по имени…",
   "docs.graph.counts": "{docs} документов · {links} связей · {unreachable} недостижимых · {broken} битых ссылок",
   "docs.graph.found": "найдено: {count}",
-  "db.console.tab": "Консоль БД"
+  "db.console.tab": "Консоль БД",
+  "http.response.tab": "Ответ HTTP"
 }
