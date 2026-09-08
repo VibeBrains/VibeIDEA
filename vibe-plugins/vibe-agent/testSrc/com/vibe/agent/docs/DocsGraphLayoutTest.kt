@@ -27,13 +27,39 @@ class DocsGraphLayoutTest {
     assertTrue("docs/orphan.md" !in depths, "сироту не достичь по ссылкам — глубины у неё нет")
   }
 
+  /** Расстояние от центра рисунка: раскладка кольцевая, и «дальше» считается от входа. */
+  private fun DocsGraphLayout.Node.distanceFromCenter(graph: DocsGraphLayout.Graph): Double {
+    val cx = graph.width / 2.0
+    val cy = graph.height / 2.0
+    return Math.hypot(x - cx, y - cy)
+  }
+
   @Test
-  fun `сироты живут своей полосой ниже всего достижимого`() {
+  fun `сироты живут своим кольцом снаружи всего достижимого`() {
     val graph = DocsGraphLayout.layout(analysis)
     val orphan = assertNotNull(graph.nodes.firstOrNull { it.path == "docs/orphan.md" })
     assertTrue(!orphan.reachable)
-    val lowestReachable = graph.nodes.filter { it.reachable }.maxOf { it.y }
-    assertTrue(orphan.y > lowestReachable, "сирота должна быть ниже всех достижимых, а не вперемешку")
+    val farthestReachable = graph.nodes.filter { it.reachable }.maxOf { it.distanceFromCenter(graph) }
+    assertTrue(orphan.distanceFromCenter(graph) > farthestReachable,
+               "сирота должна быть снаружи всего достижимого, а не вперемешку с ним")
+  }
+
+  @Test
+  fun `вход стоит в центре`() {
+    // Кольца считаются ОТ него: вход, сдвинутый с центра, превратил бы кольца в дуги.
+    val graph = DocsGraphLayout.layout(analysis)
+    val entry = assertNotNull(graph.nodes.firstOrNull { it.layer == 0 })
+    assertTrue(entry.distanceFromCenter(graph) < 1.0, "вход обязан стоять в центре рисунка")
+  }
+
+  @Test
+  fun `узел тем крупнее, чем чаще на него ссылаются`() {
+    // Размер — единственное, что отличает страницу, на которую ведут все, от страницы-листа.
+    val graph = DocsGraphLayout.layout(analysis)
+    val linked = graph.nodes.filter { it.reachable && it.layer > 0 }
+    val orphan = assertNotNull(graph.nodes.firstOrNull { !it.reachable })
+    assertTrue(linked.any { it.radius >= orphan.radius }, "на достижимые ссылаются, на сироту нет")
+    assertTrue(graph.nodes.all { it.radius <= DocsGraphLayout.MAX_RADIUS }, "радиус ограничен сверху")
   }
 
   @Test
@@ -77,11 +103,11 @@ class DocsGraphLayoutTest {
   }
 
   @Test
-  fun `размер полотна вмещает самый широкий слой`() {
+  fun `полотно вмещает все круги целиком`() {
     val graph = DocsGraphLayout.layout(analysis)
-    val right = graph.nodes.maxOf { it.x + DocsGraphLayout.NODE_WIDTH }
-    val bottom = graph.nodes.maxOf { it.y + DocsGraphLayout.NODE_HEIGHT }
-    assertTrue(right <= graph.width, "узел за краем полотна не будет виден")
-    assertTrue(bottom <= graph.height)
+    assertTrue(graph.nodes.all { it.x - it.radius >= 0 && it.y - it.radius >= 0 },
+               "узел за левым или верхним краем полотна не будет виден")
+    assertTrue(graph.nodes.all { it.x + it.radius <= graph.width && it.y + it.radius <= graph.height },
+               "узел за правым или нижним краем полотна не будет виден")
   }
 }

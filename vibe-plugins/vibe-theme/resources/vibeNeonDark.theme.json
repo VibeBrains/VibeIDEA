@@ -109,6 +109,9 @@
         "nodeBorder": "#2A2D36",
         "brokenBorder": "#FF6B5A",
         "problemForeground": "#FF6B5A",
+        "entryNode": "NeonCyan",
+        "brokenNode": "#FF6B5A",
+        "hoverRing": "NeonCyan",
         "hintForeground": "#8A90A6",
         "edge": "NeonCyanDim",
         "nodeForeground": "#E6E8EF"

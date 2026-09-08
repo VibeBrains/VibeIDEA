@@ -141,9 +141,20 @@ class DocsGraphView(private val onOpen: (String) -> Unit) : JComponent() {
     return nodeAtGraph(px, py)
   }
 
+  /**
+   * Попадание — по кругу, с запасом на подпись под ним.
+   *
+   * Запас не прихоть: круг радиусом семь пикселей мышью не поймать, а подпись — это тот же узел,
+   * и человек целится именно в неё.
+   */
   private fun nodeAtGraph(px: Int, py: Int): DocsGraphLayout.Node? = graph.nodes.firstOrNull { node ->
-    px >= JBUI.scale(node.x) && px <= JBUI.scale(node.x + DocsGraphLayout.NODE_WIDTH) &&
-    py >= JBUI.scale(node.y) && py <= JBUI.scale(node.y + DocsGraphLayout.NODE_HEIGHT)
+    val cx = JBUI.scale(node.x)
+    val cy = JBUI.scale(node.y)
+    val reach = JBUI.scale(node.radius + HIT_PADDING)
+    val labelBottom = cy + JBUI.scale(node.radius + LABEL_GAP + LABEL_HEIGHT)
+    val insideCircle = (px - cx) * (px - cx) + (py - cy) * (py - cy) <= reach * reach
+    val insideLabel = py in cy..labelBottom && Math.abs(px - cx) <= JBUI.scale(DocsGraphLayout.NODE_WIDTH / 2)
+    insideCircle || insideLabel
   }
 
   override fun paintComponent(g: Graphics) {
@@ -159,38 +170,38 @@ class DocsGraphView(private val onOpen: (String) -> Unit) : JComponent() {
       for (edge in graph.edges) {
         val from = byPath[edge.from] ?: continue
         val to = byPath[edge.to] ?: continue
-        g2.drawLine(
-          JBUI.scale(from.x + DocsGraphLayout.NODE_WIDTH / 2), JBUI.scale(from.y + DocsGraphLayout.NODE_HEIGHT),
-          JBUI.scale(to.x + DocsGraphLayout.NODE_WIDTH / 2), JBUI.scale(to.y),
-        )
+        // Линия между ЦЕНТРАМИ: узел теперь точка, и линия, упирающаяся в край прямоугольника,
+        // рисовала бы связь не туда.
+        g2.drawLine(JBUI.scale(from.x), JBUI.scale(from.y), JBUI.scale(to.x), JBUI.scale(to.y))
       }
       for (node in graph.nodes) {
-        // Найденное поиском остаётся ярким, остальное гаснет прозрачностью. Не убираем ничего:
-        // выброшенный узел уносит свои связи, и граф начинает врать про связность.
         val dimmed = highlighted.isNotEmpty() && node.path !in highlighted
         g2.composite = java.awt.AlphaComposite.getInstance(
           java.awt.AlphaComposite.SRC_OVER, if (dimmed) DIM_ALPHA else 1f)
-        val x = JBUI.scale(node.x)
-        val y = JBUI.scale(node.y)
-        val w = JBUI.scale(DocsGraphLayout.NODE_WIDTH)
-        val h = JBUI.scale(DocsGraphLayout.NODE_HEIGHT)
-        // Colour says WHY a document is worth attention, and never says it alone: the marks the
-        // list shows in words are the same marks, so nothing is knowable only by colour.
+        val cx = JBUI.scale(node.x)
+        val cy = JBUI.scale(node.y)
+        val r = JBUI.scale(node.radius)
+        // Цвет говорит, ПОЧЕМУ узел заслуживает внимания, и никогда не говорит этого один: те же
+        // пометки есть словами в дереве слева, поэтому ничто не познаётся только цветом.
         g2.color = when {
           !node.reachable -> ORPHAN_FILL
+          node.brokenLinks > 0 -> BROKEN_FILL
           node === hovered -> HOVER_FILL
+          node.layer == 0 -> ENTRY_FILL
           else -> FILL
         }
-        g2.fillRoundRect(x, y, w, h, JBUI.scale(8), JBUI.scale(8))
-        g2.color = if (node.brokenLinks > 0) BROKEN_BORDER else BORDER
-        g2.drawRoundRect(x, y, w, h, JBUI.scale(8), JBUI.scale(8))
+        g2.fillOval(cx - r, cy - r, r * 2, r * 2)
+        if (node === hovered) {
+          g2.color = HOVER_RING
+          g2.drawOval(cx - r - JBUI.scale(3), cy - r - JBUI.scale(3), (r + JBUI.scale(3)) * 2, (r + JBUI.scale(3)) * 2)
+        }
+        // Подпись ПОД кругом и по центру: подпись сбоку у радиальной раскладки наезжает на соседа
+        // с той стороны, где узлов гуще.
         g2.color = TEXT
-        val label = node.title + if (node.brokenLinks > 0) "  ⚠" + node.brokenLinks else ""
         val metrics = g2.fontMetrics
-        g2.drawString(
-          shorten(label, metrics.stringWidth(label), w - JBUI.scale(16), metrics.charWidth('m')),
-          x + JBUI.scale(8), y + h / 2 + metrics.ascent / 2 - JBUI.scale(2),
-        )
+        val label = node.title + if (node.brokenLinks > 0) "  ⚠" + node.brokenLinks else ""
+        val text = shorten(label, metrics.stringWidth(label), JBUI.scale(DocsGraphLayout.NODE_WIDTH), metrics.charWidth('m'))
+        g2.drawString(text, cx - metrics.stringWidth(text) / 2, cy + r + JBUI.scale(LABEL_GAP) + metrics.ascent)
       }
     }
     finally {
@@ -208,6 +219,17 @@ class DocsGraphView(private val onOpen: (String) -> Unit) : JComponent() {
   private companion object {
     /** Насколько гаснет ненайденное поиском: видно, что оно есть, но глаз за него не цепляется. */
     const val DIM_ALPHA = 0.25f
+
+    /** Отступ подписи от круга и её высота — для попадания мышью и расчёта полотна. */
+    const val LABEL_GAP = 6
+    const val LABEL_HEIGHT = 14
+
+    /** Запас вокруг круга: узел радиусом семь пикселей мышью иначе не поймать. */
+    const val HIT_PADDING = 6
+
+    val ENTRY_FILL: JBColor get() = JBColor.namedColor("Vibe.Docs.entryNode", JBColor(0x3574F0, 0x548AF7))
+    val BROKEN_FILL: JBColor get() = JBColor.namedColor("Vibe.Docs.brokenNode", JBColor(0xDB3B4B, 0xDB5C5C))
+    val HOVER_RING: JBColor get() = JBColor.namedColor("Vibe.Docs.hoverRing", JBColor(0x3574F0, 0x548AF7))
 
     val FILL: JBColor get() = JBColor.namedColor("Vibe.Docs.nodeBackground", UIUtil.getPanelBackground())
     val HOVER_FILL: JBColor get() = JBColor.namedColor("Vibe.Docs.nodeHoverBackground", UIUtil.getListSelectionBackground(false))

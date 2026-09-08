@@ -8,6 +8,11 @@ package com.vibe.agent.docs
  * files where four are orphans and one page links to everything looks, in a list, exactly like a
  * folder of thirty tidy files. Drawn by distance from the entry point, it does not.
  *
+ * Раскладка КОЛЬЦЕВАЯ, а не строками (08.09.2026, замечание владельца «это не граф, а таблички»).
+ * Строки прямоугольников читаются как таблица: глаз ищет столбцы и порядок, которых в графе нет.
+ * Кольца вокруг входа показывают то единственное, что здесь есть на самом деле, — расстояние от
+ * входа: центр, первый круг соседей, второй, и сироты снаружи, вне всяких связей.
+ *
  * The layout is pure arithmetic — no Swing, no project, no I/O — because the placement is the whole
  * feature and it is what breaks silently: an overlap or a lost node is invisible in a screenshot
  * review and obvious in a test.
@@ -19,8 +24,11 @@ object DocsGraphLayout {
     /** Distance from the entry point in links; unreachable documents get [ORPHAN_LAYER]. */
     val layer: Int,
     val column: Int,
+    /** Центр круга, а не левый верхний угол: узел — точка, и всё считается от неё. */
     val x: Int,
     val y: Int,
+    /** Радиус круга: чем больше ссылок сходится в документе, тем он крупнее. */
+    val radius: Int,
     val reachable: Boolean,
     val brokenLinks: Int,
   )
@@ -36,6 +44,17 @@ object DocsGraphLayout {
   const val COLUMN_GAP = 24
   const val ROW_GAP = 56
   const val MARGIN = 20
+
+  /** Радиус обычного узла и прибавка за каждую входящую ссылку — крупнее там, куда чаще ведут. */
+  const val NODE_RADIUS = 7
+  const val RADIUS_PER_LINK = 1
+  const val MAX_RADIUS = 16
+
+  /** Расстояние между кольцами. Достаточное, чтобы подписи соседних колец не сталкивались. */
+  const val RING_GAP = 150
+
+  /** Сироты — своим кольцом снаружи, за последним достижимым: они ни с чем не связаны. */
+  const val ORPHAN_RING_GAP = 90
 
   /** Orphans are drawn in their own band below everything reachable, not mixed into the tree. */
   const val ORPHAN_LAYER = Int.MAX_VALUE
@@ -56,27 +75,57 @@ object DocsGraphLayout {
     val kept = ordered.map { it.path }.toSet()
 
     val byLayer = ordered.groupBy { depths[it.path] ?: ORPHAN_LAYER }
-    // Layers are numbered densely for drawing: an empty depth in the middle would leave a blank
-    // band, and the orphan layer sits right below the last reachable one instead of at infinity.
+    // Слои нумеруются плотно: пустая глубина в середине оставила бы пустое кольцо, а сироты
+    // становятся кольцом сразу за последним достижимым, а не «на бесконечности».
     val layerOrder = byLayer.keys.sorted()
-    val rowOf = layerOrder.withIndex().associate { (index, layer) -> layer to index }
-    val widest = byLayer.values.maxOfOrNull { it.size } ?: 0
-    val width = MARGIN * 2 + (widest.coerceAtLeast(1) * NODE_WIDTH) + ((widest - 1).coerceAtLeast(0) * COLUMN_GAP)
+    val ringOf = layerOrder.withIndex().associate { (index, layer) -> layer to index }
 
-    val nodes = ArrayList<Node>(ordered.size)
+    // Входящие ссылки считаются заранее: радиус узла — про то, сколько на него ссылаются, а не
+    // про то, сколько ссылается он сам. Страница, на которую ведут все, и есть центр внимания.
+    val incoming = HashMap<String, Int>()
+    for (doc in ordered) {
+      for (link in doc.outgoing) {
+        if (!link.broken) incoming[link.to] = (incoming[link.to] ?: 0) + 1
+      }
+    }
+
+    fun radiusOf(path: String): Int =
+      (NODE_RADIUS + (incoming[path] ?: 0) * RADIUS_PER_LINK).coerceAtMost(MAX_RADIUS)
+
+    // Радиус кольца растёт так, чтобы узлам на нём хватало места: у длины окружности есть предел,
+    // и двадцать документов на первом кольце иначе слиплись бы в дугу.
+    fun ringRadius(ring: Int, count: Int): Int {
+      if (ring == 0) return 0
+      val byGap = ring * RING_GAP
+      val byCount = (count * (NODE_WIDTH / 2 + COLUMN_GAP) / (2 * Math.PI)).toInt()
+      return maxOf(byGap, byCount)
+    }
+
+    val placed = ArrayList<Node>(ordered.size)
+    var maxReach = 0
     for (layer in layerOrder) {
       val row = byLayer.getValue(layer)
-      val rowWidth = row.size * NODE_WIDTH + (row.size - 1).coerceAtLeast(0) * COLUMN_GAP
-      val left = MARGIN + ((width - MARGIN * 2) - rowWidth) / 2
+      val ring = ringOf.getValue(layer)
+      val radius = if (layer == ORPHAN_LAYER) {
+        // Сироты — снаружи всего достижимого, чтобы их отдельность была видна, а не вычислялась.
+        maxReach + ORPHAN_RING_GAP
+      }
+      else ringRadius(ring, row.size)
+      maxReach = maxOf(maxReach, radius)
       row.forEachIndexed { column, doc ->
-        nodes.add(
+        // Угол считается от количества узлов НА ЭТОМ кольце: так они распределены ровно, а
+        // соседние кольца не выстраиваются в спицы, которые глаз читает как связи.
+        val angle = if (row.size <= 1) 0.0
+                    else 2 * Math.PI * column / row.size + ring * ANGLE_OFFSET
+        placed.add(
           Node(
             path = doc.path,
             title = doc.title,
             layer = layer,
             column = column,
-            x = left + column * (NODE_WIDTH + COLUMN_GAP),
-            y = MARGIN + rowOf.getValue(layer) * (NODE_HEIGHT + ROW_GAP),
+            x = (radius * Math.cos(angle)).toInt(),
+            y = (radius * Math.sin(angle)).toInt(),
+            radius = radiusOf(doc.path),
             reachable = doc.path in analysis.reachable,
             brokenLinks = doc.outgoing.count { it.broken },
           )
@@ -84,13 +133,21 @@ object DocsGraphLayout {
       }
     }
 
+    // Координаты считались от центра; полотно — это их описанный прямоугольник плюс поле на
+    // подпись под самым нижним узлом.
+    val span = (placed.maxOfOrNull { maxOf(Math.abs(it.x), Math.abs(it.y)) } ?: 0) + NODE_WIDTH / 2 + MARGIN
+    val nodes = placed.map { it.copy(x = it.x + span, y = it.y + span) }
+
     val edges = ordered.flatMap { doc ->
       doc.outgoing.filter { !it.broken && it.to in kept && it.to != doc.path }.map { Edge(doc.path, it.to) }
     }.distinct()
 
-    val height = MARGIN * 2 + layerOrder.size * NODE_HEIGHT + (layerOrder.size - 1).coerceAtLeast(0) * ROW_GAP
-    return Graph(nodes, edges, width, height)
+    val side = span * 2
+    return Graph(nodes, edges, side, side)
   }
+
+  /** Сдвиг угла на каждое следующее кольцо: без него узлы выстраиваются в спицы. */
+  private const val ANGLE_OFFSET = 0.35
 
   /** How many documents the drawing left out, so the panel can say so instead of implying nothing. */
   fun droppedCount(analysis: DocsIndex.Analysis, maxNodes: Int = 120): Int =
