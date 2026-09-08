@@ -7,7 +7,6 @@ import com.intellij.openapi.project.Project
 import com.intellij.openapi.wm.ToolWindow
 import com.intellij.openapi.wm.ToolWindowFactory
 import com.intellij.ui.JBColor
-import com.intellij.ui.components.ActionLink
 import com.intellij.ui.components.JBCheckBox
 import com.intellij.ui.components.JBLabel
 import com.intellij.ui.content.ContentFactory
@@ -56,7 +55,7 @@ class VibeAuditPanel(private val project: Project) : JPanel(BorderLayout()), Dis
       isOpaque = false
       add(follow)
       add(onlyFailures.also { it.addActionListener { render() } })
-      add(ActionLink(t("audit.clearView")) { lines.clear(); render() })
+      add(com.vibe.agent.ui.composer.PillButton(t("audit.clearView"), outlined = true) { lines.clear(); render() })
     }
     val header = JPanel().apply {
       layout = javax.swing.BoxLayout(this, javax.swing.BoxLayout.Y_AXIS)

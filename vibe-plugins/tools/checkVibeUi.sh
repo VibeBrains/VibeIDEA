@@ -85,6 +85,34 @@ else
   fi
 fi
 
+# 3в. Ссылки платформы в НАШИХ панелях. Подчёркнутый синий текст обещает переход по ссылке, а в
+#     панели это действие — так и появилось «кнопочек хочется» от владельца 08.09.2026. В страницах
+#     настроек ActionLink оставлен намеренно: там это родная идиома платформы, и своя кнопка среди
+#     платформенных выглядела бы чужой.
+links=$("$PYTHON" - "$root" <<'PYLINKS'
+import io, os, sys
+root = sys.argv[1]
+bad = []
+for base, _, files in os.walk(os.path.join(root, 'vibe-plugins')):
+    if '/testSrc/' in base or '/out/' in base:
+        continue
+    for name in files:
+        if not name.endswith('Panel.kt') and not name.endswith('View.kt'):
+            continue
+        path = os.path.join(base, name)
+        if 'ActionLink(' in io.open(path, encoding='utf-8').read():
+            bad.append(os.path.relpath(path, root))
+print('\n'.join(sorted(bad)))
+PYLINKS
+)
+if [ -n "$links" ]; then
+  echo "ОШИБКА: в панелях используются ссылки платформы вместо кнопок:"
+  printf '%s\n' "$links" | sed 's/^/    /'
+  echo "  Действие в панели — кнопка: PillButton(text, outlined = true) { … }."
+  echo "  ActionLink оставлен только страницам настроек — там это идиома платформы."
+  status=1
+fi
+
 # 4. Значки тулвиндоу: четвёрка файлов на значок и совпадение с описанием в makeIcons.py.
 #    Значок правят в одном месте из четырёх — и в полосе он меняется, а в Search Everywhere нет;
 #    геометрия светлого и тёмного расходится — дёргается выделение. Генератор снимает оба случая.

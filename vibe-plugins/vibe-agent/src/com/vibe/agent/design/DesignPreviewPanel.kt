@@ -8,7 +8,6 @@ import com.intellij.openapi.util.Disposer
 import com.intellij.openapi.wm.ToolWindow
 import com.intellij.openapi.wm.ToolWindowFactory
 import com.intellij.ui.JBColor
-import com.intellij.ui.components.ActionLink
 import com.intellij.ui.components.JBLabel
 import com.intellij.ui.components.JBTextField
 import com.intellij.ui.content.ContentFactory
@@ -69,18 +68,18 @@ class DesignPreviewPanel(private val project: Project) : JPanel(BorderLayout()),
       isOpaque = false
       add(JBLabel(t("design.label.address")))
       add(urlField)
-      add(ActionLink(t("design.action.open")) { open() })
-      add(ActionLink(t("design.action.reload")) { browser?.cefBrowser?.reload() })
-      add(ActionLink(t("design.action.measure")) { measure() })
-      add(ActionLink(t("design.action.overlay")) { toggleOverlay() })
-      // Screen sizes as links rather than a dropdown: the three that matter are one click each,
-      // and a dropdown would hide them behind a menu nobody opens twice.
-      add(ActionLink(t("design.action.phone")) { setViewportWidth(PHONE_WIDTH) })
-      add(ActionLink(t("design.action.tablet")) { setViewportWidth(TABLET_WIDTH) })
-      add(ActionLink(t("design.action.desktop")) { setViewportWidth(0) })
-      add(ActionLink(t("design.action.onPhone")) { showLanAddress() })
-      add(ActionLink(t("design.action.errors")) { sendPageErrors() })
-      add(ActionLink(t("design.action.shot")) { sendScreenshot() })
+      add(com.vibe.agent.ui.composer.PillButton(t("design.action.open"), outlined = true) { open() })
+      add(com.vibe.agent.ui.composer.PillButton(t("design.action.reload"), outlined = true) { browser?.cefBrowser?.reload() })
+      add(com.vibe.agent.ui.composer.PillButton(t("design.action.measure"), outlined = true) { measure() })
+      add(com.vibe.agent.ui.composer.PillButton(t("design.action.overlay"), outlined = true) { toggleOverlay() })
+      // Размеры экрана кнопками, а не выпадашкой: три нужных — по одному нажатию, а меню
+      // спрятало бы их за списком, который не открывают дважды.
+      add(com.vibe.agent.ui.composer.PillButton(t("design.action.phone"), outlined = true) { setViewportWidth(PHONE_WIDTH) })
+      add(com.vibe.agent.ui.composer.PillButton(t("design.action.tablet"), outlined = true) { setViewportWidth(TABLET_WIDTH) })
+      add(com.vibe.agent.ui.composer.PillButton(t("design.action.desktop"), outlined = true) { setViewportWidth(0) })
+      add(com.vibe.agent.ui.composer.PillButton(t("design.action.onPhone"), outlined = true) { showLanAddress() })
+      add(com.vibe.agent.ui.composer.PillButton(t("design.action.errors"), outlined = true) { sendPageErrors() })
+      add(com.vibe.agent.ui.composer.PillButton(t("design.action.shot"), outlined = true) { sendScreenshot() })
       add(com.intellij.ui.components.JBCheckBox(t("design.action.liveReload")).also { liveReload = it })
     }
     val header = JPanel().apply {
@@ -155,7 +154,7 @@ class DesignPreviewPanel(private val project: Project) : JPanel(BorderLayout()),
       com.intellij.ide.util.PropertiesComponent.getInstance(project).getValue(RECENT_KEY))
     if (addresses.isNotEmpty()) recent.add(JBLabel(t("design.label.recent")).apply { foreground = JBColor.GRAY })
     for (address in addresses) {
-      recent.add(ActionLink(com.vibe.agent.preview.PreviewAddresses.label(address)) {
+      recent.add(com.vibe.agent.ui.composer.PillButton(com.vibe.agent.preview.PreviewAddresses.label(address), outlined = true) {
         urlField.text = address
         open()
       }.apply { toolTipText = address })

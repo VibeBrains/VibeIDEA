@@ -8,7 +8,6 @@ import com.intellij.openapi.wm.ToolWindow
 import com.intellij.openapi.wm.ToolWindowFactory
 import com.intellij.ui.JBColor
 import com.intellij.ui.SearchTextField
-import com.intellij.ui.components.ActionLink
 import com.intellij.ui.components.JBLabel
 import com.intellij.ui.content.ContentFactory
 import com.intellij.util.ui.JBFont
@@ -69,7 +68,13 @@ class VibeRunsPanel(private val project: Project) : JPanel(BorderLayout()), Disp
     reload()
   }
 
-  private fun link(text: String, action: () -> Unit) = ActionLink(text) { action() }
+  /**
+   * Действие строки прогона — кнопкой, а не ссылкой.
+   *
+   * Подчёркнутый синий текст обещает переход куда-то; здесь он останавливает прогон, отменяет
+   * задачу и открывает журнал — это действия, и выглядеть должны действиями.
+   */
+  private fun link(text: String, action: () -> Unit) = com.vibe.agent.ui.composer.PillButton(text, outlined = true) { action() }
 
   fun reload() {
     ApplicationManager.getApplication().executeOnPooledThread {

@@ -6,7 +6,6 @@ import com.intellij.openapi.project.Project
 import com.intellij.openapi.wm.ToolWindow
 import com.intellij.openapi.wm.ToolWindowFactory
 import com.intellij.ui.JBColor
-import com.intellij.ui.components.ActionLink
 import com.intellij.ui.components.JBLabel
 import com.intellij.ui.content.ContentFactory
 import com.intellij.util.ui.JBUI
@@ -40,7 +39,7 @@ class VibeTasksPanel(private val project: Project) : JPanel(BorderLayout()), Dis
     val header = JPanel(FlowLayout(FlowLayout.LEFT, 8, 0)).apply {
       isOpaque = false
       add(JBLabel(t("tasks.panel.title")))
-      add(ActionLink(t("tasks.panel.stopAll")) { stopAll() })
+      add(com.vibe.agent.ui.composer.PillButton(t("tasks.panel.stopAll"), outlined = true) { stopAll() })
     }
     add(header, BorderLayout.NORTH)
     add(VibeScroll.pane(list), BorderLayout.CENTER)
@@ -89,7 +88,7 @@ class VibeTasksPanel(private val project: Project) : JPanel(BorderLayout()), Dis
     // Only a running job gets a button. A stop link on a finished one would either do nothing or
     // kill a process the operating system has already handed to somebody else.
     if (task.running) {
-      add(ActionLink(t("tasks.panel.stop")) {
+      add(com.vibe.agent.ui.composer.PillButton(t("tasks.panel.stop"), outlined = true) {
         registry().stop(task.id)
         registry().finish(task.id, TaskRegistry.State.STOPPED, System.currentTimeMillis())
         render()
