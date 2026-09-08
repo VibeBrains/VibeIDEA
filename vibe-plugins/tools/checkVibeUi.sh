@@ -58,6 +58,33 @@ if ! grep -q 'vibeScrollBarThickness' "$jbscrollbar" 2>/dev/null; then
   status=1
 fi
 
+# 3б. Скролл РЕДАКТОРА тонкий не от той же правки: при включённой полосе разметки редактор ставит
+#     скроллу собственный UI (MyErrorPanel), минуя JBScrollBar.createUI, и берёт ширину бегунка из
+#     UI-свойства «Editor.scrollBarWidth». Мы кладём туда свою толщину — три точки, и потеря любой
+#     выглядит как «в редакторе опять толстый скролл», без единой ошибки сборки.
+editor_width="$root/vibe-plugins/vibe-agent/src/com/vibe/agent/ui/EditorScrollBarWidth.kt"
+if ! grep -qF '"Editor.scrollBarWidth"' "$editor_width" 2>/dev/null; then
+  echo "ОШИБКА: нет EditorScrollBarWidth с UI-свойством Editor.scrollBarWidth."
+  echo "  Скролл в редакторе вернётся к платформенным 14px независимо от настройки толщины."
+  status=1
+else
+  for place in \
+    "$root/vibe-plugins/vibe-agent/src/com/vibe/agent/appearance/CompactModeStartup.kt:при старте" \
+    "$root/vibe-plugins/vibe-agent/src/com/vibe/agent/settings/VibeUiConfigurable.kt:при смене настройки"; do
+    file="${place%%:*}"; when="${place##*:}"
+    if ! grep -qF 'EditorScrollBarWidth.apply()' "$file" 2>/dev/null; then
+      echo "ОШИБКА: EditorScrollBarWidth.apply() не вызывается $when ($file)."
+      status=1
+    fi
+  done
+  # Смена темы пересоздаёт значения UIManager: без слушателя настройка «работает, пока не поменяешь
+  # тему», а это худший вид работающей настройки — ломается позже и без связи с причиной.
+  if ! grep -qF 'EditorScrollBarWidthLafListener' "$root/vibe-plugins/vibe-agent/resources/META-INF/plugin.xml" 2>/dev/null; then
+    echo "ОШИБКА: слушатель смены темы EditorScrollBarWidthLafListener не объявлен в plugin.xml."
+    status=1
+  fi
+fi
+
 # 4. Значки тулвиндоу: четвёрка файлов на значок и совпадение с описанием в makeIcons.py.
 #    Значок правят в одном месте из четырёх — и в полосе он меняется, а в Search Everywhere нет;
 #    геометрия светлого и тёмного расходится — дёргается выделение. Генератор снимает оба случая.

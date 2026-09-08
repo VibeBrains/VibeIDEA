@@ -10,6 +10,9 @@ import com.intellij.openapi.startup.ProjectActivity
 /** Применяет умолчание плотности один раз на профиль настроек. См. [CompactModeDefault]. */
 class CompactModeStartup : ProjectActivity {
   override suspend fun execute(project: Project) {
+    // Ширина скролла в редакторе живёт в UI-свойстве темы, а не в нашем UI: ставим её при старте
+    // тем же значением, что и остальные скроллы. Разбор — [com.vibe.agent.ui.EditorScrollBarWidth].
+    com.vibe.agent.ui.EditorScrollBarWidth.apply()
     val properties = PropertiesComponent.getInstance()
     val settings = UISettings.getInstance()
     val action = CompactModeDefault.decide(

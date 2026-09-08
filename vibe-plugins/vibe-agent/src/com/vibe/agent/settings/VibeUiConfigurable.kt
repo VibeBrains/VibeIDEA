@@ -99,6 +99,9 @@ class VibeUiConfigurable : Configurable {
     // Existing scrollbars keep the UI they were built with — rebuild them so the change is visible
     // now, not after a restart.
     VibeScroll.refreshAllScrollBars()
+    // Редактор берёт ширину не у нас, а у UI-свойства темы: без этой строки настройка меняла бы
+    // всё, кроме самой заметной полосы — той, что справа от кода.
+    com.vibe.agent.ui.EditorScrollBarWidth.apply()
   }
 
   override fun reset() {

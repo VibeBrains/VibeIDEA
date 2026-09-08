@@ -12,6 +12,13 @@
   <depends>com.intellij.modules.platform</depends>
   <!-- Схемы .vibe/*.json: автодополнение и проверка в редакторе вместо разбора по логам. -->
   <depends optional="true" config-file="vibe-json-schemas.xml">com.intellij.modules.json</depends>
+  <applicationListeners>
+    <!-- Тема пересоздаёт значения UIManager: без этого ширина скролла в редакторе возвращалась бы
+         к платформенным 14 при каждой смене темы. -->
+    <listener class="com.vibe.agent.ui.EditorScrollBarWidthLafListener"
+              topic="com.intellij.ide.ui.LafManagerListener"/>
+  </applicationListeners>
+
   <extensions defaultExtensionNs="com.intellij">
     <toolWindow id="VibeDesign" anchor="right" factoryClass="com.vibe.agent.design.DesignToolWindowFactory"
                 icon="/icons/vibeDesign.svg" doNotActivateOnStart="true"/>
