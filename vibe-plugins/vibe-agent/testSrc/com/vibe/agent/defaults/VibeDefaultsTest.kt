@@ -17,10 +17,10 @@ class VibeDefaultsTest {
     val vibe = java.nio.file.Path.of(base, ".vibe")
     // Spot checks across every section of the shared VibeBrains set — the full
     // resources↔manifest correspondence is guarded by the gate test above.
-    for (f in listOf("README.md", ".gitignore", "rules.md", "hooks.example.jsonc",
-                     "pipelines.example.jsonc", "servers.example.jsonc",
-                     "design/components.md", "design/uiKit.md", ".seeded.json",
-                     "agents.example.jsonc", "providers.example.jsonc",
+    for (f in listOf("README.md", ".gitignore", "rules.md", "hooks.json",
+                     "pipelines.json", "servers.json",
+                     "design/components.md", "design/uiKit.md", "local/.seeded.json",
+                     "agents.json",
                      "learning/MISSION.example.md", "prompts/pipeline.md",
                      "rules/verification.mdc", "skills/review-pr/SKILL.md",
                      "providers/README.md", "providers/_template-openai-compatible.jsonc",
@@ -34,6 +34,10 @@ class VibeDefaultsTest {
     }
     // Runtime artifacts are git-ignored from the very first seed.
     val gitignore = Files.readString(vibe.resolve(".gitignore"))
+    // Рантайм закрыт одной строкой — папкой, а не перечислением имён, которое приходилось
+    // дополнять при каждом новом файле и забывать. Старые имена оставлены на случай, когда
+    // перенос не случился (файл занят, нет прав), — иначе журнал попал бы в коммит.
+    assertTrue(gitignore.contains("local/"), "рантайм-папка обязана быть закрыта: " + gitignore)
     assertTrue(gitignore.contains("audit.jsonl") && gitignore.contains("checkpoints.jsonl"))
   }
 
@@ -119,11 +123,11 @@ class VibeDefaultsTest {
     val base = tempProject()
     val vibe = java.nio.file.Path.of(base, ".vibe")
     Files.createDirectories(vibe)
-    Files.writeString(vibe.resolve("hooks.example.jsonc"), "pre-existing")
+    Files.writeString(vibe.resolve("hooks.json"), "pre-existing")
     val report = VibeDefaults.seed(base)
     assertTrue(report.created > 0)
     assertTrue(report.kept >= 1)
-    assertEquals("pre-existing", Files.readString(vibe.resolve("hooks.example.jsonc")))
+    assertEquals("pre-existing", Files.readString(vibe.resolve("hooks.json")))
   }
 
   @Test
@@ -178,8 +182,8 @@ class VibeDefaultsTest {
   fun journalRecordsSeededHashes() {
     val base = tempProject()
     VibeDefaults.seed(base)
-    val journal = Files.readString(java.nio.file.Path.of(base, ".vibe", ".seeded.json"))
+    val journal = Files.readString(java.nio.file.Path.of(base, ".vibe", "local", ".seeded.json"))
     assertTrue(journal.contains("rules.md"))
-    assertTrue(journal.contains("hooks.example.jsonc"))
+    assertTrue(journal.contains("hooks.json"))
   }
 }

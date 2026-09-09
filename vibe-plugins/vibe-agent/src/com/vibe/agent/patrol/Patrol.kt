@@ -65,7 +65,7 @@ object Patrol {
 
   fun parse(text: String?): Parsed {
     if (text.isNullOrBlank()) return Parsed(emptyList(), emptyList())
-    val root = runCatching { json.parseToJsonElement(text).jsonObject }.getOrNull()
+    val root = runCatching { json.parseToJsonElement(com.vibe.agent.util.VibeJsonc.strip(text)).jsonObject }.getOrNull()
       ?: return Parsed(emptyList(), listOf(Problem("", Trouble.NOT_AN_OBJECT)))
     val array = root["patrols"]?.jsonArray ?: return Parsed(emptyList(), listOf(Problem("", Trouble.NOT_AN_OBJECT)))
     val entries = ArrayList<Entry>()

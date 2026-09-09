@@ -26,7 +26,9 @@ class AuditLog(
   private val rotationBytes: () -> Long,
   private val onWarning: (String) -> Unit = {},
 ) {
-  private val logFile: Path = Path.of(projectBase, ".vibe", "audit.jsonl")
+  // Рантайм живёт в `.vibe/local/`: журнал пишет IDE, а не человек, и в репозиторий он не едет.
+  private val logFile: Path = com.vibe.agent.defaults.VibeLocal.file(projectBase, "audit.jsonl")
+    .also { com.vibe.agent.defaults.VibeLocal.migrateSiblings(projectBase, "audit.", ".jsonl.gz") }
   private val worker = Executors.newSingleThreadExecutor { r ->
     Thread(r, "vibe-audit-writer").apply { isDaemon = true }
   }

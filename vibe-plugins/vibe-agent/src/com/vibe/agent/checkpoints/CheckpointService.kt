@@ -24,7 +24,7 @@ data class Checkpoint(val hash: String, val label: String, val atMillis: Long)
  */
 class CheckpointService(private val projectBase: String) {
   private val json = Json { ignoreUnknownKeys = true }
-  private val logFile: Path = Path.of(projectBase, ".vibe", "checkpoints.jsonl")
+  private val logFile: Path = com.vibe.agent.defaults.VibeLocal.file(projectBase, "checkpoints.jsonl")
 
   fun isGitRepo(): Boolean = git("rev-parse", "--is-inside-work-tree").first == 0
 

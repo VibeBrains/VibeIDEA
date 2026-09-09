@@ -40,7 +40,7 @@ class PlanStore(private val project: Project) {
       val merged = PlanMerge.merge(onDisk = loadAll(), mine = cached, ownThread = threadId, ownPlan = own)
       val trimmed = PlanMerge.trim(merged, threadId, MAX_PLANS)
       cached = trimmed
-      val file = Path.of(base, FILE)
+      val file = com.vibe.agent.defaults.VibeLocal.file(base, PLANS)
       Files.createDirectories(file.parent)
       val text = json.encodeToString(JsonObject.serializer(), buildJsonObject {
         put("version", VERSION)
@@ -60,7 +60,7 @@ class PlanStore(private val project: Project) {
   @Synchronized
   fun loadAll(): Map<String, AgentPlan.Plan> {
     val base = project.basePath ?: return emptyMap()
-    val file = Path.of(base, FILE)
+    val file = com.vibe.agent.defaults.VibeLocal.file(base, PLANS)
     if (!Files.exists(file)) return emptyMap()
     return runCatching {
       val root = json.parseToJsonElement(Files.readString(file)).jsonObject
@@ -76,7 +76,10 @@ class PlanStore(private val project: Project) {
   }
 
   companion object {
-    const val FILE = ".vibe/plans.json"
+    private const val PLANS = "plans.json"
+
+    /** Путь для сообщений и доков: план — рантайм, поэтому живёт в `.vibe/local/`. */
+    const val FILE = ".vibe/" + com.vibe.agent.defaults.VibeLocal.DIR + "/" + PLANS
     private const val VERSION = 1
 
     /** Enough for the chats one actually returns to; the rest are history, not work in progress. */

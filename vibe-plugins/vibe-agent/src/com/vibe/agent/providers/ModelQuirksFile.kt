@@ -42,7 +42,7 @@ object ModelQuirksFile {
    */
   fun parse(text: String, source: String = "modelQuirks.json", onWarning: (String) -> Unit): List<Entry> {
     val root = try {
-      json.parseToJsonElement(ProvidersFile.stripJsonc(text)).jsonObject
+      json.parseToJsonElement(com.vibe.agent.util.VibeJsonc.strip(text)).jsonObject
     }
     catch (e: Exception) {
       onWarning(t("quirks.warn.notParsed", "source" to source, "reason" to e.message))

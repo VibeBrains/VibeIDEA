@@ -397,7 +397,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     systemLine(t("chat.greeting.keys", "acp" to AcpConfig.configPath()))
     // Config files live on disk — never read (or seed) them on the EDT; publish results back here.
     ApplicationManager.getApplication().executeOnPooledThread {
-      val loadedAgents = AcpConfig.load { systemLine(t("chat.configNotice", "text" to it)) }
+      val loadedAgents = AcpConfig.load(project.basePath) { systemLine(t("chat.configNotice", "text" to it)) }
       val loadedProviders = ProvidersService.load(project.basePath) { systemLine("[providers] $it") }
       val catalogCache = ModelCatalogCache.load()
       // Read here so the spending ceiling, which is asked on the EDT, never has to touch the disk.
@@ -3061,7 +3061,11 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
       if (existing != null && existing.isAlive && existing.sessionId != null && clientConfig == config) return existing
       existing?.stop()
       systemLine(t("chat.agentStarting", "command" to (config.command + " " + config.args.joinToString(" "))))
-      AcpClient(config, project.basePath, this, advertiseTerminalExec = VibeAgentSettings.terminalEnabled).also {
+      // "dir" записи — рабочая папка агента в монорепо: он видит её своим корнем и не ходит
+      // по соседним пакетам. Поле было описано в сиде с самого начала и не читалось.
+      val workingDir = config.dir?.let { d -> project.basePath?.let { java.nio.file.Path.of(it, d).toString() } }
+        ?: project.basePath
+      AcpClient(config, workingDir, this, advertiseTerminalExec = VibeAgentSettings.terminalEnabled).also {
         it.start()
         client = it
         clientConfig = config

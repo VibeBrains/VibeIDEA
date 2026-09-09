@@ -68,7 +68,7 @@ class VibeAuditPanel(private val project: Project) : JPanel(BorderLayout()), Dis
     render()
   }
 
-  private fun file(): Path? = project.basePath?.let { Path.of(it, ".vibe", "audit.jsonl") }
+  private fun file(): Path? = project.basePath?.let { com.vibe.agent.defaults.VibeLocal.file(it, "audit.jsonl") }
 
   private fun tick() {
     val path = file() ?: return

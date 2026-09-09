@@ -47,30 +47,6 @@ data class ServerEntry(
 object ServersFile {
   private val json = Json { ignoreUnknownKeys = true }
 
-  // Same 30-line pure JSONC stripper as in com.vibe.agent.providers.ProvidersFile —
-  // deliberate duplication until a third consumer justifies a shared module (rule of three).
-  fun stripJsonc(text: String): String {
-    val sb = StringBuilder(text.length)
-    var inString = false
-    var escaped = false
-    var i = 0
-    while (i < text.length) {
-      val c = text[i]
-      when {
-        escaped -> { sb.append(c); escaped = false }
-        inString && c == '\\' -> { sb.append(c); escaped = true }
-        c == '"' -> { sb.append(c); inString = !inString }
-        !inString && c == '/' && i + 1 < text.length && text[i + 1] == '/' -> {
-          while (i < text.length && text[i] != '\n') i++
-          continue
-        }
-        else -> sb.append(c)
-      }
-      i++
-    }
-    return Regex(",(\\s*[}\\]])").replace(sb.toString(), "$1")
-  }
-
   fun path(projectBase: String): Path = Path.of(projectBase, ".vibe", "servers.json")
 
   fun load(projectBase: String?, onWarning: (String) -> Unit): List<ServerEntry> {
@@ -80,7 +56,7 @@ object ServersFile {
     val result = ArrayList<ServerEntry>()
     val seen = HashSet<String>()
     try {
-      val root = json.parseToJsonElement(stripJsonc(Files.readString(file))).jsonObject
+      val root = json.parseToJsonElement(com.vibe.agent.util.VibeJsonc.strip(Files.readString(file))).jsonObject
       for (el in root["servers"]?.jsonArray ?: run { onWarning(t("servers.warn.noArray")); return emptyList() }) {
         try {
           val o = el.jsonObject

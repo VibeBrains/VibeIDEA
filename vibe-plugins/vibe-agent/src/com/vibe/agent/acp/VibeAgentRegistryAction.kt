@@ -37,7 +37,7 @@ class VibeAgentRegistryAction : AnAction({ t("registry.action") }) {
         return@executeOnPooledThread
       }
       val catalog = AgentRegistry.parse(text)
-      val configured = AcpConfig.load()
+      val configured = AcpConfig.load(project?.basePath)
       val fresh = AgentRegistry.newAgents(catalog, configured)
       ApplicationManager.getApplication().invokeLater { show(project, catalog.size, fresh) }
     }

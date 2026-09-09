@@ -5,6 +5,7 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonPrimitive
 
@@ -28,6 +29,14 @@ object DataSources {
 
   data class DataSource(
     val id: String,
+    /**
+     * Выключенное подключение описано, но в навигаторе не показывается и не открывается.
+     *
+     * Тот же смысл, что у `active` провайдера: образец подключения может ехать в проект рабочим
+     * файлом, а не двойником рядом. Умолчание — включено: человек, описавший базу, описал её,
+     * чтобы к ней подключаться.
+     */
+    val active: Boolean = true,
     val name: String,
     val url: String,
     val user: String?,
@@ -73,7 +82,7 @@ object DataSources {
    */
   fun parse(text: String?): Parsed {
     if (text.isNullOrBlank()) return Parsed(emptyList(), emptyList())
-    val root = runCatching { json.parseToJsonElement(text) }.getOrNull()
+    val root = runCatching { json.parseToJsonElement(com.vibe.agent.util.VibeJsonc.strip(text)) }.getOrNull()
       ?: return Parsed(emptyList(), listOf(Problem("", Trouble.NOT_AN_OBJECT)))
     val array = when (root) {
       is JsonArray -> root
@@ -98,6 +107,7 @@ object DataSources {
       sources.add(
         DataSource(
           id = id,
+          active = obj["active"]?.jsonPrimitive?.booleanOrNull ?: true,
           name = str("name") ?: id,
           url = url,
           user = str("user"),
@@ -107,7 +117,7 @@ object DataSources {
         )
       )
     }
-    return Parsed(sources, problems)
+    return Parsed(sources.filter { it.active }, problems)
   }
 
   /**

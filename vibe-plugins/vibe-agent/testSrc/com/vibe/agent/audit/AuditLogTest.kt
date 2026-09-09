@@ -13,7 +13,7 @@ class AuditLogTest {
   private fun logOn(base: Path): AuditLog = AuditLog(base.toString(), { true }, { 10L * 1024 * 1024 })
 
   private fun seed(base: Path, lines: List<String>) {
-    val f = base.resolve(".vibe").resolve("audit.jsonl")
+    val f = base.resolve(".vibe").resolve("local").resolve("audit.jsonl")
     Files.createDirectories(f.parent)
     Files.writeString(f, lines.joinToString("\n") + "\n")
   }
@@ -73,7 +73,7 @@ class AuditLogTest {
     val log = AuditLog(base.toString(), { true }, { 10L * 1024 * 1024 })
     repeat(3) { i -> log.append(AuditEvent(i.toLong(), AuditEvent.Action.FS_WRITE, ok = true, actor = AuditActor.HUMAN)) }
     log.close()   // waits for the queued lines to land
-    val file = base.resolve(".vibe").resolve("audit.jsonl")
+    val file = base.resolve(".vibe").resolve("local").resolve("audit.jsonl")
     val lines = Files.readAllLines(file)
     // Someone rewrites the record of a write that failed into one that succeeded.
     Files.write(file, lines.mapIndexed { i, l -> if (i == 1) l.replace("\"ok\":true", "\"ok\":false") else l })
@@ -87,7 +87,7 @@ class AuditLogTest {
     val log = AuditLog(base.toString(), { true }, { 200L })
     repeat(6) { i -> log.append(AuditEvent(i.toLong(), AuditEvent.Action.TERMINAL, ok = true, actor = AuditActor.IDE)) }
     log.close()   // waits for the queued lines to land
-    assertTrue(Files.exists(base.resolve(".vibe").resolve("audit.1.jsonl.gz")), "ротация должна была случиться")
+    assertTrue(Files.exists(base.resolve(".vibe").resolve("local").resolve("audit.1.jsonl.gz")), "ротация должна была случиться")
     val verdict = log.verifyChain()
     assertTrue(verdict.intact, "живой файл после ротации обязан сходиться: " + verdict)
   }
@@ -97,6 +97,6 @@ class AuditLogTest {
     val log = AuditLog(base.toString(), { false }, { 10L * 1024 * 1024 })
     log.append(AuditEvent(1L, AuditEvent.Action.PROMPT, ok = true, actor = AuditActor.HUMAN))
     log.close()
-    assertFalse(Files.exists(base.resolve(".vibe").resolve("audit.jsonl")))
+    assertFalse(Files.exists(base.resolve(".vibe").resolve("local").resolve("audit.jsonl")))
   }
 }

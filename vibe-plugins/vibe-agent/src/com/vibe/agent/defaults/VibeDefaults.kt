@@ -36,25 +36,24 @@ object VibeDefaults {
    */
   private val MANIFEST = listOf(
     "README.md" to "README.md",
-    "agents.example.jsonc" to "agents.example.jsonc",
+    "agents.json" to "agents.json",
     "design/components.md" to "design/components.md",
-    "dataSources.example.jsonc" to "dataSources.example.jsonc",
+    "dataSources.json" to "dataSources.json",
     "design/uiKit.md" to "design/uiKit.md",
     "gitignore.seed" to ".gitignore",
-    "hooks.example.jsonc" to "hooks.example.jsonc",
-    "httpClientEnv.example.jsonc" to "httpClientEnv.example.jsonc",
+    "hooks.json" to "hooks.json",
+    "http-client.env.json" to "http-client.env.json",
     "learning/MISSION.example.md" to "learning/MISSION.example.md",
-    "modelQuirks.example.jsonc" to "modelQuirks.example.jsonc",
-    "pipelines.example.jsonc" to "pipelines.example.jsonc",
+    "modelQuirks.json" to "modelQuirks.json",
+    "pipelines.json" to "pipelines.json",
     "prompts/CLAUDE-FABLE-5.md" to "prompts/CLAUDE-FABLE-5.md",
     "prompts/deep-review.md" to "prompts/deep-review.md",
     "prompts/example.md" to "prompts/example.md",
     "prompts/pipeline.md" to "prompts/pipeline.md",
-    "providers.example.jsonc" to "providers.example.jsonc",
-    "requests.example.http" to "requests.example.http",
+    "requests.http" to "requests.http",
     // Provider catalog: auto-loaded by ProvidersService (unlike the *.example.jsonc seeds),
     // `active` is the toggle — owner's decision №24. One file per provider.
-    "patrols.example.jsonc" to "patrols.example.jsonc",
+    "patrols.json" to "patrols.json",
     "providers/README.md" to "providers/README.md",
     "providers/_template-openai-compatible.jsonc" to "providers/_template-openai-compatible.jsonc",
     "providers/alibaba-coding-plan.jsonc" to "providers/alibaba-coding-plan.jsonc",
@@ -88,7 +87,7 @@ object VibeDefaults {
     "rules/ui-kit.mdc" to "rules/ui-kit.mdc",
     "rules/verification.mdc" to "rules/verification.mdc",
     "rules/versioning.mdc" to "rules/versioning.mdc",
-    "servers.example.jsonc" to "servers.example.jsonc",
+    "servers.json" to "servers.json",
     "skills/design-vocabulary/SKILL.md" to "skills/design-vocabulary/SKILL.md",
     "skills/example/SKILL.md" to "skills/example/SKILL.md",
     "skills/grill/SKILL.md" to "skills/grill/SKILL.md",
@@ -280,7 +279,7 @@ object VibeDefaults {
    * `{version, files: {path: {sha, rev, reconciled}}}`.
    */
   internal fun loadJournal(vibeDir: Path): Map<String, JournalEntry> {
-    val file = vibeDir.resolve(JOURNAL)
+    val file = VibeLocal.fileIn(vibeDir, JOURNAL)
     if (!Files.isRegularFile(file)) return emptyMap()
     return runCatching {
       val root = Json.parseToJsonElement(Files.readString(file)).jsonObject
@@ -299,7 +298,7 @@ object VibeDefaults {
 
   private fun saveJournal(vibeDir: Path, journal: Map<String, JournalEntry>) {
     runCatching {
-      Files.writeString(vibeDir.resolve(JOURNAL), buildJsonObject {
+      Files.writeString(VibeLocal.fileIn(vibeDir, JOURNAL), buildJsonObject {
         put("version", 2)
         put("files", buildJsonObject {
           journal.toSortedMap().forEach { (path, e) ->

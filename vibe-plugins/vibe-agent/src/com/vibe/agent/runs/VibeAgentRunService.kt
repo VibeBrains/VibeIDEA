@@ -37,7 +37,7 @@ class VibeAgentRunService(private val project: Project) : Disposable {
     TimeUnit.MILLISECONDS,
   )
 
-  private fun file(): Path? = project.basePath?.let { Path.of(it, ".vibe", "agent-runs.jsonl") }
+  private fun file(): Path? = project.basePath?.let { com.vibe.agent.defaults.VibeLocal.file(it, "agent-runs.jsonl") }
 
   val isEnabled: Boolean get() = VibeAgentSettings.runLedgerEnabled
 

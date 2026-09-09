@@ -51,7 +51,7 @@ object ProjectCommands {
 
   fun parse(text: String): Parsed {
     val problems = ArrayList<String>()
-    val root = runCatching { Json { ignoreUnknownKeys = true }.parseToJsonElement(text) }.getOrNull()
+    val root = runCatching { Json { ignoreUnknownKeys = true }.parseToJsonElement(com.vibe.agent.util.VibeJsonc.strip(text)) }.getOrNull()
     val array = (root as? JsonObject)?.get("commands") as? JsonArray
       ?: (root as? JsonArray)
       ?: return Parsed(emptyList(), listOf(PROBLEM_NOT_A_LIST))

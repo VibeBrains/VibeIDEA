@@ -233,7 +233,7 @@ class VibeDoctorAction : AnAction({ t("doctor.action") }) {
     // Готовность внешних агентов: чем запускать и чем платить. Оба ответа знаемы заранее, и оба
     // иначе выясняются в худший момент — «агент не запустился» и счёт в конце месяца.
     val agentNotices = com.vibe.agent.acp.AgentReadiness.check(
-      com.vibe.agent.acp.AcpConfig.load(),
+      com.vibe.agent.acp.AcpConfig.load(base),
       onPath = { com.vibe.agent.acp.AcpClient.isAvailable(it) },
       env = { System.getenv(it) },
     )

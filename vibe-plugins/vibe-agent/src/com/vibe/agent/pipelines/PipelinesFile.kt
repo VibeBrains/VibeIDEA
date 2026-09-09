@@ -98,7 +98,7 @@ object PipelinesFile {
     val result = ArrayList<Pipeline>()
     val seen = HashSet<String>()
     try {
-      val root = json.parseToJsonElement(ProvidersFile.stripJsonc(Files.readString(file))).jsonObject
+      val root = json.parseToJsonElement(com.vibe.agent.util.VibeJsonc.strip(Files.readString(file))).jsonObject
       for (el in root["pipelines"]?.jsonArray ?: return emptyList()) {
         try {
           val o = el.jsonObject

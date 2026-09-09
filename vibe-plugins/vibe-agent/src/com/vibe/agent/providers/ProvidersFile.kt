@@ -146,30 +146,6 @@ data class ProviderEntry(
 object ProvidersFile {
   private val json = Json { ignoreUnknownKeys = true }
 
-  /** Strip JSONC: `//` line comments (outside strings) and trailing commas. */
-  fun stripJsonc(text: String): String {
-    val sb = StringBuilder(text.length)
-    var inString = false
-    var escaped = false
-    var i = 0
-    while (i < text.length) {
-      val c = text[i]
-      when {
-        escaped -> { sb.append(c); escaped = false }
-        inString && c == '\\' -> { sb.append(c); escaped = true }
-        c == '"' -> { sb.append(c); inString = !inString }
-        !inString && c == '/' && i + 1 < text.length && text[i + 1] == '/' -> {
-          while (i < text.length && text[i] != '\n') i++
-          continue
-        }
-        else -> sb.append(c)
-      }
-      i++
-    }
-    // trailing commas: `,` directly before `]` or `}` (whitespace between allowed)
-    return Regex(",(\\s*[}\\]])").replace(sb.toString(), "$1")
-  }
-
   /**
    * A price block, or null when it is absent or says nothing.
    *
@@ -187,7 +163,7 @@ object ProvidersFile {
   }
 
   fun parse(text: String, source: String = "providers.json", onWarning: (String) -> Unit): List<ProviderEntry> {
-    val root = json.parseToJsonElement(stripJsonc(text)).jsonObject
+    val root = json.parseToJsonElement(com.vibe.agent.util.VibeJsonc.strip(text)).jsonObject
     val providers = root["providers"]?.jsonArray ?: run {
       onWarning(t("providers.warn.noArray", "source" to source))
       return emptyList()

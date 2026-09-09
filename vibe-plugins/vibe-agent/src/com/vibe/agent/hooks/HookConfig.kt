@@ -9,6 +9,7 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.longOrNull
 
@@ -45,6 +46,15 @@ data class Hook(
   val tools: List<String>,
   val timeoutMs: Long,
   val label: String?,
+  /**
+   * Выключенный хук описан, но не выполняется.
+   *
+   * Нужен затем же, зачем `active` у провайдера: чтобы готовый пример ехал в проект РАБОЧИМ
+   * файлом, а не файлом-двойником рядом с рабочим. Хук запускает чужую команду, поэтому
+   * умолчание здесь не «включён»: сид с включённым хуком выполнял бы код при первом же ходе.
+   * Для файла, написанного человеком, умолчание обратное — он пишет хук, чтобы тот работал.
+   */
+  val active: Boolean = true,
 ) {
   /** Human name in messages: label if set, else the command. */
   fun name(): String = label ?: command
@@ -63,7 +73,7 @@ object HookConfig {
    */
   fun parse(text: String, onWarning: (String) -> Unit): List<Hook> {
     val root = try {
-      Json { ignoreUnknownKeys = true }.parseToJsonElement(text)
+      Json { ignoreUnknownKeys = true }.parseToJsonElement(com.vibe.agent.util.VibeJsonc.strip(text))
     }
     catch (e: Exception) {
       onWarning(t("hooks.warn.badJson", "reason" to e.message))
@@ -101,14 +111,18 @@ object HookConfig {
           MAX_TIMEOUT_MS
         } else DEFAULT_TIMEOUT_MS
       }
-      result.add(Hook(event, command, tools, timeoutMs, hookObj["label"]?.jsonPrimitive?.contentOrNull))
+      result.add(Hook(event, command, tools, timeoutMs, hookObj["label"]?.jsonPrimitive?.contentOrNull,
+                      active = hookObj["active"]?.jsonPrimitive?.booleanOrNull ?: true))
     }
     return result
   }
 
   /** Hooks for one event×tool, in file order. Empty [tools] matches any tool. */
   fun hooksFor(hooks: List<Hook>, event: HookEvent, tool: String?): List<Hook> =
-    hooks.filter { it.event == event && (event in EVENTS_WITHOUT_TOOLS || it.tools.isEmpty() || (tool != null && tool in it.tools)) }
+    hooks.filter {
+      it.active &&
+      it.event == event && (event in EVENTS_WITHOUT_TOOLS || it.tools.isEmpty() || (tool != null && tool in it.tools))
+    }
 
   private fun JsonArray?.orEmptyList(): List<kotlinx.serialization.json.JsonElement> = this ?: emptyList()
 }
