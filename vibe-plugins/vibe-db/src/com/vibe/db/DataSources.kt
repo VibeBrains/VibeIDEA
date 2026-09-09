@@ -95,6 +95,10 @@ object DataSources {
     for ((index, element) in array.withIndex()) {
       val obj = element as? JsonObject
       if (obj == null) { problems.add(Problem("#$index", Trouble.NOT_AN_OBJECT)); continue }
+      // Запись, адресованная другому продукту, пропускается МОЛЧА: набор общий, и запись
+      // для соседа — не проблема этой сборки. Проверка стоит раньше всех остальных, включая
+      // активность: у чужой записи могут быть поля, которых мы не знаем.
+      if (!com.vibe.agent.defaults.VibeProducts.addressedToUs(obj)) continue
       fun str(key: String): String? = (obj[key] as? JsonPrimitive)?.contentOrNull?.takeIf { it.isNotBlank() }
       val id = str("id")
       val url = str("url")

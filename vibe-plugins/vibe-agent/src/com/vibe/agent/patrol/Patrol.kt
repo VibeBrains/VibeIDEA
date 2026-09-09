@@ -74,6 +74,10 @@ object Patrol {
     for ((index, element) in array.withIndex()) {
       val obj = element as? JsonObject
       if (obj == null) { problems.add(Problem("#$index", Trouble.NOT_AN_OBJECT)); continue }
+      // Запись, адресованная другому продукту, пропускается МОЛЧА: набор общий, и запись
+      // для соседа — не проблема этой сборки. Проверка стоит раньше всех остальных, включая
+      // активность: у чужой записи могут быть поля, которых мы не знаем.
+      if (!com.vibe.agent.defaults.VibeProducts.addressedToUs(obj)) continue
       fun str(key: String) = (obj[key])?.jsonPrimitive?.contentOrNull?.takeIf { it.isNotBlank() }
       // Активность читается ПЕРВОЙ: выключенная запись не проверяется и не жалуется — она не
       // запустится, и претензии к её содержимому предъявлять некому. Разбор общего набора сидов,

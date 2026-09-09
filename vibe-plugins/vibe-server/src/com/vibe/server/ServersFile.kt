@@ -64,6 +64,10 @@ object ServersFile {
         var silent = false
         try {
           val o = el.jsonObject
+          // Запись, адресованная другому продукту, пропускается МОЛЧА: набор общий, и запись
+          // для соседа — не проблема этой сборки. Проверка стоит раньше всех остальных,
+          // включая активность: у чужой записи могут быть поля, которых мы не знаем.
+          if (!com.vibe.agent.defaults.VibeProducts.addressedToUs(o)) continue
           silent = o["active"]?.jsonPrimitive?.booleanOrNull == false
           val id = o["id"]?.jsonPrimitive?.contentOrNull
           if (id.isNullOrBlank()) { if (!silent) onWarning(t("servers.warn.noId")); continue }

@@ -172,6 +172,10 @@ object ProvidersFile {
     for (el in providers) {
       try {
         val o = el.jsonObject
+        // Каталог провайдеров по природе общий — вендор один на все продукты. Проверка тут не
+        // потому, что случай ожидается, а потому, что молчаливое игнорирование чужого поля и есть
+        // тот отказ, ради которого поле вводилось: набор общий, читатель обязан быть везде.
+        if (!com.vibe.agent.defaults.VibeProducts.addressedToUs(o)) continue
         val id = o["id"]?.jsonPrimitive?.contentOrNull
         if (id.isNullOrBlank()) { onWarning(t("providers.warn.noId", "source" to source)); continue }
         result.add(parseProvider(id, o))

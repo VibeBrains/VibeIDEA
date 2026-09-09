@@ -115,6 +115,23 @@ object VibeDefaults {
   private const val DEPRECATED = "deprecated.json"
   private const val VERSIONS = "versions.json"
 
+  /**
+   * Адресация ФАЙЛОВ набора: `{ "files": [ { "path": "patrols.json", "products": ["vibeidea"] } ] }`.
+   *
+   * Второй уровень таргетинга, без которого первого не хватает. Поле `products` внутри файла
+   * отвечает «кому эта запись», но `patrols.json` и `dataSources.json` в редакторе без наших
+   * панелей — не «выключенные», а бессмысленные целиком: их незачем и засевать. Продукт не должен
+   * разбирать файл, чтобы узнать, что файл не для него, поэтому адрес объявляется СНАРУЖИ.
+   *
+   * Файл рукописный и отдельный от `versions.json`: тот генерируется `bump.mjs`, и ручную запись
+   * в нём стёрли бы первым же бампом. Пути в файле нет — файл для всех.
+   *
+   * ИМЯ ФАЙЛА ждёт подтверждения VibeIDE (предложено 09.09.2026): согласованы поле и правило,
+   * имя — нет. Пока файла в наборе нет, весь набор считается адресованным нам, то есть сегодня
+   * читатель ничего не меняет — он приезжает РАНЬШЕ первой адресной записи, и в этом весь смысл.
+   */
+  private const val TARGETING = "products.json"
+
   /** Resource names of the manifest — the resources↔manifest gate test compares them with the embedded set. */
   internal fun manifestResourceNames(): List<String> = MANIFEST.map { it.first }
 
@@ -122,7 +139,32 @@ object VibeDefaults {
   fun versionsContent(): String? = readResource(VERSIONS)
 
   /** Set files that serve the set itself (registries, its bump script) and are never seeded. */
-  internal val SET_METADATA = setOf(DEPRECATED, VERSIONS, "bump.mjs")
+  internal val SET_METADATA = setOf(DEPRECATED, VERSIONS, TARGETING, "bump.mjs")
+
+  /**
+   * Разбор адресации файлов: путь → продукты. Чистая функция, чтобы её можно было проверить,
+   * не собирая ресурсы. Запись без `products` в карту не попадает — это то же самое, что «всем».
+   */
+  internal fun parseTargeting(text: String?): Map<String, List<String>> {
+    val root = text?.let {
+      runCatching { Json.parseToJsonElement(com.vibe.agent.util.VibeJsonc.strip(it)).jsonObject }.getOrNull()
+    } ?: return emptyMap()
+    val files = runCatching { root["files"]?.jsonArray }.getOrNull() ?: return emptyMap()
+    val out = LinkedHashMap<String, List<String>>()
+    for (el in files) {
+      val o = el as? JsonObject ?: continue
+      val path = o["path"]?.jsonPrimitive?.contentOrNull?.takeIf { it.isNotBlank() } ?: continue
+      val products = VibeProducts.declaredProducts(o) ?: continue
+      out[path] = products
+    }
+    return out
+  }
+
+  private val targeting: Map<String, List<String>> by lazy { parseTargeting(readResource(TARGETING)) }
+
+  /** Нужен ли этот файл набора нашему продукту. Адреса нет — нужен: умолчание совпадает с частым случаем. */
+  internal fun addressedToUs(resource: String): Boolean =
+    targeting[resource]?.any { it.equals(VibeProducts.THIS, ignoreCase = true) } ?: true
 
   /** What we recorded about a file we seeded: content, the revision it came from, and the
    *  revision the user last said «keep mine» about (so a conflict is not raised twice). */

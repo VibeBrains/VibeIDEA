@@ -76,9 +76,15 @@ class VibeDefaultsTest {
     val resources = listEmbeddedResources()
     val manifest = VibeDefaults.manifestResourceNames().toSet()
     assertEquals(emptySet(), manifest - resources, "манифест ссылается на несуществующие ресурсы")
+    // Файлы, адресованные другому продукту, засевать не наше дело — и требовать их в манифесте
+    // тоже: иначе первый же файл соседа в общем наборе красит этот гейт и вынуждает нас
+    // засеять чужое. Сегодня адресации в наборе нет и множество пусто.
+    val foreign = resources.filterNot { VibeDefaults.addressedToUs(it) }.toSet()
     // Set-metadata files (deprecated.json) serve the seeders and are never seeded.
-    assertEquals(emptySet(), resources - manifest - VibeDefaults.SET_METADATA,
+    assertEquals(emptySet(), resources - manifest - VibeDefaults.SET_METADATA - foreign,
                  "ресурс без записи в манифесте — не будет засеян")
+    assertEquals(emptySet(), manifest.filterNot { VibeDefaults.addressedToUs(it) }.toSet(),
+                 "манифест засевает файл, адресованный другому продукту")
   }
 
   private fun listEmbeddedResources(): Set<String> {
@@ -185,5 +191,54 @@ class VibeDefaultsTest {
     val journal = Files.readString(java.nio.file.Path.of(base, ".vibe", "local", ".seeded.json"))
     assertTrue(journal.contains("rules.md"))
     assertTrue(journal.contains("hooks.json"))
+  }
+
+  @Test
+  fun `нет адресации — весь набор наш, есть запись — чужое не наше`() {
+    assertEquals(emptyMap(), VibeDefaults.parseTargeting(null))
+    assertTrue(VibeDefaults.addressedToUs("patrols.json"), "без адресации набор целиком наш")
+
+    val map = VibeDefaults.parseTargeting(
+      """
+      { "version": 1, "files": [
+        { "path": "patrols.json", "products": ["vibeidea"] },
+        { "path": "somethingElse.json", "products": ["vibeide"] },
+        { "path": "forEveryone.json" }
+      ] }
+      """.trimIndent()
+    )
+    assertEquals(listOf("vibeidea"), map["patrols.json"])
+    assertEquals(listOf("vibeide"), map["somethingElse.json"])
+    assertTrue("forEveryone.json" !in map, "запись без products — то же самое, что её отсутствие")
+  }
+
+  @Test
+  fun `каждый products в отгружаемом наборе состоит из известных id`() {
+    // Опечатка `vibeidee` делает запись ничьей: она молча не сработает НИГДЕ — ровно тот класс
+    // отказов, ради которого поле и вводилось. Рантайм про незнакомый id молчит намеренно (это
+    // совместимость вперёд), поэтому ловить опечатку обязан тест, и по отгружаемым байтам.
+    val unknown = LinkedHashMap<String, MutableSet<String>>()
+    for (name in listEmbeddedResources()) {
+      if (!name.endsWith(".json") && !name.endsWith(".jsonc")) continue
+      val text = VibeDefaults::class.java.getResource("/vibeDefaults/$name")?.readText() ?: continue
+      val root = runCatching {
+        kotlinx.serialization.json.Json.parseToJsonElement(com.vibe.agent.util.VibeJsonc.strip(text))
+      }.getOrNull() ?: continue
+      collectProducts(root) { id ->
+        if (id !in com.vibe.agent.defaults.VibeProducts.KNOWN) unknown.getOrPut(name) { LinkedHashSet() }.add(id)
+      }
+    }
+    assertEquals(emptyMap(), unknown, "неизвестный id продукта в наборе — почти всегда опечатка")
+  }
+
+  private fun collectProducts(el: kotlinx.serialization.json.JsonElement, sink: (String) -> Unit) {
+    when (el) {
+      is kotlinx.serialization.json.JsonObject -> {
+        com.vibe.agent.defaults.VibeProducts.declaredProducts(el)?.forEach(sink)
+        el.values.forEach { collectProducts(it, sink) }
+      }
+      is kotlinx.serialization.json.JsonArray -> el.forEach { collectProducts(it, sink) }
+      else -> Unit
+    }
   }
 }

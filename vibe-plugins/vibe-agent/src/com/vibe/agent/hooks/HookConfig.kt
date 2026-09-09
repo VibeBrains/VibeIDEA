@@ -2,6 +2,7 @@
 package com.vibe.agent.hooks
 
 import com.vibe.agent.i18n.VibeI18n.t
+import com.vibe.agent.defaults.VibeProducts
 
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
@@ -90,6 +91,10 @@ object HookConfig {
     val result = ArrayList<Hook>()
     for ((i, element) in array.withIndex()) {
       val hookObj = element as? JsonObject ?: run { onWarning(t("hooks.warn.notObject", "index" to (i + 1))); continue }
+      // Запись, адресованная другому продукту, пропускается МОЛЧА: набор общий, и запись
+      // для соседа — не проблема этой сборки. Проверка стоит раньше всех остальных, включая
+      // активность: у чужой записи могут быть поля, которых мы не знаем.
+      if (!VibeProducts.addressedToUs(hookObj)) continue
       // Активность читается ПЕРВОЙ, и выключенная запись не жалуется ни на что.
       //
       // Повод — общий набор сидов, 09.09.2026: набор нёс выключенный хук на событие, которого у

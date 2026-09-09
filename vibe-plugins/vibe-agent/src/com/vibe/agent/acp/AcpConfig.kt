@@ -106,6 +106,10 @@ object AcpConfig {
       val root = json.parseToJsonElement(com.vibe.agent.util.VibeJsonc.strip(Files.readString(path))).jsonObject
       for (el in root["agents"]?.jsonArray ?: return emptyList()) {
         val o = el as? JsonObject ?: continue
+        // Запись, адресованная другому продукту, пропускается МОЛЧА: набор общий, и запись для
+        // соседа — не проблема этой сборки. Машинная область (~/.jetbrains/acp.json) под правило
+        // не подпадает: это конвенция платформы, а не файл общего набора.
+        if (!com.vibe.agent.defaults.VibeProducts.addressedToUs(o)) continue
         val id = o["id"]?.jsonPrimitive?.contentOrNull
         try {
           // Выключенная запись остаётся документированной, но вне списка — тот же тумблер, что у
