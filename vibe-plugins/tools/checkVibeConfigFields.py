@@ -87,15 +87,27 @@ def main():
 # поля цены в `cost*`, и у НАС цена, срок годности и цена «после» разом перестали читаться. Первая
 # проверка этого не увидела: с её стороны ничего не изменилось.
 
-SEEDS = sorted(glob.glob('vibe-plugins/vibe-agent/resources/vibeDefaults/**/*.jsonc', recursive=True))
+# Расширение 09.09.2026: смотреть НА ВЕСЬ набор, а не на один каталог провайдеров.
+# Глоб стоял `**/*.jsonc`, то есть под наблюдением был ровно `providers/`, а десять файлов набора
+# (`hooks`, `agents`, `patrols`, `servers`, `dataSources`, `pipelines`, `modelQuirks`, …) написаны
+# как `.json` и не проверялись вовсе. Повод — два новых поля общего набора за два дня (`products`
+# для таргетинга по продуктам и `observedAt` в каталоге причуд): оба приезжают именно в `.json`,
+# то есть в слепую зону, и оба молча не читались бы. Ровно так уже прошло переименование `cost*`.
+SEEDS = sorted(glob.glob('vibe-plugins/vibe-agent/resources/vibeDefaults/**/*.jsonc', recursive=True) +
+               glob.glob('vibe-plugins/vibe-agent/resources/vibeDefaults/**/*.json', recursive=True))
 ALLOWLIST = 'vibe-plugins/tools/configFieldsAllowlist.txt'
+
+# Служебные файлы САМОГО набора: в проекты не засеваются (их нет в VibeDefaults.MANIFEST), человек
+# их не копирует и настроек в них не пишет. `versions.json` вдобавок генерируется `bump.mjs` и
+# держит ключами ИМЕНА ФАЙЛОВ — проверять их как настройки бессмысленно.
+SERVICE_FILES = {'versions.json', 'deprecated.json'}
 
 # Карты со СВОБОДНЫМИ ключами: их имена придумывает пользователь, а не контракт. Заглядывать в них
 # бессмысленно — там не настройки, а его собственные переменные, заголовки и поля тела запроса.
 FREE_FORM = {'env', 'headers', 'query', 'extraBody'}
 
 # Файлы, свободные целиком: имя окружения и имя переменной в нём выбирает человек.
-FREE_FORM_FILES = {'httpClientEnv.example.jsonc'}
+FREE_FORM_FILES = {'http-client.env.json'}
 
 
 def strip_jsonc(text):
@@ -164,8 +176,13 @@ def check_seeds():
     used = set()
     orphans = {}
     seen = set()
+    free_form_hit = set()
     for path in SEEDS:
-        if path.split('/')[-1] in FREE_FORM_FILES:
+        name = path.split('/')[-1]
+        if name in SERVICE_FILES:
+            continue
+        if name in FREE_FORM_FILES:
+            free_form_hit.add(name)
             continue
         raw = io.open(path, encoding='utf-8').read()
         try:
@@ -199,6 +216,14 @@ def check_seeds():
             print('ОШИБКА: исключение «%s» в %s больше ничего не находит' % (key, ALLOWLIST))
             print('        Причина была: %s' % reason)
             print('        Устаревшее исключение прячет следующий такой же ключ — удалите строку.')
+    # То же и для файловых исключений. Повод — `httpClientEnv.example.jsonc`: файл переименовали
+    # реструктуризацией `.vibe`, исключение осталось и молчало, а настоящий `http-client.env.json`
+    # всё это время шёл через проверку как обычный. Мёртвое исключение опаснее отсутствующего:
+    # оно выглядит работающим.
+    for name in sorted(FREE_FORM_FILES - free_form_hit):
+        problems += 1
+        print('ОШИБКА: файл «%s» назван свободным в FREE_FORM_FILES, но в наборе его нет' % name)
+        print('        Исключение мёртвое: переименуйте его вслед за файлом или удалите строку.')
     return problems, len(seen)
 
 
