@@ -61,6 +61,36 @@ object SkillValidator {
     if (attachments.any { it == "scripts" || it.startsWith("scripts/") }) {
       add(Finding(Level.WARNING, t("skill.warn.scripts")))
     }
+    addAll(hiddenTextFindings(pkg))
+  }
+
+  /**
+   * Спрятанный текст в скилле — проверяется ЗДЕСЬ, до первого использования.
+   *
+   * Санитайзер контекста вырезает невидимое на входе в контекст, и этого достаточно, чтобы модель
+   * его не услышала. Но скилл живёт в репозитории и приезжает пул-реквестом: к моменту, когда его
+   * впервые позовут, он уже одобрен человеком, прочитавшим чистый на вид текст. Проверка на
+   * валидации — единственная точка, где о подмене можно узнать ДО одобрения, а не после.
+   *
+   * Заголовок и тело считаются отдельно: в заголовке невидимому символу оправдания нет вовсе
+   * (`name` и `description` — это одна строка каждый), а в теле встречается честный эмодзи.
+   * Поэтому в заголовке — ошибка при любом количестве, в теле — по шкале серьёзности.
+   */
+  private fun hiddenTextFindings(pkg: SkillPackage): List<Finding> = buildList {
+    val header = com.vibe.agent.security.ContextSanitizer.sanitize(pkg.frontmatter)
+    header.findings.firstOrNull { it.kind == com.vibe.agent.security.ContextSanitizer.Kind.INVISIBLE }?.let {
+      add(Finding(Level.ERROR, t("skill.error.hiddenHeader", "count" to it.count)))
+    }
+    val body = com.vibe.agent.security.ContextSanitizer.sanitize(pkg.body)
+    body.findings.firstOrNull { it.kind == com.vibe.agent.security.ContextSanitizer.Kind.INVISIBLE }?.let {
+      val level =
+        if (it.severity >= com.vibe.agent.security.ContextSanitizer.Severity.HIGH) Level.ERROR else Level.WARNING
+      add(Finding(level, t("skill.warn.hiddenBody", "count" to it.count, "run" to it.longestRun)))
+    }
+    if (header.findings.any { it.kind == com.vibe.agent.security.ContextSanitizer.Kind.BIDI } ||
+        body.findings.any { it.kind == com.vibe.agent.security.ContextSanitizer.Kind.BIDI }) {
+      add(Finding(Level.ERROR, t("skill.error.bidi")))
+    }
   }
 
   private const val SKILLS_TREE = ".vibe/skills"

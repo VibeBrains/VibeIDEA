@@ -19,11 +19,53 @@ import kotlinx.serialization.json.put
 object ReasoningMode {
   enum class Level { OFF, LOW, MEDIUM, HIGH }
 
+  /**
+   * Что умеет КОНКРЕТНАЯ модель — объявление из `providers.json` (`"reasoning"`).
+   *
+   * Ползунок один на всё приложение, а модели разные: GLM даёт low/high и не даёт medium,
+   * рассуждающие модели OpenAI не выключаются вовсе. Отправить такой модели `medium` значит либо
+   * получить 400, либо — хуже — молчаливое игнорирование: человек двигает ползунок и не видит
+   * разницы, потому что её нет.
+   *
+   * Пусто (поля нет в файле) означает «не сказано», и тогда уровень идёт как есть: придумывать за
+   * вендора список уровней мы не вправе, а отказ отправлять что-либо сломал бы всех, кто ничего
+   * не объявлял.
+   */
+  data class Support(
+    /** Можно ли выключить рассуждение совсем; null — не сказано. */
+    val canTurnOff: Boolean? = null,
+    /** Уровни, которые модель принимает, в порядке возрастания; пусто — не сказано. */
+    val levels: List<Level> = emptyList(),
+  ) {
+    val stated: Boolean get() = canTurnOff != null || levels.isNotEmpty()
+  }
+
   fun levelOf(name: String?): Level = when (name?.trim()?.lowercase()) {
     "low", "низкий" -> Level.LOW
     "medium", "средний" -> Level.MEDIUM
     "high", "высокий", "max" -> Level.HIGH
     else -> Level.OFF
+  }
+
+  /**
+   * Уровень, приведённый к тому, что модель действительно принимает.
+   *
+   * Правила ровно два, и оба про честность, а не про удобство:
+   * - просили выключить, а модель не выключается → берём САМЫЙ НИЗКИЙ объявленный уровень
+   *   (ближе к просьбе, чем любой другой, и это единственное, что модель умеет);
+   * - просили уровень, которого у модели нет → берём ближайший СНИЗУ, а если ниже ничего нет —
+   *   самый низкий объявленный. Вниз, а не вверх: «подумай поменьше» дешевле ошибиться, чем
+   *   «подумай побольше», и человек, двигавший ползунок влево, просил экономии.
+   */
+  fun clamp(level: Level, support: Support?): Level {
+    if (support == null || !support.stated) return level
+    val offered = support.levels.sorted()
+    if (level == Level.OFF) {
+      if (support.canTurnOff != false) return Level.OFF
+      return offered.firstOrNull() ?: Level.LOW
+    }
+    if (offered.isEmpty() || level in offered) return level
+    return offered.lastOrNull { it < level } ?: offered.first()
   }
 
   /** Token budgets for providers that take one. Round numbers: this is a dial, not a measurement. */

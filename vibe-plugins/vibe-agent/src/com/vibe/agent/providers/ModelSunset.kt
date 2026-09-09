@@ -28,9 +28,23 @@ object ModelSunset {
     RETIRED,
   }
 
-  /** ISO date (`2026-11-12`); anything else is treated as «не сказано» rather than as an error. */
-  fun parse(date: String?): LocalDate? =
-    date?.trim()?.takeIf { it.isNotEmpty() }?.let { runCatching { LocalDate.parse(it) }.getOrNull() }
+  /**
+   * ISO date (`2026-11-12`) or an ISO moment (`2026-09-09T16:00:00Z`, `…+08:00`, `…T16:00:00`);
+   * anything else is treated as «не сказано» rather than as an error.
+   *
+   * A moment is accepted because vendors announce deadlines with an hour and a zone — Z.AI ends the
+   * GLM-5.3-Flash promo «09.09.2026 24:00 UTC+8» — and the person copying that into the file writes
+   * what the vendor wrote. Reading only bare dates made such a line parse to null, and a null here
+   * is indistinguishable from «срок не указан»: the warning simply never fires, on a field whose
+   * whole purpose is to fire. The moment is reduced to its day: the rest of the rule reasons in
+   * days, and the last day still counts as valid.
+   */
+  fun parse(date: String?): LocalDate? {
+    val text = date?.trim()?.takeIf { it.isNotEmpty() } ?: return null
+    return runCatching { LocalDate.parse(text) }.getOrNull()
+      ?: runCatching { java.time.OffsetDateTime.parse(text).toLocalDate() }.getOrNull()
+      ?: runCatching { java.time.LocalDateTime.parse(text).toLocalDate() }.getOrNull()
+  }
 
   fun state(date: String?, today: LocalDate): State {
     val day = parse(date) ?: return State.NONE

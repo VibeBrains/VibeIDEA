@@ -42,6 +42,16 @@ data class PipelineStep(
   val escalation: Boolean = false,
   val continueOnFailure: Boolean = false,
   val ignorePreviousArtifacts: Boolean = false,
+  /**
+   * Куда шагу разрешено писать и куда запрещено — синтаксис gitignore, разбор в [RolePaths].
+   *
+   * Права роли ([RoleRights]) отвечают «пишет или нет», и этого не хватает ровно там, где пайплайн
+   * из ролей и заводят: «этот шаг пишет тесты», «этот — документацию». Пустые списки означают
+   * отсутствие ограничения, а не запрет: иначе появление поля в одном шаге молча урезало бы все
+   * остальные.
+   */
+  val paths: List<String> = emptyList(),
+  val denyPaths: List<String> = emptyList(),
 )
 
 data class Pipeline(
@@ -70,6 +80,12 @@ object PipelinesFile {
    * тогда, когда появится новая роль.
    */
   private fun readOnly(role: String): Boolean = !RoleRights.mayWrite(role)
+
+  /** Список строк из JSON; не массив или пусто — пустой список, а не ошибка разбора. */
+  private fun stringList(element: kotlinx.serialization.json.JsonElement?): List<String> =
+    (element as? kotlinx.serialization.json.JsonArray)
+      ?.mapNotNull { it.jsonPrimitive.contentOrNull?.trim()?.ifEmpty { null } }
+      .orEmpty()
   private const val MAX_STEPS = 20
   private val json = Json { ignoreUnknownKeys = true }
 
@@ -118,6 +134,8 @@ object PipelinesFile {
               escalation = so["escalation"]?.jsonPrimitive?.booleanOrNull ?: false,
               continueOnFailure = so["continueOnFailure"]?.jsonPrimitive?.booleanOrNull ?: false,
               ignorePreviousArtifacts = so["ignorePreviousArtifacts"]?.jsonPrimitive?.booleanOrNull ?: false,
+              paths = stringList(so["paths"]),
+              denyPaths = stringList(so["denyPaths"]),
             )
           } ?: emptyList()
           if (steps.isEmpty()) { onWarning("pipelines.json: '$id' без шагов — пропущен"); continue }

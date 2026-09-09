@@ -65,6 +65,14 @@ object PriceValidity {
     val daysLeft: Long,
     /** Цена после срока, если человек её записал: решение принимают по ней, а не по факту срока. */
     val after: ModelPricing? = null,
+    /**
+     * Где цена объявлена (`costNote`), если записано.
+     *
+     * «Цена протухла» без источника отправляет человека искать то, что уже было найдено однажды и
+     * записано рядом. Своей таблицы цен у нас нет и не будет (решение №40), поэтому ссылка на
+     * объявление вендора — единственная помощь, которую мы вправе оказать.
+     */
+    val note: String? = null,
   )
 
   /**
@@ -90,7 +98,8 @@ object PriceValidity {
         if (model.pricing?.stated != true) return@mapNotNull null
         val state = state(model.priceValidUntil, today)
         if (state == State.NONE) return@mapNotNull null
-        Notice(provider.id, model.id, state, daysLeft(model.priceValidUntil, today) ?: 0, model.priceAfter)
+        Notice(provider.id, model.id, state, daysLeft(model.priceValidUntil, today) ?: 0,
+               model.priceAfter, model.priceNote)
       }
     }.sortedBy { it.daysLeft }
 }

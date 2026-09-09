@@ -46,6 +46,11 @@ object HttpApiPolicy {
     val body: String,
     /** `Mcp-Method`, required by MCP 2026-07-28 on POST so gateways route without reading bodies. */
     val mcpMethod: String? = null,
+    /**
+     * `Mcp-Name` — то же самое про ИМЯ: `params.name` для `tools/call` и `prompts/get`,
+     * `params.uri` для `resources/read`. Спека требует обоих заголовков и требует их сверки.
+     */
+    val mcpName: String? = null,
   )
 
   sealed interface Decision {
@@ -71,7 +76,7 @@ object HttpApiPolicy {
      * means, and folding it into the run path would put a protocol parser inside the route that
      * exists to be boring.
      */
-    data class Mcp(val body: String, val mcpMethod: String?) : Decision
+    data class Mcp(val body: String, val mcpMethod: String?, val mcpName: String? = null) : Decision
 
     /** Anything refused: [code] is the HTTP status, [message] goes into the JSON error body. */
     data class Refuse(val code: Int, val message: String) : Decision
@@ -103,7 +108,7 @@ object HttpApiPolicy {
       request.method == "POST" && request.path == PATH_RUN -> parseRun(request.body)
       // The MCP endpoint deliberately lives beside /run rather than replacing it: the VibeIDE
       // contract for /health and /run is carried over verbatim and scripts depend on it.
-      request.method == "POST" && request.path == PATH_MCP -> Decision.Mcp(request.body, request.mcpMethod)
+      request.method == "POST" && request.path == PATH_MCP -> Decision.Mcp(request.body, request.mcpMethod, request.mcpName)
       else -> Decision.Refuse(404, "известны только GET /health, POST /run и POST /mcp")
     }
   }

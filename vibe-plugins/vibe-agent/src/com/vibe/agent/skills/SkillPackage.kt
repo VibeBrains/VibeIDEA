@@ -18,6 +18,15 @@ data class SkillPackage(
   /** Top-level keys as they appeared, for the "unknown key" finding. */
   val topLevelKeys: List<String>,
   val hasFrontmatter: Boolean,
+  /**
+   * The header exactly as written, between the two `---` lines.
+   *
+   * Kept raw rather than as parsed fields because two different guards need the text itself and
+   * neither can work on our nine parsed keys: the approval digest has to cover `allowed-tools`
+   * (which grants capabilities) as much as `description`, and the context guard has to see
+   * characters that our shallow parser has already thrown away.
+   */
+  val frontmatter: String = "",
 ) {
   companion object {
     /** Everything the reference Agent Skills validator accepts at the top level. */
@@ -56,7 +65,8 @@ data class SkillPackage(
           "description" -> description = value.takeIf { it.isNotEmpty() }
         }
       }
-      return SkillPackage(id, name, description, body, keys, hasFrontmatter = true)
+      return SkillPackage(id, name, description, body, keys, hasFrontmatter = true,
+                          frontmatter = header.joinToString("\n"))
     }
 
     private fun unquote(raw: String): String =

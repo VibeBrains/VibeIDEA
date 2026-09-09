@@ -45,7 +45,13 @@ object McpServer {
    *   contradicts the body, and accept its absence — the clients that omit it are the ones speaking
    *   the older revision, and refusing them would buy correctness at the price of usefulness.
    */
-  fun handle(body: String, serverVersion: String, tools: Tools, mcpMethodHeader: String? = null): Answer {
+  fun handle(
+    body: String,
+    serverVersion: String,
+    tools: Tools,
+    mcpMethodHeader: String? = null,
+    mcpNameHeader: String? = null,
+  ): Answer {
     val request = runCatching { json.parseToJsonElement(body).jsonObject }.getOrNull()
                   ?: return Answer(errorBody(null, McpProtocol.Error.PARSE, "тело должно быть JSON-объектом"))
     val id = request["id"]
@@ -56,6 +62,15 @@ object McpServer {
     if (mcpMethodHeader != null && mcpMethodHeader != method) {
       return Answer(errorBody(id, McpProtocol.Error.HEADER_MISMATCH,
                               "заголовок Mcp-Method ($mcpMethodHeader) не совпадает с методом тела ($method)"))
+    }
+    // `Mcp-Name` — второй маршрутный заголовок ревизии: по нему шлюз решает, ЧТО именно зовут, не
+    // читая тела. Сверять его так же обязательно, как и метод: расхождение значит, что шлюз
+    // отправил запрос по одному имени, а исполнится другое — ровно тот случай, ради которого
+    // спека и требует сверки.
+    val declaredName = nameOf(method, params)
+    if (mcpNameHeader != null && declaredName != null && mcpNameHeader != declaredName) {
+      return Answer(errorBody(id, McpProtocol.Error.HEADER_MISMATCH,
+                              "заголовок Mcp-Name ($mcpNameHeader) не совпадает с именем в теле ($declaredName)"))
     }
 
     requestedVersion(request, params)?.let { version ->
@@ -141,6 +156,19 @@ object McpServer {
   fun unavailable(body: String, reason: String): Answer {
     val id = runCatching { json.parseToJsonElement(body).jsonObject["id"] }.getOrNull()
     return Answer(errorBody(id, McpProtocol.Error.INTERNAL, reason), httpStatus = 503)
+  }
+
+  /**
+   * Имя, которое обязан повторять заголовок `Mcp-Name`, — или null там, где имени нет.
+   *
+   * Три метода спеки несут имя, и у одного оно называется иначе (`resources/read` адресует `uri`).
+   * Для всех прочих методов заголовка быть не должно, и требовать совпадения не с чем: `null`
+   * здесь значит «нечего сверять», а не «не совпало».
+   */
+  private fun nameOf(method: String, params: JsonObject): String? = when (method) {
+    "tools/call", "prompts/get" -> params["name"]?.jsonPrimitive?.contentOrNull
+    "resources/read" -> params["uri"]?.jsonPrimitive?.contentOrNull
+    else -> null
   }
 
   /** The version travels in `_meta` in 2026 and in `params.protocolVersion` in the handshake. */

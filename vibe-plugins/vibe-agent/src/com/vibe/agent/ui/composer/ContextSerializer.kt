@@ -81,6 +81,11 @@ object ContextSerializer {
       if (embed) add(ContentBlock.Resource("skill://${skill.id}", skill.body, "text/markdown"))
       else add(ContentBlock.Text(com.vibe.agent.skills.SkillExpansion.wrap(skill.id, skill.body)))
     }
+    // Граница «дальше чужой текст» проговаривается и здесь, а не только в прямом LLM-тексте.
+    // Асимметрия была настоящей дырой: ACP — основной путь, и по нему файлы уезжали агенту вообще
+    // без пометки, хотя ровно про этот случай написан весь ContextSanitizer. Ставится вплотную к
+    // первому файлу, а не в начало сообщения: пометка, оторванная от помеченного, не работает.
+    if (loaded.isNotEmpty()) add(ContentBlock.Text(com.vibe.agent.security.ContextSanitizer.DATA_NOT_INSTRUCTIONS))
     for (item in loaded) {
       val body = item.text
       if (embed && body != null && item.ref !is ContextRef.Folder) add(ContentBlock.Resource(item.uri, body, mimeOf(item.ref.file)))
@@ -100,7 +105,16 @@ object ContextSerializer {
       // Say it in words: the model is about to read someone else's file, and files can talk.
       append("\n\n").append(com.vibe.agent.security.ContextSanitizer.DATA_NOT_INSTRUCTIONS)
       for (item in loaded) {
-        append("\n\n<context ref=\"").append(item.relPath).append("\">\n")
+        // Признак недоверия висит на КАЖДОМ блоке, а не только во вступительной фразе. Причина
+        // измерена не нами: у Microsoft Research (spotlighting, arXiv 2403.14720) разметка,
+        // повторяющаяся вместе с текстом, держит границу заметно лучше, чем одна фраза в начале, —
+        // а одна фраза перед десятью файлами к десятому уже далеко.
+        //
+        // Чего мы НЕ берём из той же работы — datamarking, вплетение маркера внутрь текста через
+        // пробелы. Для документа это безобидно, а у нас в контексте ИСХОДНЫЙ КОД, который агент
+        // потом правит дословно: испорченные отступы и вплетённые символы сломали бы главную
+        // работу ради защиты от второстепенного риска. Границу метим снаружи, содержимое не трогаем.
+        append("\n\n<context untrusted=\"true\" ref=\"").append(item.relPath).append("\">\n")
         append(item.text ?: t("context.notInlined", "path" to item.relPath))
         append("\n</context>")
       }

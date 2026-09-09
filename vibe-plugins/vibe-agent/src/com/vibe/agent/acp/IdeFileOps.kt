@@ -33,6 +33,14 @@ internal class IdeFileOps(
   private val onNotice: (String) -> Unit = {},
   /** The pipeline role in force right now; a judging role is refused the write. */
   private val roleNow: () -> String? = { null },
+  /**
+   * Куда шагу разрешено писать сейчас. Пустая область — ограничения нет.
+   *
+   * Функцией, а не значением, по той же причине, что и роль: шаги сменяются в течение прогона, а
+   * объект файловых операций живёт весь разговор.
+   */
+  private val scopeNow: () -> com.vibe.agent.pipelines.RolePaths.Scope =
+    { com.vibe.agent.pipelines.RolePaths.Scope() },
   /** Reports what the context guard found in a file the agent read; the panel turns it into a line. */
   private val onFinding: (String, List<com.vibe.agent.security.ContextSanitizer.Finding>) -> Unit = { _, _ -> },
 ) {
@@ -86,6 +94,18 @@ internal class IdeFileOps(
     // "Read my notes but do not edit them" is a rule only while something enforces it.
     if (!com.vibe.agent.context.AccessPolicy.mayWrite(path.toString(), roots())) {
       throw IllegalStateException(t("access.writeDenied", "path" to path))
+    }
+    // Область шага: «пишет только тесты» — обещание ровно до тех пор, пока его кто-то проверяет.
+    val scope = scopeNow()
+    if (scope.stated) {
+      val relative = project.basePath?.let { base ->
+        val normalized = path.toString().replace('\\', '/')
+        val root = base.replace('\\', '/').trimEnd('/')
+        if (normalized.startsWith("$root/")) normalized.removePrefix("$root/") else normalized
+      } ?: path.toString()
+      if (!com.vibe.agent.pipelines.RolePaths.mayWrite(relative, scope)) {
+        throw IllegalStateException(t("role.pathDenied", "role" to (roleNow() ?: "-"), "path" to relative))
+      }
     }
     val content = params.getValue("content").jsonPrimitive.contentOrNull ?: ""
     val exists = Files.exists(path)

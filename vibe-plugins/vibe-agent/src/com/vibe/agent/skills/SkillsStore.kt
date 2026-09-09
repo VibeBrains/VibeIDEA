@@ -14,8 +14,13 @@ object SkillsStore {
   ) {
     val isBroken: Boolean get() = SkillValidator.hasErrors(findings)
 
-    /** What the person approves when they approve this skill: the body plus the files beside it. */
-    fun digest(): String = SkillApproval.digest(pkg.body, attachments)
+    /**
+     * What the person approves: the header they READ, the body, and the files beside it.
+     *
+     * The header counts because the approval dialog shows `name` and `description` and little
+     * else — leaving it out of the digest let the reviewed half change without revoking anything.
+     */
+    fun digest(): String = SkillApproval.digest(pkg.body, attachments, pkg.frontmatter)
   }
 
   fun root(projectBase: String?): File? = projectBase?.let { File(it, SkillPackage.SKILLS_DIR) }

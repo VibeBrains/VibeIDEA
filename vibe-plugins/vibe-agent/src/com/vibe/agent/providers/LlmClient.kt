@@ -450,7 +450,10 @@ class LlmClient(
   private var thought: (String) -> Unit = {}
 
   private fun withReasoning(body: JsonObject, protocol: String, model: ModelEntry): JsonObject {
-    val level = ReasoningMode.levelOf(com.vibe.agent.settings.VibeAgentSettings.reasoningLevel)
+    // Ползунок один на приложение, наборы уровней у моделей разные: просимое приводится к тому,
+    // что модель объявила принимать. Ничего не объявила — идёт как есть.
+    val asked = ReasoningMode.levelOf(com.vibe.agent.settings.VibeAgentSettings.reasoningLevel)
+    val level = ReasoningMode.clamp(asked, model.reasoning)
     val fields = ReasoningMode.bodyFields(protocol, level, model.maxOutputTokens ?: DEFAULT_MAX_OUTPUT_TOKENS)
     return if (fields.isEmpty()) body else JsonObject(body + fields)
   }

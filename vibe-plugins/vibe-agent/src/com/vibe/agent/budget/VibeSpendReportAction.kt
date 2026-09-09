@@ -49,9 +49,12 @@ class VibeSpendReportAction : AnAction({ t("spend.action") }) {
       val stale = com.vibe.agent.providers.PriceValidity.notices(providers, java.time.LocalDate.now())
         .filter { it.state == com.vibe.agent.providers.PriceValidity.State.EXPIRED }
       if (stale.isNotEmpty()) {
+        val first = stale.first()
         appendLine(t("spend.priceExpired",
-                     "model" to (stale.first().providerId + "/" + stale.first().modelId),
+                     "model" to (first.providerId + "/" + first.modelId),
                      "count" to stale.size))
+        // Источник цены — рядом с требованием сверить: иначе сверка означает «найди заново».
+        first.note?.takeIf { it.isNotBlank() }?.let { appendLine(t("price.source", "note" to it)) }
       }
     }
     Messages.showInfoMessage(e.project, report, t("spend.title"))

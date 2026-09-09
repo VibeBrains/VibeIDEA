@@ -39,11 +39,29 @@ object AgentRegistry {
     /** Пакет для npx/uvx; у binary — null, такой агент ставится руками. */
     val pkg: String?,
     val args: List<String> = emptyList(),
+    /** Что реестр говорит о готовом бинаре под ЭТУ машину; null — сборки под неё нет. */
+    val binary: Binary? = null,
   )
+
+  /**
+   * Готовая сборка под конкретную ОС и архитектуру: где взять, чем проверить, чем запускать.
+   *
+   * Мы по-прежнему ничего не скачиваем и не распаковываем — запуск чужого бинаря остаётся решением
+   * человека. Но раньше binary-агент не давал ему ВООБЩЕ НИЧЕГО: кнопка «добавить» молчала, а в
+   * каталоге на 09.09.2026 таких записей 17 из 40 — Goose, Cursor, opencode, Kimi, Junie и другие.
+   * Реестр при этом несёт и адрес архива, и sha256, и команду запуска: пересказать это человеку
+   * дешевле, чем заставить его искать то же самое руками, и честнее, чем молчать.
+   */
+  data class Binary(val target: String, val archive: String, val sha256: String?, val cmd: String?)
 
   private val json = Json { ignoreUnknownKeys = true; isLenient = true }
 
-  fun parse(text: String): List<Entry> {
+  /**
+   * @param target как реестр называет машину, для которой читаем каталог ([targetOf]).
+   *        Аргумент, а не системное свойство: правило про чужую платформу иначе не проверить.
+   */
+  fun parse(text: String, target: String? = targetOf(System.getProperty("os.name").orEmpty(),
+                                                     System.getProperty("os.arch").orEmpty())): List<Entry> {
     val root = runCatching { json.parseToJsonElement(text).jsonObject }.getOrNull() ?: return emptyList()
     val agents = root["agents"]?.jsonArray ?: return emptyList()
     return agents.mapNotNull { element ->
@@ -61,6 +79,7 @@ object AgentRegistry {
         delivery = delivery,
         pkg = pkg,
         args = args,
+        binary = binaryOf(distribution, target),
       )
     }
   }
@@ -75,6 +94,40 @@ object AgentRegistry {
     }
     if (distribution["binary"] != null) return Triple(Delivery.BINARY, null, emptyList())
     return Triple(Delivery.UNKNOWN, null, emptyList())
+  }
+
+  /**
+   * Как реестр называет ЭТУ машину: `darwin-aarch64`, `linux-x86_64`, `windows-x86_64` и т.д.
+   *
+   * Чистая: имена системы и архитектуры — аргументы, иначе правило нельзя проверить на чужой
+   * машине, а именно на чужой оно и понадобится.
+   */
+  fun targetOf(osName: String, osArch: String): String? {
+    val os = when {
+      osName.startsWith("mac", ignoreCase = true) || osName.contains("darwin", ignoreCase = true) -> "darwin"
+      osName.startsWith("win", ignoreCase = true) -> "windows"
+      osName.contains("linux", ignoreCase = true) -> "linux"
+      else -> return null
+    }
+    val arch = when (osArch.lowercase()) {
+      "aarch64", "arm64" -> "aarch64"
+      "x86_64", "amd64" -> "x86_64"
+      else -> return null
+    }
+    return "$os-$arch"
+  }
+
+  /** Сборка под [target], если реестр её объявил. */
+  private fun binaryOf(distribution: JsonObject?, target: String?): Binary? {
+    if (target == null) return null
+    val node = distribution?.get("binary")?.jsonObject?.get(target)?.jsonObject ?: return null
+    val archive = node["archive"]?.jsonPrimitive?.contentOrNull ?: return null
+    return Binary(
+      target = target,
+      archive = archive,
+      sha256 = node["sha256"]?.jsonPrimitive?.contentOrNull,
+      cmd = node["cmd"]?.jsonPrimitive?.contentOrNull,
+    )
   }
 
   /**

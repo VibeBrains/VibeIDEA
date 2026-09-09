@@ -18,6 +18,7 @@ import io
 import re
 import sys
 import glob
+import json
 
 SOURCES = sorted(glob.glob('vibe-plugins/*/src/**/*.kt', recursive=True))
 TESTS = sorted(glob.glob('vibe-plugins/*/testSrc/**/*.kt', recursive=True))
@@ -75,5 +76,134 @@ def main():
     return 1 if problems else 0
 
 
+# ─── Обратная сторона: ключ в СИДЕ, которого не читает ни один парсер ────────────────────────
+#
+# Первая проверка идёт от кода: «поле разбирается и не применяется». Она по построению слепа к
+# зеркальному случаю — ключ ЕСТЬ в файле-образце, который мы кладём человеку в `.vibe`, и его не
+# разбирает никто. Снаружи это неотличимо ровно так же: человек копирует образец, IDE молчит,
+# настройка не работает.
+#
+# Повод — 09.09.2026: набор сидов общий с VibeIDE (submodule VibeBrains), VibeIDE переименовала
+# поля цены в `cost*`, и у НАС цена, срок годности и цена «после» разом перестали читаться. Первая
+# проверка этого не увидела: с её стороны ничего не изменилось.
+
+SEEDS = sorted(glob.glob('vibe-plugins/vibe-agent/resources/vibeDefaults/**/*.jsonc', recursive=True))
+ALLOWLIST = 'vibe-plugins/tools/configFieldsAllowlist.txt'
+
+# Карты со СВОБОДНЫМИ ключами: их имена придумывает пользователь, а не контракт. Заглядывать в них
+# бессмысленно — там не настройки, а его собственные переменные, заголовки и поля тела запроса.
+FREE_FORM = {'env', 'headers', 'query', 'extraBody'}
+
+# Файлы, свободные целиком: имя окружения и имя переменной в нём выбирает человек.
+FREE_FORM_FILES = {'httpClientEnv.example.jsonc'}
+
+
+def strip_jsonc(text):
+    """JSONC → JSON: убрать комментарии вне строк и висячие запятые."""
+    out, i, n = [], 0, len(text)
+    in_str = esc = False
+    while i < n:
+        c = text[i]
+        if in_str:
+            out.append(c)
+            if esc:
+                esc = False
+            elif c == '\\':
+                esc = True
+            elif c == '"':
+                in_str = False
+            i += 1
+            continue
+        if c == '"':
+            in_str = True
+            out.append(c)
+            i += 1
+            continue
+        if c == '/' and i + 1 < n and text[i + 1] == '/':
+            while i < n and text[i] != '\n':
+                i += 1
+            continue
+        if c == '/' and i + 1 < n and text[i + 1] == '*':
+            i += 2
+            while i + 1 < n and not (text[i] == '*' and text[i + 1] == '/'):
+                i += 1
+            i += 2
+            continue
+        out.append(c)
+        i += 1
+    return re.sub(r',(\s*[}\]])', r'\1', ''.join(out))
+
+
+def seed_keys(node, parent, acc):
+    if isinstance(node, dict):
+        for k, v in node.items():
+            acc.add(k)
+            if k not in FREE_FORM:
+                seed_keys(v, k, acc)
+    elif isinstance(node, list):
+        for v in node:
+            seed_keys(v, parent, acc)
+
+
+def read_allowlist():
+    allowed = {}
+    if not glob.glob(ALLOWLIST):
+        return allowed
+    for raw in io.open(ALLOWLIST, encoding='utf-8'):
+        line = raw.strip()
+        if not line or line.startswith('#'):
+            continue
+        key, _, reason = line.partition('|')
+        allowed[key.strip()] = reason.strip()
+    return allowed
+
+
+def check_seeds():
+    sources = ''.join(io.open(p, encoding='utf-8').read() for p in SOURCES)
+    allowed = read_allowlist()
+    used = set()
+    orphans = {}
+    seen = set()
+    for path in SEEDS:
+        if path.split('/')[-1] in FREE_FORM_FILES:
+            continue
+        raw = io.open(path, encoding='utf-8').read()
+        try:
+            data = json.loads(strip_jsonc(raw))
+        except ValueError as exc:
+            print('ОШИБКА: %s: сид не разбирается как JSONC (%s)' % (path, exc))
+            return 1, 0
+        keys = set()
+        seed_keys(data, None, keys)
+        seen |= keys
+        for key in sorted(keys):
+            if key in allowed:
+                used.add(key)
+                continue
+            # Читателем считается любое упоминание ключа строковым литералом: `o["x"]`,
+            # `str("x")`, `text(o, "x", …)` — форма разбора у каждого плагина своя.
+            if '"%s"' % key in sources:
+                continue
+            orphans.setdefault(key, []).append(path)
+
+    problems = 0
+    for key, files in sorted(orphans.items()):
+        problems += 1
+        print('ОШИБКА: ключ «%s» есть в сиде (%s) и не читается ни одним парсером'
+              % (key, ', '.join(f.split('/')[-1] for f in files)))
+        print('        Человек скопирует образец, IDE промолчит, настройка работать не будет.')
+        print('        Прочитайте его, уберите из сида или назовите границей в %s.' % ALLOWLIST)
+    for key, reason in sorted(allowed.items()):
+        if key not in used:
+            problems += 1
+            print('ОШИБКА: исключение «%s» в %s больше ничего не находит' % (key, ALLOWLIST))
+            print('        Причина была: %s' % reason)
+            print('        Устаревшее исключение прячет следующий такой же ключ — удалите строку.')
+    return problems, len(seen)
+
+
 if __name__ == '__main__':
-    sys.exit(main())
+    code = main()
+    seed_problems, seed_checked = check_seeds()
+    print('  ключи сидов: проверено %d, осиротевших %d' % (seed_checked, seed_problems))
+    sys.exit(1 if (code or seed_problems) else 0)

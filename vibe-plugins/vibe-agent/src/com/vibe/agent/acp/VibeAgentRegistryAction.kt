@@ -52,7 +52,7 @@ class VibeAgentRegistryAction : AnAction({ t("registry.action") }) {
     // здесь не формальность — реестр под Apache-2.0, а у каждого агента лицензия своя.
     val lines = fresh.joinToString("\n") { entry ->
       val command = AgentRegistry.toAgentEntry(entry)?.let { it.command + " " + it.args.joinToString(" ") }
-        ?: t("registry.manualInstall")
+        ?: binaryHint(entry)
       t("registry.line", "name" to entry.name, "version" to (entry.version ?: "—"),
         "license" to (entry.license ?: "—"), "command" to command)
     }
@@ -60,6 +60,25 @@ class VibeAgentRegistryAction : AnAction({ t("registry.action") }) {
       project,
       t("registry.body", "total" to total, "fresh" to fresh.size, "url" to AgentRegistry.URL) + "\n\n" + lines,
       t("registry.action"),
+    )
+  }
+
+  /**
+   * Что сказать про агента, который поставляется готовым бинарём.
+   *
+   * Раньше здесь стояло одно слово «ставится вручную», и на этом каталог заканчивался: 17 записей
+   * из 40 (проверено 09.09.2026) не давали человеку ни адреса, ни суммы — он шёл искать релиз сам.
+   * Реестр всё это знает, поэтому теперь мы пересказываем: архив под ЭТУ машину, sha256 и команду
+   * запуска после распаковки. Скачивание и запуск остаются за человеком — по решению о том, что
+   * чужой процесс на его машине заводит он, а не мы.
+   */
+  private fun binaryHint(entry: AgentRegistry.Entry): String {
+    val binary = entry.binary ?: return t("registry.manualInstall")
+    return t(
+      "registry.binaryInstall",
+      "archive" to binary.archive,
+      "sha256" to (binary.sha256 ?: "—"),
+      "cmd" to (binary.cmd ?: "—"),
     )
   }
 

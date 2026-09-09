@@ -15,6 +15,7 @@ import com.intellij.ui.JBColor
 import com.intellij.util.ui.JBUI
 import com.vibe.agent.acp.AcpClient
 import com.vibe.agent.acp.AcpConfig
+import com.vibe.agent.acp.AcpSessionMemory
 import com.vibe.agent.acp.AgentServerConfig
 import com.vibe.agent.acp.ContentBlock
 import com.vibe.agent.acp.IdeFileOps
@@ -155,6 +156,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     onNotice = { message -> systemLine(message) },
     onFinding = { path, findings -> reportContextFindings(path, findings) },
     roleNow = { currentRole },
+    scopeNow = { currentScope },
   )
   @Volatile private var client: AcpClient? = null
   @Volatile private var clientConfig: AgentServerConfig? = null
@@ -187,6 +189,13 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
    * value of the restriction is that it is in force at the moment the write arrives.
    */
   @Volatile private var currentRole: String? = null
+
+  /**
+   * Куда разрешено писать шагу, который идёт сейчас. Пусто вне пайплайна — обычный чат ничем не
+   * ограничен, и ограничение, взявшееся ниоткуда, хуже отсутствующего.
+   */
+  @Volatile private var currentScope: com.vibe.agent.pipelines.RolePaths.Scope =
+    com.vibe.agent.pipelines.RolePaths.Scope()
 
   /** Last sign of life in the current turn: a token, a tool call, any update. */
   private val lastActivityMs = java.util.concurrent.atomic.AtomicLong(0)
@@ -1932,7 +1941,12 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
       if (!approveSkill(id, entry)) continue
       // A skill is text from disk like any other — same guard as project files.
       val clean = com.vibe.agent.security.ContextSanitizer.sanitize(entry.pkg.body)
-      if (clean.findings.isNotEmpty()) reportContextFindings("$id/${com.vibe.agent.skills.SkillPackage.SKILL_FILE}", clean.findings)
+      // Заголовок проверяется ОТДЕЛЬНО и до тела: в контекст он не уходит, но именно его человек
+      // читает, решая одобрить, — спрятанная там строка обманывает не модель, а его. Находки
+      // сливаются в одну строку ленты: два сообщения об одном файле читаются как два файла.
+      val header = com.vibe.agent.security.ContextSanitizer.sanitize(entry.pkg.frontmatter)
+      val findings = clean.findings + header.findings
+      if (findings.isNotEmpty()) reportContextFindings("$id/${com.vibe.agent.skills.SkillPackage.SKILL_FILE}", findings)
       resolved.add(ContextSerializer.LoadedSkill(id, clean.text))
     }
     if (resolved.isNotEmpty()) systemLine(t("chat.skillsApplied", "ids" to resolved.joinToString { it.id }))
@@ -1950,13 +1964,34 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     val name = path.substringAfterLast('/')
     val parts = findings.map { finding ->
       when (finding.kind) {
-        com.vibe.agent.security.ContextSanitizer.Kind.INVISIBLE -> t("guard.invisible", "count" to finding.count)
+        // Длинный непрерывный прогон — это спрятанная СТРОКА, а не мусор кодировки, и говорить
+        // о нём той же фразой значит прятать разницу, ради которой градация и заведена.
+        com.vibe.agent.security.ContextSanitizer.Kind.INVISIBLE ->
+          if (finding.severity >= com.vibe.agent.security.ContextSanitizer.Severity.HIGH) {
+            t("guard.invisibleSevere", "count" to finding.count, "run" to finding.longestRun)
+          } else {
+            t("guard.invisible", "count" to finding.count)
+          }
         com.vibe.agent.security.ContextSanitizer.Kind.BIDI -> t("guard.bidi", "count" to finding.count)
         com.vibe.agent.security.ContextSanitizer.Kind.INSTRUCTION -> t("guard.instruction")
         com.vibe.agent.security.ContextSanitizer.Kind.SECRET -> t("guard.secret", "detail" to finding.detail)
       }
     }
     systemLine(t("guard.contextLine", "file" to name, "items" to parts.joinToString("; ")))
+  }
+
+  /**
+   * Какой вариант разрешения предложить кнопкой по умолчанию, когда доверие понижено.
+   *
+   * Ищем отказ по виду варианта (`kind` протокола: `reject_once` / `reject_always`), а не по
+   * подписи: подпись приходит от агента и на любом языке. Отказа среди вариантов нет — остаётся
+   * первый, потому что выбор без вариантов не выбор.
+   */
+  private fun indexOfRefusal(options: List<JsonObject>): Int {
+    val index = options.indexOfFirst {
+      it["kind"]?.jsonPrimitive?.contentOrNull?.startsWith("reject") == true
+    }
+    return if (index >= 0) index else 0
   }
 
   // --- external tasks (incoming HTTP API) ---
@@ -3034,7 +3069,12 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     }
     val handshakeSec = VibeAgentSettings.handshakeTimeoutSec.toLong()
     try {
-      fresh.initializeAndOpenSession().get(handshakeSec, TimeUnit.SECONDS)
+      // Возобновляем прошлую сессию этого агента в этой папке, если она известна и он это умеет:
+      // лента переживала перезапуск IDE и раньше, а агент — нет, и человек пересказывал контекст
+      // заново. Отказ агента возобновлять обрабатывается внутри — открывается новая.
+      val remembered = AcpSessionMemory.recall(config.name, project.basePath)
+      fresh.initializeAndOpenSession(remembered).get(handshakeSec, TimeUnit.SECONDS)
+      fresh.sessionId?.let { AcpSessionMemory.remember(config.name, project.basePath, it) }
     }
     catch (e: TimeoutException) {
       synchronized(clientLock) {
@@ -3579,6 +3619,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
           }
           try {
             currentRole = step.role
+            currentScope = com.vibe.agent.pipelines.RolePaths.Scope(step.paths, step.denyPaths)
             changedPaths.clear()
             stepBuffer = StringBuilder()
             // Потолки ставятся ДО запроса и снимаются в finally: считать их у обычного хода
@@ -3632,6 +3673,8 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
             // The role dies with its step: an ordinary chat inheriting «ревьюер» rights would be a
             // restriction appearing from nowhere, which is worse than no restriction at all.
             currentRole = null
+        currentScope = com.vibe.agent.pipelines.RolePaths.Scope()
+            currentScope = com.vibe.agent.pipelines.RolePaths.Scope()
           }
         }
         systemLine(t("pipeline.finished", "name" to pipeline.name, "outcome" to (if (failed) t("pipeline.outcome.failed") else t("pipeline.outcome.done"))))
@@ -3643,6 +3686,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
       }
       finally {
         currentRole = null
+        currentScope = com.vibe.agent.pipelines.RolePaths.Scope()
         finishTurn()
       }
     }
@@ -4513,8 +4557,16 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     val options = params["options"]?.jsonArray?.map { it.jsonObject } ?: emptyList()
     val chosen = askOnEdt {
       val names = options.map { it["name"]?.jsonPrimitive?.contentOrNull ?: it.getValue("optionId").jsonPrimitive.content }
-      val choice = Messages.showDialog(project, dialogText, t("chat.permission.title"), names.toTypedArray(), 0,
-        if (destructive != null) Messages.getWarningIcon() else Messages.getQuestionIcon())
+      // Понижение доверия на ходу, где сошлись все три признака: диалог перестаёт выглядеть
+      // рутинным и перестаёт предлагать «да».
+      //
+      // Запрет здесь по-прежнему НЕ ставится — решение №49 выбрало вопрос, а не блокировку,
+      // осознанно: правило, срабатывающее часто и зря, перестают читать. Но вопрос, у которого
+      // значок «?» и первая кнопка «разрешить», отвечается не глядя, а именно этот вопрос —
+      // единственное место, где утечка выглядит как обычная работа.
+      val defaultOption = if (trifecta) indexOfRefusal(options) else 0
+      val choice = Messages.showDialog(project, dialogText, t("chat.permission.title"), names.toTypedArray(), defaultOption,
+        if (destructive != null || trifecta) Messages.getWarningIcon() else Messages.getQuestionIcon())
       if (choice >= 0) options[choice].getValue("optionId").jsonPrimitive.content else null
     }
     audit?.append(AuditEvent(System.currentTimeMillis(), AuditEvent.Action.PERMISSION, ok = chosen != null, actor = com.vibe.agent.audit.AuditActor.HUMAN,

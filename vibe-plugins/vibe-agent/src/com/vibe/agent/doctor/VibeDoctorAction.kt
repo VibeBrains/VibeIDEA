@@ -174,9 +174,12 @@ class VibeDoctorAction : AnAction({ t("doctor.action") }) {
         else -> VibeDiagnosis.State.OK
       },
       when {
-        expired.isNotEmpty() -> t("doctor.detail.priceExpired",
-                                  "model" to (expired.first().providerId + "/" + expired.first().modelId),
-                                  "count" to expired.size)
+        expired.isNotEmpty() -> {
+          val gone = expired.first()
+          t("doctor.detail.priceExpired",
+            "model" to (gone.providerId + "/" + gone.modelId),
+            "count" to expired.size) + priceSource(gone)
+        }
         expiring.isNotEmpty() -> {
           val soon = expiring.first()
           val line = t("doctor.detail.priceExpiring",
@@ -186,9 +189,11 @@ class VibeDoctorAction : AnAction({ t("doctor.action") }) {
           val model = providers.firstOrNull { it.id == soon.providerId }
             ?.models?.firstOrNull { it.id == soon.modelId }
           val factor = com.vibe.agent.providers.PriceValidity.inputFactor(model?.pricing, soon.after)
-          if (factor == null) line
-          else line + " " + t("doctor.detail.priceAfter",
-                              "factor" to String.format(java.util.Locale.ROOT, "%.1f", factor))
+          val withFactor =
+            if (factor == null) line
+            else line + " " + t("doctor.detail.priceAfter",
+                                "factor" to String.format(java.util.Locale.ROOT, "%.1f", factor))
+          withFactor + priceSource(soon)
         }
         else -> t("doctor.detail.priceValidityNone")
       },
@@ -224,6 +229,33 @@ class VibeDoctorAction : AnAction({ t("doctor.action") }) {
     lines.add(VibeDiagnosis.Line(t("doctor.line.acp"),
                                  if (acp) VibeDiagnosis.State.OK else VibeDiagnosis.State.WARN,
                                  if (acp) ".vibe/acp.json" else t("doctor.detail.acpDefault")))
+
+    // Готовность внешних агентов: чем запускать и чем платить. Оба ответа знаемы заранее, и оба
+    // иначе выясняются в худший момент — «агент не запустился» и счёт в конце месяца.
+    val agentNotices = com.vibe.agent.acp.AgentReadiness.check(
+      com.vibe.agent.acp.AcpConfig.load(),
+      onPath = { com.vibe.agent.acp.AcpClient.isAvailable(it) },
+      env = { System.getenv(it) },
+    )
+    val missingRuntime = agentNotices.filter { it.kind == com.vibe.agent.acp.AgentReadiness.Kind.RUNTIME_MISSING }
+    val payingTwice = agentNotices.filter { it.kind == com.vibe.agent.acp.AgentReadiness.Kind.SUBSCRIPTION_OVERRIDDEN }
+    lines.add(VibeDiagnosis.Line(
+      t("doctor.line.agentRuntime"),
+      if (missingRuntime.isEmpty()) VibeDiagnosis.State.OK else VibeDiagnosis.State.ABSENT,
+      if (missingRuntime.isEmpty()) t("doctor.detail.agentRuntimeOk")
+      else t("doctor.detail.agentRuntimeMissing",
+             "agent" to missingRuntime.first().agent,
+             "command" to missingRuntime.first().detail,
+             "count" to missingRuntime.size),
+    ))
+    if (payingTwice.isNotEmpty()) {
+      lines.add(VibeDiagnosis.Line(
+        t("doctor.line.agentBilling"),
+        VibeDiagnosis.State.WARN,
+        t("doctor.detail.agentBillingKey", "agent" to payingTwice.first().agent,
+          "variable" to com.vibe.agent.acp.AgentReadiness.ANTHROPIC_KEY),
+      ))
+    }
 
     // Configs are named individually: «конфиги в порядке» is the answer nobody can act on.
     for (relative in com.vibe.agent.guard.ConfigGuard.FILES) {
@@ -287,6 +319,15 @@ class VibeDoctorAction : AnAction({ t("doctor.action") }) {
                                  else t("doctor.detail.orphans", "files" to orphans.joinToString())))
     return VibeDiagnosis.Report(lines)
   }
+
+  /**
+   * Где вендор объявил цену — хвостом к строке про срок, если это записано в файле.
+   *
+   * «Сверьтесь с вендором» без адреса — совет, который откладывают: искать надо то, что однажды уже
+   * нашли и записали рядом с ценой. Пусто, когда источник не назван: выдумывать ссылку нельзя.
+   */
+  private fun priceSource(notice: com.vibe.agent.providers.PriceValidity.Notice): String =
+    notice.note?.takeIf { it.isNotBlank() }?.let { " · " + t("price.source", "note" to it) } ?: ""
 
   private fun labels() = object : VibeDiagnosis.Labels {
     override fun header(problems: Int, total: Int) = t("doctor.header", "problems" to problems, "total" to total)

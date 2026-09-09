@@ -17,6 +17,14 @@ data class AgentCapabilities(
    * altogether — the session dies for a convenience it never asked for.
    */
   val mcpHttp: Boolean = false,
+  /**
+   * Агент умеет `session/resume` (`agentCapabilities.loadSession`).
+   *
+   * Спрашиваем, а не предполагаем, по той же причине, что и про MCP: клиент, зовущий метод,
+   * которого агент не знает, получает ошибку вместо разговора — и человек видит «агент сломался»
+   * там, где всего лишь нечего возобновлять.
+   */
+  val resumeSession: Boolean = false,
 )
 
 /** One entry of `availableModes` in the `session/new` result. */

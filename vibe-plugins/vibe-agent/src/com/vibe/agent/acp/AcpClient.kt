@@ -174,7 +174,20 @@ class AcpClient(
    */
   private var ideTools: Map<String, Any>? = null
 
-  fun initializeAndOpenSession(): CompletableFuture<String> {
+  /**
+   * Открыть сессию, ВОЗОБНОВИВ прежнюю, если она известна и агент это умеет.
+   *
+   * Наши треды переживают перезапуск IDE с первого дня, а сессия внешнего агента — нет: в ленте
+   * разговор был, а агент про него не помнил, и человек пересказывал контекст заново (и платил за
+   * него заново). `session/resume` стабилизирован в v1 06.07.2026 и закрывает ровно это.
+   *
+   * Отказ агента возобновлять — не ошибка: сессия могла истечь на его стороне, и это нормальный
+   * ответ, а не сбой. Тогда молча открываем новую — потерять историю неприятно, но упасть при
+   * старте вместо начала разговора хуже.
+   *
+   * @param previousSessionId сессия из прошлого запуска, если мы её запомнили.
+   */
+  fun initializeAndOpenSession(previousSessionId: String? = null): CompletableFuture<String> {
     val init = buildJsonObject {
       put("protocolVersion", PROTOCOL_VERSION)
       put("clientCapabilities", buildJsonObject {
@@ -205,16 +218,31 @@ class AcpClient(
     return request("initialize", init).thenCompose { initResult ->
       capabilities = parseCapabilities(initResult)
       ideTools = handler.ideToolsFor(capabilities?.mcpHttp == true)
-      request("session/new", buildJsonObject {
+      // Инструменты самой IDE предлагаются агенту, которого IDE и запустила: без этого он
+      // работает в проекте, не видя ни графа импортов, ни поиска по корпусу, ни журнала решений.
+      // Решение о том, можно ли, принимает [IdeToolsOffer]; здесь только форма запроса.
+      val params = buildJsonObject {
         put("cwd", workingDir ?: System.getProperty("user.home"))
-        // Инструменты самой IDE предлагаются агенту, которого IDE и запустила: без этого он
-        // работает в проекте, не видя ни графа импортов, ни поиска по корпусу, ни журнала решений.
-        // Решение о том, можно ли, принимает [IdeToolsOffer]; здесь только форма запроса.
         put("mcpServers", JsonArray(ideTools?.let { listOf(toJson(it)) } ?: emptyList()))
-      })
+      }
+      val resumable = previousSessionId?.takeIf { it.isNotBlank() && capabilities?.resumeSession == true }
+      if (resumable == null) {
+        request("session/new", params)
+      } else {
+        request("session/resume", JsonObject(params + mapOf("sessionId" to JsonPrimitive(resumable))))
+          .exceptionallyCompose {
+            handler.onProtocolLog("[acp] session/resume refused, opening a new session: ${it.message}")
+            request("session/new", params)
+          }
+      }
     }.thenApply { result ->
       val obj = result.jsonObject
-      val id = obj.getValue("sessionId").jsonPrimitive.content
+      // У `session/resume` идентификатор в ответе НЕОБЯЗАТЕЛЕН: агент возобновляет ту сессию,
+      // которую попросили, и повторять её номер ему незачем. Требовать поле — значит уронить
+      // возобновление на агенте, который всё сделал правильно.
+      val id = obj["sessionId"]?.jsonPrimitive?.contentOrNull
+        ?: previousSessionId
+        ?: error("agent returned no sessionId")
       modes = parseModes(obj)
       configOptions = parseConfigOptions(obj)
       sessionId = id
@@ -282,6 +310,7 @@ class AcpClient(
       image = prompt?.get("image").booleanOrFalse(),
       embeddedContext = prompt?.get("embeddedContext").booleanOrFalse(),
       mcpHttp = mcp?.get("http").booleanOrFalse(),
+      resumeSession = agent?.get("loadSession").booleanOrFalse(),
     )
   }
 
@@ -514,6 +543,18 @@ class AcpClient(
         dirs.asSequence().map { Path.of(it, name) }.firstOrNull { Files.isExecutable(it) }?.let { return it.toString() }
       }
       return binary
+    }
+
+    /**
+     * Есть ли чем запустить такую команду — тем же поиском, каким её потом и запустят.
+     *
+     * Отдельная функция, а не сравнение `resolveBinary(x) != x` на месте вызова: для абсолютного
+     * пути резолвер возвращает его же, и такое сравнение молча объявляло бы отсутствующий файл
+     * найденным. Один ответ в одном месте.
+     */
+    fun isAvailable(binary: String): Boolean {
+      if (com.vibe.agent.util.ExecutableNames.looksLikePath(binary)) return Files.isExecutable(Path.of(binary))
+      return resolveBinary(binary) != binary
     }
   }
 }

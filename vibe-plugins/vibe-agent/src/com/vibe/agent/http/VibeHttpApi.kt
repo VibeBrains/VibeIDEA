@@ -86,6 +86,7 @@ class VibeHttpApi(
         bodyLength = body.size,
         body = String(body, StandardCharsets.UTF_8),
         mcpMethod = exchange.requestHeaders.getFirst("Mcp-Method"),
+        mcpName = exchange.requestHeaders.getFirst("Mcp-Name"),
       )
       when (val decision = HttpApiPolicy.decide(request, tokenProvider())) {
         is HttpApiPolicy.Decision.Health -> respond(exchange, 200, buildJsonObject {
@@ -102,7 +103,7 @@ class VibeHttpApi(
             com.vibe.agent.mcp.McpServer.unavailable(decision.body, com.vibe.agent.mcp.McpProtocol.NO_PROJECT)
           }
           else {
-            com.vibe.agent.mcp.McpServer.handle(decision.body, productVersion(), tools, decision.mcpMethod)
+            com.vibe.agent.mcp.McpServer.handle(decision.body, productVersion(), tools, decision.mcpMethod, decision.mcpName)
           }
           respondText(exchange, answer.httpStatus, answer.body)
         }

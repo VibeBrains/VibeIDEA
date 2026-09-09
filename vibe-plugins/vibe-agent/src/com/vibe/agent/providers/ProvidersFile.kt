@@ -20,6 +20,11 @@ import kotlinx.serialization.json.contentOrNull
  * `extends` clones another entry, same-id entries patch each other;
  * workspace file overrides the global one field-by-field, models.static merges by model id.
  * Keys are NEVER stored in this file: apiKeyRef (secure storage) / apiKeyEnv (.vibe/.env, OS env).
+ *
+ * **Money fields are spelled `cost*` on the wire** — `cost`, `costValidUntil`, `costAfter`,
+ * `costNote` — because the seed catalogue is shared with VibeIDE and that is its spelling. Our
+ * older `pricing` / `priceValidUntil` / `priceAfter` are still accepted as synonyms so that files
+ * already written by hand keep working; new files and seeds use `cost*`.
  */
 data class ModelEntry(
   val id: String,
@@ -80,6 +85,22 @@ data class ModelEntry(
    * Расход по ней НЕ считается никогда: это будущее, а счёт — про сегодня.
    */
   val priceAfter: ModelPricing? = null,
+  /**
+   * Где объявлена цена — ссылка или фраза вендора (`costNote` в файле).
+   *
+   * Нужна там, где мы говорим «цена протухла» или «скоро протухнет»: без неё человеку сказано, что
+   * надо свериться, но не сказано с чем, и сверка откладывается. Своей цены мы не знаем (решение
+   * №40), поэтому источник — единственное, чем мы можем помочь.
+   */
+  val priceNote: String? = null,
+  /**
+   * Какие уровни рассуждения модель принимает (`"reasoning"` в файле); null — не сказано.
+   *
+   * Ползунок глубины один на приложение, а наборы уровней у моделей разные. Без этого объявления
+   * ползунок отправлял выбранный уровень любой модели — и там, где его нет, вендор либо отвечал
+   * 400, либо молча игнорировал, что хуже: человек двигает ручку и не видит разницы.
+   */
+  val reasoning: ReasoningMode.Support? = null,
   /**
    * Срок жизни кэша промпта: `5m` (умолчание вендора) или `1h`.
    *
@@ -219,14 +240,16 @@ object ProvidersFile {
         topK = mo["topK"]?.jsonPrimitive?.intOrNull,
         extraBody = mo["extraBody"] as? JsonObject,
         protocol = mo["protocol"]?.jsonPrimitive?.contentOrNull,
-        pricing = parsePricing(mo["pricing"] as? JsonObject),
+        pricing = parsePricing((mo["cost"] ?: mo["pricing"]) as? JsonObject),
         fim = mo["fim"]?.jsonPrimitive?.booleanOrNull ?: false,
         vision = mo["vision"]?.jsonPrimitive?.booleanOrNull,
         note = mo["note"]?.jsonPrimitive?.contentOrNull,
         sunsetDate = mo["sunsetDate"]?.jsonPrimitive?.contentOrNull,
-        priceValidUntil = mo["priceValidUntil"]?.jsonPrimitive?.contentOrNull,
+        priceValidUntil = text(mo, "costValidUntil", "priceValidUntil"),
         cacheTtl = mo["cacheTtl"]?.jsonPrimitive?.contentOrNull,
-        priceAfter = parsePricing(mo["priceAfter"] as? JsonObject),
+        priceAfter = parsePricing((mo["costAfter"] ?: mo["priceAfter"]) as? JsonObject),
+        priceNote = text(mo, "costNote", "priceNote"),
+        reasoning = parseReasoning(mo["reasoning"] as? JsonObject),
       )
     } ?: emptyList()
     return ProviderEntry(
@@ -247,6 +270,40 @@ object ProvidersFile {
       models = models,
       note = o["note"]?.jsonPrimitive?.contentOrNull,
     )
+  }
+
+  /**
+   * The first of two wire names that the object actually carries.
+   *
+   * Exists for one reason: the seed catalogue is SHARED with VibeIDE, and the money fields are
+   * spelled `cost` / `costValidUntil` / `costAfter` / `costNote` there. Reading only our older
+   * `pricing` / `price*` made a seeded price silently invisible — not an error, not a warning, just
+   * a model with no price and a validity date that never expires. A synonym costs one lookup; a
+   * rename would break every `providers.json` already written by hand.
+   */
+  private fun text(o: JsonObject, canonical: String, legacy: String): String? =
+    (o[canonical] ?: o[legacy])?.jsonPrimitive?.contentOrNull
+
+  /**
+   * `"reasoning": { "canTurnOff": true, "effort": ["low", "high"] }` — что умеет эта модель.
+   *
+   * Неизвестное слово уровня пропускается, а не роняет запись: более новый вендор может назвать
+   * уровень так, как эта сборка ещё не знает, и терять из-за одного слова весь список — значит
+   * менять частичное знание на никакое.
+   */
+  private fun parseReasoning(o: JsonObject?): ReasoningMode.Support? {
+    if (o == null) return null
+    val levels = (o["effort"] as? kotlinx.serialization.json.JsonArray)
+      ?.mapNotNull { el ->
+        val word = el.jsonPrimitive.contentOrNull ?: return@mapNotNull null
+        ReasoningMode.levelOf(word).takeIf { it != ReasoningMode.Level.OFF }
+      }
+      ?.distinct()
+      ?.sorted()
+      .orEmpty()
+    val canTurnOff = o["canTurnOff"]?.jsonPrimitive?.booleanOrNull
+    val support = ReasoningMode.Support(canTurnOff, levels)
+    return support.takeIf { it.stated }
   }
 
   /**
@@ -288,6 +345,8 @@ object ProvidersFile {
       priceValidUntil = over.priceValidUntil ?: base.priceValidUntil,
       cacheTtl = over.cacheTtl ?: base.cacheTtl,
       priceAfter = over.priceAfter ?: base.priceAfter,
+      priceNote = over.priceNote ?: base.priceNote,
+      reasoning = over.reasoning ?: base.reasoning,
       // Same rule as every other optional field: silence inherits, a written value overrides.
       protocol = over.protocol ?: base.protocol,
     )

@@ -22,13 +22,23 @@ object SkillApproval {
   const val DIGEST_LENGTH = 16
 
   /**
-   * The digest of a skill as approved: its body plus the names of everything shipped beside it.
+   * The digest of a skill as approved: its header, its body, and the names of everything shipped
+   * beside it.
    *
    * Attachment names are part of it because a skill that gains a file gains a capability — the
    * body may be unchanged while the recipe now points at a script that was not there yesterday.
+   *
+   * **The header is part of it because the header is what the person actually read.** `name` and
+   * `description` are the whole of what the approval dialog and the `/skill:` popup show; the body
+   * is one click further away and most people never open it. A digest over the body alone therefore
+   * left the reviewed half of the skill free to change without revoking anything — and that is
+   * precisely where the published attack puts its payload (embracethered.com, 02.2026: an
+   * instruction hidden in the YAML `name` and `description` of an otherwise legitimate skill).
    */
-  fun digest(body: String, attachments: List<String> = emptyList()): String {
+  fun digest(body: String, attachments: List<String> = emptyList(), header: String = ""): String {
     val md = MessageDigest.getInstance("SHA-256")
+    md.update(header.toByteArray(Charsets.UTF_8))
+    md.update(0)
     md.update(body.toByteArray(Charsets.UTF_8))
     // Sorted: the filesystem's order is not a property of the skill, and a reshuffled listing
     // must not read as a change.

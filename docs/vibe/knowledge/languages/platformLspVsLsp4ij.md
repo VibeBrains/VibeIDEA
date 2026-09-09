@@ -54,3 +54,24 @@ ls platform | grep -iE "^dap|debugAdapter"
 ```
 
 Появился — пункт роадмапа оживает, и миграция становится осмысленной.
+
+## Что изменилось к 09.09.2026 (сверено с заметками API платформы)
+
+Решение прежнее — **не мигрировать**, DAP в платформе так и нет. Но цена ожидания выросла, и это
+надо знать до следующего пересмотра.
+
+**Платформенный LSP получил в 2026.1 три возможности, которых у нас в TS и PHP нет:** Range
+Formatting (`textDocument/rangeFormatting`), Code Lens (`textDocument/codeLens`) и Optimize Imports
+(через `textDocument/codeAction` вида `source.organizeImports`), плюс переписанную ради
+производительности подсветку ([api-notable-list-2026](
+https://plugins.jetbrains.com/docs/intellij/api-notable-list-2026.html)). Механизм — не миксины к
+дескриптору, а customizer-классы; в нашем дереве они лежат и открыты: `platform/lsp/src/api/
+customization/LspCodeLensCustomizer.kt`, `LspOptimizeImportsCustomizer.kt` и соседние.
+
+**И одно ломающее, которое станет ценой миграции, а не её выгодой:** в 2026.1.4 `LspServerManager`
+переименован в `LspClientManager` и зарегистрирован ТОЛЬКО под новым интерфейсом — обращение по
+старому имени возвращает `null`, а не ошибку компиляции. Кастомизация переехала с
+`LspServerDescriptor.lspCustomization` на `LspClientDescriptor.lspCustomization`.
+
+Наша база — линия 263, то есть 2026.3: оба изменения у нас **уже внутри**, просто не задевают нас,
+пока языки идут через LSP4IJ.
