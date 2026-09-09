@@ -6,6 +6,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
+import kotlin.test.assertTrue
 
 /**
  * Контракт ОБЩЕГО набора сидов: он приезжает из VibeBrains и пишется двумя продуктами сразу.
@@ -152,5 +153,33 @@ class SharedSeedContractTest {
     // Более новый вендор может назвать уровень так, как эта сборка ещё не знает. Терять из-за
     // одного слова весь список значит менять частичное знание на никакое.
     assertEquals(listOf(ReasoningMode.Level.LOW, ReasoningMode.Level.HIGH), assertNotNull(m.reasoning).levels)
+  }
+
+  @Test
+  fun `любое время в отгружаемом наборе читается нашим разбором`() {
+    // Гейт по ОТГРУЖАЕМЫМ байтам, рекомендация VibeIDE 09.09.2026 — и у нас его не было.
+    //
+    // Повод тот же `costValidUntil`: вендор объявляет срок моментом с зоной, `LocalDate.parse`
+    // такое не берёт, а `null` здесь неотличим от «срок не указан». Предупреждение просто не
+    // срабатывает — на поле, весь смысл которого в том, чтобы сработать. Ни один тест этого не
+    // видел: разбор работал, он просто возвращал ничего.
+    //
+    // Проверка идёт по СЫРОМУ тексту, а не по разобранному дереву: закомментированный образец —
+    // тоже обещание формата, человек его раскомментирует и получит молчание.
+    val declared = Regex(""""(costValidUntil|priceValidUntil|sunsetDate)"\s*:\s*"([^"]*)"""")
+    val unreadable = LinkedHashMap<String, MutableList<String>>()
+    var seen = 0
+    for (name in com.vibe.agent.defaults.VibeDefaults.manifestResourceNames()) {
+      val text = javaClass.getResource("/vibeDefaults/$name")?.readText() ?: continue
+      for (m in declared.findAll(text)) {
+        seen++
+        val value = m.groupValues[2]
+        if (ModelSunset.parse(value) == null) unreadable.getOrPut(name) { ArrayList() }.add(value)
+      }
+    }
+    assertEquals(emptyMap(), unreadable, "объявленное время, которого наш разбор не берёт")
+    // Молча пустой гейт хуже отсутствующего: он рапортует успех про набор, в котором поле уже
+    // переименовали. Поэтому отдельно заявляется, что проверка вообще что-то нашла.
+    assertTrue(seen > 0, "в наборе не нашлось ни одного объявленного времени — поле переименовали?")
   }
 }
