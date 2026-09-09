@@ -84,4 +84,16 @@ class HookConfigTest {
     // turnEnd ignores tool entirely
     assertEquals(listOf("d"), HookConfig.hooksFor(hooks, HookEvent.TURN_END, null).map { it.command })
   }
+
+  @Test
+  fun disabledHookIsNotValidatedAtAll() {
+    // Общий набор сидов пишут несколько продуктов сразу: выключенная запись может ссылаться на
+    // событие, которого в этой сборке ещё нет. Проверять её содержимое незачем — она не
+    // выполнится. Повод — 09.09.2026: разбор, смотревший событие раньше активности, объявлял
+    // сломанным общий сид, который работал.
+    val (hooks, warnings) = parse(
+      """{"hooks":[{"event":"eventFromAnotherProduct","command":"","active":false},{"event":"turnEnd","command":"npm test"}]}""")
+    assertEquals(listOf("npm test"), hooks.map { it.command })
+    assertTrue(warnings.isEmpty(), "выключенная запись не жалуется ни на что: $warnings")
+  }
 }

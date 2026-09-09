@@ -88,4 +88,15 @@ class PatrolTest {
     assertTrue(Patrol.parse(null).problems.isEmpty())
     assertEquals(Patrol.Trouble.NOT_AN_OBJECT, Patrol.parse("не json").problems.single().trouble)
   }
+
+  @Test
+  fun `выключенная запись не проверяется вообще`() {
+    // Она не запустится — жаловаться на её содержимое некому. Здесь у неё разом нет пробы и
+    // запрещённый интервал: сегодня это два повода, и оба должны молчать.
+    val parsed = Patrol.parse(
+      """{ "patrols": [ { "id": "чужая", "everyMinutes": 0, "active": false },
+                        { "id": "своя", "probe": "true" } ] }""")
+    assertEquals(listOf("своя"), parsed.entries.map { it.id })
+    assertTrue(parsed.problems.isEmpty(), "выключенная запись поводов не даёт: ${parsed.problems}")
+  }
 }

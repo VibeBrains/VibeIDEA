@@ -75,17 +75,22 @@ object Patrol {
       val obj = element as? JsonObject
       if (obj == null) { problems.add(Problem("#$index", Trouble.NOT_AN_OBJECT)); continue }
       fun str(key: String) = (obj[key])?.jsonPrimitive?.contentOrNull?.takeIf { it.isNotBlank() }
+      // Активность читается ПЕРВОЙ: выключенная запись не проверяется и не жалуется — она не
+      // запустится, и претензии к её содержимому предъявлять некому. Разбор общего набора сидов,
+      // проверявший содержимое раньше активности, объявлял сломанным сид, который работал.
+      val active = obj["active"]?.jsonPrimitive?.booleanOrNull ?: true
       val id = str("id")
       val where = id ?: "#$index"
-      if (id == null) { problems.add(Problem(where, Trouble.NO_ID)); continue }
+      fun trouble(t: Trouble) { if (active) problems.add(Problem(where, t)) }
+      if (id == null) { trouble(Trouble.NO_ID); continue }
       val probe = str("probe")
-      if (probe == null) { problems.add(Problem(where, Trouble.NO_PROBE)); continue }
-      if (!seen.add(id)) { problems.add(Problem(where, Trouble.DUPLICATE_ID)); continue }
+      if (probe == null) { trouble(Trouble.NO_PROBE); continue }
+      if (!seen.add(id)) { trouble(Trouble.DUPLICATE_ID); continue }
       val minutes = obj["everyMinutes"]?.jsonPrimitive?.intOrNull ?: DEFAULT_MINUTES
       if (minutes < MIN_MINUTES || minutes > MAX_MINUTES) {
         // Интервал вне рамок — отказ, а не молчаливое приведение к границе: «каждые ноль минут»
         // человек написал не случайно, и подменять его нашим значением значит делать не то.
-        problems.add(Problem(where, Trouble.BAD_INTERVAL))
+        trouble(Trouble.BAD_INTERVAL)
         continue
       }
       entries.add(Entry(
@@ -93,7 +98,7 @@ object Patrol {
         probe = probe,
         prompt = str("prompt"),
         everyMinutes = minutes,
-        active = obj["active"]?.jsonPrimitive?.booleanOrNull ?: true,
+        active = active,
         maxPerDay = obj["maxPerDay"]?.jsonPrimitive?.intOrNull?.coerceAtLeast(1) ?: DEFAULT_MAX_PER_DAY,
         label = str("label"),
       ))

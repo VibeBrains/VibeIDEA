@@ -90,29 +90,36 @@ object HookConfig {
     val result = ArrayList<Hook>()
     for ((i, element) in array.withIndex()) {
       val hookObj = element as? JsonObject ?: run { onWarning(t("hooks.warn.notObject", "index" to (i + 1))); continue }
+      // Активность читается ПЕРВОЙ, и выключенная запись не жалуется ни на что.
+      //
+      // Повод — общий набор сидов, 09.09.2026: набор нёс выключенный хук на событие, которого у
+      // соседнего продукта не было, его разбор проверил событие раньше активности и объявил
+      // ОБЩИЙ сид сломанным. У нас дыра была зеркальной. Правило простое: запись, которая не
+      // выполнится, жаловаться поводом не является — некому.
+      val active = hookObj["active"]?.jsonPrimitive?.booleanOrNull ?: true
+      val warn: (String) -> Unit = { if (active) onWarning(it) }
       val event = HookEvent.fromWire(hookObj["event"]?.jsonPrimitive?.contentOrNull) ?: run {
-        onWarning(t("hooks.warn.unknownEvent", "index" to (i + 1)))
+        warn(t("hooks.warn.unknownEvent", "index" to (i + 1)))
         continue
       }
       val command = hookObj["command"]?.jsonPrimitive?.contentOrNull?.takeIf { it.isNotBlank() } ?: run {
-        onWarning(t("hooks.warn.noCommand", "index" to (i + 1)))
+        warn(t("hooks.warn.noCommand", "index" to (i + 1)))
         continue
       }
       var tools = (hookObj["tools"] as? JsonArray).orEmptyList().mapNotNull { it.jsonPrimitive.contentOrNull }
       if (event in EVENTS_WITHOUT_TOOLS && tools.isNotEmpty()) {
-        onWarning(t("hooks.warn.turnEndTools", "hook" to (hookObj["label"]?.jsonPrimitive?.contentOrNull ?: command)))
+        warn(t("hooks.warn.turnEndTools", "hook" to (hookObj["label"]?.jsonPrimitive?.contentOrNull ?: command)))
         tools = emptyList()
       }
       val timeoutMs = when (val raw = hookObj["timeoutMs"]?.jsonPrimitive?.longOrNull) {
         null -> DEFAULT_TIMEOUT_MS
         in 1..MAX_TIMEOUT_MS -> raw
         else -> if (raw > MAX_TIMEOUT_MS) {
-          onWarning(t("hooks.warn.timeoutClamped", "value" to raw, "max" to MAX_TIMEOUT_MS))
+          warn(t("hooks.warn.timeoutClamped", "value" to raw, "max" to MAX_TIMEOUT_MS))
           MAX_TIMEOUT_MS
         } else DEFAULT_TIMEOUT_MS
       }
-      result.add(Hook(event, command, tools, timeoutMs, hookObj["label"]?.jsonPrimitive?.contentOrNull,
-                      active = hookObj["active"]?.jsonPrimitive?.booleanOrNull ?: true))
+      result.add(Hook(event, command, tools, timeoutMs, hookObj["label"]?.jsonPrimitive?.contentOrNull, active = active))
     }
     return result
   }

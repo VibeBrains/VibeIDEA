@@ -54,4 +54,15 @@ class DataSourcesTest {
     assertEquals(emptyList(), DataSources.parse(null).sources)
     assertEquals(listOf(DataSources.Trouble.NOT_AN_OBJECT), DataSources.parse("{ это не json").problems.map { it.trouble })
   }
+
+  @Test
+  fun `выключенная запись молчит обо всём, кроме пароля`() {
+    // Придирки говорят «запись не сработает» — выключенной это не грозит. Пароль говорит другое:
+    // он уже лежит в репозитории, и выключенность записи его оттуда не убирает.
+    val parsed = DataSources.parse(
+      """[ {"id": "off", "active": false}, {"id": "off2", "active": false, "password": "секрет"} ]""")
+    assertTrue(parsed.sources.isEmpty(), "выключенные подключения в список не идут")
+    assertEquals(listOf(DataSources.Trouble.PASSWORD_IN_FILE), parsed.problems.map { it.trouble },
+                 "отсутствие адреса — не повод, пароль — повод")
+  }
 }

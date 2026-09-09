@@ -58,16 +58,21 @@ object ServersFile {
     try {
       val root = json.parseToJsonElement(com.vibe.agent.util.VibeJsonc.strip(Files.readString(file))).jsonObject
       for (el in root["servers"]?.jsonArray ?: run { onWarning(t("servers.warn.noArray")); return emptyList() }) {
+        // Выключенная запись молчит обо всём: она не запустится, и претензии к её содержимому
+        // предъявлять некому. Признак снимается сразу после разбора объекта — раньше любой
+        // придирки, включая обязательную команду, которая бросает исключение прямо в конструкторе.
+        var silent = false
         try {
           val o = el.jsonObject
+          silent = o["active"]?.jsonPrimitive?.booleanOrNull == false
           val id = o["id"]?.jsonPrimitive?.contentOrNull
-          if (id.isNullOrBlank()) { onWarning(t("servers.warn.noId")); continue }
-          if (!seen.add(id)) { onWarning(t("servers.warn.duplicateId", "id" to id)); continue }
+          if (id.isNullOrBlank()) { if (!silent) onWarning(t("servers.warn.noId")); continue }
+          if (!seen.add(id)) { if (!silent) onWarning(t("servers.warn.duplicateId", "id" to id)); continue }
           result.add(ServerEntry(
             id = id,
             name = o["name"]?.jsonPrimitive?.contentOrNull ?: id,
             kind = o["kind"]?.jsonPrimitive?.contentOrNull ?: "service",
-            active = o["active"]?.jsonPrimitive?.booleanOrNull ?: true,
+            active = !silent,
             command = o["command"]?.jsonPrimitive?.contentOrNull?.ifBlank { null }
               ?: throw IllegalArgumentException(t("servers.warn.noCommand")),
             dir = o["dir"]?.jsonPrimitive?.contentOrNull,
@@ -88,7 +93,7 @@ object ServersFile {
           ))
         }
         catch (e: Exception) {
-          onWarning(t("servers.warn.entrySkipped", "reason" to e.message))
+          if (!silent) onWarning(t("servers.warn.entrySkipped", "reason" to e.message))
         }
       }
     }

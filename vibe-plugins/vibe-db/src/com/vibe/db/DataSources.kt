@@ -99,15 +99,22 @@ object DataSources {
       val id = str("id")
       val url = str("url")
       val where = id ?: str("name") ?: "#$index"
-      if (id == null) { problems.add(Problem(where, Trouble.NO_ID)); continue }
-      if (url == null) { problems.add(Problem(where, Trouble.NO_URL)); continue }
-      if (!seen.add(id)) { problems.add(Problem(where, Trouble.DUPLICATE_ID)); continue }
-      // Пароль в файле — не «поле, которое мы не поддерживаем», а находка: он уже в репозитории.
+      // Активность читается ПЕРВОЙ: выключенная запись не проверяется и не жалуется — она не
+      // подключится, и претензии к её содержимому предъявлять некому.
+      val active = obj["active"]?.jsonPrimitive?.booleanOrNull ?: true
+      fun trouble(t: Trouble) { if (active) problems.add(Problem(where, t)) }
+      // Пароль в файле — исключение из этого правила, и единственное. Остальные придирки говорят
+      // «запись не сработает»; эта говорит «пароль уже лежит в репозитории», а он лежит там
+      // независимо от того, выключена запись или нет и годится ли она к подключению вообще.
+      // Поэтому проверка стоит ДО всех отказов и не смотрит на активность.
       if (obj.containsKey("password")) problems.add(Problem(where, Trouble.PASSWORD_IN_FILE))
+      if (id == null) { trouble(Trouble.NO_ID); continue }
+      if (url == null) { trouble(Trouble.NO_URL); continue }
+      if (!seen.add(id)) { trouble(Trouble.DUPLICATE_ID); continue }
       sources.add(
         DataSource(
           id = id,
-          active = obj["active"]?.jsonPrimitive?.booleanOrNull ?: true,
+          active = active,
           name = str("name") ?: id,
           url = url,
           user = str("user"),
