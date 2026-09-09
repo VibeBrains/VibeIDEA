@@ -153,9 +153,6 @@ shasum -a 256 VibeIDEA-0.4.7-aarch64.dmg
 # 91b6b066d52e2a687dbca9565cbbc1a4d80ac20e98fbae0a379fa59aaa738470
 ```
 
-Тот же выпуск архивом, если dmg неудобен, — `VibeIDEA-0.4.7-aarch64.sit`
-(`0fc2fe17c2cdb6c52b74b769bf6c6d08322449b3fe22d4c54b8e39894de3e7c4`).
-
 **Что нужно на машине:** PHP 8.1+ и Node 18+. Для отладки PHP — Xdebug. Для базы — драйвер JDBC,
 его скачает кнопка в панели «БД».
 
