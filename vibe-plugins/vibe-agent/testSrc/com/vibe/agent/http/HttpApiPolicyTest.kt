@@ -118,4 +118,20 @@ class HttpApiPolicyTest {
     assertEquals(403, refusal(request(host = "evil.com", auth = "Bearer чужой")).code)
     assertEquals(401, refusal(request(auth = "Bearer чужой", length = HttpApiPolicy.MAX_BODY_BYTES + 1)).code)
   }
+
+  @Test
+  fun `GET и DELETE к MCP получают 405, а не 404`() {
+    // Ревизия 2026-07-28 требует именно 405: сессий и возобновляемых потоков в ней нет.
+    // 404 сказал бы клиенту, что эндпоинта не существует вовсе, и он ушёл бы искать другой
+    // адрес вместо того, чтобы слать POST.
+    assertEquals(405, refusal(request(method = "GET", path = "/mcp", body = "")).code)
+    assertEquals(405, refusal(request(method = "DELETE", path = "/mcp", body = "")).code)
+  }
+
+  @Test
+  fun `неизвестный путь по-прежнему 404`() {
+    assertEquals(404, refusal(request(method = "GET", path = "/nope", body = "")).code)
+    assertEquals(404, refusal(request(method = "PUT", path = "/mcp", body = "")).code,
+                 "PUT ревизией не оговорён — это просто неизвестный вызов")
+  }
 }

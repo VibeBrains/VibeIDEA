@@ -109,6 +109,11 @@ object HttpApiPolicy {
       // The MCP endpoint deliberately lives beside /run rather than replacing it: the VibeIDE
       // contract for /health and /run is carried over verbatim and scripts depend on it.
       request.method == "POST" && request.path == PATH_MCP -> Decision.Mcp(request.body, request.mcpMethod, request.mcpName)
+      // Ревизия MCP 2026-07-28 требует ИМЕННО 405 на GET и DELETE к эндпоинту: сессий и
+      // возобновляемых потоков в ней нет, а 404 сказал бы клиенту, что эндпоинта не существует
+      // вовсе, — и он ушёл бы искать другой адрес вместо того, чтобы слать POST.
+      request.path == PATH_MCP && (request.method == "GET" || request.method == "DELETE") ->
+        Decision.Refuse(405, "MCP говорит только POST: сессий и возобновляемых потоков в ревизии 2026-07-28 нет")
       else -> Decision.Refuse(404, "известны только GET /health, POST /run и POST /mcp")
     }
   }
