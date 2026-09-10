@@ -620,6 +620,7 @@
   "landing.prompt.types": "Как устроены типы в этом проекте?",
   "landing.prompt.agentsMd": "Помоги написать AGENTS.md для этого репозитория",
   "landing.prompt.attachRules": "Прикрепить правила агента (@agent)",
+  "hooks.warn.flushFailed": "хуки: не удалось досдать на диск отложенную запись ({reason}) — внешняя проверка может прочитать старое содержимое",
   "hooks.warn.badJson": "hooks.json: не разобран как JSON ({reason})",
   "hooks.warn.noArray": "hooks.json: ожидался объект с массивом «hooks»",
   "hooks.warn.notObject": "hooks.json: хук #{index} не объект — пропущен",

@@ -620,6 +620,7 @@
   "landing.prompt.types": "How are the types organised in this project?",
   "landing.prompt.agentsMd": "Help me write AGENTS.md for this repository",
   "landing.prompt.attachRules": "Attach the agent rules (@agent)",
+  "hooks.warn.flushFailed": "hooks: could not flush the postponed write to disk ({reason}) — an external check may read stale content",
   "hooks.warn.badJson": "hooks.json: not valid JSON ({reason})",
   "hooks.warn.noArray": "hooks.json: expected an object with a \"hooks\" array",
   "hooks.warn.notObject": "hooks.json: hook #{index} is not an object — skipped",

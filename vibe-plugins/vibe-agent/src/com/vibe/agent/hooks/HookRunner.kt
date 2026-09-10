@@ -73,6 +73,7 @@ class HookRunner(private val project: Project, private val onWarning: (String) -
       val cwd = base ?: return NOTHING
       val hooks = HookConfig.hooksFor(load(), event, tool)
       if (hooks.isEmpty()) return NOTHING
+      flushPendingWrites()
       val payload = buildPayload(event, tool, params, cwd, changedFiles, context)
       val results = ArrayList<HookResult>()
       for (hook in hooks) {
@@ -87,6 +88,32 @@ class HookRunner(private val project: Project, private val onWarning: (String) -
       onWarning(t("hooks.warn.mechanismFailed", "reason" to e.message))
       NOTHING
     }
+  }
+
+  /**
+   * Досылает на диск то, что VFS отложила, — перед тем как отдать файлы ВНЕШНЕМУ процессу.
+   *
+   * С 2026.2 запись `VirtualFile` асинхронна: write action заканчивается раньше, чем содержимое
+   * доходит до диска. Для всех, кто ходит через VFS, это невидимо — VFS поддерживает иллюзию
+   * законченной записи. Но хук — чужой процесс, он читает диск напрямую, и без сброса линтер или
+   * тесты увидят ВЧЕРАШНЕЕ содержимое и промолчат: отказ будет выглядеть как «проверка не заметила
+   * правку», то есть как отсутствие проблемы.
+   *
+   * Сбрасывается всё разом, а не по файлам: список отложенного — это ровно то, что мы сами
+   * записали через клиента, и он почти всегда пуст, а собирать `VirtualFile` по путям из полезной
+   * нагрузки значило бы повторять работу VFS.
+   *
+   * Вызывается только когда хук реально будет запущен, и только вне write action: внутри него
+   * сбрасывать нечего (наша собственная запись ещё не закончена) и нельзя. Случай сегодня
+   * недостижим — `preToolUse` на записи срабатывает ДО неё, — но проверка стоит дешевле разбора.
+   *
+   * API помечен `@ApiStatus.Experimental`; риск назван здесь, а не спрятан.
+   */
+  private fun flushPendingWrites() {
+    val app = com.intellij.openapi.application.ApplicationManager.getApplication()
+    if (app.isWriteAccessAllowed) return
+    runCatching { com.intellij.openapi.vfs.newvfs.ManagingFS.getInstance().flushPendingUpdates() }
+      .onFailure { onWarning(t("hooks.warn.flushFailed", "reason" to it.message)) }
   }
 
   // Synchronized: run() is invoked from the reader thread (preToolUse), pooled threads
