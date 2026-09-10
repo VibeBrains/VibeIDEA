@@ -26,6 +26,8 @@
   "design.status.overlayOff": "Разметка находок убрана",
   "design.status.picked": "Находка «{rule}» отправлена в композер",
   "design.status.noPanel": "Панель VibeAgent не открыта — некуда отправить",
+  "design.action.back": "Назад",
+  "design.action.forward": "Вперёд",
   "design.action.open": "Открыть",
   "design.action.measure": "Замерить",
   "design.action.overlay": "⚑ разметка",

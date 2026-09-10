@@ -54,6 +54,16 @@ class DesignPreviewPanel(private val project: Project) : JPanel(BorderLayout()),
   private var liveReload: com.intellij.ui.components.JBCheckBox? = null
 
   /**
+   * Навигация по истории. Без неё переход по ссылке внутри превью — билет в один конец:
+   * вернуться можно было только перепечатав адрес руками.
+   *
+   * Гаснут по ответу самого браузера (`canGoBack`/`canGoForward`), а не по нашему счётчику:
+   * своя история разошлась бы с настоящей на первом же редиректе.
+   */
+  private var backButton: com.vibe.agent.ui.composer.PillButton? = null
+  private var forwardButton: com.vibe.agent.ui.composer.PillButton? = null
+
+  /**
    * The click channel of the overlay. Created ONCE and kept: a per-draw query would leak a handler
    * on every measurement, and the page would end up calling a function that no longer exists.
    */
@@ -66,6 +76,12 @@ class DesignPreviewPanel(private val project: Project) : JPanel(BorderLayout()),
     border = JBUI.Borders.empty(6)
     val toolbar = JPanel(FlowLayout(FlowLayout.LEFT, 6, 0)).apply {
       isOpaque = false
+      add(com.vibe.agent.ui.composer.PillButton(t("design.action.back"), outlined = true) {
+        browser?.cefBrowser?.goBack()
+      }.also { backButton = it; it.isEnabled = false })
+      add(com.vibe.agent.ui.composer.PillButton(t("design.action.forward"), outlined = true) {
+        browser?.cefBrowser?.goForward()
+      }.also { forwardButton = it; it.isEnabled = false })
       add(JBLabel(t("design.label.address")))
       add(urlField)
       add(com.vibe.agent.ui.composer.PillButton(t("design.action.open"), outlined = true) { open() })
@@ -91,6 +107,41 @@ class DesignPreviewPanel(private val project: Project) : JPanel(BorderLayout()),
     }
     renderRecent()
     add(header, BorderLayout.NORTH)
+
+    // Обработчик навигации. Его не было вовсе, и из этого следовали сразу три вещи: некуда было
+    // вернуться, поле адреса врало после первого же клика по ссылке, а сборщик ошибок жил только
+    // в том документе, который открыли кнопкой, — после перехода кнопка «Ошибки» молча не
+    // находила ничего.
+    browser?.let { b ->
+      b.jbCefClient.addLoadHandler(object : org.cef.handler.CefLoadHandlerAdapter() {
+        override fun onLoadingStateChange(browser: org.cef.browser.CefBrowser, isLoading: Boolean,
+                                          canGoBack: Boolean, canGoForward: Boolean) {
+          SwingUtilities.invokeLater {
+            backButton?.isEnabled = canGoBack
+            forwardButton?.isEnabled = canGoForward
+          }
+        }
+
+        // Сборщик ставится в НАЧАЛЕ загрузки, а не в конце: он должен существовать до того, как
+        // страница бросит первую ошибку, — а она обычно и есть интересная. Скрипт идемпотентен.
+        override fun onLoadStart(browser: org.cef.browser.CefBrowser, frame: org.cef.browser.CefFrame?,
+                                 transitionType: org.cef.network.CefRequest.TransitionType?) {
+          if (frame?.isMain != true) return
+          frame.executeJavaScript(ERROR_COLLECTOR, browser.url, 0)
+        }
+
+        override fun onLoadEnd(browser: org.cef.browser.CefBrowser, frame: org.cef.browser.CefFrame?,
+                               httpStatusCode: Int) {
+          if (frame?.isMain != true) return
+          val url = browser.url
+          SwingUtilities.invokeLater {
+            com.vibe.agent.preview.PreviewAddresses
+              .followedAddress(url, urlField.text, urlField.hasFocus())
+              ?.let { urlField.text = it }
+          }
+        }
+      }, b.cefBrowser)
+    }
 
     pickQuery?.let { query ->
       Disposer.register(this, query)
@@ -189,10 +240,10 @@ class DesignPreviewPanel(private val project: Project) : JPanel(BorderLayout()),
     val url = urlField.text.trim().ifEmpty { return }
     rememberAddress(url)
     status.text = t("design.status.opening", "url" to url)
+    // Сборщик ошибок ставит обработчик навигации на onLoadStart — то есть и для этой загрузки,
+    // и для любого перехода по ссылке внутри страницы. Здесь его внедрять больше не нужно и было
+    // бы неверно: до loadURL скрипт уходил в СТАРЫЙ документ.
     browser.loadURL(url)
-    // Installed on every open: the collector must exist BEFORE the page throws, otherwise the first
-    // error — usually the interesting one — is the one nobody sees.
-    browser.cefBrowser.executeJavaScript(ERROR_COLLECTOR, url, 0)
   }
 
   /**

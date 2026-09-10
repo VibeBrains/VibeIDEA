@@ -61,4 +61,33 @@ class PreviewAddressesTest {
     val list = listOf("http://localhost:3000", "http://localhost:30001")
     assertEquals(listOf("http://localhost:30001"), PreviewAddresses.forget(list, "http://localhost:3000"))
   }
+
+  @Test
+  fun `после перехода поле показывает адрес страницы`() {
+    // Иначе поле показывает то, что открыли кнопкой, сколько бы ссылок ни прошли внутри.
+    assertEquals("http://localhost:3000/admin",
+                 PreviewAddresses.followedAddress("http://localhost:3000/admin", "http://localhost:3000", false))
+  }
+
+  @Test
+  fun `пока человек печатает, поле не трогаем`() {
+    // Перетереть набранное — украсть работу: он как раз собирался открыть другой адрес.
+    assertNull(PreviewAddresses.followedAddress("http://localhost:3000/admin", "http://localhost:80", true))
+  }
+
+  @Test
+  fun `служебный адрес адресом страницы не считается`() {
+    for (url in listOf("about:blank", "data:text/html,<b>x</b>", "chrome://version", "devtools://devtools/x")) {
+      assertNull(PreviewAddresses.followedAddress(url, "http://localhost:3000", false), url)
+    }
+  }
+
+  @Test
+  fun `тот же адрес и пустота ничего не меняют`() {
+    assertNull(PreviewAddresses.followedAddress("http://localhost:3000", "http://localhost:3000", false))
+    assertNull(PreviewAddresses.followedAddress("  http://localhost:3000  ", "http://localhost:3000", false),
+               "пробелы по краям — не изменение адреса")
+    assertNull(PreviewAddresses.followedAddress(null, "http://localhost:3000", false))
+    assertNull(PreviewAddresses.followedAddress("", "http://localhost:3000", false))
+  }
 }

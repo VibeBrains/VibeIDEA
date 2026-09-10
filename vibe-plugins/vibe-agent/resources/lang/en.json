@@ -26,6 +26,8 @@
   "design.status.overlayOff": "Finding markers are off",
   "design.status.picked": "Finding “{rule}” sent to the composer",
   "design.status.noPanel": "The VibeAgent panel is not open — nowhere to send it",
+  "design.action.back": "Back",
+  "design.action.forward": "Forward",
   "design.action.open": "Open",
   "design.action.measure": "Measure",
   "design.action.overlay": "⚑ markers",

@@ -75,4 +75,26 @@ object PreviewAddresses {
     stored?.split('\n').orEmpty().mapNotNull { normalize(it) }.distinct().take(MAX)
 
   fun store(addresses: List<String>): String = addresses.joinToString("\n")
+
+  /**
+   * Каким адресом заменить содержимое поля после перехода — или null, если трогать не надо.
+   *
+   * Поле показывало то, что открыли кнопкой, сколько бы ссылок человек ни прошёл внутри превью.
+   * Поле, которое врёт про то, что на экране, хуже пустого: по нему сверяются, когда решают,
+   * ту ли страницу мерил дизайн-гейт.
+   *
+   * Три случая, когда не трогаем: человек сейчас печатает в поле (перетереть набранное — украсть
+   * работу), служебный адрес (`about:blank`, `data:`) — он не то, что человек назвал бы адресом
+   * страницы, и адрес, который в поле уже стоит.
+   */
+  fun followedAddress(pageUrl: String?, fieldText: String, userTyping: Boolean): String? {
+    if (userTyping) return null
+    val url = pageUrl?.trim().orEmpty()
+    if (url.isEmpty()) return null
+    if (SERVICE_SCHEMES.any { url.startsWith(it, ignoreCase = true) }) return null
+    return url.takeIf { it != fieldText.trim() }
+  }
+
+  /** Адреса, которые человек адресом страницы не назовёт: показывать их в поле — врать иначе. */
+  private val SERVICE_SCHEMES = listOf("about:", "data:", "chrome:", "devtools:")
 }
