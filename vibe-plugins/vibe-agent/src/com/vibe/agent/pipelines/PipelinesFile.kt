@@ -104,24 +104,24 @@ object PipelinesFile {
         try {
           val o = el.jsonObject
           val id = o["id"]?.jsonPrimitive?.contentOrNull
-          if (id.isNullOrBlank()) { onWarning("pipelines.json: пайплайн без id пропущен"); continue }
-          if (!seen.add(id)) { onWarning("pipelines.json: дубль id '$id' — вторая запись пропущена"); continue }
+          if (id.isNullOrBlank()) { onWarning(t("pipeline.warn.noId")); continue }
+          if (!seen.add(id)) { onWarning(t("pipeline.warn.duplicateId", "id" to id)); continue }
           val steps = o["steps"]?.jsonArray?.map { s ->
             val so = s.jsonObject
             val role = so["role"]?.jsonPrimitive?.contentOrNull
-              ?: throw IllegalArgumentException("шаг без role")
-            if (role !in ROLES) throw IllegalArgumentException("неизвестная роль '$role'; доступны: ${ROLES.joinToString()}")
+              ?: throw IllegalArgumentException(t("pipeline.warn.stepNoRole"))
+            if (role !in ROLES) throw IllegalArgumentException(t("pipeline.warn.unknownRole", "role" to role, "roles" to ROLES.joinToString()))
             val provider = so["provider"]?.jsonPrimitive?.contentOrNull?.ifBlank { null }
             val model = so["model"]?.jsonPrimitive?.contentOrNull?.ifBlank { null }
             // Половина адреса — это опечатка, а не выбор: провайдер без модели молча ушёл бы к
             // агенту пайплайна, и человек считал бы, что шаг идёт к его модели.
             if ((provider == null) != (model == null)) {
-              throw IllegalArgumentException("шаг с ролью '$role': provider и model задаются только вместе")
+              throw IllegalArgumentException(t("pipeline.warn.halfAddress", "role" to role))
             }
             // Пишущая роль на своей модели — обещание, которого мы не сдержим: прямой запрос к
             // провайдеру идёт без инструментов и без доступа к файлам.
             if (model != null && !readOnly(role)) {
-              throw IllegalArgumentException("роль '$role' изменяет файлы, а шаг на своей модели этого не умеет — уберите model или смените роль")
+              throw IllegalArgumentException(t("pipeline.warn.writingRoleOnOwnModel", "role" to role))
             }
             // Настройка, мёртвая В КОНТЕКСТЕ: поле разбирается, потребитель у него есть — но не на
             // ЭТОМ шаге. Гейт мёртвых полей такое не видит по построению, он отвечает «есть ли
@@ -142,7 +142,7 @@ object PipelinesFile {
             PipelineStep(
               role = role,
               task = so["task"]?.jsonPrimitive?.contentOrNull?.ifBlank { null }
-                ?: throw IllegalArgumentException("шаг без task"),
+                ?: throw IllegalArgumentException(t("pipeline.warn.stepNoTask")),
               provider = provider,
               model = model,
               acceptance = so["acceptance"]?.jsonPrimitive?.contentOrNull,
@@ -155,8 +155,8 @@ object PipelinesFile {
               denyPaths = stringList(so["denyPaths"]),
             )
           } ?: emptyList()
-          if (steps.isEmpty()) { onWarning("pipelines.json: '$id' без шагов — пропущен"); continue }
-          if (steps.size > MAX_STEPS) { onWarning("pipelines.json: '$id' длиннее $MAX_STEPS шагов — пропущен"); continue }
+          if (steps.isEmpty()) { onWarning(t("pipeline.warn.noSteps", "id" to id)); continue }
+          if (steps.size > MAX_STEPS) { onWarning(t("pipeline.warn.tooManySteps", "id" to id, "max" to MAX_STEPS)); continue }
           result.add(Pipeline(
             id = id,
             name = o["name"]?.jsonPrimitive?.contentOrNull ?: id,
@@ -165,12 +165,12 @@ object PipelinesFile {
           ))
         }
         catch (e: Exception) {
-          onWarning("pipelines.json: пайплайн пропущен: ${e.message}")
+          onWarning(t("pipeline.warn.skipped", "reason" to e.message))
         }
       }
     }
     catch (e: Exception) {
-      onWarning("pipelines.json не разобран: ${e.message}")
+      onWarning(t("pipeline.warn.unparsed", "reason" to e.message))
     }
     return result
   }
