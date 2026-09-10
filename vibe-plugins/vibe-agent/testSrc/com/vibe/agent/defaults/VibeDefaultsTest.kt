@@ -195,21 +195,24 @@ class VibeDefaultsTest {
 
   @Test
   fun `нет адресации — весь набор наш, есть запись — чужое не наше`() {
-    assertEquals(emptyMap(), VibeDefaults.parseTargeting(null))
-    assertTrue(VibeDefaults.addressedToUs("patrols.json"), "без адресации набор целиком наш")
+    val absent = VibeDefaults.parseTargeting(null)
+    assertEquals(emptyList(), absent.products)
+    assertEquals(emptyMap(), absent.files)
+    assertTrue(VibeDefaults.addressedToUs("patrols.json"), "адресованный нам файл набора — наш")
 
-    val map = VibeDefaults.parseTargeting(
+    val parsed = VibeDefaults.parseTargeting(
       """
-      { "version": 1, "files": [
+      { "version": 1, "products": ["vibeide", "vibeidea"], "files": [
         { "path": "patrols.json", "products": ["vibeidea"] },
         { "path": "somethingElse.json", "products": ["vibeide"] },
         { "path": "forEveryone.json" }
       ] }
       """.trimIndent()
     )
-    assertEquals(listOf("vibeidea"), map["patrols.json"])
-    assertEquals(listOf("vibeide"), map["somethingElse.json"])
-    assertTrue("forEveryone.json" !in map, "запись без products — то же самое, что её отсутствие")
+    assertEquals(listOf("vibeide", "vibeidea"), parsed.products, "словарь читается из набора")
+    assertEquals(listOf("vibeidea"), parsed.files["patrols.json"])
+    assertEquals(listOf("vibeide"), parsed.files["somethingElse.json"])
+    assertTrue("forEveryone.json" !in parsed.files, "запись без products — то же самое, что её отсутствие")
   }
 
   @Test
@@ -217,6 +220,11 @@ class VibeDefaultsTest {
     // Опечатка `vibeidee` делает запись ничьей: она молча не сработает НИГДЕ — ровно тот класс
     // отказов, ради которого поле и вводилось. Рантайм про незнакомый id молчит намеренно (это
     // совместимость вперёд), поэтому ловить опечатку обязан тест, и по отгружаемым байтам.
+    //
+    // Сверяемся со словарём САМОГО набора, не со своей константой: свой список разошёлся бы с
+    // чужим молча (довод VibeIDE 10.09.2026).
+    val known = VibeDefaults.knownProducts()
+    assertTrue(known.isNotEmpty(), "набор не объявил словаря продуктов — сверять опечатку не с чем")
     val unknown = LinkedHashMap<String, MutableSet<String>>()
     for (name in listEmbeddedResources()) {
       if (!name.endsWith(".json") && !name.endsWith(".jsonc")) continue
@@ -225,7 +233,7 @@ class VibeDefaultsTest {
         kotlinx.serialization.json.Json.parseToJsonElement(com.vibe.agent.util.VibeJsonc.strip(text))
       }.getOrNull() ?: continue
       collectProducts(root) { id ->
-        if (id !in com.vibe.agent.defaults.VibeProducts.KNOWN) unknown.getOrPut(name) { LinkedHashSet() }.add(id)
+        if (known.none { it.equals(id, ignoreCase = true) }) unknown.getOrPut(name) { LinkedHashSet() }.add(id)
       }
     }
     assertEquals(emptyMap(), unknown, "неизвестный id продукта в наборе — почти всегда опечатка")

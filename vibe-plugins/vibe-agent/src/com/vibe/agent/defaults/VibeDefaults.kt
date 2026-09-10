@@ -143,29 +143,48 @@ object VibeDefaults {
   internal val SET_METADATA = setOf(DEPRECATED, VERSIONS, TARGETING, "bump.mjs")
 
   /**
-   * Разбор адресации файлов: путь → продукты. Чистая функция, чтобы её можно было проверить,
-   * не собирая ресурсы. Запись без `products` в карту не попадает — это то же самое, что «всем».
+   * Объявление набора: словарь известных продуктов и адресация файлов.
+   *
+   * Словарь ОБЩИЙ и живёт в наборе, а не константой у каждого продукта. Довод VibeIDE
+   * 10.09.2026, и он решающий: строгую проверку делает тест набора, а тест сверяется со списком —
+   * если список каждый держит у себя, списки разойдутся молча. Та же механика, что сломала цену
+   * под `cost*`, только вместо имени поля имя продукта.
    */
-  internal fun parseTargeting(text: String?): Map<String, List<String>> {
+  internal data class SetTargeting(val products: List<String>, val files: Map<String, List<String>>)
+
+  /**
+   * Разбор объявления. Чистая функция, чтобы её можно было проверить, не собирая ресурсы.
+   * Файл без `files`-записи о пути — путь адресован всем; это то же самое, что отсутствие файла.
+   */
+  internal fun parseTargeting(text: String?): SetTargeting {
+    val empty = SetTargeting(emptyList(), emptyMap())
     val root = text?.let {
       runCatching { Json.parseToJsonElement(com.vibe.agent.util.VibeJsonc.strip(it)).jsonObject }.getOrNull()
-    } ?: return emptyMap()
-    val files = runCatching { root["files"]?.jsonArray }.getOrNull() ?: return emptyMap()
-    val out = LinkedHashMap<String, List<String>>()
-    for (el in files) {
+    } ?: return empty
+    val products = VibeProducts.declaredProducts(root) ?: emptyList()
+    val files = LinkedHashMap<String, List<String>>()
+    for (el in runCatching { root["files"]?.jsonArray }.getOrNull() ?: emptyList()) {
       val o = el as? JsonObject ?: continue
       val path = o["path"]?.jsonPrimitive?.contentOrNull?.takeIf { it.isNotBlank() } ?: continue
-      val products = VibeProducts.declaredProducts(o) ?: continue
-      out[path] = products
+      files[path] = VibeProducts.declaredProducts(o) ?: continue
     }
-    return out
+    return SetTargeting(products, files)
   }
 
-  private val targeting: Map<String, List<String>> by lazy { parseTargeting(readResource(TARGETING)) }
+  private val targeting: SetTargeting by lazy { parseTargeting(readResource(TARGETING)) }
 
   /** Нужен ли этот файл набора нашему продукту. Адреса нет — нужен: умолчание совпадает с частым случаем. */
   internal fun addressedToUs(resource: String): Boolean =
-    targeting[resource]?.any { it.equals(VibeProducts.THIS, ignoreCase = true) } ?: true
+    targeting.files[resource]?.any { it.equals(VibeProducts.THIS, ignoreCase = true) } ?: true
+
+  /**
+   * Продукты, которых набор знает. Пусто — набор словаря не объявил.
+   *
+   * Нужны НЕ рантайму: он про незнакомый id молчит намеренно, в этом совместимость вперёд.
+   * Нужны тесту набора — `vibeidee` это опечатка, из-за которой запись становится ничьей и молча
+   * не срабатывает нигде.
+   */
+  internal fun knownProducts(): List<String> = targeting.products
 
   /** What we recorded about a file we seeded: content, the revision it came from, and the
    *  revision the user last said «keep mine» about (so a conflict is not raised twice). */
