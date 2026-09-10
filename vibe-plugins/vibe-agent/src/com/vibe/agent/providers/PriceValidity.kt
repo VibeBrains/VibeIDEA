@@ -58,6 +58,25 @@ object PriceValidity {
    */
   fun isExpired(model: ModelEntry, today: LocalDate): Boolean = state(model.priceValidUntil, today) == State.EXPIRED
 
+  /**
+   * Цена, по которой считать расход СЕГОДНЯ.
+   *
+   * Срок прошёл и цена «после» записана в той же строке — считаем по ней. Довод «считать по
+   * устаревшей честнее, чем не считать вовсе» писался для случая, когда новой цены НЕТ; когда она
+   * лежит рядом, продолжать считать по старой значит занижать счёт молча, а пометка об этом живёт
+   * в диагностике, которую можно не открывать.
+   *
+   * Повод — живой: у `glm-5.3-flash` акция −50% кончилась 09.09.2026 в 16:00 UTC, `costAfter` с
+   * точными числами вендора лежал в записи с самого начала, и на следующий же день отчёт считал
+   * вдвое дешевле, чем вендор берёт.
+   *
+   * Срок не прошёл, цены «после» нет, или она ничего не говорит — возвращаем действующую.
+   */
+  fun effective(model: ModelEntry, today: LocalDate): ModelPricing? {
+    val after = model.priceAfter?.takeIf { it.stated } ?: return model.pricing
+    return if (isExpired(model, today)) after else model.pricing
+  }
+
   data class Notice(
     val providerId: String,
     val modelId: String,

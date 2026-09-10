@@ -78,4 +78,32 @@ class PriceValidityTest {
     val notice = PriceValidity.notices(listOf(provider(model)), today).single()
     assertEquals(0.15, notice.after!!.input, 1e-9)
   }
+
+  private fun withAfter(until: String?, after: ModelPricing? = ModelPricing(input = 0.15, output = 0.50)) =
+    ModelEntry(id = "glm-5.3-flash", pricing = ModelPricing(input = 0.075, output = 0.25),
+               priceValidUntil = until, priceAfter = after)
+
+  @Test
+  fun `после срока считаем по цене «после», если она записана`() {
+    // Повод живой: акция flash кончилась 09.09.2026 в 16:00 UTC, costAfter лежал в записи с самого
+    // начала — и на следующий день отчёт считал вдвое дешевле, чем вендор берёт.
+    val expired = withAfter("2026-09-06")
+    assertEquals(0.15, PriceValidity.effective(expired, today)?.input,
+                 "срок прошёл и цена «после» названа — считать надо по ней")
+  }
+
+  @Test
+  fun `до срока цена не меняется`() {
+    assertEquals(0.075, PriceValidity.effective(withAfter("2026-09-09"), today)?.input)
+    assertEquals(0.075, PriceValidity.effective(withAfter(null), today)?.input, "срока нет — менять нечего")
+  }
+
+  @Test
+  fun `без цены «после» поведение прежнее — считаем по устаревшей`() {
+    // Здесь довод «считать по устаревшей честнее, чем не считать вовсе» остаётся в силе:
+    // новой цены не назвал никто, и выдумывать её мы не станем.
+    assertEquals(0.075, PriceValidity.effective(withAfter("2026-09-06", after = null), today)?.input)
+    assertEquals(0.075, PriceValidity.effective(withAfter("2026-09-06", after = ModelPricing()), today)?.input,
+                 "пустой блок цены ничего не говорит и ценой не считается")
+  }
 }

@@ -3003,7 +3003,8 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
       // What the provider itself reported, and the price the owner of the key wrote down. Both may
       // be absent — then the accounting falls back to the old estimate, and says so by omission.
       lastTurnUsage = llmClient.lastUsage()
-      lastTurnPricing = t.model.pricing
+      // Цена берётся с оглядкой на срок: у модели с истёкшей акцией считать надо по costAfter.
+      lastTurnPricing = com.vibe.agent.providers.PriceValidity.effective(t.model, java.time.LocalDate.now())
       finishAgentBubble((System.currentTimeMillis() - startedAt) / 1000.0, t.model.id)
     }
     catch (e: java.io.InterruptedIOException) {
@@ -3042,7 +3043,8 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     when (com.vibe.agent.providers.CacheWindow.state(lastLlmTurnStartedAtMs, ttl, now)) {
       com.vibe.agent.providers.CacheWindow.State.COLD ->
         systemLine(t("cache.cold", "minutes" to (now - lastLlmTurnStartedAtMs) / 60_000,
-                     "pays" to com.vibe.agent.providers.CacheWindow.paysOffFromRequest(model.pricing, ttl)))
+                     "pays" to com.vibe.agent.providers.CacheWindow.paysOffFromRequest(
+                       com.vibe.agent.providers.PriceValidity.effective(model, java.time.LocalDate.now()), ttl)))
       com.vibe.agent.providers.CacheWindow.State.EXPIRING ->
         systemLine(t("cache.expiring",
                      "seconds" to com.vibe.agent.providers.CacheWindow.leftMs(lastLlmTurnStartedAtMs, ttl, now) / 1000))
@@ -3395,7 +3397,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
       steps = pipeline.steps.map { it.role },
       // Месяц истории: смета по вчерашнему дню зависела бы от того, гоняли ли вчера эту роль.
       entries = com.vibe.agent.budget.VibeSpendService.getInstance().entries(com.vibe.agent.budget.SpendLedger.MONTH_MS),
-      pricePerMillionInput = model?.pricing?.input,
+      pricePerMillionInput = model?.let { com.vibe.agent.providers.PriceValidity.effective(it, java.time.LocalDate.now()) }?.input,
       currency = model?.pricing?.currency,
     )
     // Нечего показывать — нечего и спрашивать: пустая смета это лишний диалог, а не осторожность.
@@ -3545,7 +3547,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
       appendAgentText(delta)
     }
     lastTurnUsage = llmClient.lastUsage()
-    lastTurnPricing = model.pricing
+    lastTurnPricing = com.vibe.agent.providers.PriceValidity.effective(model, java.time.LocalDate.now())
   }
 
   private fun runPipeline(pipeline: com.vibe.agent.pipelines.Pipeline, agent: AgentServerConfig) {

@@ -83,6 +83,7 @@ object VibeDefaults {
     "rules/roadmap-autopilot.mdc" to "rules/roadmap-autopilot.mdc",
     "rules/roadmap.mdc" to "rules/roadmap.mdc",
     "rules/script-save.mdc" to "rules/script-save.mdc",
+    "rules/security.mdc" to "rules/security.mdc",
     "rules/spec-first.mdc" to "rules/spec-first.mdc",
     "rules/ui-kit.mdc" to "rules/ui-kit.mdc",
     "rules/verification.mdc" to "rules/verification.mdc",
