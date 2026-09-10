@@ -3,6 +3,8 @@ package com.vibe.agent.providers
 
 import org.junit.jupiter.api.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
+import kotlin.test.assertTrue
 import kotlin.test.assertNull
 
 class ModelPricingTest {
@@ -55,5 +57,43 @@ class ModelPricingTest {
     assertEquals(10.0, model.pricing!!.input)
     assertEquals(0.25, model.pricing!!.cacheRead)
     assertEquals("мой", model.note)
+  }
+
+  @Test
+  fun `надбавка за длинный промпт действует на весь запрос`() {
+    // GPT-6 Astra: «more than 272K input tokens are priced at 2x input and cache rates and 1.5x
+    // output FOR THE FULL REQUEST» — не за превышение, а за всё (developers.openai.com, 10.09.2026).
+    val p = ModelPricing(input = 10.0, output = 50.0, cacheRead = 1.0,
+                         longContext = ModelPricing.LongContext(272_000, input = 2.0, cache = 2.0, output = 1.5))
+    val long = TokenUsage(inputTokens = 300_000, outputTokens = 1_000)
+    // 300000*10*2/1M + 1000*50*1.5/1M = 6.0 + 0.075
+    assertEquals(6.075, p.costOf(long)!!, 1e-9)
+  }
+
+  @Test
+  fun `под порогом цена обычная`() {
+    val p = ModelPricing(input = 10.0, output = 50.0,
+                         longContext = ModelPricing.LongContext(272_000, input = 2.0, output = 1.5))
+    val short = TokenUsage(inputTokens = 100_000, outputTokens = 1_000)
+    // Без надбавки: 100000*10/1M + 1000*50/1M = 1.0 + 0.05
+    assertEquals(1.05, p.costOf(short)!!, 1e-9)
+  }
+
+  @Test
+  fun `порог считается по промпту, а кэш входит в него`() {
+    // Вендор говорит «prompts with more than N input tokens»; кэшированная часть промпта тоже
+    // отправлена, поэтому в порог входит. Выход — нет: его в момент назначения цены ещё нет.
+    val p = ModelPricing(input = 10.0, output = 50.0, cacheRead = 1.0,
+                         longContext = ModelPricing.LongContext(272_000, input = 2.0, cache = 2.0, output = 1.5))
+    val split = TokenUsage(inputTokens = 200_000, cacheReadTokens = 100_000)
+    assertTrue(p.longContextApplies(split), "200K свежих плюс 100K из кэша — это промпт длиннее порога")
+    val outputOnly = TokenUsage(inputTokens = 10_000, outputTokens = 500_000)
+    assertFalse(p.longContextApplies(outputOnly), "длинный ответ порога не поднимает")
+  }
+
+  @Test
+  fun `объявление без множителей надбавкой не считается`() {
+    val p = ModelPricing(input = 10.0, longContext = ModelPricing.LongContext(272_000))
+    assertFalse(p.longContextApplies(TokenUsage(inputTokens = 500_000)), "все множители по единице — надбавки нет")
   }
 }

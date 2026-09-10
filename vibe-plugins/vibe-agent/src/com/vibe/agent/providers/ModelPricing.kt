@@ -21,7 +21,43 @@ data class ModelPricing(
   val cacheRead: Double = 0.0,
   val cacheWrite: Double = 0.0,
   val currency: String = DEFAULT_CURRENCY,
+  /**
+   * Надбавка за длинный промпт, если вендор её объявил.
+   *
+   * Повод — GPT-6 Astra: «Prompts with more than 272K input tokens are priced at 2x input and cache
+   * rates and 1.5x output **for the full request**» (developers.openai.com, проверено 10.09.2026).
+   * Без неё отчёт о расходе на длинном контексте занижает счёт вдвое и молчит об этом — а именно
+   * агентный цикл, перечитывающий контекст, в этот порог и упирается.
+   */
+  val longContext: LongContext? = null,
 ) {
+  /**
+   * Множители, действующие, когда промпт длиннее порога.
+   *
+   * Множители, а не вторая таблица цен: вендор объявляет именно «в столько-то раз», и вторая
+   * таблица разошлась бы с первой при первом же изменении базовой ставки.
+   */
+  data class LongContext(
+    /** Порог по длине промпта. Считается по отправленному: свежий вход плюс чтение из кэша. */
+    val overInputTokens: Long,
+    val input: Double = 1.0,
+    val cache: Double = 1.0,
+    val output: Double = 1.0,
+  ) {
+    val stated: Boolean get() = overInputTokens > 0 && (input != 1.0 || cache != 1.0 || output != 1.0)
+  }
+
+  /**
+   * Действуют ли надбавки на этом ходе.
+   *
+   * Порог меряется по ПРОМПТУ — свежий вход плюс чтение из кэша: вендор говорит «prompts with more
+   * than N input tokens», а кэшированная часть промпта тоже отправлена. Выход в порог не входит:
+   * он ещё не существует в момент, когда цена определяется.
+   */
+  fun longContextApplies(usage: TokenUsage): Boolean {
+    val tier = longContext?.takeIf { it.stated } ?: return false
+    return usage.inputTokens + usage.cacheReadTokens > tier.overInputTokens
+  }
   val stated: Boolean get() = input > 0 || output > 0 || cacheRead > 0 || cacheWrite > 0
 
   /**
@@ -36,10 +72,16 @@ data class ModelPricing(
    */
   fun costOf(usage: TokenUsage): Double? {
     if (!stated || !usage.known) return null
-    return usage.inputTokens * input / MILLION +
-           usage.outputTokens * output / MILLION +
-           usage.cacheReadTokens * cacheRead / MILLION +
-           usage.cacheWriteTokens * cacheWrite / MILLION
+    // Надбавка действует на ВЕСЬ запрос, а не на превышение: так объявлено вендором
+    // («for the full request»), и считать иначе значит выдумать свою тарифную сетку.
+    val tier = longContext.takeIf { longContextApplies(usage) }
+    val fIn = tier?.input ?: 1.0
+    val fCache = tier?.cache ?: 1.0
+    val fOut = tier?.output ?: 1.0
+    return usage.inputTokens * input * fIn / MILLION +
+           usage.outputTokens * output * fOut / MILLION +
+           usage.cacheReadTokens * cacheRead * fCache / MILLION +
+           usage.cacheWriteTokens * cacheWrite * fCache / MILLION
   }
 
   /**
@@ -51,7 +93,11 @@ data class ModelPricing(
   fun cacheSavingOf(usage: TokenUsage): Double? {
     if (!stated || usage.cacheReadTokens <= 0) return null
     if (input <= 0) return null
-    return usage.cacheReadTokens * (input - cacheRead) / MILLION
+    // Те же множители, что и в счёте: экономия, посчитанная по базовой ставке при действующей
+    // надбавке, назвала бы число, которого не было ни в одном счёте.
+    val tier = longContext.takeIf { longContextApplies(usage) }
+    val saved = input * (tier?.input ?: 1.0) - cacheRead * (tier?.cache ?: 1.0)
+    return usage.cacheReadTokens * saved / MILLION
   }
 
   companion object {

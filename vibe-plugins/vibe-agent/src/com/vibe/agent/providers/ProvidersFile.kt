@@ -8,6 +8,7 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.doubleOrNull
 import kotlinx.serialization.json.intOrNull
+import kotlinx.serialization.json.longOrNull
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
@@ -159,6 +160,16 @@ object ProvidersFile {
       cacheRead = it["cacheRead"]?.jsonPrimitive?.doubleOrNull ?: 0.0,
       cacheWrite = it["cacheWrite"]?.jsonPrimitive?.doubleOrNull ?: 0.0,
       currency = it["currency"]?.jsonPrimitive?.contentOrNull ?: ModelPricing.DEFAULT_CURRENCY,
+      // Надбавка за длинный промпт объявляется вложенным блоком: вендоры называют её отдельно от
+      // базовой ставки, и плоские поля рядом с `input` читались бы как ещё одна цена.
+      longContext = (it["longContext"] as? JsonObject)?.let { lc ->
+        ModelPricing.LongContext(
+          overInputTokens = lc["overInputTokens"]?.jsonPrimitive?.longOrNull ?: 0L,
+          input = lc["input"]?.jsonPrimitive?.doubleOrNull ?: 1.0,
+          cache = lc["cache"]?.jsonPrimitive?.doubleOrNull ?: 1.0,
+          output = lc["output"]?.jsonPrimitive?.doubleOrNull ?: 1.0,
+        ).takeIf { tier -> tier.stated }
+      },
     ).takeIf { p -> p.stated }
   }
 
