@@ -496,6 +496,8 @@
   "servers.warn.unknownDependency": "неизвестная зависимость '{id}'",
   "servers.warn.excludedDependency": "зависит от исключённой '{id}'",
   "servers.warn.cycle": "цикл зависимостей",
+  "pipeline.warn.maxStepsOnOwnModel": "pipelines.json: шаг с ролью «{role}» идёт на своей модели, и maxSteps там не действует — у прямого запроса нет инструментов, считать нечего. Ограничьте ответ через maxOutputTokens в записи провайдера.",
+  "pipeline.warn.pathsOnOwnModel": "pipelines.json: шаг с ролью «{role}» идёт на своей модели, и paths/denyPaths там ничего не ограничивают — прямой запрос не читает и не пишет файлы. Уберите поля или снимите model, если шаг должен работать с файлами.",
   "pipeline.none": "[pipelines] нет пайплайнов: создайте .vibe/pipelines.json (спека — docs/vibe/manuals/pipelinesSpec.md)",
   "pipeline.needsAgent": "[pipelines] нужен агент ACP ({path})",
   "pipeline.choice": "{name} ({count} шагов)",

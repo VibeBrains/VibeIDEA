@@ -496,6 +496,8 @@
   "servers.warn.unknownDependency": "unknown dependency '{id}'",
   "servers.warn.excludedDependency": "depends on the excluded '{id}'",
   "servers.warn.cycle": "dependency cycle",
+  "pipeline.warn.maxStepsOnOwnModel": "pipelines.json: the step with role «{role}» runs on its own model, and maxSteps does nothing there — a direct request has no tools, so there is nothing to count. Cap the answer with maxOutputTokens in the provider entry.",
+  "pipeline.warn.pathsOnOwnModel": "pipelines.json: the step with role «{role}» runs on its own model, and paths/denyPaths restrict nothing there — a direct request neither reads nor writes files. Drop the fields, or drop model if the step is meant to touch files.",
   "pipeline.none": "[pipelines] no pipelines: create .vibe/pipelines.json (spec: docs/vibe/manuals/pipelinesSpec.md)",
   "pipeline.needsAgent": "[pipelines] an ACP agent is required ({path})",
   "pipeline.choice": "{name} ({count} steps)",

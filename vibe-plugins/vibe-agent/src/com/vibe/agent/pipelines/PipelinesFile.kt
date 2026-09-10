@@ -1,6 +1,7 @@
 // Copyright 2026 VibeBrains. Use of this source code is governed by the Apache 2.0 license.
 package com.vibe.agent.pipelines
 
+import com.vibe.agent.i18n.VibeI18n.t
 import com.vibe.agent.providers.ProvidersFile
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.booleanOrNull
@@ -121,6 +122,22 @@ object PipelinesFile {
             // провайдеру идёт без инструментов и без доступа к файлам.
             if (model != null && !readOnly(role)) {
               throw IllegalArgumentException("роль '$role' изменяет файлы, а шаг на своей модели этого не умеет — уберите model или смените роль")
+            }
+            // Настройка, мёртвая В КОНТЕКСТЕ: поле разбирается, потребитель у него есть — но не на
+            // ЭТОМ шаге. Гейт мёртвых полей такое не видит по построению, он отвечает «есть ли
+            // потребитель», а не «работает ли он здесь». Снаружи неотличимо от работающей
+            // настройки: человек написал ограничение, IDE промолчала, ограничения нет.
+            //
+            // Здесь предупреждение, а не отказ: пишущая роль на своей модели — обещание, которого
+            // мы не сдержим, и пайплайн ронять правильно; бессмысленное поле — опечатка, и ронять
+            // из-за неё рабочий пайплайн значит наказывать за неё.
+            if (model != null) {
+              if ((so["maxSteps"]?.jsonPrimitive?.intOrNull ?: 0) > 0) {
+                onWarning(t("pipeline.warn.maxStepsOnOwnModel", "role" to role))
+              }
+              if (stringList(so["paths"]).isNotEmpty() || stringList(so["denyPaths"]).isNotEmpty()) {
+                onWarning(t("pipeline.warn.pathsOnOwnModel", "role" to role))
+              }
             }
             PipelineStep(
               role = role,

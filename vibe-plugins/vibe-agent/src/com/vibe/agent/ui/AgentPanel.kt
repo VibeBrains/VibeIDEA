@@ -3677,7 +3677,6 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
             // The role dies with its step: an ordinary chat inheriting «ревьюер» rights would be a
             // restriction appearing from nowhere, which is worse than no restriction at all.
             currentRole = null
-        currentScope = com.vibe.agent.pipelines.RolePaths.Scope()
             currentScope = com.vibe.agent.pipelines.RolePaths.Scope()
           }
         }
