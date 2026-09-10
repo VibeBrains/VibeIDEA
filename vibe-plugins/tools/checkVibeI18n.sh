@@ -88,22 +88,32 @@ PY
 # (регэкспы детекторов, преамбулы ролей в промпте), перечислены в i18nExclusions.txt с причиной:
 # переводить их не только не нужно, но и вредно — детектор ищет русские слова в чужой странице.
 EXCLUSIONS=vibe-plugins/tools/i18nExclusions.txt
-excluded_paths=$(grep -v '^#' "$EXCLUSIONS" 2>/dev/null | grep -v '^$' | cut -d'|' -f1 || true)
 # Счёт ведёт python, а не grep: диапазон [А-Яа-яЁё] в POSIX-grep ловит по байтам и считает
 # кириллицей типографские тире, точки-разделители и стрелки. Планка при этом «держалась» на
 # пунктуации, а настоящая непереведённая строка тонула в шуме.
-count=$("$PYTHON" - "$EXCLUSIONS" <<'PYCOUNT'
+report=$("$PYTHON" - "$EXCLUSIONS" <<'PYCOUNT'
 import io, os, re, sys
 sys.path.insert(0, os.path.join('vibe-plugins', 'tools'))
 from ktComments import strip_comments
-excluded = set()
+# Исключение выдаётся ФАЙЛУ, а причина всегда про ЧАСТЬ файла. Поэтому рядом с путём стоит
+# число: сколько таких строк там ожидается. Разошлось — значит в укрытый файл что-то приехало,
+# и это «что-то» надо назвать вслух, а не спрятать под чужим обоснованием.
+expected = {}
+malformed = []
 for line in io.open(sys.argv[1], encoding='utf-8'):
     line = line.strip()
-    if line and not line.startswith('#'):
-        excluded.add(line.split('|', 1)[0].strip())
+    if not line or line.startswith('#'):
+        continue
+    parts = [p.strip() for p in line.split('|', 2)]
+    if len(parts) != 3 or not parts[1].isdigit():
+        malformed.append(parts[0])
+        continue
+    expected[parts[0]] = int(parts[1])
+excluded = set(expected)
 literal = re.compile(r'"(?:[^"\\]|\\.)*"')
 cyrillic = re.compile(r'[\u0400-\u04FF]')
 total = 0
+seen = {}
 for root, _, files in os.walk('vibe-plugins'):
     if os.sep + 'src' + os.sep not in root + os.sep:
         continue
@@ -113,17 +123,40 @@ for root, _, files in os.walk('vibe-plugins'):
         # Exclusions are written with '/', os.walk answers with the OS separator: compare the
         # normalised form, or no exclusion matches on Windows and the ratchet counts data as UI.
         path = os.path.join(root, name)
-        if path.replace(os.sep, '/') in excluded:
-            continue
         text = io.open(path, encoding='utf-8').read()
         # Комментарии считать нельзя: они по правилам проекта английские, а редкая кириллица
         # внутри них — пример или цитата, а не строка интерфейса. Вырезает их общий разбор,
         # знающий про строковые литералы: наивный «//» съедал бы хвост строки после https://.
         text = strip_comments(text)
-        total += sum(1 for m in literal.finditer(text) if cyrillic.search(m.group(0)))
+        here = sum(1 for m in literal.finditer(text) if cyrillic.search(m.group(0)))
+        key = path.replace(os.sep, '/')
+        if key in excluded:
+            seen[key] = here          # исключённый файл в храповик не идёт, но сверяется по числу
+        else:
+            total += here
 print(total)
+for key in sorted(malformed):
+    print('строка исключения без числа: %s — формат «путь|N|причина»' % key)
+for key, want in sorted(expected.items()):
+    have = seen.get(key)
+    if have is None:
+        print('исключение указывает на файл, которого нет: %s' % key)
+    elif have == 0:
+        print('исключение мёртвое, исключать нечего: %s' % key)
+    elif have != want:
+        print('в укрытом файле стало %d строк вместо %d: %s' % (have, want, key))
 PYCOUNT
 )
+count=$(printf '%s\n' "$report" | head -1)
+excl_problems=$(printf '%s\n' "$report" | tail -n +2)
+if [ -n "$excl_problems" ]; then
+  say "✖ исключения храповика разошлись с файлами:"
+  printf '%s\n' "$excl_problems" | sed 's/^/    /'
+  say "  Исключение укрывает ФАЙЛ, а причина у него — про часть файла: приехавшая туда строка"
+  say "  интерфейса прячется под чужим обоснованием. Назовите, что прибавилось: строка для"
+  say "  человека идёт в каталог, данные — правьте число в $EXCLUSIONS вместе с причиной."
+  fail=1
+fi
 # Планка обязана существовать. Раньше её отсутствие подставляло текущее число — и храповик
 # молча пропускал любой рост, то есть был гейтом-пустышкой. Гейт, который нельзя провалить,
 # не защищает ничего.
