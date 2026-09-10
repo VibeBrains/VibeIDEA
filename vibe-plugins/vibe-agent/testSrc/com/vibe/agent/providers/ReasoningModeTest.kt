@@ -4,6 +4,7 @@ package com.vibe.agent.providers
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlin.test.Test
+import kotlin.test.assertNull
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
@@ -56,5 +57,40 @@ class ReasoningModeTest {
                  ReasoningMode.budgetTokens(ReasoningMode.Level.MEDIUM)!!)
     assertTrue(ReasoningMode.budgetTokens(ReasoningMode.Level.MEDIUM)!! <
                  ReasoningMode.budgetTokens(ReasoningMode.Level.HIGH)!!)
+  }
+
+  @Test
+  fun `верхнее положение отправляет верхнее слово ВЕНДОРА, а не наше`() {
+    // GLM-5.3 объявляет low/high/max и рекомендует max для кода. Наше перечисление схлопывало
+    // max в high, и на верхнем положении ползунка модель получала «поменьше» — молча.
+    val glm = ReasoningMode.Support(canTurnOff = false, words = listOf("low", "high", "max"))
+    assertEquals("max", ReasoningMode.effortWord(ReasoningMode.Level.HIGH, glm))
+    assertEquals("low", ReasoningMode.effortWord(ReasoningMode.Level.LOW, glm))
+    assertEquals("high", ReasoningMode.effortWord(ReasoningMode.Level.MEDIUM, glm), "середина списка вендора")
+  }
+
+  @Test
+  fun `словарь длиннее нашего тоже читается по краям`() {
+    // GPT-6 Astra: low/medium/high/xhigh/max — пять уровней против наших трёх.
+    val astra = ReasoningMode.Support(words = listOf("low", "medium", "high", "xhigh", "max"))
+    assertEquals("max", ReasoningMode.effortWord(ReasoningMode.Level.HIGH, astra))
+    assertEquals("low", ReasoningMode.effortWord(ReasoningMode.Level.LOW, astra))
+    assertEquals("high", ReasoningMode.effortWord(ReasoningMode.Level.MEDIUM, astra))
+  }
+
+  @Test
+  fun `без объявления отправляем своё слово`() {
+    // Придумывать за вендора список мы не вправе, а молчать значило бы отключить ползунок тем,
+    // кто ничего не объявлял.
+    assertEquals("high", ReasoningMode.effortWord(ReasoningMode.Level.HIGH, null))
+    assertEquals("high", ReasoningMode.effortWord(ReasoningMode.Level.HIGH, ReasoningMode.Support(canTurnOff = false)))
+    assertNull(ReasoningMode.effortWord(ReasoningMode.Level.OFF, ReasoningMode.Support(words = listOf("low", "max"))))
+  }
+
+  @Test
+  fun `тело запроса несёт слово вендора`() {
+    val glm = ReasoningMode.Support(canTurnOff = false, words = listOf("low", "high", "max"))
+    val body = ReasoningMode.bodyFields("openai", ReasoningMode.Level.HIGH, 128_000, glm)
+    assertEquals("max", body["reasoning_effort"]?.jsonPrimitive?.content)
   }
 }

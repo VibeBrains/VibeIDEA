@@ -454,7 +454,8 @@ class LlmClient(
     // что модель объявила принимать. Ничего не объявила — идёт как есть.
     val asked = ReasoningMode.levelOf(com.vibe.agent.settings.VibeAgentSettings.reasoningLevel)
     val level = ReasoningMode.clamp(asked, model.reasoning)
-    val fields = ReasoningMode.bodyFields(protocol, level, model.maxOutputTokens ?: DEFAULT_MAX_OUTPUT_TOKENS)
+    val fields = ReasoningMode.bodyFields(protocol, level, model.maxOutputTokens ?: DEFAULT_MAX_OUTPUT_TOKENS,
+                                             model.reasoning)
     return if (fields.isEmpty()) body else JsonObject(body + fields)
   }
 

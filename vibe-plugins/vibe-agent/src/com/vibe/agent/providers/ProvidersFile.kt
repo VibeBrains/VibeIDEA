@@ -292,8 +292,14 @@ object ProvidersFile {
       ?.distinct()
       ?.sorted()
       .orEmpty()
+    // Слова вендора сохраняются КАК ОБЪЯВЛЕНЫ: приведение к нашим уровням теряет те, которых у
+    // нас нет (`max` схлопывался в `high`, `xhigh` пропадал), а отправлять надо именно их.
+    val words = (o["effort"] as? kotlinx.serialization.json.JsonArray)
+      ?.mapNotNull { el -> el.jsonPrimitive.contentOrNull?.trim()?.lowercase()?.takeIf { it.isNotEmpty() } }
+      ?.distinct()
+      .orEmpty()
     val canTurnOff = o["canTurnOff"]?.jsonPrimitive?.booleanOrNull
-    val support = ReasoningMode.Support(canTurnOff, levels)
+    val support = ReasoningMode.Support(canTurnOff, levels, words)
     return support.takeIf { it.stated }
   }
 

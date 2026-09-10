@@ -36,8 +36,18 @@ object ReasoningMode {
     val canTurnOff: Boolean? = null,
     /** Уровни, которые модель принимает, в порядке возрастания; пусто — не сказано. */
     val levels: List<Level> = emptyList(),
+    /**
+     * Слова вендора КАК ОБЪЯВЛЕНЫ, в порядке возрастания усилия.
+     *
+     * Нужны затем, что наши уровни в его словарь не переводятся один в один. GLM-5.3 объявляет
+     * `low`, `high`, `max` — без `medium`; GPT-6 Astra добавляет `xhigh`. Приведение к нашему
+     * перечислению схлопывало `max` в `high`, и на верхнем положении ползунка мы отправляли
+     * модели «поменьше», чем человек просил, — молча. У GLM это вдобавок расходится с её
+     * умолчанием: вендор рекомендует `max` для кода.
+     */
+    val words: List<String> = emptyList(),
   ) {
-    val stated: Boolean get() = canTurnOff != null || levels.isNotEmpty()
+    val stated: Boolean get() = canTurnOff != null || levels.isNotEmpty() || words.isNotEmpty()
   }
 
   fun levelOf(name: String?): Level = when (name?.trim()?.lowercase()) {
@@ -84,11 +94,35 @@ object ReasoningMode {
   }
 
   /**
+   * Слово, которое отправляем ИМЕННО ЭТОЙ модели.
+   *
+   * Ползунок один и трёхпозиционный (плюс «выключено»), а словари вендоров разной длины: у GLM-5.3
+   * их три (`low`, `high`, `max`), у GPT-6 Astra пять. Поэтому положение ползунка читается как
+   * «меньше всего / посередине / больше всего», и берётся соответствующее слово ИЗ СПИСКА ВЕНДОРА:
+   * нижнее, среднее, верхнее. Тогда верхнее положение честно означает верхний уровень модели, а не
+   * наше слово `high`, которое у неё может быть серединой.
+   *
+   * Список не объявлен — отправляем своё слово: придумывать за вендора мы не вправе, а молчать
+   * значило бы отключить ползунок тем, кто ничего не объявлял.
+   */
+  fun effortWord(level: Level, support: Support?): String? {
+    val words = support?.words?.filter { it.isNotBlank() }.orEmpty()
+    if (level == Level.OFF) return null
+    if (words.isEmpty()) return effortWord(level)
+    return when (level) {
+      Level.LOW -> words.first()
+      Level.HIGH -> words.last()
+      // Середина списка, а не слово «medium»: у вендора его может не быть вовсе.
+      else -> words[words.size / 2]
+    }
+  }
+
+  /**
    * The fields to add to the request body for [protocol], or an empty object when this provider
    * has nothing to say about thinking. An empty object rather than null: the caller merges, and a
    * merge with nothing is simpler to read than a null check at every call site.
    */
-  fun bodyFields(protocol: String, level: Level, maxOutputTokens: Int?): JsonObject {
+  fun bodyFields(protocol: String, level: Level, maxOutputTokens: Int?, support: Support? = null): JsonObject {
     if (level == Level.OFF) return JsonObject(emptyMap())
     return when (protocol.lowercase()) {
       "anthropic" -> buildJsonObject {
@@ -105,7 +139,7 @@ object ReasoningMode {
           put("thinkingConfig", buildJsonObject { put("thinkingBudget", budgetTokens(level)!!) })
         })
       }
-      else -> buildJsonObject { put("reasoning_effort", effortWord(level)!!) }
+      else -> buildJsonObject { put("reasoning_effort", effortWord(level, support)!!) }
     }
   }
 
