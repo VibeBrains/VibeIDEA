@@ -764,3 +764,13 @@
   [checkpointTempIndex.md](knowledge/gitAndTools/checkpointTempIndex.md),
   [bazelCaches.md](knowledge/build/bazelCaches.md), [voiceDelegation.md](knowledge/agents/voiceDelegation.md).
   Итог: 1573 теста и шесть гейтов зелёные; ничего не запушено.
+
+- [x] **Кэши Bazel целиком на внешнем томе** — ✅ (11.09.2026, next; сама настройка машинная, вне
+  git) по слову владельца весь `output_user_root` — базы сборки, install base, repository cache —
+  переехал с системного диска на `/Volumes/Storage/Caches/JetBrains/MonorepoBazel` строкой в
+  `.bazelrc-user.bazelrc`, вслед за утренним disk cache. Repository cache скопирован и сверен
+  (41 253 записи, 3129 файлов пересчитаны по sha256), база сборки создана заново: холодная сборка
+  `vibe-agent` — 4 мин 25 с, 1585 тестов зелёные. Замер опроверг прежний совет «база на внешнем
+  томе заметно замедлит сборку»: пересборка после правки та же, старт сервера дороже на 0,3–2,3 с.
+  Попутно найдено: внешний том индексирует Spotlight, а `~/Library/Caches` — нет, нужно исключение.
+  Разбор — [bazelCaches.md](knowledge/build/bazelCaches.md).
