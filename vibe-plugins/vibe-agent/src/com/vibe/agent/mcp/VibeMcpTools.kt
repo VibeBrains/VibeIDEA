@@ -3,6 +3,9 @@ package com.vibe.agent.mcp
 
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.project.ProjectManager
+import com.vibe.agent.context.AccessPolicy
+import com.vibe.agent.context.AgentPaths
+import com.vibe.agent.context.ProjectContextService
 import com.vibe.agent.graph.CodeGraphIndex
 import com.vibe.agent.graph.CodeGraphRefresh
 import com.vibe.agent.http.VibeAgentGateway
@@ -116,11 +119,21 @@ class VibeMcpTools(private val projectProvider: () -> Project? = { ProjectManage
     val limit = (arguments["limit"]?.jsonPrimitive?.contentOrNull?.toIntOrNull() ?: DEFAULT_USAGE_LIMIT)
       .coerceIn(1, MAX_USAGE_LIMIT)
     val base = project.basePath
+    val roots = ProjectContextService.getInstance(project).roots()
+    // One verdict per file, not per occurrence: resolving a path touches the disk, and a common name
+    // occurs hundreds of times in the same few files.
+    val verdicts = HashMap<com.intellij.openapi.vfs.VirtualFile, Boolean>()
     val found = ArrayList<String>()
     // TextOccurenceProcessor, а не Processor: индекс слов отдаёт СОВПАДЕНИЕ (элемент плюс смещение
     // внутри него), и его собственный интерфейс — единственный, который helper принимает.
     val processor = com.intellij.psi.search.TextOccurenceProcessor { element, offsetInElement ->
       val file = element.containingFile?.virtualFile ?: return@TextOccurenceProcessor true
+      // A line returned is a line read. A file that is not on the local disk has no path the rule
+      // can speak for, and is skipped rather than guessed at.
+      val readable = verdicts.getOrPut(file) {
+        file.fileSystem.getNioPath(file)?.let { readable(it.toString(), roots) } == true
+      }
+      if (!readable) return@TextOccurenceProcessor true
       val document = com.intellij.psi.PsiDocumentManager.getInstance(project)
         .getDocument(element.containingFile) ?: return@TextOccurenceProcessor true
       // Смещение внутри элемента обязательно: комментарий или многострочный литерал — ОДИН
@@ -216,13 +229,25 @@ class VibeMcpTools(private val projectProvider: () -> Project? = { ProjectManage
       )
   }
 
-  private companion object {
-    const val DEFAULT_USAGE_LIMIT = 50
+  internal companion object {
+    private const val DEFAULT_USAGE_LIMIT = 50
 
     /** Потолок: ответ инструмента уходит в контекст модели, и «все совпадения» там не нужны никому. */
-    const val MAX_USAGE_LIMIT = 200
+    private const val MAX_USAGE_LIMIT = 200
 
     /** Длинная строка в ответе — это минифицированный файл; смысла в ней нет, а токены есть. */
-    const val LINE_CHARS = 200
+    private const val LINE_CHARS = 200
+
+    /**
+     * May the agent read this file — the file channel's rule, on the same resolved path.
+     *
+     * The word index knows nothing of `.vibe/ignore` or of where a link leads; without this check a
+     * search would hand out, line by line, a file the channel refuses to open. VibeIDE found the same
+     * hole in its own search on 11.09.2026.
+     */
+    internal fun readable(path: String, roots: AccessPolicy.Roots): Boolean {
+      val resolved = AgentPaths.resolve(path) as? AgentPaths.Result.Resolved ?: return false
+      return AccessPolicy.mayRead(resolved.path.canonical.toString(), roots)
+    }
   }
 }

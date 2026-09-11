@@ -9,6 +9,9 @@ import java.io.OutputStream
 import java.net.HttpURLConnection
 import java.net.InetAddress
 import java.net.URI
+import java.net.http.HttpClient
+import java.net.http.HttpRequest
+import java.net.http.HttpResponse
 import java.nio.charset.StandardCharsets
 import java.util.concurrent.ConcurrentLinkedQueue
 import kotlin.test.assertEquals
@@ -60,6 +63,7 @@ class VibeHttpApiE2ETest {
     auth: String? = "Bearer test-token-Ab3xYz",
     host: String? = null,
     body: String? = """{"task":"собери проект"}""",
+    headers: Map<String, String> = emptyMap(),
   ): Response {
     val url = URI("http://127.0.0.1:${api.boundPort}$path").toURL()
     val connection = (url.openConnection() as HttpURLConnection).apply {
@@ -68,6 +72,7 @@ class VibeHttpApiE2ETest {
       // Overriding Host requires the JDK's "restricted headers" escape hatch; the test sets the
       // property in its own JVM before any connection is made.
       host?.let { setRequestProperty("Host", it) }
+      headers.forEach { (name, value) -> setRequestProperty(name, value) }
       connectTimeout = 10_000
       readTimeout = 30_000
       if (body != null) {
@@ -96,6 +101,29 @@ class VibeHttpApiE2ETest {
     val called = call(path = "/mcp",
                       body = """{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"${com.vibe.agent.mcp.McpProtocol.TOOL_PROJECT}","arguments":{}}}""")
     assertTrue(called.body.contains("вызван ${com.vibe.agent.mcp.McpProtocol.TOOL_PROJECT}"), called.body)
+  }
+
+  @Test
+  fun `the listener hands the MCP transport headers to the server`() {
+    // The pure suites see the server and the policy, never the listener between them: a header
+    // dropped here would pass every other test and break every client of the new revision.
+    val meta = """"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28"}"""
+    val listing = """{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{$meta}}"""
+    val conforming = call(path = "/mcp", body = listing,
+                          headers = mapOf("MCP-Protocol-Version" to "2026-07-28", "Mcp-Method" to "tools/list"))
+    assertEquals(200, conforming.code, conforming.body)
+
+    val contradicted = call(path = "/mcp", body = listing,
+                            headers = mapOf("MCP-Protocol-Version" to "2026-07-28", "Mcp-Method" to "tools/call"))
+    assertEquals(400, contradicted.code, contradicted.body)
+    assertTrue(contradicted.body.contains("-32020"), contradicted.body)
+
+    val tool = com.vibe.agent.mcp.McpProtocol.TOOL_PROJECT
+    val named = call(path = "/mcp",
+                     body = """{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"$tool","arguments":{},$meta}}""",
+                     headers = mapOf("MCP-Protocol-Version" to "2026-07-28", "Mcp-Method" to "tools/call", "Mcp-Name" to tool))
+    assertEquals(200, named.code, named.body)
+    assertTrue(named.body.contains("вызван $tool"), named.body)
   }
 
   @Test
@@ -170,16 +198,24 @@ class VibeHttpApiE2ETest {
   }
 
   @Test
-  fun `answers carry no CORS headers — a web page must not be able to read them`() {
-    val url = URI("http://127.0.0.1:${api.boundPort}/health").toURL()
-    val connection = (url.openConnection() as HttpURLConnection).apply {
-      requestMethod = "GET"
-      setRequestProperty("Authorization", "Bearer $token")
-      setRequestProperty("Origin", "https://evil.example.com")
-    }
-    connection.inputStream.use { it.readBytes() }
-    assertEquals(null, connection.getHeaderField("Access-Control-Allow-Origin"))
-    connection.disconnect()
+  fun `a page from another site is refused, and no answer carries CORS headers`() {
+    // java.net.http rather than HttpURLConnection: the latter treats Origin as a restricted header
+    // and may drop a hand-set one silently — the test would pass without Origin ever reaching us.
+    val client = HttpClient.newBuilder().version(HttpClient.Version.HTTP_1_1).build()
+    fun ask(origin: String): HttpResponse<String> = client.send(
+      HttpRequest.newBuilder(URI("http://127.0.0.1:${api.boundPort}/health"))
+        .header("Authorization", "Bearer $token")
+        .header("Origin", origin)
+        .GET()
+        .build(),
+      HttpResponse.BodyHandlers.ofString(),
+    )
+    val foreign = ask("https://evil.example.com")
+    assertEquals(403, foreign.statusCode(), foreign.body())
+    assertTrue(foreign.headers().firstValue("Access-Control-Allow-Origin").isEmpty)
+    val local = ask("http://localhost:3000")
+    assertEquals(200, local.statusCode(), local.body())
+    assertTrue(local.headers().firstValue("Access-Control-Allow-Origin").isEmpty)
   }
 
   @Test

@@ -77,16 +77,22 @@ class VibeHttpApi(
   private fun handle(exchange: HttpExchange) {
     try {
       val body = readBody(exchange)
+      // `Headers.getFirst` compares names case-insensitively, as HTTP requires.
+      val headers = exchange.requestHeaders
       val request = HttpApiPolicy.Request(
         method = exchange.requestMethod.uppercase(),
         path = exchange.requestURI.path.trimEnd('/').ifEmpty { "/" },
-        authorization = exchange.requestHeaders.getFirst("Authorization"),
-        host = exchange.requestHeaders.getFirst("Host"),
+        authorization = headers.getFirst("Authorization"),
+        host = headers.getFirst("Host"),
         remoteIsLoopback = exchange.remoteAddress?.address?.isLoopbackAddress == true,
         bodyLength = body.size,
         body = String(body, StandardCharsets.UTF_8),
-        mcpMethod = exchange.requestHeaders.getFirst("Mcp-Method"),
-        mcpName = exchange.requestHeaders.getFirst("Mcp-Name"),
+        origin = headers.getFirst("Origin"),
+        mcp = com.vibe.agent.mcp.McpServer.Headers(
+          protocolVersion = headers.getFirst(com.vibe.agent.mcp.McpProtocol.Header.PROTOCOL_VERSION),
+          method = headers.getFirst(com.vibe.agent.mcp.McpProtocol.Header.METHOD),
+          name = headers.getFirst(com.vibe.agent.mcp.McpProtocol.Header.NAME),
+        ),
       )
       when (val decision = HttpApiPolicy.decide(request, tokenProvider())) {
         is HttpApiPolicy.Decision.Health -> respond(exchange, 200, buildJsonObject {
@@ -103,7 +109,7 @@ class VibeHttpApi(
             com.vibe.agent.mcp.McpServer.unavailable(decision.body, com.vibe.agent.mcp.McpProtocol.NO_PROJECT)
           }
           else {
-            com.vibe.agent.mcp.McpServer.handle(decision.body, productVersion(), tools, decision.mcpMethod, decision.mcpName)
+            com.vibe.agent.mcp.McpServer.handle(decision.body, productVersion(), tools, decision.headers)
           }
           respondText(exchange, answer.httpStatus, answer.body)
         }

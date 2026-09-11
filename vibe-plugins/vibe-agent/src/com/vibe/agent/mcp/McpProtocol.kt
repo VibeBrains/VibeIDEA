@@ -48,6 +48,19 @@ object McpProtocol {
   object Meta {
     const val PROTOCOL_VERSION = "io.modelcontextprotocol/protocolVersion"
     const val SERVER_INFO = "io.modelcontextprotocol/serverInfo"
+    const val CLIENT_INFO = "io.modelcontextprotocol/clientInfo"
+    const val CLIENT_CAPABILITIES = "io.modelcontextprotocol/clientCapabilities"
+  }
+
+  /**
+   * HTTP headers of the 2026 transport that mirror the body, so gateways can route without reading
+   * it. Named once: the listener reads them and the doctor's self-probe sends them, and two
+   * spellings would drift apart silently. Case-insensitive on the wire.
+   */
+  object Header {
+    const val PROTOCOL_VERSION = "MCP-Protocol-Version"
+    const val METHOD = "Mcp-Method"
+    const val NAME = "Mcp-Name"
   }
 
   /**

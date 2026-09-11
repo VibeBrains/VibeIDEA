@@ -1,6 +1,7 @@
 // Copyright 2026 VibeBrains. Use of this source code is governed by the Apache 2.0 license.
 package com.vibe.agent.http
 
+import com.vibe.agent.mcp.McpServer
 import org.junit.jupiter.api.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -19,7 +20,8 @@ class HttpApiPolicyTest {
     loopback: Boolean = true,
     body: String = """{"task":"собери проект"}""",
     length: Int = body.toByteArray().size,
-  ) = HttpApiPolicy.Request(method, path, auth, host, loopback, length, body)
+    origin: String? = null,
+  ) = HttpApiPolicy.Request(method, path, auth, host, loopback, length, body, origin = origin)
 
   private fun refusal(request: HttpApiPolicy.Request, token: String? = this.token): HttpApiPolicy.Decision.Refuse =
     assertIs<HttpApiPolicy.Decision.Refuse>(HttpApiPolicy.decide(request, token))
@@ -112,10 +114,11 @@ class HttpApiPolicyTest {
   }
 
   @Test
-  fun `refusal order — origin, then host, then token, then size`() {
+  fun `refusal order — peer, host and origin, then token, then size`() {
     // A caller from outside must not learn whether the token was right.
     assertEquals(403, refusal(request(loopback = false, auth = "Bearer чужой", host = "evil.com")).code)
     assertEquals(403, refusal(request(host = "evil.com", auth = "Bearer чужой")).code)
+    assertEquals(403, refusal(request(origin = "https://evil.example.com", auth = "Bearer чужой")).code)
     assertEquals(401, refusal(request(auth = "Bearer чужой", length = HttpApiPolicy.MAX_BODY_BYTES + 1)).code)
   }
 
@@ -133,5 +136,25 @@ class HttpApiPolicyTest {
     assertEquals(404, refusal(request(method = "GET", path = "/nope", body = "")).code)
     assertEquals(404, refusal(request(method = "PUT", path = "/mcp", body = "")).code,
                  "PUT ревизией не оговорён — это просто неизвестный вызов")
+  }
+
+  @Test
+  fun `a foreign Origin is refused with 403, one from this machine passes`() {
+    // MCP 2026-07-28: «If the Origin header is present and invalid, servers MUST respond with HTTP
+    // 403 Forbidden». Checked on every path: the reason is the listener's, not the protocol's.
+    for (origin in listOf("https://evil.example.com", "null", "http://127.0.0.1.evil.com", "chrome-extension://abc", "file://")) {
+      assertEquals(403, refusal(request(origin = origin)).code, origin)
+    }
+    for (origin in listOf("http://localhost:3000", "http://127.0.0.1:7391", "https://[::1]:5173", "HTTP://LOCALHOST")) {
+      assertIs<HttpApiPolicy.Decision.Run>(HttpApiPolicy.decide(request(origin = origin), token), origin)
+    }
+  }
+
+  @Test
+  fun `the MCP route hands the transport headers to the server unread`() {
+    // Comparing them with the body is the server's job, done where the body is parsed.
+    val headers = McpServer.Headers(protocolVersion = "2026-07-28", method = "tools/list", name = "=?base64?eA==?=")
+    val mcp = request(path = "/mcp", body = """{"jsonrpc":"2.0","id":1,"method":"tools/list"}""").copy(mcp = headers)
+    assertEquals(headers, assertIs<HttpApiPolicy.Decision.Mcp>(HttpApiPolicy.decide(mcp, token)).headers)
   }
 }

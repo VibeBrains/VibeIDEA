@@ -1,11 +1,14 @@
 // Copyright 2026 VibeBrains. Use of this source code is governed by the Apache 2.0 license.
 package com.vibe.agent.http
 
+import com.vibe.agent.mcp.McpServer
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
+import java.net.URI
+import java.net.URISyntaxException
 import java.nio.charset.StandardCharsets
 import java.security.MessageDigest
 
@@ -44,13 +47,10 @@ object HttpApiPolicy {
     val remoteIsLoopback: Boolean,
     val bodyLength: Int,
     val body: String,
-    /** `Mcp-Method`, required by MCP 2026-07-28 on POST so gateways route without reading bodies. */
-    val mcpMethod: String? = null,
-    /**
-     * `Mcp-Name` — то же самое про ИМЯ: `params.name` для `tools/call` и `prompts/get`,
-     * `params.uri` для `resources/read`. Спека требует обоих заголовков и требует их сверки.
-     */
-    val mcpName: String? = null,
+    /** `Origin` as sent: browsers attach it to cross-site requests, the clients we serve send none. */
+    val origin: String? = null,
+    /** The MCP transport headers (`MCP-Protocol-Version`, `Mcp-Method`, `Mcp-Name`) as sent. */
+    val mcp: McpServer.Headers = McpServer.Headers(),
   )
 
   sealed interface Decision {
@@ -74,9 +74,10 @@ object HttpApiPolicy {
      *
      * A separate decision rather than a variant of [Run]: MCP decides for itself what a message
      * means, and folding it into the run path would put a protocol parser inside the route that
-     * exists to be boring.
+     * exists to be boring. The same goes for [headers]: they travel unread, because comparing them
+     * with the body is done where the body is parsed.
      */
-    data class Mcp(val body: String, val mcpMethod: String?, val mcpName: String? = null) : Decision
+    data class Mcp(val body: String, val headers: McpServer.Headers = McpServer.Headers()) : Decision
 
     /** Anything refused: [code] is the HTTP status, [message] goes into the JSON error body. */
     data class Refuse(val code: Int, val message: String) : Decision
@@ -88,7 +89,7 @@ object HttpApiPolicy {
    * @param token the configured API token, or null when the API is on but no token is stored (503).
    */
   fun decide(request: Request, token: String?): Decision {
-    // 1. Origin. The listener is bound to loopback, but a bind is one line away from being changed;
+    // 1. Peer. The listener is bound to loopback, but a bind is one line away from being changed;
     //    checking the peer as well means the mistake would have to be made twice.
     if (!request.remoteIsLoopback) return Decision.Refuse(403, "запросы принимаются только с этой машины")
 
@@ -96,11 +97,20 @@ object HttpApiPolicy {
     //    to this port (DNS rebinding); the one thing it cannot forge is the Host header.
     if (!isLocalHost(request.host)) return Decision.Refuse(403, "недопустимый Host: ${request.host}")
 
-    // 3. Token. 503 before 401: "no token configured" is our problem, not the caller's.
+    // 3. Origin. MCP 2026-07-28 makes validating it a MUST («If the Origin header is present and
+    //    invalid, servers MUST respond with HTTP 403 Forbidden»), and it is checked on every path:
+    //    the reason belongs to the listener, not to the protocol — a page open in the owner's
+    //    browser attaches its Origin to whatever it sends here. A page served from this machine
+    //    passes, as a local Host does; a foreign site or `null` (a sandboxed frame, a file) does not.
+    if (request.origin != null && !isLocalOrigin(request.origin)) {
+      return Decision.Refuse(403, "недопустимый Origin: ${request.origin}")
+    }
+
+    // 4. Token. 503 before 401: "no token configured" is our problem, not the caller's.
     if (token.isNullOrEmpty()) return Decision.Refuse(503, "токен HTTP API не настроен")
     if (!isAuthorized(request.authorization, token)) return Decision.Refuse(401, "нужен заголовок Authorization: Bearer <токен>")
 
-    // 4. Size, before parsing: a refusal must not require reading a gigabyte first.
+    // 5. Size, before parsing: a refusal must not require reading a gigabyte first.
     if (request.bodyLength > MAX_BODY_BYTES) return Decision.Refuse(413, "тело больше $MAX_BODY_BYTES байт")
 
     return when {
@@ -108,7 +118,7 @@ object HttpApiPolicy {
       request.method == "POST" && request.path == PATH_RUN -> parseRun(request.body)
       // The MCP endpoint deliberately lives beside /run rather than replacing it: the VibeIDE
       // contract for /health and /run is carried over verbatim and scripts depend on it.
-      request.method == "POST" && request.path == PATH_MCP -> Decision.Mcp(request.body, request.mcpMethod, request.mcpName)
+      request.method == "POST" && request.path == PATH_MCP -> Decision.Mcp(request.body, request.mcp)
       // Ревизия MCP 2026-07-28 требует ИМЕННО 405 на GET и DELETE к эндпоинту: сессий и
       // возобновляемых потоков в ней нет, а 404 сказал бы клиенту, что эндпоинта не существует
       // вовсе, — и он ушёл бы искать другой адрес вместо того, чтобы слать POST.
@@ -153,5 +163,19 @@ object HttpApiPolicy {
     return name in LOCAL_NAMES
   }
 
+  /**
+   * An `Origin` of a page served from this machine: `http(s)://` plus the names [isLocalHost]
+   * accepts, on any port. No stricter than Host on purpose — a local page is stopped by the token and
+   * by the CORS headers we never send, and a rule that refuses it would buy nothing the two do not.
+   */
+  fun isLocalOrigin(origin: String?): Boolean {
+    val uri = try { URI(origin?.trim() ?: return false) } catch (e: URISyntaxException) { return false }
+    val scheme = uri.scheme?.lowercase() ?: return false
+    if (scheme !in ORIGIN_SCHEMES) return false
+    val host = uri.host?.removePrefix("[")?.removeSuffix("]")?.lowercase() ?: return false
+    return host in LOCAL_NAMES
+  }
+
   private val LOCAL_NAMES = setOf("localhost", "127.0.0.1", "::1", "0:0:0:0:0:0:0:1")
+  private val ORIGIN_SCHEMES = setOf("http", "https")
 }

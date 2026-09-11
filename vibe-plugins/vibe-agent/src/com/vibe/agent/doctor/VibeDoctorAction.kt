@@ -226,6 +226,30 @@ class VibeDoctorAction : AnAction({ t("doctor.action") }) {
       else t("doctor.detail.ideToolsOff"),
     ))
 
+    // Not «is it up» but «does it answer by the spec»: the unit suites see the MCP server and the
+    // HTTP policy separately, never the listener between them, and a header lost there breaks every
+    // client while every test stays green.
+    if (apiRunning) {
+      val port = apiService.port
+      val probe = com.vibe.agent.mcp.McpSelfProbe.run(port, runCatching { com.vibe.agent.http.VibeApiToken.peek() }.getOrNull())
+      val version = com.vibe.agent.mcp.McpProtocol.VERSION_2026
+      val (state, detail) = when (probe) {
+        com.vibe.agent.mcp.McpSelfProbe.Result.Ok ->
+          VibeDiagnosis.State.OK to t("doctor.detail.mcpProbeOk", "port" to port, "version" to version)
+        com.vibe.agent.mcp.McpSelfProbe.Result.NoToken ->
+          VibeDiagnosis.State.WARN to t("doctor.detail.mcpProbeNoToken")
+        is com.vibe.agent.mcp.McpSelfProbe.Result.Unreachable ->
+          VibeDiagnosis.State.ABSENT to t("doctor.detail.mcpProbeUnreachable", "port" to port, "reason" to probe.reason)
+        is com.vibe.agent.mcp.McpSelfProbe.Result.WrongAnswer -> VibeDiagnosis.State.WARN to when (probe.check) {
+          com.vibe.agent.mcp.McpSelfProbe.Check.DISCOVER ->
+            t("doctor.detail.mcpProbeDiscover", "status" to probe.status, "version" to version)
+          com.vibe.agent.mcp.McpSelfProbe.Check.HEADER_MISMATCH ->
+            t("doctor.detail.mcpProbeMismatch", "status" to probe.status, "code" to (probe.code?.toString() ?: "—"))
+        }
+      }
+      lines.add(VibeDiagnosis.Line(t("doctor.line.mcpProbe"), state, detail))
+    }
+
     lines.add(VibeDiagnosis.Line(t("doctor.line.acp"),
                                  if (acp) VibeDiagnosis.State.OK else VibeDiagnosis.State.WARN,
                                  if (acp) ".vibe/acp.json" else t("doctor.detail.acpDefault")))
