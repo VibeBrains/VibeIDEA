@@ -110,11 +110,15 @@ class AcpClientE2ETest {
     c.prompt("что ты обо мне знаешь").get(30, TimeUnit.SECONDS)
     await { texts().any { it.startsWith("caps=") } }
     val announced = texts().first { it.startsWith("caps=") }
+    val caps = announcedCapabilities(announced)
 
     assertTrue(announced.contains("\"readTextFile\":true"), announced)
     assertTrue(announced.contains("\"writeTextFile\":true"), announced)
     assertTrue(announced.contains("\"terminal_output\":true"), announced)
-    assertFalse(announced.contains("\"terminal\":true"), "терминал не разрешён — не анонсируем: $announced")
+    // Parsed rather than searched: `auth.terminal` below would satisfy a substring check for this one.
+    assertTrue(caps["terminal"] == null, "терминал не разрешён — не анонсируем: $announced")
+    // Terminal Auth is about who runs the sign-in, not about the agent running commands through us.
+    assertEquals("true", caps["auth"]?.jsonObject?.get("terminal")?.jsonPrimitive?.content, announced)
   }
 
   @Test
@@ -124,8 +128,11 @@ class AcpClientE2ETest {
     c.prompt("что ты обо мне знаешь").get(30, TimeUnit.SECONDS)
     await { texts().any { it.startsWith("caps=") } }
 
-    assertTrue(texts().first { it.startsWith("caps=") }.contains("\"terminal\":true"))
+    assertEquals("true", announcedCapabilities(texts().first { it.startsWith("caps=") })["terminal"]?.jsonPrimitive?.content)
   }
+
+  private fun announcedCapabilities(line: String): JsonObject =
+    kotlinx.serialization.json.Json.parseToJsonElement(line.removePrefix("caps=")).jsonObject
 
   // --- streaming ---
 
@@ -357,5 +364,62 @@ class AcpClientE2ETest {
     Thread.sleep(300)
     assertTrue(exits.isEmpty(), "наш собственный stop() не должен репортить как падение агента")
     assertFalse(c.isAlive)
+  }
+
+  // --- sign-in ---
+
+  @Test
+  fun `an agent that needs a sign-in refuses the session with auth_required, its methods read as declared`() {
+    val c = start("auth", TestHandler())
+    val handshake = runCatching { c.initializeAndOpenSession().get(30, TimeUnit.SECONDS) }
+
+    assertTrue(AgentAuth.isAuthRequired(handshake.exceptionOrNull()), "ожидался auth_required: ${handshake.exceptionOrNull()}")
+    assertEquals(listOf(FakeAcpAgent.AGENT_LOGIN, FakeAcpAgent.TERMINAL_LOGIN, "future-login"), c.authMethods.map { it.id })
+    assertEquals(listOf(AuthMethod.Kind.AGENT, AuthMethod.Kind.TERMINAL, AuthMethod.Kind.OTHER), c.authMethods.map { it.kind })
+    assertEquals(mapOf("ACP_INTERACTIVE_LOGIN" to "1"), c.authMethods[1].env)
+    assertEquals(true, c.capabilities?.logout)
+    assertTrue(c.isAlive, "отказ в сессии — не смерть агента: вход идёт по тому же соединению")
+  }
+
+  @Test
+  fun `authenticate with an agent method opens the session on the same connection`() {
+    val c = start("auth", TestHandler())
+    runCatching { c.initializeAndOpenSession().get(30, TimeUnit.SECONDS) }
+
+    c.authenticate(FakeAcpAgent.AGENT_LOGIN).get(30, TimeUnit.SECONDS)
+    assertEquals(FakeAcpAgent.SESSION_ID, c.openSession().get(30, TimeUnit.SECONDS))
+    assertEquals(FakeAcpAgent.SESSION_ID, c.sessionId)
+  }
+
+  @Test
+  fun `a terminal method is never sent to authenticate`() {
+    val c = start("auth", TestHandler())
+    runCatching { c.initializeAndOpenSession().get(30, TimeUnit.SECONDS) }
+
+    val refused = runCatching { c.authenticate(FakeAcpAgent.TERMINAL_LOGIN).get(30, TimeUnit.SECONDS) }.exceptionOrNull()
+    // Refused by the client itself: an answer from the agent would mean the request went out.
+    assertTrue(generateSequence(refused) { it.cause }.any { it is IllegalArgumentException }, "ожидался отказ клиента: $refused")
+    assertFalse(generateSequence(refused) { it.cause }.any { it is AcpRpcError }, "запрос ушёл агенту: $refused")
+  }
+
+  @Test
+  fun `logout goes out when declared, and the next session asks to sign in again`() {
+    val c = start("auth", TestHandler())
+    runCatching { c.initializeAndOpenSession().get(30, TimeUnit.SECONDS) }
+    c.authenticate(FakeAcpAgent.AGENT_LOGIN).get(30, TimeUnit.SECONDS)
+    c.openSession().get(30, TimeUnit.SECONDS)
+
+    c.logout().get(30, TimeUnit.SECONDS)
+    val next = runCatching { c.openIsolatedSession().get(30, TimeUnit.SECONDS) }
+    assertTrue(AgentAuth.isAuthRequired(next.exceptionOrNull()), "после выхода агент снова просит войти: ${next.exceptionOrNull()}")
+  }
+
+  @Test
+  fun `logout is not sent to an agent that did not declare it`() {
+    val c = start("basic", TestHandler())
+    c.initializeAndOpenSession().get(30, TimeUnit.SECONDS)
+
+    assertTrue(runCatching { c.logout().get(30, TimeUnit.SECONDS) }.isFailure)
+    assertTrue(c.isAlive)
   }
 }

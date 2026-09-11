@@ -3120,17 +3120,38 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
       // лента переживала перезапуск IDE и раньше, а агент — нет, и человек пересказывал контекст
       // заново. Отказ агента возобновлять обрабатывается внутри — открывается новая.
       val remembered = AcpSessionMemory.recall(config.name, project.basePath)
-      fresh.initializeAndOpenSession(remembered).get(handshakeSec, TimeUnit.SECONDS)
+      try {
+        fresh.initializeAndOpenSession(remembered).get(handshakeSec, TimeUnit.SECONDS)
+      }
+      catch (e: java.util.concurrent.ExecutionException) {
+        if (!com.vibe.agent.acp.AgentAuth.isAuthRequired(e)) throw e
+        // The agent wants a sign-in first: its ways, exactly as it declared them (decision №82).
+        val choice = askOnEdt {
+          com.vibe.agent.acp.AgentLoginDialog(project, config, fresh.authMethods).let { if (it.showAndGet()) it.choice() else null }
+        }
+        when (choice) {
+          is com.vibe.agent.acp.AgentLoginDialog.Choice.Authenticate -> {
+            signIn(fresh, config, choice.method)
+            fresh.openSession(remembered).get(handshakeSec, TimeUnit.SECONDS)
+          }
+          // Signed in outside the IDE: what the spec prescribes next is a new connection and handshake.
+          com.vibe.agent.acp.AgentLoginDialog.Choice.Reconnect -> {
+            drop(fresh)
+            return ensureClient(config)
+          }
+          null -> {
+            drop(fresh)
+            throw IllegalStateException(t("auth.notLoggedIn", "agent" to config.name))
+          }
+        }
+      }
       fresh.sessionId?.let { AcpSessionMemory.remember(config.name, project.basePath, it) }
       // Not the session asked for — none remembered, expired, or the agent cannot resume: it knows
       // nothing of this thread's plan, so the first turn in it carries the plan.
       if (remembered == null || fresh.sessionId != remembered) planCarryPending = true
     }
     catch (e: TimeoutException) {
-      synchronized(clientLock) {
-        fresh.stop()
-        if (client === fresh) { client = null; clientConfig = null }
-      }
+      drop(fresh)
       throw IllegalStateException(t("chat.handshakeTimeout", "seconds" to handshakeSec, "path" to AcpConfig.configPath()))
     }
     systemLine(t("chat.sessionOpen") + (fresh.modes?.let { m -> t("chat.modeSuffix", "mode" to (m.available.firstOrNull { it.id == m.currentModeId }?.name ?: m.currentModeId)) } ?: ""))
@@ -3143,6 +3164,37 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     // A fresh session starts a fresh context — drop the stale usage chip until the agent reports anew.
     SwingUtilities.invokeLater { composer.setUsage(null, null, warn = false) }
     return fresh
+  }
+
+  /** Stops a client that did not reach a session, and forgets it if it is still the current one. */
+  private fun drop(stale: AcpClient) {
+    synchronized(clientLock) {
+      stale.stop()
+      if (client === stale) { client = null; clientConfig = null }
+    }
+  }
+
+  /**
+   * `authenticate` with a method the protocol drives, recorded in the audit. It waits for a person
+   * rather than a program — the agent may be waiting on a browser — so its bound is its own, not the
+   * handshake's. What is recorded is which method and whether the agent accepted it, never a credential.
+   */
+  private fun signIn(client: AcpClient, config: AgentServerConfig, method: com.vibe.agent.acp.AuthMethod) {
+    systemLine(t("auth.loggingIn", "agent" to config.name, "method" to method.name))
+    val failure = runCatching { client.authenticate(method.id).get(SIGN_IN_TIMEOUT_MIN, TimeUnit.MINUTES) }.exceptionOrNull()
+    val reason = failure?.let { (it.cause ?: it).message ?: it.javaClass.simpleName }
+    audit?.append(AuditEvent(System.currentTimeMillis(), AuditEvent.Action.AGENT_AUTH, ok = failure == null,
+      actor = com.vibe.agent.audit.AuditActor.HUMAN,
+      meta = buildMap {
+        put("agent", config.name)
+        put("method", method.id)
+        reason?.let { put("error", it.take(DESTRUCTIVE_PREVIEW_LEN)) }
+      }))
+    if (failure != null) {
+      drop(client)
+      throw IllegalStateException(t("auth.failed", "agent" to config.name, "reason" to reason), failure)
+    }
+    systemLine(t("auth.loggedIn", "agent" to config.name))
   }
 
   // --- threads & tabs (wave C) ---
@@ -3332,6 +3384,46 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
       }
     }
     return true
+  }
+
+  /** What «Выйти из учётной записи агента» found. */
+  enum class Logout { NO_AGENT, UNSUPPORTED, CANCELLED, STARTED }
+
+  /**
+   * The protocol's `logout` for the running agent, once the person confirms it.
+   *
+   * The agent is stopped afterwards: its session was opened under the account it has just left, and
+   * the next message starts over — with a sign-in, if the agent asks for one. The remembered session
+   * is kept on purpose (see [AcpSessionMemory]): an agent that will not resume it opens a new one.
+   */
+  fun logoutAgent(): Logout {
+    val (running, config) = synchronized(clientLock) { client to clientConfig }
+    if (running == null || config == null || !running.isAlive) return Logout.NO_AGENT
+    if (running.capabilities?.logout != true) return Logout.UNSUPPORTED
+    val sure = askOnEdt {
+      Messages.showYesNoDialog(project, t("logout.confirm", "agent" to config.name), t("logout.title"),
+                               t("logout.yes"), t("common.cancel"), Messages.getQuestionIcon()) == Messages.YES
+    }
+    if (!sure) return Logout.CANCELLED
+    ApplicationManager.getApplication().executeOnPooledThread {
+      val failure = runCatching { running.logout().get(VibeAgentSettings.handshakeTimeoutSec.toLong(), TimeUnit.SECONDS) }
+        .exceptionOrNull()
+      val reason = failure?.let { (it.cause ?: it).message ?: it.javaClass.simpleName }
+      audit?.append(AuditEvent(System.currentTimeMillis(), AuditEvent.Action.AGENT_LOGOUT, ok = failure == null,
+        actor = com.vibe.agent.audit.AuditActor.HUMAN,
+        meta = buildMap {
+          put("agent", config.name)
+          reason?.let { put("error", it.take(DESTRUCTIVE_PREVIEW_LEN)) }
+        }))
+      if (failure != null) {
+        systemLine(t("logout.failed", "agent" to config.name, "reason" to reason))
+        return@executeOnPooledThread
+      }
+      drop(running)
+      SwingUtilities.invokeLater { modePicker.setModes(null); configPicker.setOptions(null) }
+      systemLine(t("logout.done", "agent" to config.name))
+    }
+    return Logout.STARTED
   }
 
   /** Entry point for the palette action «История чата» and the «история ▾» pill. */
@@ -4868,6 +4960,12 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
   }
 
   private companion object {
+    /**
+     * How long a protocol sign-in may take. It waits for a person — the agent may have opened a
+     * browser — rather than for a program, so the handshake's bound would cut it off mid-login.
+     */
+    const val SIGN_IN_TIMEOUT_MIN = 10L
+
     /** Ответ агента в поле «Решили»: длинный ответ в диалоге не читается, а правится. */
     const val DECISION_PREFILL_CHARS = 2000
 

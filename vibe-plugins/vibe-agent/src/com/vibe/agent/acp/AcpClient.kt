@@ -98,6 +98,10 @@ class AcpClient(
   @Volatile var capabilities: AgentCapabilities? = null
     private set
 
+  /** Ways to sign in, as the agent declared them in `initialize`; empty until then and after [stop]. */
+  @Volatile var authMethods: List<AuthMethod> = emptyList()
+    private set
+
   /** Parsed from the `session/new` result; null when the agent reports no modes or after [stop]. */
   @Volatile var modes: SessionModes? = null
     private set
@@ -154,6 +158,7 @@ class AcpClient(
     // An isolated session dies with the process; a stale id here would route the next prompt nowhere.
     turnSession = null
     capabilities = null
+    authMethods = emptyList()
     modes = null
     // Тумблеры принадлежат сессии: у мёртвого клиента их нет, как нет и режимов.
     configOptions = emptyList()
@@ -222,30 +227,45 @@ class AcpClient(
         })
         // Claude adapter streams Bash output to us via _meta.terminal_output (read-only display, always on).
         put("_meta", buildJsonObject { put("terminal_output", true) })
+        // Terminal Auth (stable since 2026-08-20). Without it an agent that signs in only through its
+        // own program — 12 of the registry's 33 on 2026-09-10, the Claude adapter among them — declares
+        // no way to sign in at all. The person runs the command in their own terminal (AgentLoginDialog).
+        put("auth", buildJsonObject { put("terminal", true) })
       })
     }
     return request("initialize", init).thenCompose { initResult ->
       capabilities = parseCapabilities(initResult)
+      authMethods = AgentAuth.methods(initResult as? JsonObject)
       ideTools = handler.ideToolsFor(capabilities?.mcpHttp == true)
       // Инструменты самой IDE предлагаются агенту, которого IDE и запустила: без этого он
       // работает в проекте, не видя ни графа импортов, ни поиска по корпусу, ни журнала решений.
       // Решение о том, можно ли, принимает [IdeToolsOffer]; здесь только форма запроса.
-      val params = buildJsonObject {
+      sessionParams = buildJsonObject {
         put("cwd", workingDir ?: System.getProperty("user.home"))
         put("mcpServers", JsonArray(ideTools?.let { listOf(toJson(it)) } ?: emptyList()))
       }
-      sessionParams = params
-      val resumable = previousSessionId?.takeIf { it.isNotBlank() && capabilities?.resumeSession == true }
-      if (resumable == null) {
-        request("session/new", params)
-      } else {
-        request("session/resume", JsonObject(params + mapOf("sessionId" to JsonPrimitive(resumable))))
-          .exceptionallyCompose {
-            handler.onProtocolLog("[acp] session/resume refused, opening a new session: ${it.message}")
-            request("session/new", params)
-          }
-      }
-    }.thenApply { result ->
+      openSession(previousSessionId)
+    }
+  }
+
+  /**
+   * Opens the chat's session on an initialized connection, resuming [previousSessionId] when the
+   * agent can. Apart from [initializeAndOpenSession] for the sign-in: after `authenticate` the
+   * session is opened again on the same connection, without a second handshake.
+   */
+  fun openSession(previousSessionId: String? = null): CompletableFuture<String> {
+    val params = sessionParams ?: return CompletableFuture.failedFuture(IllegalStateException("not initialized"))
+    val resumable = previousSessionId?.takeIf { it.isNotBlank() && capabilities?.resumeSession == true }
+    val opened = if (resumable == null) {
+      request("session/new", params)
+    } else {
+      request("session/resume", JsonObject(params + mapOf("sessionId" to JsonPrimitive(resumable))))
+        .exceptionallyCompose {
+          handler.onProtocolLog("[acp] session/resume refused, opening a new session: ${it.message}")
+          request("session/new", params)
+        }
+    }
+    return opened.thenApply { result ->
       val obj = result.jsonObject
       // У `session/resume` идентификатор в ответе НЕОБЯЗАТЕЛЕН: агент возобновляет ту сессию,
       // которую попросили, и повторять её номер ему незачем. Требовать поле — значит уронить
@@ -258,6 +278,23 @@ class AcpClient(
       sessionId = id
       id
     }
+  }
+
+  /**
+   * Signs in with a method the protocol drives. A terminal method is refused here, before anything
+   * is sent: the spec forbids passing one to `authenticate`, and this is the one place that sends it.
+   */
+  fun authenticate(methodId: String): CompletableFuture<Unit> {
+    if (authMethods.firstOrNull { it.id == methodId }?.kind != AuthMethod.Kind.AGENT) {
+      return CompletableFuture.failedFuture(IllegalArgumentException("not a protocol-driven sign-in method: $methodId"))
+    }
+    return request("authenticate", buildJsonObject { put("methodId", methodId) }).thenApply { }
+  }
+
+  /** Logs the agent out — only when it declared it can (`agentCapabilities.auth.logout`). */
+  fun logout(): CompletableFuture<Unit> {
+    if (capabilities?.logout != true) return CompletableFuture.failedFuture(IllegalStateException("the agent declared no logout"))
+    return request("logout", JsonObject(emptyMap())).thenApply { }
   }
 
   /** Params the chat session was opened with; an isolated session is opened with the same. */
@@ -345,6 +382,7 @@ class AcpClient(
       embeddedContext = prompt?.get("embeddedContext").booleanOrFalse(),
       mcpHttp = mcp?.get("http").booleanOrFalse(),
       resumeSession = agent?.get("loadSession").booleanOrFalse(),
+      logout = AgentAuth.logoutSupported(agent),
     )
   }
 
@@ -460,7 +498,11 @@ class AcpClient(
             id != null -> {
               val future = pending.remove(id) ?: return@forEachLine
               val error = msg["error"]
-              if (error != null && error != JsonNull) future.completeExceptionally(RuntimeException(error.toString()))
+              // The code is kept so a caller can tell «sign in first» from a failure; the text stays whole.
+              if (error != null && error != JsonNull) {
+                val code = ((error as? JsonObject)?.get("code") as? JsonPrimitive)?.longOrNull?.toInt()
+                future.completeExceptionally(AcpRpcError(code, error.toString()))
+              }
               else future.complete(msg["result"] ?: JsonNull)
             }
           }

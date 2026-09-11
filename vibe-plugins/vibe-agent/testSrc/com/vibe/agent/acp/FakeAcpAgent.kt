@@ -70,6 +70,12 @@ object FakeAcpAgent {
     }
   }
 
+  const val AGENT_LOGIN = "agent-login"
+  const val TERMINAL_LOGIN = "terminal-login"
+
+  /** Scenario `auth`: whether the client signed in — `session/new` asks for it until then, `logout` undoes it. */
+  @Volatile private var loggedIn = false
+
   private fun handleRequest(scenario: String, id: Long, method: String, params: JsonObject) {
     when (method) {
       "initialize" -> {
@@ -82,12 +88,27 @@ object FakeAcpAgent {
               put("image", true)
               put("embeddedContext", true)
             })
+            if (scenario == "auth") put("auth", buildJsonObject { put("logout", buildJsonObject { }) })
           })
+          // Both kinds the protocol defines, and one it may define later: the client names that one, never acts on it.
+          if (scenario == "auth") put("authMethods", JsonArray(listOf(
+            buildJsonObject { put("id", AGENT_LOGIN); put("name", "Войти через агента"); put("description", "поток входа самого агента") },
+            buildJsonObject {
+              put("id", TERMINAL_LOGIN); put("name", "Войти в терминале"); put("type", "terminal")
+              put("args", JsonArray(listOf(JsonPrimitive("--login"))))
+              put("env", buildJsonObject { put("ACP_INTERACTIVE_LOGIN", "1") })
+            },
+            buildJsonObject { put("id", "future-login"); put("name", "Способ из будущего"); put("type", "env_var") },
+          )))
           // Echoed back so the test can assert what the client announced about itself.
           put("_echoClientCapabilities", params["clientCapabilities"] ?: JsonObject(emptyMap()))
         }))
       }
       "session/new" -> {
+        // What an agent that needs a login answers until one of its methods is done. The code is the
+        // protocol SDK's `RequestError.authRequired`, spelled out here rather than taken from the
+        // client: a wrong constant there must fail the test, not agree with itself.
+        if (scenario == "auth" && !loggedIn) return send(error(id, -32000, "Authentication required"))
         val opened = sessionsOpened.incrementAndGet()
         send(result(id, buildJsonObject {
           put("sessionId", if (opened == 1) SESSION_ID else "fake-session-$opened")
@@ -100,6 +121,16 @@ object FakeAcpAgent {
           })
           put("_echoCwd", params["cwd"] ?: JsonPrimitive(""))
         }))
+      }
+      "authenticate" -> {
+        // Only a protocol-driven method belongs here; a terminal one reaching the agent is a client bug.
+        val methodId = (params["methodId"] as? JsonPrimitive)?.contentOrNull
+        if (methodId == AGENT_LOGIN) { loggedIn = true; send(result(id, JsonObject(emptyMap()))) }
+        else send(error(id, -32602, "not an agent method: $methodId"))
+      }
+      "logout" -> {
+        loggedIn = false
+        send(result(id, JsonObject(emptyMap())))
       }
       "session/set_mode" -> {
         send(result(id, JsonObject(emptyMap())))

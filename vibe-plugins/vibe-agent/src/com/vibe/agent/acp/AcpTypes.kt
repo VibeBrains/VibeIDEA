@@ -25,7 +25,45 @@ data class AgentCapabilities(
    * там, где всего лишь нечего возобновлять.
    */
   val resumeSession: Boolean = false,
+  /** The agent can log out by the protocol (`agentCapabilities.auth.logout`). */
+  val logout: Boolean = false,
 )
+
+/**
+ * One way to sign in, as the agent declares it in `initialize` (`authMethods`) — see [AgentAuth].
+ *
+ * @property type the wire type as declared; [kind] is what this client can do with it.
+ */
+data class AuthMethod(
+  val id: String,
+  val name: String,
+  val description: String?,
+  val type: String,
+  val kind: Kind,
+  /** For a terminal method: appended to the agent's own command line. */
+  val args: List<String> = emptyList(),
+  /** For a terminal method: over the agent's own environment. */
+  val env: Map<String, String> = emptyMap(),
+) {
+  enum class Kind {
+    /** The protocol drives it: `authenticate` with the method's id. */
+    AGENT,
+
+    /** The agent's program, run interactively by the person, then a reconnect; never `authenticate`. */
+    TERMINAL,
+
+    /** A type this client does not know: named as declared, never acted on. */
+    OTHER,
+  }
+}
+
+/**
+ * An error answer of the agent to one of our requests.
+ *
+ * The message stays the whole error object as text, as before the code was kept: the chat shows it,
+ * and a shorter one would hide what the agent actually said.
+ */
+class AcpRpcError(val code: Int?, message: String) : RuntimeException(message)
 
 /** One entry of `availableModes` in the `session/new` result. */
 data class SessionMode(

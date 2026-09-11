@@ -137,6 +137,9 @@
       <action id="Vibe.ReconnectAgent" class="com.vibe.agent.acp.VibeReconnectAgentAction"
               text="Переподключить агента"
               description="Поднять соединение с внешним ACP-агентом заново, не перезапуская IDE"/>
+      <action id="Vibe.LogoutAgent" class="com.vibe.agent.acp.VibeLogoutAgentAction"
+              text="Выйти из учётной записи агента"
+              description="Выход по протоколу ACP, если агент его объявил; войти снова можно при следующем сообщении"/>
       <action id="Vibe.Doctor" class="com.vibe.agent.doctor.VibeDoctorAction"
               text="Диагностика" description="Один отчёт: сборка, провайдеры, конфиги, режимы, индексы"/>
       <action id="Vibe.DesignDoctor" class="com.vibe.agent.design.VibeDesignDoctorAction"

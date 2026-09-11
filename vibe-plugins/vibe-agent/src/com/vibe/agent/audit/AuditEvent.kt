@@ -101,5 +101,15 @@ data class AuditEvent(
 
     /** The agent's process ended on its own, with this exit code. */
     const val AGENT_EXIT = "agent:exit"
+
+    /**
+     * The IDE signed the agent in by the protocol (`authenticate`): which method, and whether the
+     * agent accepted it. Never a credential — the sign-in is the agent's own flow. A terminal method
+     * is not recorded here: it runs outside the IDE, and the reconnect after it is an [AGENT_START].
+     */
+    const val AGENT_AUTH = "agent:auth"
+
+    /** The IDE asked the agent to log out (`logout`), and whether it did. */
+    const val AGENT_LOGOUT = "agent:logout"
   }
 }
