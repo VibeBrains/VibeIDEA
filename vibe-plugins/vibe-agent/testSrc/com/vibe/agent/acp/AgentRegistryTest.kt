@@ -61,6 +61,33 @@ class AgentRegistryTest {
   }
 
   @Test
+  fun `an adapter configured under another name is recognised by its package, version aside`() {
+    // Decision №76: the registry calls it «Claude Agent», our seed «Claude Code» — one package.
+    val configured = listOf(AgentServerConfig("Claude Code", "npx", listOf("-y", "@agentclientprotocol/claude-agent-acp"), emptyMap()))
+    val entries = AgentRegistry.parse(catalog)
+    assertTrue(AgentRegistry.isConfigured(entries.first { it.id == "claude-acp" }, configured))
+    assertEquals(listOf("UV Agent", "Native Agent"), AgentRegistry.newAgents(entries, configured).map { it.name })
+    assertEquals("@scope/tool", AgentRegistry.withoutVersion("@Scope/Tool@1.2.3"))
+    assertEquals("uv-agent", AgentRegistry.withoutVersion("uv-agent==0.4.0"))
+  }
+
+  @Test
+  fun `a binary build brings its checksum, command, arguments and environment`() {
+    val text = """
+      { "agents": [ { "id": "b", "name": "B", "version": "1", "repository": "https://github.com/x/b",
+        "distribution": { "binary": {
+          "darwin-aarch64": { "archive": "https://x/b.tgz", "cmd": "./b", "args": ["acp"], "env": { "B_MODE": "acp" } },
+          "linux-x86_64": { "archive": "https://x/b-linux.tgz", "sha256": "abc", "cmd": "./b" } } } } ] }
+    """.trimIndent()
+    val mac = AgentRegistry.parse(text, target = "darwin-aarch64").single()
+    assertEquals("https://github.com/x/b", mac.repository)
+    assertNull(mac.binary!!.sha256, "суммы нет — это говорится словами, а не прочерком")
+    assertEquals(listOf("acp"), mac.binary!!.args)
+    assertEquals(mapOf("B_MODE" to "acp"), mac.binary!!.env)
+    assertEquals("abc", AgentRegistry.parse(text, target = "linux-x86_64").single().binary!!.sha256)
+  }
+
+  @Test
   fun `битый каталог не роняет действие`() {
     assertTrue(AgentRegistry.parse("не json").isEmpty())
     assertTrue(AgentRegistry.parse("""{ "version": "1.0.0" }""").isEmpty())
