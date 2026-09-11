@@ -52,6 +52,7 @@
 | [shallowClonePush.md](gitAndTools/shallowClonePush.md) | [инцидент] Первый пуш форка отвергнут: `remote unpack failed: index-pack failed` — у поверхностного клона корень ссылается на несуществующих родителей. Лечится пересборкой корня через `commit-tree` (13 с на 183 коммита), а не докачкой истории. Проверять `.git/shallow` ДО публикации. |
 | [shallowDeepenGithub.md](gitAndTools/shallowDeepenGithub.md) | [квирк] `git fetch --deepen` против GitHub падает «error processing shallow info: 4» — ретраи бесполезны; дозакачивать историю через `--shallow-since` со сдвигом даты. |
 | [caseInsensitiveFs.md](gitAndTools/caseInsensitiveFs.md) | [квирк] Case-insensitive APFS: `README.md` ≡ `readme.md` — копирование в каталог апстрима молча перетирает его файл (наш README перетёр их docs/readme.md; восстановлен). Свои файлы — только в своём неймспейсе; после копирования смотреть `git status`. |
+| [checkpointTempIndex.md](gitAndTools/checkpointTempIndex.md) | [инцидент] `GIT_INDEX_FILE` на пустой файл из `createTempFile` — git отвечает «index file smaller than expected», и чекпоинты не создавались ни разу с v0.1.0: отказ читался как «недоступно». Временный индекс — несуществующий путь в свежей папке, старт с копии настоящего индекса (иначе хеш всего дерева и тайм-аут). Урок: функция, деградирующая до «недоступно», требует теста на настоящем инструменте. |
 
 ## languages
 

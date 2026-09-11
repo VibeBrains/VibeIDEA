@@ -31,34 +31,39 @@ class CheckpointService(private val projectBase: String) {
   /** Snapshot the working tree; returns null when unavailable (no git, empty tree). */
   fun create(label: String): Checkpoint? {
     if (!isGitRepo()) return null
-    val tmpIndex = Files.createTempFile("vibe-checkpoint", ".index")
-    try {
-      val env = mapOf("GIT_INDEX_FILE" to tmpIndex.toString())
-      if (git("add", "-A", env = env).first != 0) return null
-      val (treeCode, treeOut) = git("write-tree", env = env)
-      if (treeCode != 0) return null
-      val tree = treeOut.trim()
-      val head = git("rev-parse", "HEAD").let { if (it.first == 0) it.second.trim() else null }
-      val args = if (head != null) arrayOf("commit-tree", tree, "-p", head, "-m", "vibe checkpoint: $label")
-                 else arrayOf("commit-tree", tree, "-m", "vibe checkpoint: $label")
-      val (commitCode, commitOut) = git(*args)
-      if (commitCode != 0) return null
-      val cp = Checkpoint(commitOut.trim(), label, System.currentTimeMillis())
-      // A failing journal write must not lose the (already-created) snapshot — the commit object
-      // exists in git regardless; only the .jsonl pointer is best-effort.
-      runCatching {
-        Files.createDirectories(logFile.parent)
-        Files.writeString(logFile, buildJsonObject {
-          put("hash", cp.hash)
-          put("label", cp.label)
-          put("at", cp.atMillis)
-        }.toString() + "\n", java.nio.file.StandardOpenOption.CREATE, java.nio.file.StandardOpenOption.APPEND)
-      }
-      return cp
+    val tree = snapshotTree() ?: return null
+    val head = git("rev-parse", "HEAD").let { if (it.first == 0) it.second.trim() else null }
+    val args = if (head != null) arrayOf("commit-tree", tree, "-p", head, "-m", "vibe checkpoint: $label")
+               else arrayOf("commit-tree", tree, "-m", "vibe checkpoint: $label")
+    val (commitCode, commitOut) = git(*args)
+    if (commitCode != 0) return null
+    val cp = Checkpoint(commitOut.trim(), label, System.currentTimeMillis())
+    // A failing journal write must not lose the (already-created) snapshot — the commit object
+    // exists in git regardless; only the .jsonl pointer is best-effort.
+    runCatching {
+      Files.createDirectories(logFile.parent)
+      Files.writeString(logFile, buildJsonObject {
+        put("hash", cp.hash)
+        put("label", cp.label)
+        put("at", cp.atMillis)
+      }.toString() + "\n", java.nio.file.StandardOpenOption.CREATE, java.nio.file.StandardOpenOption.APPEND)
     }
-    finally {
-      Files.deleteIfExists(tmpIndex)
-    }
+    return cp
+  }
+
+  /**
+   * The working tree against [cp] for [paths] (relative to the project), as a unified diff.
+   *
+   * New and deleted files are in it: the current tree is snapshotted the way [create] does it, so a
+   * file a step created — untracked by definition — is part of the answer. Null when git cannot say;
+   * empty when nothing changed.
+   */
+  fun diff(cp: Checkpoint, paths: Collection<String>): String? {
+    if (paths.isEmpty()) return ""
+    if (!isGitRepo()) return null
+    val tree = snapshotTree() ?: return null
+    val (code, out) = git("diff", "--no-color", "--no-ext-diff", cp.hash, tree, "--", *paths.toTypedArray())
+    return if (code == 0) out else null
   }
 
   fun list(): List<Checkpoint> {
@@ -79,6 +84,39 @@ class CheckpointService(private val projectBase: String) {
   fun restore(cp: Checkpoint): Boolean {
     // restore tracked files to snapshot state; files created after the snapshot stay (no deletions «на всякий случай»)
     return git("restore", "--source", cp.hash, "--worktree", "--", ".").first == 0
+  }
+
+  /**
+   * The whole working tree as a git tree object, through a temporary index: the real index is never
+   * touched.
+   *
+   * The temporary index is a path that does not exist yet, inside a fresh directory. Git refuses an
+   * EMPTY index file («index file smaller than expected»), and `Files.createTempFile` creates exactly
+   * that: until 11.09.2026 no checkpoint was ever taken — [create] returned null, and the feature read
+   * as «unavailable» without a word. It starts as a copy of the real index, so git re-hashes only the
+   * files that changed; an empty start would hash the whole tree on every message and run into the
+   * git timeout on a large repository.
+   */
+  private fun snapshotTree(): String? {
+    val dir = Files.createTempDirectory("vibe-checkpoint")
+    val index = dir.resolve("index")
+    try {
+      val real = git("rev-parse", "--git-path", "index").let { (code, out) ->
+        if (code == 0) Path.of(projectBase).resolve(out.trim()) else null
+      }
+      if (real != null && Files.isRegularFile(real)) Files.copy(real, index)
+      val env = mapOf("GIT_INDEX_FILE" to index.toString())
+      if (git("add", "-A", env = env).first != 0) return null
+      val (treeCode, treeOut) = git("write-tree", env = env)
+      return if (treeCode == 0) treeOut.trim() else null
+    }
+    finally {
+      runCatching {
+        Files.deleteIfExists(index)
+        Files.deleteIfExists(dir.resolve("index.lock"))
+        Files.deleteIfExists(dir)
+      }
+    }
   }
 
   private fun git(vararg args: String, env: Map<String, String> = emptyMap()): Pair<Int, String> {
