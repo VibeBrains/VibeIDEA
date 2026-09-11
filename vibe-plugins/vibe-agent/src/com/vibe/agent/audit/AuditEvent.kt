@@ -91,5 +91,15 @@ data class AuditEvent(
      * would be the leak it was meant to help investigate.
      */
     const val SECRET_USED = "secret_used"
+
+    /**
+     * The IDE started an external agent's process: the command (masked), its folder, whether it
+     * may run commands through us, and the NAMES of the secrets it was given. Together with
+     * [AGENT_EXIT] it bounds everything the agent did with the person's authority.
+     */
+    const val AGENT_START = "agent:start"
+
+    /** The agent's process ended on its own, with this exit code. */
+    const val AGENT_EXIT = "agent:exit"
   }
 }

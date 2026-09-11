@@ -48,7 +48,9 @@ JSONL: одна строка — один JSON-объект, завершённ�
 | `circuit_breaker_opened` | Сработал защитный предохранитель | `breaker`, `reason` |
 | `circuit_breaker_recovered` | Пользователь снял предохранители | `cleared` |
 | `terminal` | Завершение/гейт терминала | `exit` или `gate`/`reasons`/`approved` |
-| `checkpoint` | Снят чекпоинт | `hash` (первые 12 символов) |
+| `checkpoint` | Снят чекпоинт | `hash` (первые 12 символов); у шага пайплайна ещё `pipeline`, `step` |
+| `agent:start` | IDE запустила процесс внешнего агента | `agent`, `command` (с аргументами, секреты замаскированы), `dir`, `terminal`, `secrets` (только имена) |
+| `agent:exit` | Процесс агента завершился сам | `code` |
 
 ## Автор записи (`actor`)
 

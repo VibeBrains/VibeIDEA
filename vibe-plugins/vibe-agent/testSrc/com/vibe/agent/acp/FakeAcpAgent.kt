@@ -191,6 +191,23 @@ object FakeAcpAgent {
         notifyUpdate(chunk("отменена сессия $cancelledSession"), session)
         send(result(id, stop(if (got) "cancelled" else "end_turn")))
       }
+      "authStatus" -> {
+        // The Claude adapter's extension notification: how the turn is billed, account included.
+        send(buildJsonObject {
+          put("jsonrpc", "2.0")
+          put("method", "_auth/status_update")
+          put("params", buildJsonObject {
+            put("authStatus", buildJsonObject {
+              put("kind", "subscription")
+              put("label", "Claude Max")
+              put("detail", "claude.ai")
+              put("account", buildJsonObject { put("email", "me@example.com"); put("organization", "Организация") })
+            })
+          })
+        })
+        notifyUpdate(chunk("статус отправлен"))
+        send(result(id, stop("end_turn")))
+      }
       "outOfOrder" -> {
         // Answers the prompt LAST, after the client's later set_mode call has been served —
         // the client must still route each response to its own future.

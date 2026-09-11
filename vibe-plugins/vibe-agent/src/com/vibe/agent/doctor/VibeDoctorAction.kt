@@ -96,7 +96,15 @@ class VibeDoctorAction : AnAction({ t("doctor.action") }) {
       ))
     }
 
-    val acp = base?.let { Files.exists(Path.of(it, ".vibe", "acp.json")) } ?: false
+    // Where the agents come from: the project's `.vibe/agents.json` and the machine's
+    // `~/.jetbrains/acp.json` (AcpConfig). Until 11.09.2026 this line looked at `.vibe/acp.json`, a
+    // file nothing has read since 09.09 — the doctor vouched for a dead path.
+    val agentSources = listOfNotNull(
+      base?.let { com.vibe.agent.acp.AcpConfig.projectPath(it) }?.takeIf { Files.isRegularFile(it) }?.let { ".vibe/agents.json" },
+      com.vibe.agent.acp.AcpConfig.configPath().takeIf { Files.isRegularFile(it) }?.let { "~/.jetbrains/acp.json" },
+    )
+    val agentWarnings = ArrayList<String>()
+    val agents = com.vibe.agent.acp.AcpConfig.load(base) { agentWarnings.add(it) }
     val today = java.time.LocalDate.now()
     val notices = com.vibe.agent.providers.ModelSunset.notices(providers, today)
     val retired = notices.count { it.state == com.vibe.agent.providers.ModelSunset.State.RETIRED }
@@ -250,14 +258,24 @@ class VibeDoctorAction : AnAction({ t("doctor.action") }) {
       lines.add(VibeDiagnosis.Line(t("doctor.line.mcpProbe"), state, detail))
     }
 
-    lines.add(VibeDiagnosis.Line(t("doctor.line.acp"),
-                                 if (acp) VibeDiagnosis.State.OK else VibeDiagnosis.State.WARN,
-                                 if (acp) ".vibe/acp.json" else t("doctor.detail.acpDefault")))
+    lines.add(VibeDiagnosis.Line(
+      t("doctor.line.acp"),
+      if (agentWarnings.isNotEmpty() || agentSources.isEmpty()) VibeDiagnosis.State.WARN else VibeDiagnosis.State.OK,
+      when {
+        // A broken entry is skipped with a warning in the chat; here it is named once more, because
+        // an agent that «just did not appear» is exactly what nobody thinks to look for.
+        agentWarnings.isNotEmpty() -> t("doctor.detail.acpBroken",
+                                        "files" to agentSources.joinToString().ifEmpty { t("doctor.detail.acpDefault") },
+                                        "count" to agentWarnings.size, "reason" to agentWarnings.first())
+        agentSources.isEmpty() -> t("doctor.detail.acpDefault")
+        else -> agentSources.joinToString()
+      },
+    ))
 
     // Готовность внешних агентов: чем запускать и чем платить. Оба ответа знаемы заранее, и оба
     // иначе выясняются в худший момент — «агент не запустился» и счёт в конце месяца.
     val agentNotices = com.vibe.agent.acp.AgentReadiness.check(
-      com.vibe.agent.acp.AcpConfig.load(base),
+      agents,
       onPath = { com.vibe.agent.acp.AcpClient.isAvailable(it) },
       env = { System.getenv(it) },
     )
@@ -276,8 +294,27 @@ class VibeDoctorAction : AnAction({ t("doctor.action") }) {
       lines.add(VibeDiagnosis.Line(
         t("doctor.line.agentBilling"),
         VibeDiagnosis.State.WARN,
+        // The variable that actually decides, in Claude Code's own order — not always the API key.
         t("doctor.detail.agentBillingKey", "agent" to payingTwice.first().agent,
-          "variable" to com.vibe.agent.acp.AgentReadiness.ANTHROPIC_KEY),
+          "variable" to payingTwice.first().detail),
+      ))
+    }
+    // Asked of the program that owns the login, by exit code only: its output names the account.
+    if (agents.any { com.vibe.agent.acp.AgentReadiness.usesClaude(it) }) {
+      val login = com.vibe.agent.acp.ClaudeLogin.check(
+        onPath = { com.vibe.agent.acp.AcpClient.isAvailable(it) },
+        run = { com.vibe.agent.acp.ClaudeLogin.exitCode(it) },
+      )
+      lines.add(VibeDiagnosis.Line(
+        t("doctor.line.claudeLogin"),
+        if (login == com.vibe.agent.acp.ClaudeLogin.State.LOGGED_IN) VibeDiagnosis.State.OK else VibeDiagnosis.State.WARN,
+        when (login) {
+          com.vibe.agent.acp.ClaudeLogin.State.LOGGED_IN -> t("doctor.detail.claudeLoginOk")
+          com.vibe.agent.acp.ClaudeLogin.State.LOGGED_OUT -> t("doctor.detail.claudeLoginOut")
+          com.vibe.agent.acp.ClaudeLogin.State.UNKNOWN ->
+            t("doctor.detail.claudeLoginUnknown", "seconds" to com.vibe.agent.acp.ClaudeLogin.TIMEOUT.seconds)
+          com.vibe.agent.acp.ClaudeLogin.State.NOT_INSTALLED -> t("doctor.detail.claudeLoginMissing")
+        },
       ))
     }
 

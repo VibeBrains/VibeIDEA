@@ -314,6 +314,21 @@ class AcpClientE2ETest {
     await { texts().contains("отменена сессия $isolated") }
   }
 
+  @Test
+  fun `the agent's billing label reaches the handler, its account does not`() {
+    val statuses = ConcurrentLinkedQueue<String>()
+    val handler = object : AcpClient.Handler by TestHandler() {
+      override fun onAuthStatus(label: String, detail: String?) { statuses += "$label|$detail" }
+    }
+    val c = start("authStatus", handler)
+    c.initializeAndOpenSession().get(30, TimeUnit.SECONDS)
+    c.prompt("кто платит").get(30, TimeUnit.SECONDS)
+
+    await { statuses.isNotEmpty() }
+    assertEquals(listOf("Claude Max|claude.ai"), statuses.toList())
+    assertFalse(protocolLog.any { it.contains("me@example.com") }, "учётная запись не должна оседать даже в логе протокола")
+  }
+
   // --- lifecycle ---
 
   @Test

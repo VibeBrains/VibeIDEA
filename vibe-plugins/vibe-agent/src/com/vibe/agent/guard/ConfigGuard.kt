@@ -61,7 +61,7 @@ object ConfigGuard {
     ".vibe/providers.json",
     ".vibe/servers.json",
     ".vibe/hooks.json",
-    ".vibe/acp.json",
+    ".vibe/agents.json",
     ".vibe/commands.json",
   )
 

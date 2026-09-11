@@ -45,6 +45,13 @@ class AcpClient(
     fun onConfigOptionsChanged(options: List<SessionConfigOption>) {}
 
     /**
+     * How the agent says the turn is billed — `_auth/status_update` of the Claude adapter. [label] is
+     * its own UI string («Claude Max», «Anthropic API key», «AWS Bedrock»), [detail] the specifics
+     * (key source, gateway host). The account — e-mail, organisation — is deliberately not passed on.
+     */
+    fun onAuthStatus(label: String, detail: String?) {}
+
+    /**
      * Запись MCP-сервера IDE для этой сессии, или null.
      *
      * Спрашивается у клиента, а не решается здесь: доступность зависит от настроек IDE и токена,
@@ -121,8 +128,8 @@ class AcpClient(
     // process keeps the environment it was started with, and re-launching the agent per call would
     // throw away the session it exists to hold. The file is the leak we can close; the process
     // lifetime is a limit we state rather than pretend to have fixed.
-    val resolvedEnv = config.env.mapValues { (_, value) -> secrets(value) }
-    pb.environment().putAll(resolvedEnv)
+    // An empty value takes the variable away rather than leaving it set and empty (AgentEnvironment).
+    AgentEnvironment.apply(pb.environment(), config.env) { value -> secrets(value) }
     val used = config.env.values.flatMap { com.vibe.agent.security.SecretRefs.names(it) }.distinct()
     if (used.isNotEmpty()) handler.onProtocolLog("[acp] secrets injected into the agent environment: " + used.joinToString(","))
     val p = pb.start()
@@ -441,6 +448,13 @@ class AcpClient(
             method != null -> when {
               method == "session/update" -> if (params != null) onSessionUpdateNotification(params)
               method == Elicitation.COMPLETE_METHOD -> handler.onElicitComplete(params ?: JsonObject(emptyMap()))
+              // The Claude adapter's extension notification: how the turn is billed. Only its label
+              // and detail are taken — the account (e-mail, organisation) stays where it came from.
+              method == "_auth/status_update" -> (params?.get("authStatus") as? JsonObject)?.let { status ->
+                (status["label"] as? JsonPrimitive)?.contentOrNull?.takeIf { it.isNotBlank() }?.let { label ->
+                  handler.onAuthStatus(label, (status["detail"] as? JsonPrimitive)?.contentOrNull)
+                }
+              }
               else -> handler.onProtocolLog(t("acp.log.notification", "method" to method))
             }
             id != null -> {

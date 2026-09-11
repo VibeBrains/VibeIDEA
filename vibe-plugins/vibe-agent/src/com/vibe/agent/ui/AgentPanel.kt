@@ -3111,6 +3111,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
         it.start()
         client = it
         clientConfig = config
+        auditAgentStart(config, workingDir)
       }
     }
     val handshakeSec = VibeAgentSettings.handshakeTimeoutSec.toLong()
@@ -4823,6 +4824,32 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     SwingUtilities.invokeLater { modePicker.setModes(client?.modes); configPicker.setOptions(client?.configOptions) }
   }
 
+  /**
+   * The boundary where a process with the person's authority begins: what was started, where,
+   * whether it may run commands through us, and which secrets went with it. «Что вообще было
+   * запущено» has no other answer — the protocol log is not a journal and does not survive the IDE.
+   * The command is masked like any text that may carry a token; secrets are named, never shown.
+   */
+  private fun auditAgentStart(config: AgentServerConfig, workingDir: String?) {
+    val secrets = config.env.values.flatMap { com.vibe.agent.security.SecretRefs.names(it) }.distinct()
+    val dir = workingDir?.let { wd -> project.basePath?.let { com.vibe.agent.context.AccessPolicy.relativeTo(wd, it) } ?: wd }
+    audit?.append(AuditEvent(System.currentTimeMillis(), AuditEvent.Action.AGENT_START, ok = true,
+      actor = com.vibe.agent.audit.AuditActor.IDE,
+      meta = buildMap {
+        put("agent", config.name)
+        put("command", com.vibe.agent.security.SecretPatterns.redact((listOf(config.command) + config.args).joinToString(" "))
+          .take(DESTRUCTIVE_PREVIEW_LEN))
+        dir?.let { put("dir", it.ifEmpty { "." }) }
+        put("terminal", VibeAgentSettings.terminalEnabled.toString())
+        if (secrets.isNotEmpty()) put("secrets", secrets.joinToString(","))
+      }))
+  }
+
+  /** The agent says how the turn is billed: its own label and detail, never the account. */
+  override fun onAuthStatus(label: String, detail: String?) {
+    systemLine(t("chat.agentAuthStatus", "label" to (if (detail.isNullOrBlank()) label else "$label — $detail")))
+  }
+
   override fun onProcessExit(client: AcpClient, code: Int) {
     synchronized(clientLock) {
       // An exit of a client we already replaced is not ours to react to.
@@ -4830,6 +4857,10 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
       this.client = null
       clientConfig = null
     }
+    // The other end of the boundary audited in [auditAgentStart]: an agent that dies mid-run leaves
+    // the journal its exit code, not only a line in a feed nobody kept.
+    audit?.append(AuditEvent(System.currentTimeMillis(), AuditEvent.Action.AGENT_EXIT, ok = code == 0,
+                             actor = com.vibe.agent.audit.AuditActor.IDE, meta = mapOf("code" to code.toString())))
     systemLine(t("chat.processExited", "code" to code))
     SwingUtilities.invokeLater { modePicker.setModes(null); configPicker.setOptions(null) }
     // No finishTurn() here: an idle agent's death must not end an unrelated (e.g. LLM) turn.
