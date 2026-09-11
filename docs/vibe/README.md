@@ -46,6 +46,7 @@
 - [references/digest20260902.md](references/digest20260902.md) — разбор внешнего дайджеста 02.09.2026: ломающие изменения Fable 5.1, регрессии агентного цикла, MCP Tasks и Skills over MCP, экономика кэш-чтений; бэклог с приоритетами.
 - [references/digest20260901.md](references/digest20260901.md) — разбор внешнего дайджеста 01.09.2026: формат API на уровне модели (OpenCode Go), гранулярность причуд (MiniMax), атрибуция действий в журнале (NIST), защита журнала от инструментов агента, Claude Agent SDK и лимиты подписки; бэклог с приоритетами.
 - [references/vibeideUxParity.md](references/vibeideUxParity.md) — поведенческие спеки экранов VibeIDE (эталон UX-паритета волн A/B/C).
+- [references/spotifyPortalAiPlugins.md](references/spotifyPortalAiPlugins.md) — разбор маркетплейса плагинов Spotify Portal (11.09.2026): что взять — отказ хука в чужом формате, проверка ответившей модели, правила навыков с побочными эффектами, эвалы навыков; что не брать и почему.
 - [knowledge/README.md](knowledge/README.md) — база знаний: индекс обязателен, запись без строки в индексе не существует.
 - [../../FORK_CHANGES.md](../../FORK_CHANGES.md) — реестр отклонений от апстрима + плейбук синка.
 - [../../CLAUDE.md](../../CLAUDE.md) — специфика проекта для сессий Claude.
