@@ -44,11 +44,16 @@ class ProjectContextService(private val project: Project) {
   }
 
   fun roots(): AccessPolicy.Roots = AccessPolicy.Roots(
-    projectBase = project.basePath,
-    referenceFolders = referenceFolders(),
+    // Physical spellings, resolved the same way as agent paths: a project opened through a symlink
+    // (or through macOS `/var` → `/private/var`) would otherwise be a stranger to itself.
+    projectBase = project.basePath?.let { physical(it) },
+    referenceFolders = referenceFolders().map { physical(it) },
     sourceFolders = sourceFolders(),
     ignore = ignore(),
   )
+
+  private fun physical(path: String): String =
+    runCatching { AgentPaths.physical(Path.of(path).toAbsolutePath().normalize())?.toString() }.getOrNull() ?: path
 
   fun ignore(): VibeIgnore {
     val base = project.basePath ?: return VibeIgnore.EMPTY

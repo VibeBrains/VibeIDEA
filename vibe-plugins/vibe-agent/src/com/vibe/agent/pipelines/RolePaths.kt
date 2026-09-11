@@ -49,7 +49,13 @@ object RolePaths {
   fun mayWrite(relativePath: String, scope: Scope): Boolean {
     if (!scope.stated) return true
     val path = normalize(relativePath)
-    if (scope.deny.any { matches(path, it) }) return false
+    // A route, not a place: `tests/../src/app.kt` matches `tests/**` as text and lands in src.
+    // Callers resolve paths first (AgentPaths); whatever still carries dots is refused, not matched.
+    if (path.split('/').any { it == "." || it == ".." }) return false
+    // Deny rules fold case and Unicode form — on APFS and NTFS `Secrets/` IS `secrets/`; allow rules
+    // match exactly, because an exact miss can only err towards refusing.
+    val folded = com.vibe.agent.context.AccessPolicy.foldCase(path)
+    if (scope.deny.any { matches(folded, com.vibe.agent.context.AccessPolicy.foldCase(it)) }) return false
     if (scope.allow.isEmpty()) return true
     return scope.allow.any { matches(path, it) }
   }

@@ -16,6 +16,10 @@ package com.vibe.agent.context
  * - `docs slash star-star slash star.png` matches by path from the project root;
  * - a leading `/` anchors the pattern at the root;
  * - `!pattern` re-includes what an earlier line excluded (last match wins, as in git).
+ *
+ * Case and Unicode form are folded on both sides: on APFS and NTFS `Dist/` IS `dist/`, and a rule
+ * that let the other spelling through would be an ignore list with a door in it. On a case-sensitive
+ * disk the rule is therefore deliberately broader than git's — the safe direction for a deny list.
  */
 class VibeIgnore private constructor(private val rules: List<Rule>) {
   private class Rule(val regex: Regex, val negated: Boolean, val directoryOnly: Boolean)
@@ -25,7 +29,7 @@ class VibeIgnore private constructor(private val rules: List<Rule>) {
   /** [relativePath] is slash-separated and relative to the project root, without a leading slash. */
   fun isIgnored(relativePath: String, isDirectory: Boolean = false): Boolean {
     if (rules.isEmpty()) return false
-    val path = relativePath.trim('/')
+    val path = AccessPolicy.foldCase(relativePath.trim('/'))
     if (path.isEmpty()) return false
     // Last match wins, exactly as in git: that is what makes `!keep.min.js` after `*.min.js` work.
     var ignored = false
@@ -65,7 +69,7 @@ class VibeIgnore private constructor(private val rules: List<Rule>) {
         if (pattern.isEmpty()) continue
         // A pattern without a slash matches by NAME anywhere; with a slash it is a path from the root.
         val anchored = '/' in pattern
-        rules.add(Rule(toRegex(pattern, anchored), negated, directoryOnly))
+        rules.add(Rule(toRegex(AccessPolicy.foldCase(pattern), anchored), negated, directoryOnly))
       }
       return if (rules.isEmpty()) EMPTY else VibeIgnore(rules)
     }

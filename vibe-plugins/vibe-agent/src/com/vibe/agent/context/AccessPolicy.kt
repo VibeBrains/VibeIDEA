@@ -1,6 +1,9 @@
 // Copyright 2026 VibeBrains. Use of this source code is governed by the Apache 2.0 license.
 package com.vibe.agent.context
 
+import java.text.Normalizer
+import java.util.Locale
+
 /**
  * Who may touch what: the answer given BEFORE the agent acts, not explained after.
  *
@@ -22,6 +25,15 @@ package com.vibe.agent.context
  *
  * Pure on purpose: the decision must be testable without a filesystem, because "did it really
  * refuse to write there?" is exactly the question one does not want to answer by experiment.
+ *
+ * The path must arrive already resolved — see [AgentPaths]: `..` gone, symbolic links followed.
+ * Text that still walks through `..` is a route rather than a place, and a route can leave any
+ * folder it seems to be in; such a path is refused here instead of being guessed at.
+ *
+ * Case and Unicode form: every DENY-type comparison (the journals, `.vibe/ignore`, source folders)
+ * folds both, because on APFS and NTFS `Secrets/` and `secrets/` are one folder and «й» has two byte
+ * spellings. ALLOW-type comparisons (the project, reference folders) stay exact: both sides are
+ * resolved through the file system first, and an exact miss can only err towards refusing.
  */
 object AccessPolicy {
   enum class Access { READ_WRITE, READ_ONLY, DENIED }
@@ -56,9 +68,11 @@ object AccessPolicy {
    * precisely the part an investigation reads.
    */
   fun isProtectedJournal(relative: String): Boolean {
-    if (relative in PROTECTED_JOURNALS) return true
-    val name = relative.removePrefix(".vibe/")
-    if (name != relative.substringAfterLast('/')) return false
+    // Folded: on a case-insensitive disk `.VIBE/AUDIT.JSONL` is the journal itself.
+    val key = foldCase(relative)
+    if (key in PROTECTED_JOURNALS) return true
+    val name = key.removePrefix(".vibe/")
+    if (name != key.substringAfterLast('/')) return false
     return (name.startsWith("audit.") || name.startsWith("checkpoints.")) &&
            (name.endsWith(".jsonl") || name.endsWith(".jsonl.gz"))
   }
@@ -67,14 +81,19 @@ object AccessPolicy {
     val normalized = normalize(path)
     val base = roots.projectBase?.let { normalize(it) }
 
-    if (base != null && isInside(normalized, base)) {
-      val relative = normalized.removePrefix(base).trim('/')
-      // Before every other rule, and not overridable by any of them: a setting that could open the
-      // journal for writing would be a setting that switches accountability off.
-      if (isProtectedJournal(relative)) return Access.READ_ONLY
-      if (roots.ignore.isIgnored(relative)) return Access.DENIED
-      if (roots.sourceFolders.any { isInside(normalized, joinRelative(base, it)) }) return Access.READ_ONLY
-      return Access.READ_WRITE
+    if (base != null) {
+      if (hasDotSegments(normalized)) return Access.DENIED
+      val relative = relativeTo(normalized, base)
+      if (relative != null) {
+        // Before every other rule, and not overridable by any of them: a setting that could open the
+        // journal for writing would be a setting that switches accountability off.
+        if (isProtectedJournal(relative)) return Access.READ_ONLY
+        if (roots.ignore.isIgnored(relative)) return Access.DENIED
+        if (roots.sourceFolders.any { isInside(foldCase(normalized), foldCase(joinRelative(base, it))) }) {
+          return Access.READ_ONLY
+        }
+        return Access.READ_WRITE
+      }
     }
 
     if (roots.referenceFolders.any { isInside(normalized, normalize(it)) }) return Access.READ_ONLY
@@ -95,6 +114,24 @@ object AccessPolicy {
   }
 
   fun normalize(path: String): String = path.replace('\\', '/').trimEnd('/').ifEmpty { "/" }
+
+  /** [path] relative to [root] («» for the root itself), or null when it is not inside; exact comparison. */
+  fun relativeTo(path: String, root: String): String? {
+    val normalized = normalize(path)
+    val cleanRoot = normalize(root)
+    if (!isInside(normalized, cleanRoot)) return null
+    return normalized.removePrefix(cleanRoot.trimEnd('/')).trim('/')
+  }
+
+  /**
+   * The form deny-type comparisons are made in: Unicode NFC, lower case.
+   *
+   * For deny rules only. Folding an allow rule would, on a case-sensitive disk, let `/work/APP`
+   * pass for `/work/app` — a different folder there.
+   */
+  fun foldCase(text: String): String = Normalizer.normalize(text, Normalizer.Form.NFC).lowercase(Locale.ROOT)
+
+  private fun hasDotSegments(path: String): Boolean = path.split('/').any { it == "." || it == ".." }
 
   private fun joinRelative(base: String, relative: String): String =
     normalize(base.trimEnd('/') + "/" + relative.trim('/'))

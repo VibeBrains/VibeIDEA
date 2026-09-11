@@ -78,4 +78,34 @@ class RolePathsTest {
     val scope = RolePaths.Scope(allow = listOf("tests/**"))
     assertTrue(RolePaths.mayWrite("tests\\unit\\FooTest.kt", scope))
   }
+
+  @Test
+  fun `маршрут с двумя точками — отказ, а не совпадение`() {
+    // `tests/../src/app.kt` совпадал с `tests/**` как текст и ложился в src.
+    val scope = RolePaths.Scope(allow = listOf("tests/**"))
+    assertFalse(RolePaths.mayWrite("tests/../src/app.kt", scope))
+    assertFalse(RolePaths.mayWrite("../outside.kt", scope))
+    assertTrue(RolePaths.mayWrite("tests/unit/FooTest.kt", scope), "обычный путь не задет")
+  }
+
+  @Test
+  fun `запрет не обходится регистром и формой юникода`() {
+    val scope = RolePaths.Scope(allow = listOf("**"), deny = listOf("**/secrets/**"))
+    assertFalse(RolePaths.mayWrite("Secrets/key.txt", scope))
+    assertFalse(RolePaths.mayWrite("src/SECRETS/key.txt", scope))
+    assertTrue(RolePaths.mayWrite("src/Main.kt", scope))
+  }
+
+  @Test
+  fun `и то и другое сразу — порядок проверок не даёт лазейки`() {
+    // Урок VibeSweep: по отдельности обе нормализации верны, вместе — нет, если порядок неверен.
+    val scope = RolePaths.Scope(allow = listOf("tests/**"), deny = listOf("**/secrets/**"))
+    assertFalse(RolePaths.mayWrite("tests/../Secrets/key.txt", scope))
+  }
+
+  @Test
+  fun `разрешение сравнивается точно`() {
+    // На диске, чувствительном к регистру, Tests/ — другая папка; точный промах ошибается в сторону отказа.
+    assertFalse(RolePaths.mayWrite("Tests/FooTest.kt", RolePaths.Scope(allow = listOf("tests/**"))))
+  }
 }

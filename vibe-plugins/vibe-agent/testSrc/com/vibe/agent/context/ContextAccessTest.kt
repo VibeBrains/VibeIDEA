@@ -52,6 +52,16 @@ class VibeIgnoreTest {
     assertTrue(ignore.isIgnored("app.min.js"))
     assertFalse(ignore.isIgnored("vendor/keep.min.js"))
   }
+
+  @Test
+  fun `case and unicode form do not open a door in the list`() {
+    // On APFS and NTFS `Dist/` IS `dist/`; «й» has a composed and a decomposed spelling.
+    val ignore = VibeIgnore.parse("dist/\n/секреты/")
+    assertTrue(ignore.isIgnored("Dist/app.js"))
+    assertTrue(ignore.isIgnored("DIST/deep/app.js"))
+    val decomposed = java.text.Normalizer.normalize("секреты/мой.txt", java.text.Normalizer.Form.NFD)
+    assertTrue(VibeIgnore.parse("/мой-каталог/\n*мой.txt").isIgnored(decomposed), "NFD-написание — тот же файл")
+  }
 }
 
 class AccessPolicyTest {
@@ -101,6 +111,43 @@ class AccessPolicyTest {
   fun `with no project open nothing is restricted`() {
     val open = AccessPolicy.Roots(projectBase = null)
     assertEquals(AccessPolicy.Access.READ_WRITE, AccessPolicy.of("/tmp/scratch.kt", open))
+  }
+
+  @Test
+  fun `a route with dot-dot is refused, not matched`() {
+    // Found by reading the code on 11.09.2026: the text was compared, the OS resolved `..` itself.
+    assertEquals(AccessPolicy.Access.DENIED, AccessPolicy.of("/work/app/../../home/me/.ssh/id_rsa", roots),
+                 "из проекта наружу")
+    assertEquals(AccessPolicy.Access.DENIED, AccessPolicy.of("/notes/research/../../home/me/.aws/credentials", roots),
+                 "через папку-справочник наружу")
+    assertEquals(AccessPolicy.Access.DENIED, AccessPolicy.of("/work/app/src/../.vibe/audit.jsonl", roots),
+                 "в журнал в обход его защиты")
+    assertEquals(AccessPolicy.Access.DENIED, AccessPolicy.of("/work/app/x/../dist/bundle.js", roots),
+                 "мимо закреплённого ignore-шаблона")
+    assertEquals(AccessPolicy.Access.DENIED, AccessPolicy.of("/work/app/./src/Main.kt", roots),
+                 "даже безобидная точка — не место, а маршрут")
+  }
+
+  @Test
+  fun `deny rules ignore case and unicode form`() {
+    assertEquals(AccessPolicy.Access.READ_ONLY, AccessPolicy.of("/work/app/.VIBE/AUDIT.JSONL", roots), "журнал")
+    assertEquals(AccessPolicy.Access.DENIED, AccessPolicy.of("/work/app/Dist/bundle.js", roots), "ignore")
+    assertEquals(AccessPolicy.Access.READ_ONLY, AccessPolicy.of("/work/app/RAW/dump.json", roots), "источник")
+    val decomposed = java.text.Normalizer.normalize("/work/app/docs/sources/й.pdf", java.text.Normalizer.Form.NFD)
+    assertEquals(AccessPolicy.Access.READ_ONLY, AccessPolicy.of(decomposed, roots))
+  }
+
+  @Test
+  fun `allow rules stay exact`() {
+    // Folding an allow rule would, on a case-sensitive disk, let a DIFFERENT folder pass for the project.
+    assertEquals(AccessPolicy.Access.DENIED, AccessPolicy.of("/WORK/APP/src/Main.kt", roots))
+  }
+
+  @Test
+  fun `relative path is exact and knows its root`() {
+    assertEquals("src/Main.kt", AccessPolicy.relativeTo("/work/app/src/Main.kt", "/work/app"))
+    assertEquals("", AccessPolicy.relativeTo("/work/app", "/work/app"))
+    assertEquals(null, AccessPolicy.relativeTo("/work/app-backup/x", "/work/app"))
   }
 }
 

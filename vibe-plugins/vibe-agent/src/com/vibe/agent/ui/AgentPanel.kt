@@ -4600,16 +4600,20 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
   }
 
   override fun onWriteTextFile(params: JsonObject): JsonElement {
-    val path = params["path"]?.jsonPrimitive?.contentOrNull
+    // The hook, the changed-files list and the audit get the path as it will be written: with the
+    // agent's `..` left in, a hook's own path pattern could be walked around the same way.
+    val path = params["path"]?.jsonPrimitive?.contentOrNull?.let { fileOps.resolvePath(it).normalized.toString() }
+    val resolved = if (path == null) params
+                   else JsonObject(params + ("path" to kotlinx.serialization.json.JsonPrimitive(path)))
     // preToolUse hook on the client-controlled write path (WritePreview is the interactive gate;
     // a blocking hook refuses before the diff even appears).
-    val preHook = runToolHook(HookEvent.PRE_TOOL_USE, "write_text_file", params)
+    val preHook = runToolHook(HookEvent.PRE_TOOL_USE, "write_text_file", resolved)
     if (preHook.blocked) {
       systemLine("🪝 ${preHook.agentMessage}")
       throw IllegalStateException(preHook.agentMessage ?: t("chat.write.rejectedByHook"))
     }
     path?.let { changedPaths.add(it) }
-    val result = fileOps.writeTextFile(params)
+    val result = fileOps.writeTextFile(resolved)
     audit?.append(AuditEvent(System.currentTimeMillis(), AuditEvent.Action.FS_WRITE, ok = true, actor = agentActor(),
       files = path?.let { listOf(it.take(ToolCallAudit.MAX_TARGET_LEN)) }))
     return result
