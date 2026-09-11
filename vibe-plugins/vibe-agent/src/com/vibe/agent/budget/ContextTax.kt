@@ -59,8 +59,10 @@ object ContextTax {
       inputTokens = input,
       cacheReadTokens = cacheRead,
       outputTokens = output,
-      inputCost = pricing?.costOf(TokenUsage(inputTokens = input, cacheReadTokens = cacheRead)),
-      outputCost = pricing?.costOf(TokenUsage(outputTokens = output)),
+      // No moment per turn is kept here, so the price by the hour cannot apply: the declared (peak)
+      // rate is used, which overstates an off-peak conversation rather than understating it.
+      inputCost = pricing?.costOf(TokenUsage(inputTokens = input, cacheReadTokens = cacheRead), null),
+      outputCost = pricing?.costOf(TokenUsage(outputTokens = output), null),
     )
   }
 }

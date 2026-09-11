@@ -1,6 +1,11 @@
 // Copyright 2026 VibeBrains. Use of this source code is governed by the Apache 2.0 license.
 package com.vibe.agent.providers
 
+import java.time.DayOfWeek
+import java.time.Instant
+import java.time.ZoneOffset
+import java.time.temporal.ChronoField
+
 /**
  * What a million tokens of this model costs, as the owner of the key wrote it down.
  *
@@ -30,6 +35,16 @@ data class ModelPricing(
    * агентный цикл, перечитывающий контекст, в этот порог и упирается.
    */
   val longContext: LongContext? = null,
+  /**
+   * Price by the hour, when the vendor declared it: the rates above are PEAK rates, and outside the
+   * peak every rate is multiplied by [TimeOfDay.offPeakFactor].
+   *
+   * The occasion is DeepSeek from 10.09.2026: peak 01:00–04:00 and 06:00–10:00 UTC on weekdays,
+   * half the peak rate at any other time (api-docs.deepseek.com/quick_start/pricing, checked
+   * 11.09.2026). Without it the spending report is off by a factor of two, in a direction that
+   * depends on the hour of the turn.
+   */
+  val timeOfDay: TimeOfDay? = null,
 ) {
   /**
    * Множители, действующие, когда промпт длиннее порога.
@@ -45,6 +60,45 @@ data class ModelPricing(
     val output: Double = 1.0,
   ) {
     val stated: Boolean get() = overInputTokens > 0 && (input != 1.0 || cache != 1.0 || output != 1.0)
+  }
+
+  /**
+   * The peak schedule. Rates of the entry are the peak ones; outside the peak windows, and on days
+   * without a peak, every rate is multiplied by [offPeakFactor].
+   *
+   * Peak rather than off-peak as the base: both vendors that publish such a schedule (DeepSeek,
+   * Z.ai) state the off-peak price as a share of the peak one, and the entry repeats their price
+   * list instead of recomputing it.
+   */
+  data class TimeOfDay(
+    val peakWindows: List<Window>,
+    /** Days on which the peak windows apply; empty means every day. */
+    val peakDays: Set<DayOfWeek> = emptySet(),
+    val offPeakFactor: Double = 1.0,
+  ) {
+    /** Minutes since midnight UTC, end exclusive; a window across midnight has [toMinute] below [fromMinute]. */
+    data class Window(val fromMinute: Int, val toMinute: Int) {
+      fun contains(minute: Int): Boolean =
+        if (fromMinute < toMinute) minute in fromMinute until toMinute else minute >= fromMinute || minute < toMinute
+    }
+
+    val stated: Boolean get() = peakWindows.isNotEmpty() && offPeakFactor > 0 && offPeakFactor != 1.0
+
+    fun isPeak(at: Instant): Boolean {
+      val utc = at.atOffset(ZoneOffset.UTC)
+      if (peakDays.isNotEmpty() && utc.dayOfWeek !in peakDays) return false
+      val minute = utc.get(ChronoField.MINUTE_OF_DAY)
+      return peakWindows.any { it.contains(minute) }
+    }
+
+    /**
+     * The multiplier to the rates at [at]; null means the moment is unknown and counts as peak.
+     *
+     * Peak rather than some average: without the moment of the turn the honest answer is the
+     * declared rate, not an invented share of hours — and an overestimate is the safe error for a
+     * spending ceiling, an underestimate is not.
+     */
+    fun factorAt(at: Instant?): Double = if (at == null || !stated || isPeak(at)) 1.0 else offPeakFactor
   }
 
   /**
@@ -69,8 +123,12 @@ data class ModelPricing(
    * A rate left at zero while others are set counts as zero for its part — the person who wrote
    * only `input` and `output` said what they knew, and refusing the whole calculation over a
    * missing cache rate would answer a question they did ask with silence.
+   *
+   * [at] is the moment of the turn, for the price by the hour; null when it is unknown — then the
+   * declared (peak) rate applies, see [TimeOfDay.factorAt]. There is no default on purpose: a caller
+   * that forgets the moment would silently price every off-peak turn at twice its cost.
    */
-  fun costOf(usage: TokenUsage): Double? {
+  fun costOf(usage: TokenUsage, at: Instant?): Double? {
     if (!stated || !usage.known) return null
     // Надбавка действует на ВЕСЬ запрос, а не на превышение: так объявлено вендором
     // («for the full request»), и считать иначе значит выдумать свою тарифную сетку.
@@ -78,10 +136,11 @@ data class ModelPricing(
     val fIn = tier?.input ?: 1.0
     val fCache = tier?.cache ?: 1.0
     val fOut = tier?.output ?: 1.0
-    return usage.inputTokens * input * fIn / MILLION +
-           usage.outputTokens * output * fOut / MILLION +
-           usage.cacheReadTokens * cacheRead * fCache / MILLION +
-           usage.cacheWriteTokens * cacheWrite * fCache / MILLION
+    val hour = timeOfDay?.factorAt(at) ?: 1.0
+    return (usage.inputTokens * input * fIn +
+            usage.outputTokens * output * fOut +
+            usage.cacheReadTokens * cacheRead * fCache +
+            usage.cacheWriteTokens * cacheWrite * fCache) * hour / MILLION
   }
 
   /**
@@ -90,13 +149,14 @@ data class ModelPricing(
    * The number worth showing is not «сколько стоило», it is «сколько стоило бы без кэша»: cache
    * reads are the one line item a person can act on by keeping the conversation append-only.
    */
-  fun cacheSavingOf(usage: TokenUsage): Double? {
+  fun cacheSavingOf(usage: TokenUsage, at: Instant?): Double? {
     if (!stated || usage.cacheReadTokens <= 0) return null
     if (input <= 0) return null
     // Те же множители, что и в счёте: экономия, посчитанная по базовой ставке при действующей
     // надбавке, назвала бы число, которого не было ни в одном счёте.
     val tier = longContext.takeIf { longContextApplies(usage) }
-    val saved = input * (tier?.input ?: 1.0) - cacheRead * (tier?.cache ?: 1.0)
+    val hour = timeOfDay?.factorAt(at) ?: 1.0
+    val saved = (input * (tier?.input ?: 1.0) - cacheRead * (tier?.cache ?: 1.0)) * hour
     return usage.cacheReadTokens * saved / MILLION
   }
 

@@ -100,6 +100,7 @@ object VibeDefaults {
     "skills/resolve-merge-conflicts/scripts/extract_conflict_context.py" to "skills/resolve-merge-conflicts/scripts/extract_conflict_context.py",
     "skills/review-pr/SKILL.md" to "skills/review-pr/SKILL.md",
     "skills/roadmap-autopilot/SKILL.md" to "skills/roadmap-autopilot/SKILL.md",
+    "skills/screenshot-review/SKILL.md" to "skills/screenshot-review/SKILL.md",
     "skills/spec-driven-implementation/SKILL.md" to "skills/spec-driven-implementation/SKILL.md",
     "skills/teach/SKILL.md" to "skills/teach/SKILL.md",
     "skills/triage-failing-test/SKILL.md" to "skills/triage-failing-test/SKILL.md",

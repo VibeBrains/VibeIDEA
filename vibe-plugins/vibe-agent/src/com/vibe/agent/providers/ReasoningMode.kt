@@ -46,8 +46,18 @@ object ReasoningMode {
      * умолчанием: вендор рекомендует `max` для кода.
      */
     val words: List<String> = emptyList(),
+    /**
+     * The body fragment that switches reasoning OFF on this model, sent as is when the slider is off.
+     *
+     * Needed where reasoning is on by default: DeepSeek V4.1 thinks at `high` unless the request
+     * carries `{"thinking":{"type":"disabled"}}` (api-docs.deepseek.com/guides/thinking_mode, checked
+     * 11.09.2026). Without it «off» sends nothing and the model keeps thinking — the slider lies.
+     * A fragment rather than a flag: vendors spell the switch differently, and the person who wrote
+     * the entry knows the spelling of their route.
+     */
+    val off: JsonObject? = null,
   ) {
-    val stated: Boolean get() = canTurnOff != null || levels.isNotEmpty() || words.isNotEmpty()
+    val stated: Boolean get() = canTurnOff != null || levels.isNotEmpty() || words.isNotEmpty() || off != null
   }
 
   fun levelOf(name: String?): Level = when (name?.trim()?.lowercase()) {
@@ -121,9 +131,12 @@ object ReasoningMode {
    * The fields to add to the request body for [protocol], or an empty object when this provider
    * has nothing to say about thinking. An empty object rather than null: the caller merges, and a
    * merge with nothing is simpler to read than a null check at every call site.
+   *
+   * Off sends the model's declared [Support.off] fragment and nothing otherwise: inventing a switch
+   * for a vendor that did not declare one would be guessing at its wire format.
    */
   fun bodyFields(protocol: String, level: Level, maxOutputTokens: Int?, support: Support? = null): JsonObject {
-    if (level == Level.OFF) return JsonObject(emptyMap())
+    if (level == Level.OFF) return support?.off ?: JsonObject(emptyMap())
     return when (protocol.lowercase()) {
       "anthropic" -> buildJsonObject {
         // The budget must leave room for the answer itself; a budget at or above max_tokens is

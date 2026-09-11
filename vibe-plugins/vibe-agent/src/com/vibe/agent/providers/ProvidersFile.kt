@@ -153,7 +153,7 @@ object ProvidersFile {
    * Shared by `pricing` and `priceAfter` on purpose: two readers of the same shape drift, and the
    * future price would end up accepting fields today's price rejects.
    */
-  private fun parsePricing(pr: JsonObject?): ModelPricing? = pr?.let {
+  private fun parsePricing(pr: JsonObject?, model: String, onWarning: (String) -> Unit): ModelPricing? = pr?.let {
     ModelPricing(
       input = it["input"]?.jsonPrimitive?.doubleOrNull ?: 0.0,
       output = it["output"]?.jsonPrimitive?.doubleOrNull ?: 0.0,
@@ -170,8 +170,54 @@ object ProvidersFile {
           output = lc["output"]?.jsonPrimitive?.doubleOrNull ?: 1.0,
         ).takeIf { tier -> tier.stated }
       },
+      timeOfDay = parseTimeOfDay(it["timeOfDay"] as? JsonObject, model, onWarning),
     ).takeIf { p -> p.stated }
   }
+
+  /**
+   * `"timeOfDay": { "peakUtc": ["01:00-04:00"], "peakDays": ["mon"], "offPeakFactor": 0.5 }` inside `cost`.
+   *
+   * A block with one broken window or day is dropped WHOLE and named aloud: a price computed from half
+   * a schedule looks right and is wrong silently, while without the block it is at least the peak one.
+   */
+  private fun parseTimeOfDay(o: JsonObject?, model: String, onWarning: (String) -> Unit): ModelPricing.TimeOfDay? {
+    if (o == null) return null
+    val windows = (o["peakUtc"] as? kotlinx.serialization.json.JsonArray)?.map { el -> window(el.jsonPrimitive.contentOrNull) }
+    val days = (o["peakDays"] as? kotlinx.serialization.json.JsonArray)?.map { el ->
+      PEAK_DAYS[el.jsonPrimitive.contentOrNull?.trim()?.lowercase()]
+    }
+    val factor = o["offPeakFactor"]?.jsonPrimitive?.doubleOrNull
+    if (windows.isNullOrEmpty() || windows.any { it == null } || days?.any { it == null } == true ||
+        factor == null || factor <= 0) {
+      onWarning(t("providers.warn.timeOfDayInvalid", "model" to model))
+      return null
+    }
+    return ModelPricing.TimeOfDay(windows.filterNotNull(), days.orEmpty().filterNotNull().toSet(), factor)
+      .takeIf { it.stated }
+  }
+
+  /** «01:00-04:00» → a window in minutes since midnight UTC; «24:00» is accepted as an end only. */
+  private fun window(text: String?): ModelPricing.TimeOfDay.Window? {
+    val parts = text?.split('-')?.map { it.trim() } ?: return null
+    if (parts.size != 2) return null
+    val from = minuteOfDay(parts[0], asEnd = false) ?: return null
+    val to = minuteOfDay(parts[1], asEnd = true) ?: return null
+    return ModelPricing.TimeOfDay.Window(from, to).takeIf { from != to }
+  }
+
+  private fun minuteOfDay(text: String, asEnd: Boolean): Int? =
+    if (asEnd && text == END_OF_DAY) 0
+    else runCatching { java.time.LocalTime.parse(text).get(java.time.temporal.ChronoField.MINUTE_OF_DAY) }.getOrNull()
+
+  /** Midnight as the END of a window («22:00-24:00»); as a start it is written «00:00». */
+  private const val END_OF_DAY = "24:00"
+
+  private val PEAK_DAYS: Map<String, java.time.DayOfWeek> = java.time.DayOfWeek.entries.associateBy {
+    it.name.take(DAY_ABBREVIATION_LENGTH).lowercase()
+  }
+
+  /** `mon`, `tue`, … — the three-letter English abbreviation the spec documents. */
+  private const val DAY_ABBREVIATION_LENGTH = 3
 
   fun parse(text: String, source: String = "providers.json", onWarning: (String) -> Unit): List<ProviderEntry> {
     val root = json.parseToJsonElement(com.vibe.agent.util.VibeJsonc.strip(text)).jsonObject
@@ -189,7 +235,7 @@ object ProvidersFile {
         if (!com.vibe.agent.defaults.VibeProducts.addressedToUs(o)) continue
         val id = o["id"]?.jsonPrimitive?.contentOrNull
         if (id.isNullOrBlank()) { onWarning(t("providers.warn.noId", "source" to source)); continue }
-        result.add(parseProvider(id, o))
+        result.add(parseProvider(id, o, onWarning))
       }
       catch (e: Exception) {
         onWarning(t("providers.warn.entrySkipped", "source" to source, "reason" to e.message))
@@ -198,7 +244,7 @@ object ProvidersFile {
     return result
   }
 
-  private fun parseProvider(id: String, o: JsonObject): ProviderEntry {
+  private fun parseProvider(id: String, o: JsonObject, onWarning: (String) -> Unit): ProviderEntry {
     val auth = when (val a = o["auth"]) {
       null -> AuthSpec()
       else -> if (a is kotlinx.serialization.json.JsonPrimitive) AuthSpec(type = a.content)
@@ -231,14 +277,14 @@ object ProvidersFile {
         topK = mo["topK"]?.jsonPrimitive?.intOrNull,
         extraBody = mo["extraBody"] as? JsonObject,
         protocol = mo["protocol"]?.jsonPrimitive?.contentOrNull,
-        pricing = parsePricing((mo["cost"] ?: mo["pricing"]) as? JsonObject),
+        pricing = parsePricing((mo["cost"] ?: mo["pricing"]) as? JsonObject, "$id/$mid", onWarning),
         fim = mo["fim"]?.jsonPrimitive?.booleanOrNull ?: false,
         vision = mo["vision"]?.jsonPrimitive?.booleanOrNull,
         note = mo["note"]?.jsonPrimitive?.contentOrNull,
         sunsetDate = mo["sunsetDate"]?.jsonPrimitive?.contentOrNull,
         priceValidUntil = text(mo, "costValidUntil", "priceValidUntil"),
         cacheTtl = mo["cacheTtl"]?.jsonPrimitive?.contentOrNull,
-        priceAfter = parsePricing((mo["costAfter"] ?: mo["priceAfter"]) as? JsonObject),
+        priceAfter = parsePricing((mo["costAfter"] ?: mo["priceAfter"]) as? JsonObject, "$id/$mid", onWarning),
         priceNote = text(mo, "costNote", "priceNote"),
         reasoning = parseReasoning(mo["reasoning"] as? JsonObject),
       )
@@ -299,7 +345,10 @@ object ProvidersFile {
       ?.distinct()
       .orEmpty()
     val canTurnOff = o["canTurnOff"]?.jsonPrimitive?.booleanOrNull
-    val support = ReasoningMode.Support(canTurnOff, levels, words)
+    // «Как выключить» — фрагмент тела КАК ОБЪЯВЛЕН: написание переключателя у вендоров разное, и
+    // выдумывать его за маршрут мы не вправе.
+    val off = o["off"] as? JsonObject
+    val support = ReasoningMode.Support(canTurnOff, levels, words, off)
     return support.takeIf { it.stated }
   }
 

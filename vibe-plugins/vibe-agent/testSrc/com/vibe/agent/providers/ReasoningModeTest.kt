@@ -1,8 +1,10 @@
 // Copyright 2026 VibeBrains. Use of this source code is governed by the Apache 2.0 license.
 package com.vibe.agent.providers
 
+import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.put
 import kotlin.test.Test
 import kotlin.test.assertNull
 import kotlin.test.assertEquals
@@ -92,5 +94,43 @@ class ReasoningModeTest {
     val glm = ReasoningMode.Support(canTurnOff = false, words = listOf("low", "high", "max"))
     val body = ReasoningMode.bodyFields("openai", ReasoningMode.Level.HIGH, 128_000, glm)
     assertEquals("max", body["reasoning_effort"]?.jsonPrimitive?.content)
+  }
+
+  // DeepSeek V4.1 thinks at `high` unless the request says otherwise (api-docs.deepseek.com, 11.09.2026).
+  private val disabled = buildJsonObject { put("thinking", buildJsonObject { put("type", "disabled") }) }
+  private val deepseek = ReasoningMode.Support(canTurnOff = true, words = listOf("low", "high", "max"), off = disabled)
+
+  @Test
+  fun `выключение отправляет объявленный фрагмент`() {
+    // Без фрагмента «выкл» не отправлял ничего, и модель думала дальше — ползунок врал.
+    val body = ReasoningMode.bodyFields("openai", ReasoningMode.Level.OFF, 8_000, deepseek)
+    assertEquals("disabled", body["thinking"]!!.jsonObject["type"]!!.jsonPrimitive.content)
+    assertNull(body["reasoning_effort"], "при выключении уровень не отправляется")
+  }
+
+  @Test
+  fun `включённое рассуждение фрагмента выключения не несёт`() {
+    val body = ReasoningMode.bodyFields("openai", ReasoningMode.Level.HIGH, 8_000, deepseek)
+    assertNull(body["thinking"])
+    assertEquals("max", body["reasoning_effort"]!!.jsonPrimitive.content)
+  }
+
+  @Test
+  fun `модель, которая не выключается, фрагмента не получает`() {
+    // Противоречивое объявление (canTurnOff=false и off) решается в пользу canTurnOff: clamp переводит
+    // «выкл» в самый низкий уровень, и до фрагмента дело не доходит.
+    val odd = ReasoningMode.Support(canTurnOff = false, words = listOf("low", "high"), off = disabled)
+    val level = ReasoningMode.clamp(ReasoningMode.Level.OFF, odd)
+    assertEquals(ReasoningMode.Level.LOW, level)
+    assertNull(ReasoningMode.bodyFields("openai", level, 8_000, odd)["thinking"])
+  }
+
+  @Test
+  fun `фрагмент выключения читается из файла как есть`() {
+    val parsed = ProvidersFile.parse(
+      """{"providers":[{"id":"d","baseURL":"https://x","models":{"static":[
+         {"id":"m","reasoning":{"canTurnOff":true,"off":{"thinking":{"type":"disabled"}}}}]}}]}""", "test") { }
+    val support = parsed.single().models.single().reasoning!!
+    assertEquals("disabled", support.off!!["thinking"]!!.jsonObject["type"]!!.jsonPrimitive.content)
   }
 }

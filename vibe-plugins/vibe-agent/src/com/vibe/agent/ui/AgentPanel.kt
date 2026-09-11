@@ -4069,8 +4069,10 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
       val usage = lastTurnUsage
       val counted = if (usage.known) usage.total
                     else com.vibe.agent.context.ContextBudget.estimateTokens(fullText)
-      val cost = lastTurnPricing?.costOf(usage)
-      lastTurnPricing?.cacheSavingOf(usage)?.takeIf { it > 0 }?.let { saved ->
+      // The moment of the turn, for the price by the hour: off-peak DeepSeek bills the same work at half.
+      val finishedAt = java.time.Instant.now()
+      val cost = lastTurnPricing?.costOf(usage, finishedAt)
+      lastTurnPricing?.cacheSavingOf(usage, finishedAt)?.takeIf { it > 0 }?.let { saved ->
         systemLine(t("spend.cacheSaved", "saved" to "%.2f".format(saved),
                      "tokens" to "%,d".format(usage.cacheReadTokens)))
       }

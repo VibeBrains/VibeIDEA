@@ -639,6 +639,7 @@
   "providers.warn.noArray": "{source}: нет массива providers",
   "providers.warn.noId": "{source}: запись без id пропущена",
   "providers.warn.entrySkipped": "{source}: запись пропущена: {reason}",
+  "providers.warn.timeOfDayInvalid": "{model}: расписание пика в cost.timeOfDay не разобрано — цена считается по пиковой ставке, без поправки на час",
   "slash.noSkillsFor": "Нет скиллов по фильтру «{filter}»",
   "slash.noCommandsFor": "Нет команд по фильтру «{filter}»",
   "slash.header.commands": "Команды чата:",

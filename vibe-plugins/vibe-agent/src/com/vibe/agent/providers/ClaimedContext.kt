@@ -10,10 +10,11 @@ import kotlinx.serialization.json.longOrNull
 /**
  * Размер окна, который провайдер сообщает о своей модели, — и почему ему нельзя верить молча.
  *
- * Разобрано 07.09.2026 на MiniMax-M3: совместимый `/anthropic`-слой отдаёт `context_window: 200000`
- * («likely inheriting Claude Sonnet's value»), сторонний каталог models.dev — 512 000, клиент
- * показывает третье, а фактическое окно — 1 000 000. Три источника, три числа, ни одно не совпало
- * с правдой.
+ * The trap as it was met on MiniMax-M3 (07.09.2026, re-checked 11.09.2026): a client reported the
+ * window as 200 000, the third-party models.dev catalogue as 512 000, and the vendor's own API
+ * reference as 1 000 000. The 200 000 turned out to be the window Claude Code assumes for a model id
+ * it does not recognise (code.claude.com/docs/en/model-config), not a field of the vendor's API —
+ * which only sharpens the point: three sources, three numbers, and the loudest one was a guess.
  *
  * Мы на эту ловушку не ловимся по построению: бюджет сессии берётся из настройки, а окно модели —
  * из `.vibe/providers.json`, то есть от человека. Но это же и означает, что расхождение между его

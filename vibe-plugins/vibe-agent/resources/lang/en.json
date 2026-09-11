@@ -639,6 +639,7 @@
   "providers.warn.noArray": "{source}: no providers array",
   "providers.warn.noId": "{source}: an entry without an id was skipped",
   "providers.warn.entrySkipped": "{source}: entry skipped: {reason}",
+  "providers.warn.timeOfDayInvalid": "{model}: the peak schedule in cost.timeOfDay could not be read — the price is computed at the peak rate, without the hour adjustment",
   "slash.noSkillsFor": "No skills match «{filter}»",
   "slash.noCommandsFor": "No commands match «{filter}»",
   "slash.header.commands": "Chat commands:",
