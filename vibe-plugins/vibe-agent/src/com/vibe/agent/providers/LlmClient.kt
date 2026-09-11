@@ -25,7 +25,13 @@ import java.time.Duration
 /** One inline image: raw base64 payload (no data: prefix) plus its MIME type. */
 data class ImagePart(val mimeType: String, val base64: String)
 
-data class ChatMessage(val role: String, val text: String, val images: List<ImagePart> = emptyList()) {
+data class ChatMessage(
+  val role: String,
+  val text: String,
+  val images: List<ImagePart> = emptyList(),
+  /** Assistant only: its reasoning as streamed; on the wire only for a model that requires it back. */
+  val reasoning: String? = null,
+) {
   /** Text-only copy for models without vision; the dropped images are named so the model knows context went missing. */
   fun withoutImages(): ChatMessage =
     if (images.isEmpty()) this
@@ -42,9 +48,15 @@ internal object LlmMessages {
   private const val DATA_URL_PREFIX = "data:"
   private const val DATA_URL_BASE64_MARKER = ";base64,"
 
-  /** openai: "content" is a string, or [{type:text},{type:image_url,image_url:{url:data-url}}…]. */
-  fun openAi(m: ChatMessage): JsonObject = buildJsonObject {
+  /**
+   * openai: "content" is a string, or [{type:text},{type:image_url,image_url:{url:data-url}}…].
+   *
+   * [echoReasoning] puts an assistant message's reasoning back as `reasoning_content` — only for a
+   * model that requires it (`ECHO_REASONING`); a wire that does not expect the field may reject it.
+   */
+  fun openAi(m: ChatMessage, echoReasoning: Boolean = false): JsonObject = buildJsonObject {
     put("role", m.role)
+    if (echoReasoning && m.role == "assistant" && !m.reasoning.isNullOrEmpty()) put("reasoning_content", m.reasoning)
     if (m.images.isEmpty()) put("content", m.text)
     else put("content", JsonArray(buildList {
       if (m.text.isNotBlank()) add(buildJsonObject { put("type", "text"); put("text", m.text) })
@@ -220,8 +232,11 @@ class LlmClient(
     return !cancelled()
   }
 
-  /** GET model catalog; openai-style {data:[{id}]} and gemini-style {models:[{name}]} are both understood. */
-  fun listModels(provider: ResolvedProvider, fetchUrl: String?): List<String> {
+  /**
+   * GET model catalog; openai-style {data:[{id}]} and gemini-style {models:[{name}]} are both understood.
+   * Each model comes with what the catalog says it accepts, when it says it ([CatalogModel]).
+   */
+  fun listModels(provider: ResolvedProvider, fetchUrl: String?): List<CatalogModel> {
     val entry = provider.entry
     var url = if (!fetchUrl.isNullOrBlank()) fetchUrl else provider.baseUrl.trimEnd('/') + "/models"
     // Same auth/header/query treatment as chat requests — the catalog endpoint is not special.
@@ -251,11 +266,7 @@ class LlmClient(
     // Заодно запоминаем, какое окно провайдер приписывает своим моделям: второй поход в сеть ради
     // одной цифры был бы расточительством, а расхождение с конфигом надо кому-то заметить.
     ClaimedContextRegistry.record(entry.id, ClaimedContext.parse(root))
-    val arr = root["data"]?.jsonArray ?: root["models"]?.jsonArray ?: return emptyList()
-    return arr.mapNotNull { el ->
-      val o = el.jsonObject
-      o["id"]?.jsonPrimitive?.contentOrNull ?: o["name"]?.jsonPrimitive?.contentOrNull?.removePrefix("models/")
-    }
+    return CatalogModel.parse(root)
   }
 
   /**
@@ -331,7 +342,9 @@ class LlmClient(
       model.temperature?.let { put("temperature", it) }
       model.topP?.let { put("top_p", it) }
       model.maxOutputTokens?.let { put("max_tokens", it) }
-      put("messages", JsonArray(asked.map(LlmMessages::openAi)))
+      // A model that requires its reasoning back gets it; no other model ever sees the field.
+      val echo = ModelQuirks.has(model.id, ModelQuirks.Quirk.ECHO_REASONING, overrides)
+      put("messages", JsonArray(asked.map { LlmMessages.openAi(it, echo) }))
     }.let { withReasoning(it, "openai", model) }), model.extraBody)
     if (ModelQuirks.quirksOf(model.id, overrides).isNotEmpty()) {
       logger<LlmClient>().info("Model quirks applied for " + model.id + ": " + ModelQuirks.noteOf(model.id, overrides))

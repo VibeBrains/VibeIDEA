@@ -3010,6 +3010,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
           role = if (r.role == Role.USER) "user" else "assistant",
           text = r.wireText ?: r.text,
           images = if (index in imageBearing) r.images.map { ImagePart(it.mimeType, it.base64) } else emptyList(),
+          reasoning = r.reasoning,
         )
       }
       // A model declared non-vision must not receive images lingering in the history either.
@@ -3038,7 +3039,9 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
         },
         // Мысль модели идёт в тот же сворачиваемый блок, что и мысль ACP-агента: у прямого LLM
         // рассуждение выглядело молчанием, потому что показывать его было некуда.
-        onThought = { appendThought(it) },
+        // It is also kept with the answer: a model that requires it back (ECHO_REASONING) gets it
+        // in the next request.
+        onThought = { turnReasoning.append(it); appendThought(it) },
       ) { delta -> appendAgentText(delta) }
       // What the provider itself reported, and the price the owner of the key wrote down. Both may
       // be absent — then the accounting falls back to the old estimate, and says so by omission.
@@ -3892,12 +3895,12 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
   // --- models.fetch ---
 
   /** EDT: folds ONE provider's fresh catalog into the registry (unknown ids only) and refreshes the picker. */
-  private fun addCatalogModels(providerId: String, ids: List<String>) {
+  private fun addCatalogModels(providerId: String, models: List<com.vibe.agent.providers.CatalogModel>) {
     val current = providers.firstOrNull { it.id == providerId } ?: return
-    val known = current.models.map { it.id }.toSet()
-    val extra = ids.filter { it !in known }.map { ModelEntry(id = it) }
-    if (extra.isEmpty()) return
-    providers = providers.map { if (it.id == providerId) it.copy(models = it.models + extra) else it }
+    // The cache's own merge, so a catalog fetched now and one served from the cache land the same way.
+    val merged = ModelCatalogCache.merge(listOf(current), mapOf(providerId to ModelCatalogCache.entryOf(current, models, 0L))).single()
+    if (merged == current) return
+    providers = providers.map { if (it.id == providerId) merged else it }
     rebuildTargets()
   }
 
@@ -3951,14 +3954,10 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
         }
         ApplicationManager.getApplication().executeOnPooledThread {
           try {
-            val ids = llm.listModels(resolved, p.modelsFetch?.url)
-            fresh[p.id] = ModelCatalogCache.Entry(
-              fingerprint = ModelCatalogCache.fingerprint(p),
-              modelIds = ids,
-              fetchedAtMs = System.currentTimeMillis(),
-            )
+            val models = llm.listModels(resolved, p.modelsFetch?.url)
+            fresh[p.id] = ModelCatalogCache.entryOf(p, models, System.currentTimeMillis())
             updated += p.id
-            SwingUtilities.invokeLater { if (!disposed) addCatalogModels(p.id, ids) }
+            SwingUtilities.invokeLater { if (!disposed) addCatalogModels(p.id, models) }
           }
           catch (e: Exception) {
             val reason = CatalogReport.reason(e)
@@ -4244,6 +4243,13 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     }
   }
 
+  /**
+   * The direct model's reasoning in this turn, kept with its answer: a model that requires it back
+   * (ECHO_REASONING) gets it in the next request. Filled only on the direct-model path — an ACP
+   * agent's thoughts have no next request of ours to go into.
+   */
+  private val turnReasoning = StringBuffer()
+
   private fun finishAgentBubble(seconds: Double, suffix: String?) {
     val threadId = turnThreadId
     // Atomic capture+clear: queued per-delta projections then see an empty buffer and no-op.
@@ -4252,8 +4258,13 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
       turnText.setLength(0)
       t
     }
+    val reasoning = synchronized(turnReasoning) {
+      val r = turnReasoning.toString()
+      turnReasoning.setLength(0)
+      r.ifBlank { null }
+    }
     if (threadId != null && fullText.isNotBlank()) {
-      history.append(threadId, ChatMessageRecord(Role.ASSISTANT, fullText, at = nowIso()))
+      history.append(threadId, ChatMessageRecord(Role.ASSISTANT, fullText, at = nowIso(), reasoning = reasoning))
       // The provider's own numbers when it reported them; the old length-based guess only when it
       // did not. The guess counted the ANSWER and nothing else, so a request carrying two hundred
       // thousand tokens of context cost, in the report, as much as the sentence it produced —

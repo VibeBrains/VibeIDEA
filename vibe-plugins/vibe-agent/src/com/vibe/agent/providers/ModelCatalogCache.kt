@@ -7,6 +7,7 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonArray
@@ -32,8 +33,17 @@ import java.nio.file.Path
  *   data, and `.vibe` is for files the user edits.
  */
 object ModelCatalogCache {
-  /** One provider's catalog as it was last fetched. */
-  data class Entry(val fingerprint: String, val modelIds: List<String>, val fetchedAtMs: Long)
+  /**
+   * One provider's catalog as it was last fetched.
+   *
+   * @property vision what the catalog said about images, for the models it said it about ([CatalogModel]).
+   */
+  data class Entry(
+    val fingerprint: String,
+    val modelIds: List<String>,
+    val fetchedAtMs: Long,
+    val vision: Map<String, Boolean> = emptyMap(),
+  )
 
   private val json = Json { ignoreUnknownKeys = true; prettyPrint = true }
 
@@ -47,18 +57,25 @@ object ModelCatalogCache {
 
   // --- pure core (no I/O — this is what the tests drive) ---
 
+  /** What a successful fetch leaves in the cache: the ids, and the image flag where the catalog gave one. */
+  fun entryOf(provider: ProviderEntry, models: List<CatalogModel>, fetchedAtMs: Long): Entry =
+    Entry(fingerprint(provider), models.map { it.id }, fetchedAtMs, models.mapNotNull { m -> m.vision?.let { m.id to it } }.toMap())
+
   /**
    * Adds cached model ids as [ModelEntry] to providers that do not declare them, leaving
-   * hand-declared models untouched. An entry whose fingerprint no longer matches the
-   * provider is ignored — the catalog belonged to a different endpoint.
+   * hand-declared models as written — except for an image flag they do not state, which the
+   * catalog fills in. An entry whose fingerprint no longer matches the provider is ignored — the
+   * catalog belonged to a different endpoint.
    */
   fun merge(providers: List<ProviderEntry>, cache: Map<String, Entry>): List<ProviderEntry> =
     providers.map { p ->
       val entry = cache[p.id] ?: return@map p
       if (entry.fingerprint != fingerprint(p)) return@map p
       val known = p.models.map { it.id }.toSet()
-      val extra = entry.modelIds.filter { it !in known }.map { ModelEntry(id = it) }
-      if (extra.isEmpty()) p else p.copy(models = p.models + extra)
+      // What a person wrote wins; «not stated» is exactly what the catalog's word is for.
+      val declared = p.models.map { m -> if (m.vision == null) entry.vision[m.id]?.let { m.copy(vision = it) } ?: m else m }
+      val extra = entry.modelIds.filter { it !in known }.map { ModelEntry(id = it, vision = entry.vision[it]) }
+      if (extra.isEmpty() && declared == p.models) p else p.copy(models = declared + extra)
     }
 
   /** Human-readable age of a cached catalog, for the log line that explains where models came from. */
@@ -123,7 +140,10 @@ object ModelCatalogCache {
         .getOrNull() ?: return@mapNotNull null
       val fingerprint = o["fingerprint"]?.jsonPrimitive?.contentOrNull ?: ""
       val at = o["fetchedAt"]?.jsonPrimitive?.longOrNull ?: 0L
-      id to Entry(fingerprint, ids, at)
+      // Absent in a cache written before the flags existed: it reads as «the catalog said nothing».
+      val vision = (o["vision"] as? JsonObject).orEmpty()
+        .mapNotNull { (model, flag) -> (flag as? JsonPrimitive)?.booleanOrNull?.let { model to it } }.toMap()
+      id to Entry(fingerprint, ids, at, vision)
     }.toMap()
   }
 
@@ -136,6 +156,7 @@ object ModelCatalogCache {
           put("fingerprint", e.fingerprint)
           put("fetchedAt", e.fetchedAtMs)
           put("models", JsonArray(e.modelIds.map { JsonPrimitive(it) }))
+          if (e.vision.isNotEmpty()) put("vision", JsonObject(e.vision.mapValues { JsonPrimitive(it.value) }))
         }
       }))
     },

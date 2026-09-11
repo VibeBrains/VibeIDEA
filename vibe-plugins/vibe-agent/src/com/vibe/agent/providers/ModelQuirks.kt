@@ -59,6 +59,17 @@ object ModelQuirks {
 
     /** Stop sequences are rejected. */
     NO_STOP,
+
+    /**
+     * The assistant's reasoning goes back with its answer: every earlier assistant message carries its
+     * `reasoning_content` in the next request (openai wire only).
+     *
+     * The one quirk that ADDS to a request rather than taking away. Kimi documents it for K3: in a
+     * multi-turn conversation the assistant's reply is returned whole, `reasoning_content` included
+     * (platform.kimi.ai/docs/guide/use-reasoning-effort, checked 2026-09-11; not verified with a live
+     * key). Other models never get the field: a wire that does not expect it may reject it.
+     */
+    ECHO_REASONING,
   }
 
   /**
@@ -110,6 +121,14 @@ object ModelQuirks {
       Regex("^gpt-5"),
       setOf(Quirk.NO_SAMPLING, Quirk.MAX_COMPLETION_TOKENS),
       "gpt-5: the model sets its own sampling, and the answer limit is named differently",
+    ),
+    Rule(
+      // Kimi K3: in a multi-turn conversation the assistant's reply goes back whole,
+      // `reasoning_content` included. Source: platform.kimi.ai/docs/guide/use-reasoning-effort
+      // (checked 2026-09-11). Not verified with a live key — decision №83.
+      Regex("^kimi-k3"),
+      setOf(Quirk.ECHO_REASONING),
+      "kimi-k3: the assistant's reasoning_content goes back with its answer in the history",
     ),
   )
 

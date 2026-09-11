@@ -277,13 +277,14 @@ class VibeModelsConfigurable(private val project: Project) : Configurable, Confi
           return@mapNotNull null
         }
         ApplicationManager.getApplication().executeOnPooledThread {
-          val ids = try { llm.listModels(resolved, p.modelsFetch?.url) }
+          val models = try { llm.listModels(resolved, p.modelsFetch?.url) }
           catch (e: Exception) {
             setStatus(p.id, mySeq, t("settings.models.fetchFailed", "reason" to e.message?.take(80)))
             return@executeOnPooledThread
           }
+          val ids = models.map { it.id }
           // Только успешный ответ пишется в кэш — 401 не должен стирать вчерашний каталог.
-          fresh[p.id] = ModelCatalogCache.Entry(ModelCatalogCache.fingerprint(p), ids, System.currentTimeMillis())
+          fresh[p.id] = ModelCatalogCache.entryOf(p, models, System.currentTimeMillis())
           showCatalog(p.id, mySeq, ids, pending) { added ->
             if (ids.isEmpty()) t("settings.models.catalogEmpty")
             else t("settings.models.catalogReturned", "count" to ids.size, "word" to modelsWord(ids.size)) +

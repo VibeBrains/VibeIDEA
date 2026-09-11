@@ -35,9 +35,15 @@ class ChatMessageRecord(
   val wireText: String? = null,
   /** Pinned messages survive trimming: the one thing the user asked not to forget. */
   val pinned: Boolean = false,
+  /**
+   * ASSISTANT only: the model's reasoning as it streamed; null when the wire sent none. Kept because
+   * a model may require it back with the answer in the next request (`ECHO_REASONING`); for every
+   * other model it is never sent. The feed does not draw it from here.
+   */
+  val reasoning: String? = null,
 ) {
   fun withPinned(pinned: Boolean): ChatMessageRecord =
-    ChatMessageRecord(role, text, images, at, wireText, pinned)
+    ChatMessageRecord(role, text, images, at, wireText, pinned, reasoning)
 }
 
 /** Per-thread snapshot of composer choices (restored when the tab is activated). */
@@ -131,6 +137,7 @@ object ChatTranscriptCodec {
         put("at", m.at)
         m.wireText?.let { put("wireText", it) }
         if (m.pinned) put("pinned", true)
+        m.reasoning?.let { put("reasoning", it) }
         if (m.images.isNotEmpty()) put("images", JsonArray(m.images.map { img ->
           buildJsonObject {
             put("name", img.name)
@@ -165,6 +172,7 @@ object ChatTranscriptCodec {
         at = m.str("at") ?: "",
         wireText = m.str("wireText"),
         pinned = (m["pinned"] as? kotlinx.serialization.json.JsonPrimitive)?.content == "true",
+        reasoning = m.str("reasoning"),
       )
     }
     return ChatThread(
