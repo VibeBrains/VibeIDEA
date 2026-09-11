@@ -2,6 +2,7 @@
 package com.vibe.agent.skills
 
 import org.junit.jupiter.api.Test
+import java.text.Normalizer
 import kotlin.test.assertEquals
 import kotlin.test.assertNotEquals
 import kotlin.test.assertNull
@@ -38,11 +39,26 @@ class SkillApprovalTest {
   }
 
   @Test
-  fun `the digest is short, stable and hex`() {
+  fun `the digest is the full SHA-256 in hex, and stable`() {
     val digest = SkillApproval.digest(files)
-    assertEquals(SkillApproval.DIGEST_LENGTH, digest.length)
+    assertEquals(64, digest.length)
     assertTrue(digest.all { it in "0123456789abcdef" }, digest)
     assertEquals(digest, SkillApproval.digest(files))
+  }
+
+  @Test
+  fun `one skill has one digest in VibeIDEA and VibeIDE`() {
+    // The vector both products carry: VibeIDE's skillApproval.ts must answer the same for the same
+    // three files. File hashes are sha256 of "a", "b" and "c".
+    val shared = mapOf(
+      "SKILL.md" to "ca978112ca1bbdcafac231b39a23dc4da786eff8147c4e72b9807785afee48bb",
+      "scripts/run.sh" to "3e23e8160039594a33894f6564e1b1348bbd7a0088d42c4acb73eeaed59c009d",
+      "résumé.md" to "2e7d2c03a9507ae265ecf5b5356885a53393a2029d241394997265a1a25aefc6",
+    )
+    assertEquals("46de3a000870b52d31029ab78032af0c28158143253c6b4a3321abc91cb10ce8", SkillApproval.digest(shared))
+    // The same name decomposed, as some filesystems hand it back, is the same skill.
+    val decomposed = shared.mapKeys { Normalizer.normalize(it.key, Normalizer.Form.NFD) }
+    assertEquals(SkillApproval.digest(shared), SkillApproval.digest(decomposed))
   }
 
   @Test

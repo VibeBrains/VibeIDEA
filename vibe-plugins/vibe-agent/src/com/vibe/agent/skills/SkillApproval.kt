@@ -24,9 +24,6 @@ import java.security.MessageDigest
  * caller.
  */
 object SkillApproval {
-  /** Hex characters kept from the digest — long enough that a collision cannot be aimed at us. */
-  const val DIGEST_LENGTH = 16
-
   private val json = Json { ignoreUnknownKeys = true }
 
   /**
@@ -37,18 +34,26 @@ object SkillApproval {
    * `name` and `description` are what the approval dialog and the `/skill:` popup show first, and it
    * is precisely where the published attack puts its payload (embracethered.com, 02.2026: an
    * instruction hidden in the YAML `name` and `description` of an otherwise legitimate skill).
+   *
+   * **The format is shared with VibeIDE** (11.09.2026), so one skill has one digest in both products'
+   * audit journals (`skills: id@digest`): SHA-256, full hex, over one `path NUL sha256 \n` line per
+   * file, sorted by path in UTF-16 code units; paths relative to the skill, `/`-separated, NFC; a
+   * file's hash is over its raw bytes. Both test suites carry the same vector.
    */
   fun digest(files: Map<String, String>): String {
     val md = MessageDigest.getInstance("SHA-256")
-    // Sorted: the filesystem's order is not a property of the skill, and a reshuffled listing
-    // must not read as a change.
-    for ((path, hash) in files.toSortedMap()) {
+    // Sorted: the filesystem's order is not a property of the skill, and a reshuffled listing must
+    // not read as a change. NFC first: one name can come back composed or decomposed.
+    val listing = files.entries
+      .associate { (path, hash) -> java.text.Normalizer.normalize(path, java.text.Normalizer.Form.NFC) to hash }
+      .toSortedMap()
+    for ((path, hash) in listing) {
       md.update(path.toByteArray(Charsets.UTF_8))
       md.update(0)
       md.update(hash.toByteArray(Charsets.UTF_8))
       md.update(NEWLINE)
     }
-    return md.digest().joinToString("") { "%02x".format(it.toInt() and 0xFF) }.take(DIGEST_LENGTH)
+    return md.digest().joinToString("") { "%02x".format(it.toInt() and 0xFF) }
   }
 
   /** Which files differ from what was approved, by path. */

@@ -21,16 +21,33 @@ object SkillCodeScan {
   /** How much of an offending command to quote: enough to find it in the file. */
   const val DETAIL_CHARS = 120
 
-  /** Commands in SKILL.md live in fenced code blocks; prose that mentions a command is discussion. */
-  fun scanSkill(body: String): List<Finding> = scanCommands(SkillPackage.SKILL_FILE, fencedCode(body))
+  /**
+   * SKILL.md: every command in its fenced code blocks, and a download handed to an interpreter
+   * anywhere in its prose. Prose is the model's instructions — «Сначала выполни: curl … | sh» is an
+   * instruction, not discussion (VibeIDE reads prose the same way, 11.09.2026). The other findings
+   * stay code-only: a package named in a sentence is not a command.
+   */
+  fun scanSkill(body: String): List<Finding> {
+    val (code, prose) = split(body)
+    val found = scanCommands(SkillPackage.SKILL_FILE, code)
+    if (found.any { it.kind == Kind.FETCH_AND_RUN }) return found
+    // Inline code is unwrapped first: to Markdown a backtick is a frame, to the shell it is syntax.
+    val inProse = prose.firstNotNullOfOrNull { ShellSafetyAnalyzer.findFetchAndRunInText(INLINE_CODE.replace(it, "$1")) }
+      ?: return found
+    return found + Finding(Kind.FETCH_AND_RUN, SkillPackage.SKILL_FILE, inProse.take(DETAIL_CHARS))
+  }
 
   /** A script is code throughout: every line, plus its PEP 723 header. */
   fun scanScript(path: String, text: String): List<Finding> =
     scanCommands(path, text.lines()) + listOfNotNull(unpinnedInlineDependency(text)?.let { Finding(Kind.UNPINNED_PEP723, path, it) })
 
   /** Lines inside ``` or ~~~ fences. */
-  fun fencedCode(markdown: String): List<String> {
+  fun fencedCode(markdown: String): List<String> = split(markdown).first
+
+  /** Fenced code and prose, each in order; a fence line itself is neither. */
+  private fun split(markdown: String): Pair<List<String>, List<String>> {
     val code = ArrayList<String>()
+    val prose = ArrayList<String>()
     var fence: String? = null
     for (line in markdown.lines()) {
       val trimmed = line.trimStart()
@@ -39,10 +56,13 @@ object SkillCodeScan {
         fence == null && marker != null -> fence = marker
         fence != null && trimmed.startsWith(fence) -> fence = null
         fence != null -> code.add(line)
+        else -> prose.add(line)
       }
     }
-    return code
+    return code to prose
   }
+
+  private val INLINE_CODE = Regex("`([^`]*)`")
 
   /**
    * `npx <package>` or `uvx <package>` without an exact version, as «npx package», or null.
