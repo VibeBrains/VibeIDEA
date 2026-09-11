@@ -757,8 +757,10 @@
   выключатель рассуждения и цена по часу у модели (№74, №75); анализатор команд и отпечаток скилла
   вровень с VibeIDE, общие тест-векторы. **Решено без кода:** промежуточная расшифровка голоса ждёт
   выбора движка (№84), контейнер для внешнего агента — не сейчас (№85), переезд на платформенный LSP
-  — не сейчас и дороже, чем казалось (№73). **Не сделано:** LSP4IJ 0.20.2 — скачивание ждёт
-  разрешения. Разборы — [agentPathCanonicalization.md](knowledge/agents/agentPathCanonicalization.md),
+  — не сейчас и дороже, чем казалось (№73). **LSP4IJ поднят до 0.20.2** днём 11.09, после
+  разрешения владельца на скачивание: исправления зависаний, чтения вне read action и утечек; архив
+  сверен с суммой, опубликованной GitHub, API-jar заменён, `vibe-lsp` собирается, 67 тестов зелёные,
+  гейт дистрибутива — со сборкой 0.5.0. Разборы — [agentPathCanonicalization.md](knowledge/agents/agentPathCanonicalization.md),
   [checkpointTempIndex.md](knowledge/gitAndTools/checkpointTempIndex.md),
   [bazelCaches.md](knowledge/build/bazelCaches.md), [voiceDelegation.md](knowledge/agents/voiceDelegation.md).
   Итог: 1573 теста и шесть гейтов зелёные; ничего не запушено.

@@ -3,7 +3,7 @@ load("@rules_java//java:defs.bzl", "java_import")
 # VibeIDEA fork: LSP4IJ API jar for compiling com.vibe.lsp (see FORK_CHANGES.md)
 java_import(
     name = "vibe-lsp4ij",
-    jars = ["lsp4ij-0.20.1.jar"],
+    jars = ["lsp4ij-0.20.2.jar"],
     visibility = ["//visibility:public"],
 )
 
@@ -14,6 +14,6 @@ alias(
 )
 
 exports_files(
-    ["lsp4ij-0.20.1.jar"],
+    ["lsp4ij-0.20.2.jar"],
     visibility = ["//visibility:public"],
 )

@@ -45,7 +45,7 @@
 
 ### Добавлено для Фазы 2 (языки)
 - `vibe-plugins/vibe-lsp/` — плагин `com.vibe.lsp`: vtsls (TS) + Phpactor (PHP) через LSP4IJ (optional depends). **Причина:** плагины PhpStorm/WebStorm закрыты; LSP — лицензионно чистый путь.
-- `vibe-plugins/deps/` — пиненная загрузка LSP4IJ 0.20.1 с GitHub releases (sha256), раскладывается в `plugins/lsp4ij/` на сборке.
+- `vibe-plugins/deps/` — пиненная загрузка LSP4IJ 0.20.2 с GitHub releases (sha256), раскладывается в `plugins/lsp4ij/` на сборке.
 - `lib/vibe/lsp4ij/` — вендоренный API-jar LSP4IJ (компиляция, scope PROVIDED — в наш плагин не пакуется) + свой `BUILD.bazel`-пакет.
 - `.idea/libraries/vibe_lsp4ij.xml`, строки в `.idea/modules.xml` — регистрация модулей (аддитивно).
 

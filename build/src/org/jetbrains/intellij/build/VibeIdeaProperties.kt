@@ -52,7 +52,7 @@ open class VibeIdeaProperties(communityHomeDir: Path) : IdeaCommunityProperties(
     // without naming it in the licence report is exactly the kind of quiet debt that surfaces at the
     // worst possible moment.
     allLibraryLicenses = allLibraryLicenses + listOf(
-      LibraryLicense(name = "LSP4IJ", version = "0.20.1", attachedTo = "intellij.vibe.lsp",
+      LibraryLicense(name = "LSP4IJ", version = "0.20.2", attachedTo = "intellij.vibe.lsp",
                      url = "https://github.com/redhat-developer/lsp4ij")
         .eplV2("https://github.com/redhat-developer/lsp4ij/blob/main/LICENSE"),
       LibraryLicense(name = "Phpactor", version = "2026.06.23.0", attachedTo = "intellij.vibe.lsp",
