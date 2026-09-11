@@ -130,6 +130,31 @@ class ComposerPanel(
     pillsRight.revalidate(); pillsRight.repaint()
   }
 
+  /**
+   * The live transcript of a dictation in progress: grey, italic and apart from the draft, so typing
+   * is never disturbed and nothing half-heard is ever sent. The final text goes into the draft at
+   * «стоп»; this only shows that the microphone hears.
+   */
+  private val voicePreview = JBTextArea().apply {
+    isEditable = false
+    isFocusable = false
+    lineWrap = true
+    wrapStyleWord = true
+    isOpaque = false
+    foreground = USAGE_FG
+    font = JBFont.label().deriveFont(java.awt.Font.ITALIC)
+    border = JBUI.Borders.empty(0, INPUT_PAD_H)
+    isVisible = false
+  }
+
+  /** Shows the live transcript; null hides it. EDT only. */
+  fun setVoicePreview(text: String?) {
+    voicePreview.isVisible = text != null
+    voicePreview.text = text.orEmpty()
+    revalidate()
+    repaint()
+  }
+
   private val mention: MentionPopup
   private val slash: SlashPopup
   private var focused = false
@@ -175,9 +200,15 @@ class ComposerPanel(
       isOpaque = false
       add(icons, BorderLayout.SOUTH)
     }
-    val inputRow = JPanel(BorderLayout(JBUI.scale(ICON_GAP), 0)).apply {
+    // The live transcript sits right under the text it will become, not in the feed.
+    val inputColumn = JPanel(BorderLayout()).apply {
       isOpaque = false
       add(scroll, BorderLayout.CENTER)
+      add(voicePreview, BorderLayout.SOUTH)
+    }
+    val inputRow = JPanel(BorderLayout(JBUI.scale(ICON_GAP), 0)).apply {
+      isOpaque = false
+      add(inputColumn, BorderLayout.CENTER)
       add(iconColumn, BorderLayout.EAST)
     }
     pillsRight.add(usageLabel)

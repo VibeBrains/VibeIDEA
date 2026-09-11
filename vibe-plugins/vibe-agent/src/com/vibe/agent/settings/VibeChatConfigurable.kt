@@ -26,6 +26,8 @@ class VibeChatConfigurable : Configurable {
   private var soundVolume: JBIntSpinner? = null
   private var soundPath: JBTextField? = null
   private var codeFold: JBIntSpinner? = null
+  private var voiceModel: com.intellij.openapi.ui.TextFieldWithBrowseButton? = null
+  private var voiceLanguage: JBTextField? = null
 
   override fun getDisplayName(): String = t("settings.chat.title")
 
@@ -35,6 +37,14 @@ class VibeChatConfigurable : Configurable {
   private var spendMonthSpinner: JBIntSpinner? = null
 
   private fun hint(text: String) = JBLabel("<html>$text</html>").apply { foreground = com.intellij.ui.JBColor.GRAY }
+
+  /** The whisper.cpp model file: the chooser shows `.bin` files, the field also takes a typed path. */
+  private fun voiceModelField() = com.intellij.openapi.ui.TextFieldWithBrowseButton().apply {
+    text = VibeAgentSettings.voiceModelPath
+    addBrowseFolderListener(null, com.intellij.openapi.fileChooser.FileChooserDescriptorFactory
+      .createSingleFileDescriptor("bin").withTitle(t("settings.voice.modelChooser")))
+    voiceModel = this
+  }
 
   override fun createComponent(): JComponent {
     val field = JBTextField(VibeChatSettings.continueText, 24)
@@ -74,6 +84,10 @@ class VibeChatConfigurable : Configurable {
       .addLabeledComponent(t("settings.sound.customPath"), JBTextField(VibeChatSettings.soundCustomPath, 24).also { soundPath = it })
       .addComponent(com.intellij.ui.components.ActionLink(t("settings.sound.preview")) { previewSound() })
       .addComponent(hint(t("settings.sound.hint")))
+      .addLabeledComponent(t("settings.voice.model"), voiceModelField())
+      .addComponent(hint(t("settings.voice.modelHint")))
+      .addLabeledComponent(t("settings.voice.language"), JBTextField(VibeAgentSettings.telegramVoiceLanguage, 8).also { voiceLanguage = it })
+      .addComponent(hint(t("settings.voice.languageHint")))
       .addComponentFillVertically(JPanel(), 0)
       .panel.apply { border = JBUI.Borders.empty(8) }))
   }
@@ -108,6 +122,8 @@ class VibeChatConfigurable : Configurable {
     soundMuteFocused?.isSelected != VibeChatSettings.soundMuteWhenFocused ||
     soundVolume?.number != VibeChatSettings.soundVolume ||
     (soundPath?.text?.trim() ?: VibeChatSettings.soundCustomPath) != VibeChatSettings.soundCustomPath ||
+    (voiceModel?.text?.trim() ?: VibeAgentSettings.voiceModelPath) != VibeAgentSettings.voiceModelPath ||
+    (voiceLanguage?.text?.trim() ?: VibeAgentSettings.telegramVoiceLanguage) != VibeAgentSettings.telegramVoiceLanguage ||
     (continueField?.text?.trim() ?: VibeChatSettings.continueText) != VibeChatSettings.continueText ||
     (tabsSpinner?.number ?: VibeChatSettings.maxOpenTabs) != VibeChatSettings.maxOpenTabs ||
     (messagesSpinner?.number ?: VibeChatSettings.maxMessagesPerThread) != VibeChatSettings.maxMessagesPerThread ||
@@ -117,6 +133,8 @@ class VibeChatConfigurable : Configurable {
     (spendMonthSpinner?.number?.toDouble() ?: VibeChatSettings.spendLimitMonth) != VibeChatSettings.spendLimitMonth
 
   override fun apply() {
+    voiceModel?.let { VibeAgentSettings.voiceModelPath = it.text }
+    voiceLanguage?.let { VibeAgentSettings.telegramVoiceLanguage = it.text }
     codeFold?.let { VibeChatSettings.codeFoldLines = it.number }
     soundEnabled?.let { VibeChatSettings.soundEnabled = it.isSelected }
     soundFinished?.let { VibeChatSettings.soundOnTurnFinished = it.isSelected }
@@ -136,6 +154,8 @@ class VibeChatConfigurable : Configurable {
   }
 
   override fun reset() {
+    voiceModel?.text = VibeAgentSettings.voiceModelPath
+    voiceLanguage?.text = VibeAgentSettings.telegramVoiceLanguage
     codeFold?.number = VibeChatSettings.codeFoldLines
     soundEnabled?.isSelected = VibeChatSettings.soundEnabled
     soundFinished?.isSelected = VibeChatSettings.soundOnTurnFinished

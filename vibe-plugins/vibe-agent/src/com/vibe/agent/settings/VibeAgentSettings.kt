@@ -464,6 +464,18 @@ object VibeAgentSettings {
     get() = props.getValue(KEY_TELEGRAM_VOICE_LANG, DEFAULT_VOICE_LANGUAGE)
     set(value) = props.setValue(KEY_TELEGRAM_VOICE_LANG, value.trim(), DEFAULT_VOICE_LANGUAGE)
 
+  private const val KEY_VOICE_MODEL = "vibe.agent.voiceModelPath"
+
+  /**
+   * A whisper.cpp model file (ggml `.bin`) for voice notes; empty — none. With it and
+   * `whisper-server` on the machine a dictation is transcribed while it is recorded (decision №84);
+   * with it and `whisper-cli` — after «стоп». Models are not bundled: size and quality are the
+   * person's choice.
+   */
+  var voiceModelPath: String
+    get() = props.getValue(KEY_VOICE_MODEL, "")
+    set(value) = props.setValue(KEY_VOICE_MODEL, value.trim(), "")
+
   /**
    * Run voice transcripts through a LOCAL model before using them. On by default because it only
    * ever uses a local provider: nothing leaves the machine, and without one the step is skipped.

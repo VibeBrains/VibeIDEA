@@ -149,7 +149,8 @@ class TelegramBridge {
    * outcome here: the person hears nothing, and finds out from the diff.
    */
   private fun handleVoice(token: String, chatId: Long, voice: TelegramProtocol.Command.Voice) {
-    val transcriber = VoiceTranscription.find() ?: run {
+    // A Telegram note is Opus in OGG: openai-whisper decodes it through ffmpeg, whisper.cpp is the fallback.
+    val transcriber = VoiceTranscription.find(VibeAgentSettings.voiceModelPath, wav = false) ?: run {
       send(token, TelegramProtocol.sendMessage(chatId, t("telegram.voice.noTranscriber")))
       return
     }

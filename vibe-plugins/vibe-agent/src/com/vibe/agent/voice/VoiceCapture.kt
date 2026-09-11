@@ -1,6 +1,8 @@
 // Copyright 2026 VibeBrains. Use of this source code is governed by the Apache 2.0 license.
 package com.vibe.agent.voice
 
+import java.io.ByteArrayInputStream
+import java.io.ByteArrayOutputStream
 import java.io.File
 import javax.sound.sampled.AudioFileFormat
 import javax.sound.sampled.AudioFormat
@@ -51,13 +53,22 @@ object VoiceCapture {
   fun tooShort(bytesRecorded: Long, format: AudioFormat = format()): Boolean =
     bytesRecorded < MIN_MS * bytesPerMs(format)
 
+  /** PCM of [format] wrapped as WAV, in memory — the file the transcribers read, without the file. */
+  fun wav(pcm: ByteArray, format: AudioFormat = format()): ByteArray {
+    val out = ByteArrayOutputStream()
+    AudioInputStream(ByteArrayInputStream(pcm), format, pcm.size.toLong() / format.frameSize).use {
+      AudioSystem.write(it, AudioFileFormat.Type.WAVE, out)
+    }
+    return out.toByteArray()
+  }
+
   /**
    * One recording in progress. Started by [start], ended by [stop] — which returns the file, or
    * null when what was captured is too short to be a note.
    */
   class Recording internal constructor(private val line: TargetDataLine, private val target: File) {
     @Volatile private var stopped = false
-    private val buffer = java.io.ByteArrayOutputStream()
+    private val buffer = ByteArrayOutputStream()
     private val thread = Thread({ pump() }, "vibe-voice-capture").apply { isDaemon = true; start() }
 
     val elapsedMs: Long get() = ((buffer.size() / bytesPerMs()).toLong())
@@ -76,6 +87,15 @@ object VoiceCapture {
       }
     }
 
+    /**
+     * What was captured so far, as WAV, while the recording goes on — the live transcript reads it.
+     * Null while it is still too short to say anything.
+     */
+    fun snapshot(): ByteArray? {
+      val bytes = buffer.toByteArray()
+      return if (tooShort(bytes.size.toLong())) null else wav(bytes)
+    }
+
     /** @return the WAV file, or null when the recording is too short to bother transcribing. */
     fun stop(): File? {
       stopped = true
@@ -84,9 +104,7 @@ object VoiceCapture {
       runCatching { line.close() }
       val bytes = buffer.toByteArray()
       if (tooShort(bytes.size.toLong())) return null
-      AudioInputStream(java.io.ByteArrayInputStream(bytes), format(), bytes.size.toLong() / format().frameSize).use {
-        AudioSystem.write(it, AudioFileFormat.Type.WAVE, target)
-      }
+      target.writeBytes(wav(bytes))
       return target
     }
 

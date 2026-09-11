@@ -15,33 +15,84 @@ import java.io.File
  * The transcriber is NOT bundled: shipping model weights and GPL builds is a licensing and release
  * problem this fork has not solved. So the feature uses what the machine has, and when the machine
  * has nothing it says exactly what to install — silence would be the worst of the three behaviours.
+ *
+ * Two transcribers answer to «whisper», and they share nothing but the name. openai-whisper
+ * (`whisper`, Python) takes the audio as an operand and fetches its own model; whisper.cpp
+ * (`whisper-cli`) takes `-f` and `-m` and a model file the person chose. Until 11.09.2026 both got
+ * openai-whisper's flags, so with whisper.cpp installed — the install our own hint suggested — every
+ * note ended in the usage text and «ни слова не разобрано».
  */
 object VoiceTranscription {
-  /** Transcribers we know how to call, in order of preference. */
-  private val CANDIDATES = listOf("whisper-cli", "whisper")
+  /** Which of the two, because each wants a different command line. */
+  enum class Kind { OPENAI_WHISPER, WHISPER_CPP }
 
-  data class Transcriber(val binary: String)
+  /** @property model the ggml model file; whisper.cpp only. */
+  data class Transcriber(val binary: String, val kind: Kind = Kind.OPENAI_WHISPER, val model: String? = null)
 
-  fun find(): Transcriber? = CANDIDATES.firstNotNullOfOrNull { WatchTools.find(it)?.let { path -> Transcriber(path) } }
+  const val OPENAI_BINARY = "whisper"
+  const val CPP_BINARY = "whisper-cli"
+
+  /** whisper.cpp assumes English when told nothing; «auto» is what openai-whisper does unasked. */
+  const val AUTO_LANGUAGE = "auto"
+
+  /**
+   * The transcriber for this audio, or null when the machine has none that can run.
+   *
+   * A WAV from the IDE microphone goes to whisper.cpp when it is set up: the model is local, loaded
+   * once and fast. Anything else — a Telegram note is Opus in OGG — goes to openai-whisper first,
+   * which decodes through ffmpeg; whisper.cpp is the fallback there.
+   *
+   * @param modelPath the whisper.cpp model from the settings; without one whisper.cpp cannot run.
+   */
+  fun find(
+    modelPath: String?,
+    wav: Boolean,
+    lookup: (String) -> String? = WatchTools::find,
+    hasFile: (String) -> Boolean = { File(it).isFile },
+  ): Transcriber? {
+    val model = modelPath?.trim()?.takeIf { it.isNotEmpty() && hasFile(it) }
+    val cpp = model?.let { m -> lookup(CPP_BINARY)?.let { Transcriber(it, Kind.WHISPER_CPP, m) } }
+    val openai = lookup(OPENAI_BINARY)?.let { Transcriber(it, Kind.OPENAI_WHISPER) }
+    return if (wav) cpp ?: openai else openai ?: cpp
+  }
+
+  /** whisper.cpp is installed but has no model file — the one case where the fix is a setting, not an install. */
+  fun needsModel(
+    modelPath: String?,
+    lookup: (String) -> String? = WatchTools::find,
+    hasFile: (String) -> Boolean = { File(it).isFile },
+  ): Boolean = lookup(CPP_BINARY) != null && modelPath?.trim()?.takeIf { it.isNotEmpty() }?.let(hasFile) != true
 
   /**
    * The command that writes a plain-text transcript next to the audio.
    *
-   * `--output_format txt` and an explicit directory rather than parsing stdout: whisper prints
-   * progress, timings and warnings there, and a transcript scraped out of that mixture eventually
-   * carries a line of somebody's log into the task.
+   * A file and an explicit place rather than stdout: both print progress, timings and warnings
+   * there, and a transcript scraped out of that mixture eventually carries a line of somebody's log
+   * into the task.
    */
   fun command(transcriber: Transcriber, audio: File, outputDir: File, language: String?): List<String> = buildList {
-    add(transcriber.binary)
-    add(audio.absolutePath)
-    add("--output_format"); add("txt")
-    add("--output_dir"); add(outputDir.absolutePath)
     // A language given up front saves the detection pass and stops a short note in one language
     // being decoded as another — the classic failure on «ага, поехали».
-    language?.takeIf { it.isNotBlank() }?.let { add("--language"); add(it) }
+    val lang = language?.trim()?.takeIf { it.isNotEmpty() }
+    add(transcriber.binary)
+    when (transcriber.kind) {
+      Kind.OPENAI_WHISPER -> {
+        add(audio.absolutePath)
+        add("--output_format"); add("txt")
+        add("--output_dir"); add(outputDir.absolutePath)
+        lang?.let { add("--language"); add(it) }
+      }
+      Kind.WHISPER_CPP -> {
+        add("-m"); add(requireNotNull(transcriber.model) { "whisper.cpp needs a model file" })
+        add("-f"); add(audio.absolutePath)
+        add("-otxt"); add("-of"); add(File(outputDir, audio.nameWithoutExtension).absolutePath)
+        add("-np"); add("-nt")
+        add("-l"); add(lang ?: AUTO_LANGUAGE)
+      }
+    }
   }
 
-  /** Where [command] leaves the transcript. */
+  /** Where [command] leaves the transcript — the same place for both transcribers. */
   fun outputFile(audio: File, outputDir: File): File = File(outputDir, audio.nameWithoutExtension + ".txt")
 
   /**

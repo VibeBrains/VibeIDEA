@@ -234,6 +234,26 @@ class VibeDoctorAction : AnAction({ t("doctor.action") }) {
       else t("doctor.detail.ideToolsOff"),
     ))
 
+    // Голос: чем расшифровывается и идёт ли расшифровка во время записи. Иначе «кнопка не
+    // работает» выясняется первой же заметкой, а причин у этого три разных.
+    val voiceModel = com.vibe.agent.settings.VibeAgentSettings.voiceModelPath
+    val voiceLive = com.vibe.agent.voice.VoiceServer.configOf(voiceModel, null)
+    val voiceOnce = com.vibe.agent.voice.VoiceTranscription.find(voiceModel, wav = true)
+    lines.add(VibeDiagnosis.Line(
+      t("doctor.line.voice"),
+      when {
+        voiceLive != null || voiceOnce != null -> VibeDiagnosis.State.OK
+        com.vibe.agent.voice.VoiceTranscription.needsModel(voiceModel) -> VibeDiagnosis.State.WARN
+        else -> VibeDiagnosis.State.ABSENT
+      },
+      when {
+        voiceLive != null -> t("doctor.detail.voiceLive", "model" to java.io.File(voiceLive.model).name)
+        voiceOnce != null -> t("doctor.detail.voiceOnce", "tool" to java.io.File(voiceOnce.binary).name)
+        com.vibe.agent.voice.VoiceTranscription.needsModel(voiceModel) -> t("doctor.detail.voiceNoModel")
+        else -> t("doctor.detail.voiceNone")
+      },
+    ))
+
     // Not «is it up» but «does it answer by the spec»: the unit suites see the MCP server and the
     // HTTP policy separately, never the listener between them, and a header lost there breaks every
     // client while every test stays green.

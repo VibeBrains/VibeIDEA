@@ -2025,6 +2025,12 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
 
   private var recording: com.vibe.agent.voice.VoiceCapture.Recording? = null
 
+  /** The live-transcript loop of the recording in progress (decision №84); null when there is none. */
+  private var voicePreviewLoop: java.util.concurrent.ScheduledFuture<*>? = null
+
+  /** A preview still waiting for the server: the next beat is skipped, not queued behind it. */
+  private val voicePreviewBusy = java.util.concurrent.atomic.AtomicBoolean(false)
+
   private fun toggleVoice() {
     val active = recording
     if (active == null) {
@@ -2037,9 +2043,11 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
       recording = started
       voicePill.toolTipText = t("chat.voice.stop")
       voicePill.repaint()
+      startVoicePreview(started)
       return
     }
     recording = null
+    stopVoicePreview()
     voicePill.toolTipText = t("chat.voice.start")
     voicePill.repaint()
     val file = active.stop()
@@ -2052,14 +2060,83 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     ApplicationManager.getApplication().executeOnPooledThread { transcribeVoice(file) }
   }
 
+  /** The resident server a live transcript can run on, or null: no `whisper-server` or no model set. */
+  private fun voiceServerConfig(): com.vibe.agent.voice.VoiceServer.Config? =
+    com.vibe.agent.voice.VoiceServer.configOf(VibeAgentSettings.voiceModelPath, VibeAgentSettings.telegramVoiceLanguage)
+
+  /**
+   * Every few seconds the recording so far goes to the resident server and its text shows under the
+   * input — the person sees that the microphone hears before «стоп», not after. Past
+   * [com.vibe.agent.voice.VoiceServer.PREVIEW_MAX_MS] the loop stops: each preview transcribes the
+   * whole recording again, and the final transcript comes at «стоп» anyway. A server that cannot
+   * start is named once and the loop ends; the final transcript then takes the one-shot path.
+   */
+  private fun startVoicePreview(active: com.vibe.agent.voice.VoiceCapture.Recording) {
+    val config = voiceServerConfig() ?: return
+    val server = com.vibe.agent.voice.VoiceServer
+    voicePreviewLoop = com.intellij.util.concurrency.AppExecutorUtil.getAppScheduledExecutorService().scheduleWithFixedDelay({
+      if (disposed || recording !== active || !voicePreviewBusy.compareAndSet(false, true)) return@scheduleWithFixedDelay
+      try {
+        if (active.elapsedMs > server.PREVIEW_MAX_MS) {
+          SwingUtilities.invokeLater { if (recording === active) composer.setVoicePreview(t("chat.voice.previewLimit")) }
+          voicePreviewLoop?.cancel(false)
+          return@scheduleWithFixedDelay
+        }
+        val wav = active.snapshot() ?: return@scheduleWithFixedDelay
+        val text = server.getInstance().transcribe(wav, config, server.PREVIEW_TIMEOUT_MS)
+        if (!text.isNullOrBlank()) {
+          SwingUtilities.invokeLater { if (recording === active) composer.setVoicePreview(t("chat.voice.preview", "text" to text)) }
+        }
+      }
+      catch (e: Exception) {
+        voicePreviewLoop?.cancel(false)
+        systemLine(t("chat.voice.serverFailed", "reason" to (e.message ?: e.javaClass.simpleName)))
+      }
+      finally {
+        voicePreviewBusy.set(false)
+      }
+    }, server.PREVIEW_INTERVAL_MS, server.PREVIEW_INTERVAL_MS, java.util.concurrent.TimeUnit.MILLISECONDS)
+  }
+
+  private fun stopVoicePreview() {
+    voicePreviewLoop?.cancel(false)
+    voicePreviewLoop = null
+    SwingUtilities.invokeLater { composer.setVoicePreview(null) }
+  }
+
   private fun transcribeVoice(file: java.io.File) {
-    val transcriber = com.vibe.agent.voice.VoiceTranscription.find()
-    if (transcriber == null) {
-      systemLine(t("chat.voice.noTranscriber"))
-      file.delete()
-      return
+    try {
+      systemLine(t("chat.voice.transcribing"))
+      // The resident server first: it already holds the model the live transcript used. Failing
+      // that — the one-shot transcriber, as before the server existed.
+      val viaServer = voiceServerConfig()?.let { config ->
+        runCatching {
+          com.vibe.agent.voice.VoiceServer.getInstance().transcribe(file.readBytes(), config, com.vibe.agent.voice.VoiceServer.FINAL_TIMEOUT_MS)
+        }.getOrNull()
+      }
+      val text = viaServer ?: transcribeOnce(file) ?: return
+      val task = com.vibe.agent.voice.VoiceTranscription.taskFrom(text)
+      if (task == null) {
+        systemLine(t("chat.voice.empty"))
+        return
+      }
+      // Into the draft, not sent: what to do with the words stays the person's decision — the same
+      // rule the design detector's findings follow.
+      putIntoComposer(task)
     }
-    systemLine(t("chat.voice.transcribing"))
+    finally {
+      runCatching { file.delete() }
+    }
+  }
+
+  /** The one-shot transcriber on the machine; null after saying why there is none or it heard nothing. */
+  private fun transcribeOnce(file: java.io.File): String? {
+    val model = VibeAgentSettings.voiceModelPath
+    val transcriber = com.vibe.agent.voice.VoiceTranscription.find(model, wav = true)
+    if (transcriber == null) {
+      systemLine(if (com.vibe.agent.voice.VoiceTranscription.needsModel(model)) t("chat.voice.noModel") else t("chat.voice.noTranscriber"))
+      return null
+    }
     val dir = file.parentFile
     val text = runCatching {
       val process = ProcessBuilder(
@@ -2070,15 +2147,8 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
       val out = com.vibe.agent.voice.VoiceTranscription.outputFile(file, dir)
       out.takeIf { it.isFile }?.readText().also { runCatching { out.delete() } }
     }.getOrNull()
-    runCatching { file.delete() }
-    val task = text?.let { com.vibe.agent.voice.VoiceTranscription.taskFrom(it) }
-    if (task == null) {
-      systemLine(t("chat.voice.empty"))
-      return
-    }
-    // Into the draft, not sent: what to do with the words stays the person's decision — the same
-    // rule the design detector's findings follow.
-    putIntoComposer(task)
+    if (text == null) systemLine(t("chat.voice.empty"))
+    return text
   }
 
   override fun putIntoComposer(text: String) {
