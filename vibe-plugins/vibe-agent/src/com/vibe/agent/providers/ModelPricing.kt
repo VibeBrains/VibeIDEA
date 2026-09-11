@@ -102,15 +102,19 @@ data class ModelPricing(
   }
 
   /**
-   * Действуют ли надбавки на этом ходе.
+   * Whether the long-prompt surcharge applies to this turn.
    *
-   * Порог меряется по ПРОМПТУ — свежий вход плюс чтение из кэша: вендор говорит «prompts with more
-   * than N input tokens», а кэшированная часть промпта тоже отправлена. Выход в порог не входит:
-   * он ещё не существует в момент, когда цена определяется.
+   * The threshold is measured on the whole PROMPT — fresh input, cache reads and cache writes: the
+   * vendor says «prompts with more than N input tokens», and the cached parts were sent all the
+   * same. A cache write is as much a part of the prompt as a read; Anthropic merely reports it in a
+   * field of its own (`total_input_tokens = cache_read_input_tokens + cache_creation_input_tokens +
+   * input_tokens`), and leaving it out priced the first long request — the one that writes the
+   * cache — as a short one (found by VibeIDE, 11.09.2026). Output is not counted: it does not exist
+   * yet when the price is set.
    */
   fun longContextApplies(usage: TokenUsage): Boolean {
     val tier = longContext?.takeIf { it.stated } ?: return false
-    return usage.inputTokens + usage.cacheReadTokens > tier.overInputTokens
+    return usage.inputTokens + usage.cacheReadTokens + usage.cacheWriteTokens > tier.overInputTokens
   }
   val stated: Boolean get() = input > 0 || output > 0 || cacheRead > 0 || cacheWrite > 0
 

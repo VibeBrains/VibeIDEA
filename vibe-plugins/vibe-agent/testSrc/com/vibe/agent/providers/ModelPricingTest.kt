@@ -89,6 +89,8 @@ class ModelPricingTest {
                          longContext = ModelPricing.LongContext(272_000, input = 2.0, cache = 2.0, output = 1.5))
     val split = TokenUsage(inputTokens = 200_000, cacheReadTokens = 100_000)
     assertTrue(p.longContextApplies(split), "200K свежих плюс 100K из кэша — это промпт длиннее порога")
+    val written = TokenUsage(inputTokens = 200_000, cacheWriteTokens = 100_000)
+    assertTrue(p.longContextApplies(written), "запись в кэш — тоже часть промпта: её делает как раз первый длинный запрос")
     val outputOnly = TokenUsage(inputTokens = 10_000, outputTokens = 500_000)
     assertFalse(p.longContextApplies(outputOnly), "длинный ответ порога не поднимает")
   }
