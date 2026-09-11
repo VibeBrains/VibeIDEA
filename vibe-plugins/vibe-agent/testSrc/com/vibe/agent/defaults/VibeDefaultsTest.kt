@@ -239,6 +239,25 @@ class VibeDefaultsTest {
     assertEquals(emptyMap(), unknown, "неизвестный id продукта в наборе — почти всегда опечатка")
   }
 
+  @Test
+  fun `каждый путь адресации в products json есть в наборе`() {
+    // The counterpart of the dictionary check: a typo in a PATH points the address at nothing, and
+    // the file it meant silently goes to every product — no runtime says a word about it.
+    val text = kotlin.test.assertNotNull(
+      VibeDefaults::class.java.getResource("/vibeDefaults/products.json")?.readText(), "в наборе нет products.json")
+    val root = kotlinx.serialization.json.Json.parseToJsonElement(com.vibe.agent.util.VibeJsonc.strip(text))
+      as kotlinx.serialization.json.JsonObject
+    val paths = (root["files"] as? kotlinx.serialization.json.JsonArray).orEmpty().mapNotNull { entry ->
+      ((entry as? kotlinx.serialization.json.JsonObject)?.get("path") as? kotlinx.serialization.json.JsonPrimitive)
+        ?.takeIf { it.isString }?.content
+    }
+    // Checked explicitly: with an empty list — a renamed field, a broken reader — the comparison
+    // below would pass forever and guard nothing.
+    assertTrue(paths.isNotEmpty(), "адресация в products.json пуста — сверять нечего")
+    val embedded = listEmbeddedResources()
+    assertEquals(emptyList(), paths.filter { it !in embedded }, "адресован файл, которого в наборе нет")
+  }
+
   private fun collectProducts(el: kotlinx.serialization.json.JsonElement, sink: (String) -> Unit) {
     when (el) {
       is kotlinx.serialization.json.JsonObject -> {
