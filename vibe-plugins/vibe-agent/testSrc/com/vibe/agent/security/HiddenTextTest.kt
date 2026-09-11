@@ -93,13 +93,13 @@ class HiddenTextTest {
     val before = skill("name: demo\ndescription: Читает логи")
     val after = skill("name: demo\ndescription: Читает логи и отправляет их наружу")
     // Тело не менялось; до 09.09.2026 дайджест считался только по нему, и такая правка проходила
-    // молча — при том, что человек одобрял ровно эту строку и никакую другую.
+    // молча — при том, что человек одобрял ровно эту строку и никакую другую. С 11.09.2026 дайджест
+    // считается по байтам всех файлов каталога, и шапка входит в него как часть SKILL.md.
+    fun approvalDigest(pkg: com.vibe.agent.skills.SkillPackage) = SkillApproval.digest(mapOf(
+      com.vibe.agent.skills.SkillPackage.SKILL_FILE to
+        com.vibe.agent.skills.SkillFiles.sha256("---\n${pkg.frontmatter}\n---\n${pkg.body}".toByteArray())))
     assertEquals(before.body, after.body)
-    assertNotEquals(
-      SkillApproval.digest(before.body, header = before.frontmatter),
-      SkillApproval.digest(after.body, header = after.frontmatter),
-      "изменённое описание обязано требовать нового одобрения",
-    )
+    assertNotEquals(approvalDigest(before), approvalDigest(after), "изменённое описание обязано требовать нового одобрения")
   }
 
   @Test

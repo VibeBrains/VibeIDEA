@@ -28,6 +28,32 @@ data class SkillPackage(
    */
   val frontmatter: String = "",
 ) {
+  /**
+   * A top-level header value as written: the scalar after `key:`, or the items of a flow list
+   * (`[a, b]`) or of a block list under it, joined with `, `; null when the key is absent or empty.
+   *
+   * For the approval dialog: `allowed-tools` and `compatibility` are SHOWN to the person, never
+   * interpreted — Agent Skills marks `allowed-tools` experimental, and here it grants nothing.
+   */
+  fun field(key: String): String? {
+    val lines = frontmatter.lines()
+    val at = lines.indexOfFirst { line ->
+      line.isNotEmpty() && !line.first().isWhitespace() && line.substringBefore(':', "").trim() == key
+    }
+    if (at < 0) return null
+    val inline = unquote(lines[at].substringAfter(':'))
+    if (inline.isNotEmpty()) {
+      if (!(inline.startsWith("[") && inline.endsWith("]"))) return inline
+      return inline.removeSurrounding("[", "]").split(',').map { unquote(it) }.filter { it.isNotEmpty() }
+        .joinToString(", ").takeIf { it.isNotEmpty() }
+    }
+    val items = lines.drop(at + 1)
+      .takeWhile { it.isBlank() || it.first().isWhitespace() }
+      .map { unquote(it.trim().removePrefix("-")) }
+      .filter { it.isNotEmpty() }
+    return items.joinToString(", ").takeIf { it.isNotEmpty() }
+  }
+
   companion object {
     /** Everything the reference Agent Skills validator accepts at the top level. */
     val ALLOWED_TOP_LEVEL = setOf("name", "description", "license", "allowed-tools", "compatibility", "metadata")

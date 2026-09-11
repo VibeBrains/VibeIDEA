@@ -1888,19 +1888,19 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
   /**
    * Asks about a skill whose content the person has not approved yet, and remembers the answer.
    *
-   * Bound to a digest of the body plus the names of the files beside it: a skill that gains a
-   * script gains a capability even when its text did not change. Approval is per project, because
-   * a skill of the same name in another repository is another skill.
+   * Bound to a digest of every file in the skill directory: a script rewritten by a pull request
+   * changes what runs even when SKILL.md did not change. The file map is stored beside the digest,
+   * so the next question can say WHICH files changed. Approval is per project, because a skill of
+   * the same name in another repository is another skill.
    */
-  private fun approveSkill(id: String, entry: com.vibe.agent.skills.SkillsStore.Entry): Boolean {
-    val digest = entry.digest()
+  private fun approveSkill(id: String, entry: com.vibe.agent.skills.SkillsStore.Entry, digest: String): Boolean {
     val key = SKILL_APPROVAL_KEY + id
+    val filesKey = SKILL_APPROVED_FILES_KEY + id
     val props = com.intellij.ide.util.PropertiesComponent.getInstance(project)
     val verdict = com.vibe.agent.skills.SkillApproval.verdictFor(digest, props.getValue(key))
     if (verdict == com.vibe.agent.skills.SkillApproval.Verdict.UNCHANGED) return true
-    val body = if (verdict == com.vibe.agent.skills.SkillApproval.Verdict.CHANGED)
-      t("skills.approve.changed", "id" to id, "preview" to entry.pkg.body.take(SKILL_PREVIEW_LEN))
-    else t("skills.approve.new", "id" to id, "preview" to entry.pkg.body.take(SKILL_PREVIEW_LEN))
+    val approvedFiles = props.getValue(filesKey)?.let { com.vibe.agent.skills.SkillApproval.decodeFiles(it) }
+    val body = com.vibe.agent.skills.SkillApprovalText.render(id, entry, verdict, approvedFiles)
     val approved = askOnEdt {
       Messages.showYesNoDialog(project, body, t("skills.approve.title"),
                                t("skills.approve.use"), t("common.cancel"), Messages.getQuestionIcon()) == Messages.YES
@@ -1910,6 +1910,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
       return false
     }
     props.setValue(key, digest)
+    props.setValue(filesKey, com.vibe.agent.skills.SkillApproval.encodeFiles(entry.files.hashes))
     return true
   }
 
@@ -1938,7 +1939,8 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
       }
       // What was approved is the CONTENT, not the name: a skill lives in the repository and
       // arrives with a pull request, so «я разрешил его вчера» says nothing about what it does now.
-      if (!approveSkill(id, entry)) continue
+      val digest = entry.digest()
+      if (!approveSkill(id, entry, digest)) continue
       // A skill is text from disk like any other — same guard as project files.
       val clean = com.vibe.agent.security.ContextSanitizer.sanitize(entry.pkg.body)
       // Заголовок проверяется ОТДЕЛЬНО и до тела: в контекст он не уходит, но именно его человек
@@ -1947,7 +1949,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
       val header = com.vibe.agent.security.ContextSanitizer.sanitize(entry.pkg.frontmatter)
       val findings = clean.findings + header.findings
       if (findings.isNotEmpty()) reportContextFindings("$id/${com.vibe.agent.skills.SkillPackage.SKILL_FILE}", findings)
-      resolved.add(ContextSerializer.LoadedSkill(id, clean.text))
+      resolved.add(ContextSerializer.LoadedSkill(id, clean.text, digest))
     }
     if (resolved.isNotEmpty()) systemLine(t("chat.skillsApplied", "ids" to resolved.joinToString { it.id }))
     return resolved
@@ -2685,8 +2687,14 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
       turnSignals.add(com.vibe.agent.guard.Trifecta.Signal.UNTRUSTED_CONTENT)
     }
     // thoughtsBlock is EDT-owned (created/read in appendThought's invokeLater) — reset it there, not here.
+    // Which recipes, in which version, took part in the turn: without it the chain an investigation
+    // walks (prompt → skill → tool call) breaks right here. The digest is the approved one.
+    val promptMeta = buildMap {
+      put("chars", text.length.toString())
+      if (skills.isNotEmpty()) put("skills", skills.joinToString(",") { "${it.id}@${it.digest}" })
+    }
     audit?.append(AuditEvent(System.currentTimeMillis(), AuditEvent.Action.PROMPT, ok = true, actor = turnActor,
-      model = "acp/${t.config.name}", meta = mapOf("chars" to text.length.toString())))
+      model = "acp/${t.config.name}", meta = promptMeta))
     SwingUtilities.invokeLater {
       modePicker.setModes(c.modes)
       configPicker.setOptions(c.configOptions)
@@ -4763,7 +4771,9 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     const val SPEND_COMMAND = "/spend"
     /** Per project: a skill of the same name in another repository is another skill. */
     const val SKILL_APPROVAL_KEY = "vibe.skill.approved."
-    const val SKILL_PREVIEW_LEN = 400
+
+    /** The approved path → hash map, beside the digest: lets the next question name what changed. */
+    const val SKILL_APPROVED_FILES_KEY = "vibe.skill.approvedFiles."
     const val GIT_COMMAND = "/git"
     const val COUNCIL_COMMAND = "/council"
     const val HANDOFF_COMMAND = "/handoff"

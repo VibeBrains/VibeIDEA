@@ -1,6 +1,11 @@
 // Copyright 2026 VibeBrains. Use of this source code is governed by the Apache 2.0 license.
 package com.vibe.agent.skills
 
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import java.security.MessageDigest
 
 /**
@@ -15,41 +20,56 @@ import java.security.MessageDigest
  * to a digest, and a changed digest revokes it. Everything else in that draft is protocol we do
  * not speak.
  *
- * Pure: text in, digest out, decision out. The store of what was approved belongs to the caller.
+ * Pure: file hashes in, digest out, decision out. The store of what was approved belongs to the
+ * caller.
  */
 object SkillApproval {
   /** Hex characters kept from the digest — long enough that a collision cannot be aimed at us. */
   const val DIGEST_LENGTH = 16
 
+  private val json = Json { ignoreUnknownKeys = true }
+
   /**
-   * The digest of a skill as approved: its header, its body, and the names of everything shipped
-   * beside it.
+   * The digest of a skill as approved: every file of its directory, by relative path and content —
+   * see [SkillFiles] for why the whole directory.
    *
-   * Attachment names are part of it because a skill that gains a file gains a capability — the
-   * body may be unchanged while the recipe now points at a script that was not there yesterday.
-   *
-   * **The header is part of it because the header is what the person actually read.** `name` and
-   * `description` are the whole of what the approval dialog and the `/skill:` popup show; the body
-   * is one click further away and most people never open it. A digest over the body alone therefore
-   * left the reviewed half of the skill free to change without revoking anything — and that is
-   * precisely where the published attack puts its payload (embracethered.com, 02.2026: an
+   * SKILL.md is one of the files, so its header is covered with the body. **The header matters most**:
+   * `name` and `description` are what the approval dialog and the `/skill:` popup show first, and it
+   * is precisely where the published attack puts its payload (embracethered.com, 02.2026: an
    * instruction hidden in the YAML `name` and `description` of an otherwise legitimate skill).
    */
-  fun digest(body: String, attachments: List<String> = emptyList(), header: String = ""): String {
+  fun digest(files: Map<String, String>): String {
     val md = MessageDigest.getInstance("SHA-256")
-    md.update(header.toByteArray(Charsets.UTF_8))
-    md.update(0)
-    md.update(body.toByteArray(Charsets.UTF_8))
     // Sorted: the filesystem's order is not a property of the skill, and a reshuffled listing
     // must not read as a change.
-    attachments.sorted().forEach {
+    for ((path, hash) in files.toSortedMap()) {
+      md.update(path.toByteArray(Charsets.UTF_8))
       md.update(0)
-      md.update(it.toByteArray(Charsets.UTF_8))
+      md.update(hash.toByteArray(Charsets.UTF_8))
+      md.update(NEWLINE)
     }
-    return md.digest().joinToString("", limit = DIGEST_LENGTH / 2, truncated = "") {
-      "%02x".format(it.toInt() and 0xFF)
-    }
+    return md.digest().joinToString("") { "%02x".format(it.toInt() and 0xFF) }.take(DIGEST_LENGTH)
   }
+
+  /** Which files differ from what was approved, by path. */
+  data class Changes(val added: List<String>, val removed: List<String>, val modified: List<String>) {
+    val isEmpty: Boolean get() = added.isEmpty() && removed.isEmpty() && modified.isEmpty()
+  }
+
+  /** The answer to «what changed» the dialog owes the person — files, not a new digest. */
+  fun changes(approved: Map<String, String>, current: Map<String, String>): Changes = Changes(
+    added = (current.keys - approved.keys).sorted(),
+    removed = (approved.keys - current.keys).sorted(),
+    modified = current.filter { (path, hash) -> approved[path]?.let { it != hash } == true }.keys.sorted(),
+  )
+
+  /** The approved file map as it is stored beside the digest: the settings store keeps strings. */
+  fun encodeFiles(files: Map<String, String>): String =
+    JsonObject(files.toSortedMap().mapValues { JsonPrimitive(it.value) }).toString()
+
+  /** Null when the stored text is not a file map — then there is nothing to compare with. */
+  fun decodeFiles(text: String): Map<String, String>? =
+    runCatching { json.parseToJsonElement(text).jsonObject.mapValues { it.value.jsonPrimitive.content } }.getOrNull()
 
   /** What to do with a skill the person is about to use. */
   enum class Verdict {
@@ -68,4 +88,6 @@ object SkillApproval {
     approved == current -> Verdict.UNCHANGED
     else -> Verdict.CHANGED
   }
+
+  private const val NEWLINE: Byte = 0x0A
 }

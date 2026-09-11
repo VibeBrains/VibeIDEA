@@ -21,15 +21,22 @@ object SkillValidator {
   private val NAME_SHAPE = Regex("[a-z0-9]+(-[a-z0-9]+)*")
   const val MAX_NAME_CHARS = 64
 
+  private const val BYTES_IN_MB = 1024 * 1024
+
   /**
-   * @param attachments file names lying next to SKILL.md (for the path-escape and scripts checks).
-   * @param escapingAttachments canonical paths that resolved OUTSIDE the skills tree — the caller
-   *        does the resolving (it needs the filesystem), the verdict is here.
+   * @param attachments names at the top of the skill directory (for the scripts warning).
+   * @param escapingAttachments paths that resolved OUTSIDE the skills tree — the caller does the
+   *        resolving (it needs the filesystem), the verdict is here.
+   * @param incomplete why the directory could not be read whole: an approval cannot be bound to
+   *        content nobody hashed, so such a skill is refused.
+   * @param scripts text of the files under `scripts/`, scanned with the SKILL.md code blocks.
    */
   fun validate(
     pkg: SkillPackage,
     attachments: List<String> = emptyList(),
     escapingAttachments: List<String> = emptyList(),
+    incomplete: SkillFiles.Incomplete? = null,
+    scripts: Map<String, String> = emptyMap(),
   ): List<Finding> = buildList {
     if (!pkg.hasFrontmatter) {
       add(Finding(Level.ERROR, t("skill.error.noFrontmatter")))
@@ -58,10 +65,31 @@ object SkillValidator {
     for (path in escapingAttachments) {
       add(Finding(Level.ERROR, t("skill.error.escapingAttachment", "path" to path, "tree" to SKILLS_TREE)))
     }
+    incomplete?.let { add(Finding(Level.ERROR, incompleteMessage(it))) }
     if (attachments.any { it == "scripts" || it.startsWith("scripts/") }) {
       add(Finding(Level.WARNING, t("skill.warn.scripts")))
     }
+    addAll(codeFindings(pkg, scripts))
     addAll(hiddenTextFindings(pkg))
+  }
+
+  private fun incompleteMessage(incomplete: SkillFiles.Incomplete): String = when (incomplete.reason) {
+    SkillFiles.Incomplete.Reason.FILES -> t("skill.error.tooManyFiles", "max" to SkillFiles.MAX_FILES)
+    SkillFiles.Incomplete.Reason.BYTES -> t("skill.error.tooBig", "max" to SkillFiles.MAX_BYTES / BYTES_IN_MB)
+    SkillFiles.Incomplete.Reason.DEPTH -> t("skill.error.tooDeep", "max" to SkillFiles.MAX_DEPTH)
+    SkillFiles.Incomplete.Reason.UNREADABLE -> t("skill.error.unreadable", "path" to incomplete.path)
+  }
+
+  /** What the skill would have the agent run: SKILL.md code blocks and every script. */
+  private fun codeFindings(pkg: SkillPackage, scripts: Map<String, String>): List<Finding> {
+    val found = SkillCodeScan.scanSkill(pkg.body) + scripts.flatMap { (path, text) -> SkillCodeScan.scanScript(path, text) }
+    return found.map { finding ->
+      Finding(Level.WARNING, when (finding.kind) {
+        SkillCodeScan.Kind.FETCH_AND_RUN -> t("skill.warn.fetchAndRun", "file" to finding.file, "command" to finding.detail)
+        SkillCodeScan.Kind.UNPINNED_RUNNER -> t("skill.warn.unpinnedRunner", "file" to finding.file, "command" to finding.detail)
+        SkillCodeScan.Kind.UNPINNED_PEP723 -> t("skill.warn.unpinnedPep723", "file" to finding.file, "dependency" to finding.detail)
+      })
+    }
   }
 
   /**

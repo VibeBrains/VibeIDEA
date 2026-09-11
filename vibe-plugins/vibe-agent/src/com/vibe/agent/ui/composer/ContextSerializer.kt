@@ -61,8 +61,11 @@ object ContextSerializer {
     Loaded(ref, path, uri, clean?.text ?: raw, clean?.findings.orEmpty())
   }
 
-  /** A skill resolved for this message: its id and the body of SKILL.md (already sanitised). */
-  class LoadedSkill(val id: String, val body: String)
+  /**
+   * A skill resolved for this message: its id, the body of SKILL.md (already sanitised), and the
+   * digest the person approved — the audit names the version that took part in the turn.
+   */
+  class LoadedSkill(val id: String, val body: String, val digest: String)
 
   fun acpBlocks(
     text: String,

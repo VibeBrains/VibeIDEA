@@ -62,4 +62,16 @@ class SkillPackageTest {
     assertEquals("описание", pkg.description)
     assertEquals(listOf("name", "description"), pkg.topLevelKeys)
   }
+
+  @Test
+  fun `allowed-tools and compatibility are read for the approval dialog, in every YAML shape`() {
+    val scalar = SkillPackage.parse("x", "---\nname: x\ndescription: d\nallowed-tools: Bash(git:*) Read\ncompatibility: \"Python 3.11+\"\n---\nтело")
+    assertEquals("Bash(git:*) Read", scalar.field("allowed-tools"))
+    assertEquals("Python 3.11+", scalar.field("compatibility"))
+    assertNull(scalar.field("license"), "нет ключа — нет строки в диалоге")
+    val block = SkillPackage.parse("x", "---\nname: x\nallowed-tools:\n  - Bash\n  - \"Read\"\n---\nтело")
+    assertEquals("Bash, Read", block.field("allowed-tools"))
+    val flow = SkillPackage.parse("x", "---\nname: x\nallowed-tools: [Bash, 'Read']\n---\nтело")
+    assertEquals("Bash, Read", flow.field("allowed-tools"))
+  }
 }

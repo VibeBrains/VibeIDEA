@@ -9,18 +9,16 @@ object SkillsStore {
     val pkg: SkillPackage,
     val findings: List<SkillValidator.Finding>,
     val dir: File,
-    /** Everything shipped beside SKILL.md — part of what gets approved, see [SkillApproval]. */
-    val attachments: List<String> = emptyList(),
+    /** Every file of the skill, hashed — what gets approved, see [SkillFiles]. */
+    val files: SkillFiles,
   ) {
     val isBroken: Boolean get() = SkillValidator.hasErrors(findings)
 
     /**
-     * What the person approves: the header they READ, the body, and the files beside it.
-     *
-     * The header counts because the approval dialog shows `name` and `description` and little
-     * else — leaving it out of the digest let the reviewed half change without revoking anything.
+     * What the person approves: every file of the skill directory — SKILL.md with the header the
+     * dialog shows first, and every script and attachment beside it, at any depth.
      */
-    fun digest(): String = SkillApproval.digest(pkg.body, attachments, pkg.frontmatter)
+    fun digest(): String = SkillApproval.digest(files.hashes)
   }
 
   fun root(projectBase: String?): File? = projectBase?.let { File(it, SkillPackage.SKILLS_DIR) }
@@ -44,14 +42,11 @@ object SkillsStore {
     if (!file.isFile) return null
     val text = runCatching { file.readText() }.getOrNull() ?: return null
     val pkg = SkillPackage.parse(dir.name, text)
-    val attachments = (dir.listFiles() ?: emptyArray())
-      .filter { it.name != SkillPackage.SKILL_FILE }
-      .map { if (it.isDirectory) it.name + "/" else it.name }
-    // A link pointing outside the skills tree would let a skill pull in an arbitrary file; the
-    // verdict lives in the validator, the resolving has to happen here, where the filesystem is.
-    val escaping = (dir.listFiles() ?: emptyArray())
-      .filter { runCatching { !it.canonicalPath.startsWith(root.canonicalPath + File.separator) }.getOrDefault(true) }
-      .map { it.name }
-    return Entry(pkg, SkillValidator.validate(pkg, attachments, escaping), dir, attachments)
+    // Links leaving the skills tree are found by the walk, where the filesystem is; the verdict
+    // lives in the validator.
+    val files = SkillFiles.scan(root.toPath(), dir.toPath())
+    val attachments = files.topLevel.filter { it != SkillPackage.SKILL_FILE }
+    val findings = SkillValidator.validate(pkg, attachments, files.escaping, files.incomplete, files.scripts)
+    return Entry(pkg, findings, dir, files)
   }
 }
