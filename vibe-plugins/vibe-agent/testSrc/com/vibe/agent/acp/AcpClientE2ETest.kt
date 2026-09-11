@@ -280,6 +280,40 @@ class AcpClientE2ETest {
     assertEquals("end_turn", turn.get(30, TimeUnit.SECONDS).jsonObject["stopReason"]?.jsonPrimitive?.content)
   }
 
+  @Test
+  fun `an isolated session is a second session on the same connection, and the chat's stays current`() {
+    val c = start("sessions", TestHandler())
+    val chat = c.initializeAndOpenSession().get(30, TimeUnit.SECONDS)
+    val isolated = c.openIsolatedSession().get(30, TimeUnit.SECONDS)
+    assertTrue(isolated != chat, "новая сессия — новый идентификатор")
+    assertEquals(chat, c.sessionId, "текущей остаётся сессия чата")
+
+    c.turnSession = isolated
+    c.prompt("проверь работу").get(30, TimeUnit.SECONDS)
+    c.turnSession = null
+    await { texts().contains("session=$isolated") }
+    // The isolated session switching its own mode must not repaint the chat's pickers.
+    assertEquals("default", c.modes?.currentModeId)
+    assertTrue(modeChanges.isEmpty(), "режим чужой сессии пришёл как смена режима чата: ${modeChanges.toList()}")
+
+    c.prompt("а теперь в чат").get(30, TimeUnit.SECONDS)
+    await { texts().contains("session=$chat") }
+  }
+
+  @Test
+  fun `cancel reaches the session the turn actually runs in`() {
+    val c = start("cancelSession", TestHandler())
+    c.initializeAndOpenSession().get(30, TimeUnit.SECONDS)
+    val isolated = c.openIsolatedSession().get(30, TimeUnit.SECONDS)
+    c.turnSession = isolated
+    val turn = c.prompt("долгая проверка")
+    await { texts().contains("работаю…") }
+
+    c.cancel()
+    assertEquals("cancelled", turn.get(30, TimeUnit.SECONDS).jsonObject["stopReason"]?.jsonPrimitive?.content)
+    await { texts().contains("отменена сессия $isolated") }
+  }
+
   // --- lifecycle ---
 
   @Test

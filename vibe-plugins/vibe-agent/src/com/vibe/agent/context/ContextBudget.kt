@@ -62,7 +62,11 @@ object ContextBudget {
    * English and generous for Cyrillic, and a guard that under-counts is a guard that lets the
    * window overflow while showing green.
    */
-  fun estimateTokens(text: String): Long = if (text.isEmpty()) 0 else ((text.length + 3) / 4).toLong()
+  fun estimateTokens(text: String): Long =
+    if (text.isEmpty()) 0 else ((text.length + CHARS_PER_TOKEN - 1) / CHARS_PER_TOKEN).toLong()
+
+  /** The ratio of [estimateTokens]; turned around, it says how many characters a token budget buys. */
+  const val CHARS_PER_TOKEN = 4
 
   fun estimateTokens(texts: Iterable<String>): Long = texts.sumOf { estimateTokens(it) }
 }

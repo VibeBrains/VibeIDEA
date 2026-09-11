@@ -144,6 +144,8 @@ class AcpClient(
     process?.destroy()
     process = null
     sessionId = null
+    // An isolated session dies with the process; a stale id here would route the next prompt nowhere.
+    turnSession = null
     capabilities = null
     modes = null
     // Тумблеры принадлежат сессии: у мёртвого клиента их нет, как нет и режимов.
@@ -225,6 +227,7 @@ class AcpClient(
         put("cwd", workingDir ?: System.getProperty("user.home"))
         put("mcpServers", JsonArray(ideTools?.let { listOf(toJson(it)) } ?: emptyList()))
       }
+      sessionParams = params
       val resumable = previousSessionId?.takeIf { it.isNotBlank() && capabilities?.resumeSession == true }
       if (resumable == null) {
         request("session/new", params)
@@ -250,10 +253,34 @@ class AcpClient(
     }
   }
 
+  /** Params the chat session was opened with; an isolated session is opened with the same. */
+  @Volatile private var sessionParams: JsonObject? = null
+
+  /**
+   * The session the running turn goes to when it is not the chat's own — set around a pipeline step
+   * with a fresh context, so that the prompt, «Стоп» and the step's ceilings all reach the turn that
+   * is actually running. Null — the chat's session.
+   */
+  @Volatile var turnSession: String? = null
+
+  /**
+   * A second session on the same connection, for a step that must not see the conversation.
+   *
+   * Not made current and not remembered: the chat's session stays what it was, and the next turn
+   * continues the conversation. In ACP every session has its own context, so a fresh context is
+   * exactly a new session of the same agent — no second process, no second handshake.
+   */
+  fun openIsolatedSession(): CompletableFuture<String> {
+    val params = sessionParams ?: return CompletableFuture.failedFuture(IllegalStateException("no session"))
+    return request("session/new", params).thenApply { result ->
+      (result as? JsonObject)?.get("sessionId")?.jsonPrimitive?.contentOrNull ?: error("agent returned no sessionId")
+    }
+  }
+
   fun prompt(text: String): CompletableFuture<JsonElement> = prompt(listOf(ContentBlock.Text(text)))
 
   fun prompt(blocks: List<ContentBlock>): CompletableFuture<JsonElement> {
-    val sid = checkNotNull(sessionId) { "no session" }
+    val sid = turnSession ?: checkNotNull(sessionId) { "no session" }
     return request("session/prompt", buildJsonObject {
       put("sessionId", sid)
       put("prompt", JsonArray(blocks.map { it.toJson() }))
@@ -353,8 +380,9 @@ class AcpClient(
 
   private fun JsonElement?.booleanOrFalse(): Boolean = (this as? JsonPrimitive)?.booleanOrNull ?: false
 
+  /** Cancels the running turn — in [turnSession] while a step with a fresh context runs. */
   fun cancel() {
-    val sid = sessionId ?: return
+    val sid = turnSession ?: sessionId ?: return
     notify("session/cancel", buildJsonObject { put("sessionId", sid) })
   }
 
@@ -435,11 +463,14 @@ class AcpClient(
 
   private fun onSessionUpdateNotification(params: JsonObject) {
     val update = params["update"] as? JsonObject
-    if (update?.get("sessionUpdate")?.stringOrNull() == UPDATE_CONFIG_OPTIONS) {
+    // Modes and switches belong to the chat's session: an isolated one changing its own must not
+    // repaint the chat's pickers with a state the chat does not have. Its text still reaches the feed.
+    val chatSession = params["sessionId"]?.stringOrNull().let { it == null || it == sessionId }
+    if (chatSession && update?.get("sessionUpdate")?.stringOrNull() == UPDATE_CONFIG_OPTIONS) {
       configOptions = parseConfigOptions(update)
       handler.onConfigOptionsChanged(configOptions)
     }
-    if (update?.get("sessionUpdate")?.stringOrNull() == UPDATE_CURRENT_MODE) {
+    if (chatSession && update?.get("sessionUpdate")?.stringOrNull() == UPDATE_CURRENT_MODE) {
       val modeId = update["currentModeId"]?.stringOrNull()
       if (modeId != null) {
         modes = modes?.copy(currentModeId = modeId)

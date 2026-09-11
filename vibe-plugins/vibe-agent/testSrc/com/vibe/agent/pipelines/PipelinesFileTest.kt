@@ -70,4 +70,38 @@ class PipelinesFileTest {
     val (_, warnings) = load(ownModelStep(""", "maxSteps": 5, "paths": ["src/**"]"""))
     assertEquals(2, warnings.size, "каждая мёртвая настройка называется отдельно: $warnings")
   }
+
+  @Test
+  fun `a judging role starts in a fresh session by default, the others continue the chat`() {
+    val (pipelines, warnings) = load(
+      """
+      { "pipelines": [ { "id": "p", "name": "П", "steps": [
+        { "role": "backend-dev", "task": "сделай" },
+        { "role": "code-reviewer", "task": "проверь" },
+        { "role": "code-reviewer", "task": "проверь с разговором", "context": "shared" },
+        { "role": "backend-dev", "task": "сделай с чистого листа", "context": "fresh" }
+      ] } ] }
+      """.trimIndent()
+    )
+    assertTrue(warnings.isEmpty(), "$warnings")
+    assertEquals(listOf(StepContext.SHARED, StepContext.FRESH, StepContext.SHARED, StepContext.FRESH),
+                 pipelines.single().steps.map { it.context })
+  }
+
+  @Test
+  fun `an unknown context falls back to the role's default out loud`() {
+    val (pipelines, warnings) = load(
+      """{ "pipelines": [ { "id": "p", "steps": [ { "role": "qa", "task": "проверь", "context": "isolated" } ] } ] }""")
+    assertEquals(StepContext.FRESH, pipelines.single().steps.single().context)
+    assertTrue(warnings.single().contains("isolated"), warnings.single())
+  }
+
+  @Test
+  fun `context on a step with its own model is named as dead`() {
+    // A direct request has no session to share or to open.
+    val (pipelines, warnings) = load(ownModelStep(""", "context": "fresh""""))
+    assertEquals(1, pipelines.size)
+    assertEquals(1, warnings.size, "$warnings")
+    assertTrue(warnings.single().contains("context"), warnings.single())
+  }
 }

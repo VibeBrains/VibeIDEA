@@ -53,7 +53,31 @@ data class PipelineStep(
    */
   val paths: List<String> = emptyList(),
   val denyPaths: List<String> = emptyList(),
+  /** Whose context the step sees, see [StepContext]; by default a judge starts clean. */
+  val context: StepContext = StepContext.defaultFor(role),
 )
+
+/**
+ * Where a step runs: in the chat's own session, or in a new session of the same agent.
+ *
+ * A reviewer that watched the author work reviews the author's reasoning, not the work: review goes
+ * better when the reviewer has not seen the author's context (Cognition, «Multi-Agents: What's
+ * Actually Working», 22.04.2026). In ACP every session has its own context, so «fresh» is simply a
+ * new session on the same connection — not remembered, and the chat's session stays current.
+ */
+enum class StepContext(val wire: String) {
+  SHARED("shared"),
+  FRESH("fresh");
+
+  companion object {
+    /** The roles that judge rather than build: they start clean unless told otherwise. */
+    val JUDGING_ROLES: Set<String> = setOf("code-reviewer", "critic", "qa", "security")
+
+    fun defaultFor(role: String): StepContext = if (role in JUDGING_ROLES) FRESH else SHARED
+
+    fun parse(wire: String?): StepContext? = entries.firstOrNull { it.wire == wire }
+  }
+}
 
 data class Pipeline(
   val id: String,
@@ -123,6 +147,7 @@ object PipelinesFile {
             if (model != null && !readOnly(role)) {
               throw IllegalArgumentException(t("pipeline.warn.writingRoleOnOwnModel", "role" to role))
             }
+            val contextWire = so["context"]?.jsonPrimitive?.contentOrNull?.trim()?.ifEmpty { null }
             // Настройка, мёртвая В КОНТЕКСТЕ: поле разбирается, потребитель у него есть — но не на
             // ЭТОМ шаге. Гейт мёртвых полей такое не видит по построению, он отвечает «есть ли
             // потребитель», а не «работает ли он здесь». Снаружи неотличимо от работающей
@@ -138,7 +163,16 @@ object PipelinesFile {
               if (stringList(so["paths"]).isNotEmpty() || stringList(so["denyPaths"]).isNotEmpty()) {
                 onWarning(t("pipeline.warn.pathsOnOwnModel", "role" to role))
               }
+              // A direct request has no session to share or to open.
+              if (contextWire != null) onWarning(t("pipeline.warn.contextOnOwnModel", "role" to role))
             }
+            // An unknown value is a typo, and a typo falls back to the role's default out loud
+            // rather than dropping a working pipeline.
+            val context = contextWire?.let { wire ->
+              StepContext.parse(wire) ?: StepContext.defaultFor(role).also {
+                onWarning(t("pipeline.warn.unknownContext", "role" to role, "value" to wire, "default" to it.wire))
+              }
+            } ?: StepContext.defaultFor(role)
             PipelineStep(
               role = role,
               task = so["task"]?.jsonPrimitive?.contentOrNull?.ifBlank { null }
@@ -153,6 +187,7 @@ object PipelinesFile {
               ignorePreviousArtifacts = so["ignorePreviousArtifacts"]?.jsonPrimitive?.booleanOrNull ?: false,
               paths = stringList(so["paths"]),
               denyPaths = stringList(so["denyPaths"]),
+              context = context,
             )
           } ?: emptyList()
           if (steps.isEmpty()) { onWarning(t("pipeline.warn.noSteps", "id" to id)); continue }

@@ -49,4 +49,13 @@ class VibeSchemasTest {
     val command = schema("commands")["definitions"]!!.jsonObject["command"]!!.jsonObject
     assertEquals(false, command["additionalProperties"]!!.jsonPrimitive.content.toBoolean())
   }
+
+  @Test
+  fun `the step context values in the schema are the ones the parser knows`() {
+    // An editor suggesting a value the parser does not know is a typo delivered by autocomplete.
+    val enum = schema("pipelines")["properties"]!!.jsonObject["pipelines"]!!.jsonObject["items"]!!.jsonObject["properties"]!!
+      .jsonObject["steps"]!!.jsonObject["items"]!!.jsonObject["properties"]!!.jsonObject["context"]!!.jsonObject["enum"]!!
+      .jsonArray.map { it.jsonPrimitive.content }.toSet()
+    assertEquals(com.vibe.agent.pipelines.StepContext.entries.map { it.wire }.toSet(), enum)
+  }
 }

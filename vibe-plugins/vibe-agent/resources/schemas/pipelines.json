@@ -83,6 +83,24 @@
                 },
                 "ignorePreviousArtifacts": {
                   "type": "boolean"
+                },
+                "paths": {
+                  "type": "array",
+                  "items": { "type": "string" },
+                  "description": "Куда шагу разрешено писать — шаблоны в синтаксисе .gitignore. Нет поля — ограничения нет."
+                },
+                "denyPaths": {
+                  "type": "array",
+                  "items": { "type": "string" },
+                  "description": "Куда шагу запрещено писать — шаблоны .gitignore; запреты сильнее разрешений."
+                },
+                "context": {
+                  "type": "string",
+                  "enum": [
+                    "shared",
+                    "fresh"
+                  ],
+                  "description": "Чей контекст видит шаг: shared — продолжает сессию чата, fresh — новая сессия того же агента. По умолчанию fresh у судящих ролей (code-reviewer, critic, qa, security), shared у остальных. На шаге со своей моделью не действует."
                 }
               }
             }

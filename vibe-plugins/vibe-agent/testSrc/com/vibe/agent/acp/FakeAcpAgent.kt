@@ -16,6 +16,7 @@ import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.LinkedBlockingQueue
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicInteger
 import kotlin.system.exitProcess
 
 /**
@@ -36,6 +37,12 @@ object FakeAcpAgent {
   private var nextAgentId = 1000L
   private val cancelled = CountDownLatch(1)
 
+  /** Sessions opened so far: the first is [SESSION_ID], every next one a new id, as a real agent does. */
+  private val sessionsOpened = AtomicInteger(0)
+
+  /** The session a `session/cancel` named — so a test can see which turn the client stopped. */
+  @Volatile private var cancelledSession: String? = null
+
   /** What the client announced about itself in `initialize` — replayed on demand so tests can assert it. */
   @Volatile private var clientCapabilities: JsonObject = JsonObject(emptyMap())
 
@@ -53,7 +60,10 @@ object FakeAcpAgent {
       when {
         // A response to something WE asked the client.
         method == null && id != null -> agentRequests[id]?.offer(msg)
-        method == "session/cancel" -> cancelled.countDown()
+        method == "session/cancel" -> {
+          cancelledSession = (params["sessionId"] as? JsonPrimitive)?.contentOrNull
+          cancelled.countDown()
+        }
         method != null && id != null -> handleRequest(scenario, id, method, params)
         else -> {} // other notifications are of no interest to the fake
       }
@@ -77,17 +87,20 @@ object FakeAcpAgent {
           put("_echoClientCapabilities", params["clientCapabilities"] ?: JsonObject(emptyMap()))
         }))
       }
-      "session/new" -> send(result(id, buildJsonObject {
-        put("sessionId", SESSION_ID)
-        put("modes", buildJsonObject {
-          put("currentModeId", "default")
-          put("availableModes", JsonArray(listOf(
-            buildJsonObject { put("id", "default"); put("name", "Обычный") },
-            buildJsonObject { put("id", "plan"); put("name", "План"); put("description", "только чтение") },
-          )))
-        })
-        put("_echoCwd", params["cwd"] ?: JsonPrimitive(""))
-      }))
+      "session/new" -> {
+        val opened = sessionsOpened.incrementAndGet()
+        send(result(id, buildJsonObject {
+          put("sessionId", if (opened == 1) SESSION_ID else "fake-session-$opened")
+          put("modes", buildJsonObject {
+            put("currentModeId", "default")
+            put("availableModes", JsonArray(listOf(
+              buildJsonObject { put("id", "default"); put("name", "Обычный") },
+              buildJsonObject { put("id", "plan"); put("name", "План"); put("description", "только чтение") },
+            )))
+          })
+          put("_echoCwd", params["cwd"] ?: JsonPrimitive(""))
+        }))
+      }
       "session/set_mode" -> {
         send(result(id, JsonObject(emptyMap())))
         // The agent confirms the switch the way a real one does — through the update stream.
@@ -96,12 +109,15 @@ object FakeAcpAgent {
           put("currentModeId", params["modeId"] ?: JsonPrimitive("default"))
         })
       }
-      "session/prompt" -> Thread { runPrompt(scenario, id) }.start()
+      "session/prompt" -> {
+        val session = (params["sessionId"] as? JsonPrimitive)?.contentOrNull ?: SESSION_ID
+        Thread { runPrompt(scenario, id, session) }.start()
+      }
       else -> send(error(id, -32601, "fake agent does not know $method"))
     }
   }
 
-  private fun runPrompt(scenario: String, id: Long) {
+  private fun runPrompt(scenario: String, id: Long, session: String) {
     when (scenario) {
       "basic" -> {
         repeat(3) { i -> notifyUpdate(chunk("часть $i")) }
@@ -157,6 +173,24 @@ object FakeAcpAgent {
         val got = cancelled.await(10, TimeUnit.SECONDS)
         send(result(id, stop(if (got) "cancelled" else "end_turn")))
       }
+      "sessions" -> {
+        // Says which session the prompt reached; a session that is not the first one also switches
+        // its own mode, which must stay its own business.
+        notifyUpdate(chunk("session=$session"), session)
+        if (session != SESSION_ID) {
+          notifyUpdate(buildJsonObject {
+            put("sessionUpdate", "current_mode_update")
+            put("currentModeId", "plan")
+          }, session)
+        }
+        send(result(id, stop("end_turn")))
+      }
+      "cancelSession" -> {
+        notifyUpdate(chunk("работаю…"), session)
+        val got = cancelled.await(10, TimeUnit.SECONDS)
+        notifyUpdate(chunk("отменена сессия $cancelledSession"), session)
+        send(result(id, stop(if (got) "cancelled" else "end_turn")))
+      }
       "outOfOrder" -> {
         // Answers the prompt LAST, after the client's later set_mode call has been served —
         // the client must still route each response to its own future.
@@ -185,10 +219,10 @@ object FakeAcpAgent {
 
   private fun stop(reason: String): JsonObject = buildJsonObject { put("stopReason", reason) }
 
-  private fun notifyUpdate(update: JsonObject) = send(buildJsonObject {
+  private fun notifyUpdate(update: JsonObject, session: String = SESSION_ID) = send(buildJsonObject {
     put("jsonrpc", "2.0")
     put("method", "session/update")
-    put("params", buildJsonObject { put("sessionId", SESSION_ID); put("update", update) })
+    put("params", buildJsonObject { put("sessionId", session); put("update", update) })
   })
 
   private fun result(id: Long, value: JsonElement) = buildJsonObject {

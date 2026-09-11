@@ -251,6 +251,12 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
   /** Шаг прекращён своим потолком: отличает его от остановки человеком и от отказа агента. */
   @Volatile private var stepLimitHit: com.vibe.agent.pipelines.StepLimits.Verdict? = null
 
+  /**
+   * Set when the agent opened a session it could not resume: the first turn in it carries the
+   * unfinished plan, which a new session otherwise knows nothing about.
+   */
+  @Volatile private var planCarryPending = false
+
   /** Признаки «трифекты», накопленные за текущий ход; разбор — [com.vibe.agent.guard.Trifecta]. */
   private val turnSignals = java.util.concurrent.ConcurrentHashMap.newKeySet<com.vibe.agent.guard.Trifecta.Signal>()
   /** Did the turn end in anything other than a normal finish? The autopilot refuses to resume such a turn. */
@@ -2654,6 +2660,30 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     return com.vibe.agent.knowledge.Librarian.promptBlock(hits, t("decisions.header")) + "\n\n" + prompt
   }
 
+  /**
+   * The unfinished plan, in front of the first prompt of a session the agent could not resume.
+   *
+   * The plan lives in our store and survives a restart; the agent's session may not — it expired, or
+   * the agent cannot resume at all. A new session knows nothing of the plan, and the autopilot's
+   * «продолжай по плану» then continues nothing. Once per new session, and only an unfinished plan.
+   */
+  private fun prependCarriedPlan(prompt: String): String {
+    if (!planCarryPending) return prompt
+    planCarryPending = false
+    val threadId = turnThreadId ?: currentThreadId ?: return prompt
+    val plan = runCatching { com.vibe.agent.plans.PlanStore.getInstance(project).load(threadId) }.getOrNull() ?: return prompt
+    if (plan.isEmpty || plan.isFinished) return prompt
+    systemLine(t("plan.carried", "done" to plan.done, "total" to plan.total))
+    val steps = com.vibe.agent.plans.AgentPlan.render(plan) { status ->
+      when (status) {
+        com.vibe.agent.plans.AgentPlan.Status.COMPLETED -> "[x]"
+        com.vibe.agent.plans.AgentPlan.Status.IN_PROGRESS -> "[~]"
+        com.vibe.agent.plans.AgentPlan.Status.PENDING -> "[ ]"
+      }
+    }
+    return t("plan.carryPrompt", "plan" to steps) + "\n\n" + prompt
+  }
+
   private fun sendToAcp(
     t: ChatTarget.Agent, text: String, loaded: List<ContextSerializer.Loaded>,
     images: List<ImageAttachment>, startedAt: Long,
@@ -2666,8 +2696,10 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     }
     val design = DesignContextFile.load(project.basePath)
     val designed = if (design != null) DesignContextFile.promptBlock(design) + "\n" + text else text
-    val fullPrompt = prependMinimalism(prependProjectRules(prependKnowledge(designed, text), text, loaded))
+    // The client first: whether the agent could resume its session is known only once it is open,
+    // and a session it could not resume gets the unfinished plan in front of the prompt.
     val c = ensureClient(t.config)
+    val fullPrompt = prependMinimalism(prependProjectRules(prependKnowledge(prependCarriedPlan(designed), text), text, loaded))
     // A fresh turn: tool-call ids and the changed-files set are per-turn.
     toolCalls.reset()
     loopHistory.clear()
@@ -3089,6 +3121,9 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
       val remembered = AcpSessionMemory.recall(config.name, project.basePath)
       fresh.initializeAndOpenSession(remembered).get(handshakeSec, TimeUnit.SECONDS)
       fresh.sessionId?.let { AcpSessionMemory.remember(config.name, project.basePath, it) }
+      // Not the session asked for — none remembered, expired, or the agent cannot resume: it knows
+      // nothing of this thread's plan, so the first turn in it carries the plan.
+      if (remembered == null || fresh.sessionId != remembered) planCarryPending = true
     }
     catch (e: TimeoutException) {
       synchronized(clientLock) {
@@ -3558,6 +3593,36 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     lastTurnPricing = com.vibe.agent.providers.PriceValidity.effective(model, java.time.LocalDate.now())
   }
 
+  /**
+   * The run's changes for a judge on its own model: the touched paths diffed against the snapshot
+   * taken before the first step, fitted to the step's budget. That judge has no tools; without the
+   * diff it judged the author's account of the work, not the work (decision №80).
+   */
+  private fun judgeDiff(from: com.vibe.agent.checkpoints.Checkpoint?, paths: Collection<String>, maxTokens: Int?): String? {
+    val service = checkpoints ?: return null
+    if (from == null || paths.isEmpty()) return null
+    val relative = paths.mapNotNull { projectRelative(it) }.distinct()
+    if (relative.isEmpty()) return null
+    val diff = service.diff(from, relative)?.takeIf { it.isNotBlank() } ?: return null
+    val fitted = com.vibe.agent.pipelines.JudgeDiff.fit(diff, maxTokens)
+    return t("pipeline.step.diff", "diff" to fitted.text) + if (fitted.truncated) "\n" + t("pipeline.step.diffTruncated") else ""
+  }
+
+  /**
+   * [path] relative to the project root, both resolved on disk: git reads a pathspec spelled through
+   * a linked root as a path outside the repository. Null for anything outside the project.
+   */
+  private fun projectRelative(path: String): String? {
+    val base = project.basePath ?: return null
+    val root = runCatching { java.nio.file.Path.of(base).toAbsolutePath().normalize() }.getOrNull()
+      ?.let { com.vibe.agent.context.AgentPaths.physical(it) } ?: return null
+    val raw = runCatching { java.nio.file.Path.of(path) }.getOrNull() ?: return null
+    val file = com.vibe.agent.context.AgentPaths.physical((if (raw.isAbsolute) raw else root.resolve(raw)).normalize())
+               ?: return null
+    if (!file.startsWith(root)) return null
+    return root.relativize(file).joinToString("/") { it.toString() }
+  }
+
   private fun runPipeline(pipeline: com.vibe.agent.pipelines.Pipeline, agent: AgentServerConfig) {
     if (!history.tryBeginTurn(currentThreadId)) {
       systemLine(t("chat.threadBusy"))
@@ -3579,6 +3644,8 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
       llmCancel.set(false)
       val artifacts = LinkedHashSet<String>()
       var lastSummary: String? = null
+      // The snapshot before the first step: a judge on its own model gets the run's diff against it.
+      var runCheckpoint: com.vibe.agent.checkpoints.Checkpoint? = null
       var failed = false
       // Принял ли гейт последний проверенный шаг. Null — гейта нет вовсе: тогда «эскалация»
       // ничего не значит и шаг выполняется как обычный.
@@ -3622,6 +3689,15 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
             return@forEachIndexed
           }
           systemLine("$header ${step.task.take(80)}")
+          // A pipeline runs unattended: without a snapshot before each step, one bad step could be
+          // rolled back only together with everything before it — or not at all.
+          checkpoints?.create(t("pipeline.checkpointLabel", "name" to pipeline.name, "index" to (i + 1), "role" to step.role))?.let {
+            checkpointLine(it)
+            audit?.append(AuditEvent(System.currentTimeMillis(), AuditEvent.Action.CHECKPOINT, ok = true,
+                                     actor = com.vibe.agent.audit.AuditActor.IDE,
+                                     meta = mapOf("hash" to it.hash.take(12), "pipeline" to pipeline.id, "step" to (i + 1).toString())))
+            if (runCheckpoint == null) runCheckpoint = it
+          }
           val prompt = buildString {
             appendLine(PipelinesFile.rolePreamble(step.role))
             appendLine(t("pipeline.step.task", "task" to step.task))
@@ -3629,6 +3705,8 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
             if (!step.ignorePreviousArtifacts) {
               if (artifacts.isNotEmpty()) appendLine(t("pipeline.step.artifacts", "files" to artifacts.joinToString()))
               lastSummary?.let { appendLine(t("pipeline.step.summary", "summary" to it)) }
+              // A judge on its own model has no tools to read the files: it gets the run's diff.
+              if (step.model != null) judgeDiff(runCheckpoint, artifacts, step.maxTokens)?.let { appendLine(it) }
             }
           }
           try {
@@ -3657,8 +3735,21 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
             }
             else {
               val c = ensureClient(agent)
-              val result = c.prompt(prompt).get()
-              result?.jsonObject?.get("stopReason")?.jsonPrimitive?.contentOrNull
+              // A judging step starts clean: a new session of the same agent, not remembered, while
+              // the chat's session stays current for the next turn (decision №80). An agent that
+              // cannot open one fails the step with the reason — judging in the chat's session
+              // instead would quietly break the very promise of the field.
+              if (step.context == com.vibe.agent.pipelines.StepContext.FRESH) {
+                c.turnSession = c.openIsolatedSession().get(VibeAgentSettings.handshakeTimeoutSec.toLong(), TimeUnit.SECONDS)
+                systemLine(t("pipeline.stepFresh", "header" to header))
+              }
+              try {
+                val result = c.prompt(prompt).get()
+                result?.jsonObject?.get("stopReason")?.jsonPrimitive?.contentOrNull
+              }
+              finally {
+                c.turnSession = null
+              }
             }
             finishAgentBubble((System.currentTimeMillis() - startedAt) / 1000.0,
                               step.model ?: t("pipeline.stepLabel", "index" to (i + 1)))
