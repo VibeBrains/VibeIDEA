@@ -1831,6 +1831,7 @@
   "pipeline.gate.rejected": "the gate did not accept the step: {reason}",
   "pipeline.stepSkippedByGate": "{header} skipped: the previous step was accepted by the gate",
   "chat.permission.trifecta": "⚠️ In this turn the agent read project files, received text that did not come from you, and is now opening an outbound channel ({channel}). Each on its own is ordinary work; together they are how data leaves.\n\n{title}",
+  "chat.modelSubstituted": "A different model answered: {answered}, while {asked} was requested. That happens with a proxy, an aggregator or a failover target; price and limits are counted for the requested one.",
   "trace.contextTax": "context tax: over {turns} turn(s) the input was {input} tokens against {output} of output; {perTurn} per turn on average",
   "trace.contextTaxRatio": "That is {ratio}x of reminding per unit of work.",
   "pipeline.limit.tokens": "the \"{role}\" step hit its ceiling of {limit} tokens and was stopped",

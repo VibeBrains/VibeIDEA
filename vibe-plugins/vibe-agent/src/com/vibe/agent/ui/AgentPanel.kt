@@ -3116,6 +3116,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
       // What the provider itself reported, and the price the owner of the key wrote down. Both may
       // be absent — then the accounting falls back to the old estimate, and says so by omission.
       lastTurnUsage = llmClient.lastUsage()
+      noteModelSubstitution(t.model.id, llmClient.lastAnsweredModel())
       // Цена берётся с оглядкой на срок: у модели с истёкшей акцией считать надо по costAfter.
       lastTurnPricing = com.vibe.agent.providers.PriceValidity.effective(t.model, java.time.LocalDate.now())
       finishAgentBubble((System.currentTimeMillis() - startedAt) / 1000.0, t.model.id)
@@ -3683,6 +3684,8 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
       put("step", index + 1)
       put("role", step.role)
       step.model?.let { put("model", it) }
+      // Что ответило на самом деле: гейт судит о полученном ответе, а не о заказанном.
+      if (step.model != null) llmClient.lastAnsweredModel()?.let { put("answeredModel", it) }
       // Ответ шага, обрезанный: гейту нужен вердикт по содержанию, а не весь транскрипт в stdin.
       put("answer", answer.take(GATE_ANSWER_CHARS))
     }
@@ -3756,7 +3759,28 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
       appendAgentText(delta)
     }
     lastTurnUsage = llmClient.lastUsage()
+    noteModelSubstitution(model.id, llmClient.lastAnsweredModel())
     lastTurnPricing = com.vibe.agent.providers.PriceValidity.effective(model, java.time.LocalDate.now())
+  }
+
+  /**
+   * Which pairs «asked → answered» were already reported, so a proxy that renames every answer says
+   * it once per session instead of on every turn.
+   */
+  private val reportedSubstitutions = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
+
+  /**
+   * The provider answered with a model nobody asked for — a proxy, an aggregator or a failover
+   * target decided so. Not an error and not a block: the answer is already here and paid for, and
+   * the price is counted by the asked model, so the honest thing is to say it and write it down.
+   */
+  private fun noteModelSubstitution(asked: String, answered: String?) {
+    if (!com.vibe.agent.providers.ModelEcho.substituted(asked, answered)) return
+    if (!reportedSubstitutions.add(asked + "\u2192" + answered)) return
+    systemLine(t("chat.modelSubstituted", "asked" to asked, "answered" to (answered ?: "")))
+    audit?.append(AuditEvent(System.currentTimeMillis(), AuditEvent.Action.MODEL_SUBSTITUTED, ok = false,
+                             actor = agentActor(),
+                             meta = mapOf("asked" to asked, "answered" to (answered ?: ""))))
   }
 
   /**

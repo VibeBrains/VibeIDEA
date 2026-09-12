@@ -152,6 +152,17 @@ class LlmClient(
   /** Usage of the last completed request, or [TokenUsage.NONE] when the provider reported none. */
   fun lastUsage(): TokenUsage = lastUsage
 
+  /**
+   * Which model the provider said actually answered, filled in as the stream reports it.
+   *
+   * Kept beside the usage for the same reason: only the end of the turn sees the whole answer.
+   */
+  @Volatile
+  private var lastAnsweredModel: String? = null
+
+  /** The model of the last completed request as the provider named it, or null when it named none. */
+  fun lastAnsweredModel(): String? = lastAnsweredModel
+
   private val json = Json { ignoreUnknownKeys = true }
   @Volatile private var cancelled: () -> Boolean = { false }
   @Volatile private var activeBody: java.io.InputStream? = null
@@ -186,6 +197,7 @@ class LlmClient(
     this.thought = onThought
     this.cancelled = isCancelled
     lastUsage = TokenUsage.NONE
+    lastAnsweredModel = null
     // The offline promise is kept HERE, at the single door out: a check in the UI would be a
     // reminder, and a reminder is not a guarantee. A local provider is still allowed — nothing
     // leaves the machine.
@@ -319,6 +331,7 @@ class LlmClient(
     val request = builder.POST(HttpRequest.BodyPublishers.ofString(body.toString())).build()
     streamSse(request) { data ->
       val event = json.parseToJsonElement(data).jsonObject
+      ModelEcho.fromGeminiEvent(event)?.let { lastAnsweredModel = it }
       // У Gemini мысль и ответ лежат в одном массиве частей и различаются пометкой `thought`:
       // раньше бралась ПЕРВАЯ часть, то есть при включённых рассуждениях мысль уезжала в ответ.
       ReasoningStream.fromGeminiEvent(event)?.let { thought(it) }
@@ -363,6 +376,7 @@ class LlmClient(
       if (data == "[DONE]") return@streamSse
       val chunk = json.parseToJsonElement(data).jsonObject
       TokenUsage.fromOpenAiChunk(chunk)?.let { lastUsage = lastUsage.merge(it) }
+      ModelEcho.fromOpenAiChunk(chunk)?.let { lastAnsweredModel = it }
       // reasoning_content — как его называют китайские OpenAI-совместимые эндпоинты (DeepSeek, GLM).
       ReasoningStream.fromOpenAiChunk(chunk)?.let { thought(it) }
       val delta = chunk["choices"]?.jsonArray?.firstOrNull()
@@ -417,6 +431,7 @@ class LlmClient(
       // Input, cache reads and cache writes arrive at `message_start`; the output count at
       // `message_delta`. One reader for both, because both put it under `usage`.
       TokenUsage.fromAnthropicEvent(obj)?.let { lastUsage = lastUsage.merge(it) }
+      ModelEcho.fromAnthropicEvent(obj)?.let { lastAnsweredModel = it }
       // Рассуждение приезжает тем же событием, но другой дельтой: без этой ветки модель молчала
       // ровно столько, сколько думала, и это выглядело как зависание.
       ReasoningStream.fromAnthropicEvent(obj)?.let { thought(it) }
@@ -485,7 +500,9 @@ class LlmClient(
     if (response.statusCode() !in 200..299) {
       throw RuntimeException("HTTP " + response.statusCode() + ": " + response.body().take(500))
     }
-    return json.parseToJsonElement(response.body()).jsonObject["choices"]?.jsonArray?.firstOrNull()
+    val answer = json.parseToJsonElement(response.body()).jsonObject
+    ModelEcho.fromOpenAiChunk(answer)?.let { lastAnsweredModel = it }
+    return answer["choices"]?.jsonArray?.firstOrNull()
       ?.jsonObject?.get("message")?.jsonObject?.get("content")?.jsonPrimitive?.contentOrNull ?: ""
   }
 
