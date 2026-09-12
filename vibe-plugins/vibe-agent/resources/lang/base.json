@@ -652,6 +652,7 @@
   "hooks.result.timedOut": "хук «{hook}» не уложился в {timeout} мс и был остановлен",
   "hooks.result.refusedSilently": "хук «{hook}» отклонил действие без объяснения",
   "hooks.result.badExit": "хук «{hook}» завершился с кодом {code} (отказ — это код {refuseCode})",
+  "hooks.result.foreignAsk": "хук «{hook}» просит спросить человека: это решение «ask» из формата Claude Code, а наш хук отвечает только «можно» (код 0) или «нельзя» (код 2). Действие не остановлено — решает режим разрешений",
   "hooks.header.blocked": "Действие остановлено проверкой проекта:",
   "hooks.header.flagged": "Проверка проекта нашла проблему в том, что только что сделано:",
   "hooks.output.clipped": "…(вывод обрезан)",

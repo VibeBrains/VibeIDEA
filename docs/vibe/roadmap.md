@@ -782,8 +782,13 @@
   VibeIDEA и VibeIDE решают только по коду выхода — такой «запрет» у нас молча разрешает. Разбор —
   [references/spotifyPortalAiPlugins.md](references/spotifyPortalAiPlugins.md). Предложения ждут
   решения владельца:
-  - [ ] Отказ хука в формате Claude Code (`decision: block`, `permissionDecision: deny`) считать
-        отказом — в VibeIDEA и VibeIDE, с общими тест-векторами.
+  - [x] **Отказ хука в формате Claude Code** — ✅ (12.09.2026, next) исполняется в обоих продуктах
+        (`HookOutcome.kt`, `hookOutcome.ts`), таблица случаев в тестах одинаковая: `deny`/`block` и
+        `continue: false` — отказ, `allow`/`approve` — разрешение без заметки агенту, `ask` —
+        предупреждение пользователю; решением считается только вывод от `{` до `}`, код `2` сильнее
+        JSON. Решение №87, спеки и каталоги возможностей обоих продуктов дополнены, разбор —
+        [foreignHookContract.md](knowledge/architecture/foreignHookContract.md). Прогоны зелёные:
+        VibeIDEA 1594 теста, VibeIDE 13 327.
   - [ ] Проверять, какая модель на самом деле ответила: `model` из ответа провайдера против
         запрошенной (прокси, агрегаторы, запасные цели).
   - [ ] Правила навыков с побочными эффектами (dry-run → показ → согласие, `--help` и `--json`,

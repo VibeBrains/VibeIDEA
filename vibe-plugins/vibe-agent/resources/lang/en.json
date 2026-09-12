@@ -652,6 +652,7 @@
   "hooks.result.timedOut": "the «{hook}» hook exceeded {timeout} ms and was stopped",
   "hooks.result.refusedSilently": "the «{hook}» hook refused the action without an explanation",
   "hooks.result.badExit": "the «{hook}» hook exited with code {code} (a refusal is code {refuseCode})",
+  "hooks.result.foreignAsk": "the «{hook}» hook asks to prompt the human: that is Claude Code's «ask» decision, while our hooks answer only «allowed» (exit 0) or «refused» (exit 2). The action was not stopped — the permission mode decides",
   "hooks.header.blocked": "The action was stopped by a project check:",
   "hooks.header.flagged": "A project check found a problem with what was just done:",
   "hooks.output.clipped": "…(output truncated)",

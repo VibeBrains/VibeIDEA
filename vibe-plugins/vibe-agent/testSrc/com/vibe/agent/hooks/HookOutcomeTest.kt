@@ -101,4 +101,72 @@ class HookOutcomeTest {
     assertFalse(d.blocked)
     assertNull(d.agentMessage)
   }
+
+  // Hooks ported from Claude Code refuse with JSON on exit 0. The same table of cases lives in
+  // VibeIDE (hookOutcome.test.ts): one contract, one behaviour.
+
+  @Test
+  fun foreignDenyOnExitZeroRefuses() {
+    val r = verdict(0, out = """{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"Destructive command"}}""")
+    assertEquals(HookVerdict.REFUSE, r.verdict)
+    assertEquals("Destructive command", r.message)
+    assertTrue(HookOutcome.decideHooks(HookEvent.PRE_TOOL_USE, listOf(r)).blocked)
+  }
+
+  @Test
+  fun foreignLegacyDecisionRefuses() {
+    assertEquals(HookVerdict.REFUSE, verdict(0, out = """{"decision":"block","reason":"нет"}""").verdict)
+    assertEquals("нет", verdict(0, out = """{"decision":"deny","reason":"нет"}""").message)
+  }
+
+  @Test
+  fun foreignRefusalWithoutReasonStillRefuses() {
+    val r = verdict(0, out = """{"decision":"block"}""")
+    assertEquals(HookVerdict.REFUSE, r.verdict)
+    assertTrue(r.message!!.contains("без объяснения"))
+  }
+
+  @Test
+  fun foreignContinueFalseIsRefusal() {
+    val r = verdict(0, out = """{"continue": false, "stopReason": "хватит"}""")
+    assertEquals(HookVerdict.REFUSE, r.verdict)
+    assertEquals("хватит", r.message)
+  }
+
+  @Test
+  fun foreignAllowIsNotANote() {
+    assertEquals(HookVerdict.OK, verdict(0, out = """{"decision":"approve"}""").verdict)
+    assertNull(verdict(0, out = """{"hookSpecificOutput":{"permissionDecision":"allow"}}""").message)
+  }
+
+  @Test
+  fun foreignAskIsToldToTheUserAndDoesNotBlock() {
+    val r = verdict(0, out = """{"hookSpecificOutput":{"permissionDecision":"ask"}}""")
+    assertEquals(HookVerdict.BROKEN, r.verdict)
+    val d = HookOutcome.decideHooks(HookEvent.PRE_TOOL_USE, listOf(r))
+    assertFalse(d.blocked)
+    assertEquals(listOf("H"), d.brokenHooks)
+  }
+
+  @Test
+  fun jsonWithoutADecisionStaysANote() {
+    assertEquals(HookVerdict.NOTE, verdict(0, out = """{"lines": 350, "file": "a.kt"}""").verdict)
+    assertEquals(HookVerdict.NOTE, verdict(0, out = """{"decision":"whatever"}""").verdict)
+  }
+
+  @Test
+  fun onlyRealJsonCounts() {
+    // Their rule verbatim: stdout is a decision only when it starts with { and ends with }.
+    assertEquals(HookVerdict.NOTE, verdict(0, out = """the hook says {"decision":"block"}""").verdict)
+    assertEquals(HookVerdict.NOTE, verdict(0, out = """{"decision":"block" """).verdict)
+    assertEquals(HookVerdict.NOTE, verdict(0, out = """{"decision": }""").verdict)
+  }
+
+  @Test
+  fun exitTwoWinsOverAForeignAllow() {
+    // Claude Code: a JSON allow cannot override exit 2. Neither here.
+    val r = verdict(2, out = """{"decision":"approve"}""", err = "стоп")
+    assertEquals(HookVerdict.REFUSE, r.verdict)
+    assertEquals("стоп", r.message)
+  }
 }
