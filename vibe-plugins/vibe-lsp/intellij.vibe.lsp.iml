@@ -17,5 +17,7 @@
     <orderEntry type="library" scope="PROVIDED" name="vibe-lsp4ij" level="project" />
     <orderEntry type="module" module-name="intellij.libraries.gson" />
     <orderEntry type="module" module-name="intellij.libraries.eclipse.lsp4j" />
+    <orderEntry type="module" module-name="intellij.platform.indexing" />
+    <orderEntry type="module" module-name="intellij.platform.lang" />
   </component>
 </module>

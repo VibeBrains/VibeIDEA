@@ -828,3 +828,9 @@
       падение по `useFlatConfig` при наивной починке, новые → «ок») и гейтом `EslintSettingsTest`;
       разбор — [eslintServerSettings.md](knowledge/languages/eslintServerSettings.md).
       **В выпуск не отдано:** копим до следующей версии.
+- [x] **Переход по коду Ext JS** — ✅ (12.09.2026, next) Ctrl+Click по строке в `.js`: имя класса и
+      псевдоним ведут в `Ext.define`, строка-путь открывает файл. В открытой платформе JS-ядра нет,
+      PSI у `.js` плоское, поэтому взяты `gotoDeclarationHandler` (единственный работает без PSI),
+      `FileBasedIndex` по тексту файла и `FakePsiElement`, открывающий файл на смещении. Гейт —
+      `ExtJsTest` на образце с экрана владельца; разбор —
+      [extJsNavigation.md](knowledge/languages/extJsNavigation.md).

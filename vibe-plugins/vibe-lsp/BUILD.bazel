@@ -38,6 +38,9 @@ jvm_library(
         "@lib//vibe/lsp4ij:vibe-lsp4ij",
         "//libraries/gson",
         "//libraries/lsp4j",
+        # Индекс объявлений Ext JS и обработчик перехода.
+        "//platform/indexing-api:indexing",
+        "//platform/lang-api:lang",
     ],
 )
 
