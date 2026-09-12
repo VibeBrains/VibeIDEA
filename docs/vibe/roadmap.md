@@ -817,3 +817,14 @@
         одобрение по отпечатку просилось бы после каждого прогона). Решение №89, спека
         [skillEvalsSpec.md](manuals/skillEvalsSpec.md), образец засеян в навык `example`
         (VibeBrains `d69d82f`).
+
+### Живая эксплуатация 0.5.0 (Windows у владельца)
+
+- [x] **ESLint: `codeAction` больше не падает на Windows** — ✅ (12.09.2026, next) в ответе на
+      `workspace/configuration` появился `workspaceFolder`, `nodePath` стал `null` вместо пустой
+      строки, а `experimental` уехал пустым объектом вместо навязанного `useFlatConfig: false`.
+      Три уведомления «The "path" argument must be of type string. Received undefined» на два
+      открытых файла — это были они. Проверено стендом на настоящем сервере (старые настройки →
+      падение по `useFlatConfig` при наивной починке, новые → «ок») и гейтом `EslintSettingsTest`;
+      разбор — [eslintServerSettings.md](knowledge/languages/eslintServerSettings.md).
+      **В выпуск не отдано:** копим до следующей версии.

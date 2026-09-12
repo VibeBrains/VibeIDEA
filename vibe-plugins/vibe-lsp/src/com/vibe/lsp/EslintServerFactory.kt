@@ -1,6 +1,7 @@
 // Copyright 2026 VibeBrains. Use of this source code is governed by the Apache 2.0 license.
 package com.vibe.lsp
 
+import com.google.gson.JsonNull
 import com.google.gson.JsonObject
 import com.google.gson.JsonPrimitive
 import com.intellij.openapi.project.Project
@@ -42,54 +43,91 @@ class EslintServerFactory : LanguageServerFactory {
 private class EslintConnectionProvider(workingDirectory: String?) :
   ProcessStreamConnectionProvider(ServerBinaries.eslintCommand(), workingDirectory)
 
+/** Ответ на `workspace/configuration` — то, без чего сервер падает на первом же запросе. */
+private class EslintLanguageClient(private val project: Project) : LanguageClientImpl(project) {
+  override fun createSettings(): Any = eslintSettings(workspaceFolderUri(project.basePath))
+}
+
 /**
- * Ответ на `workspace/configuration` — то, без чего сервер падает на первом же запросе.
+ * URI корня проекта в том виде, в каком его ждёт сервер: без завершающего слэша.
  *
- * Значения намеренно консервативные: правила берутся из конфигурации проекта, автоправок при
- * сохранении нет, форматирование выключено. Линтер, самовольно правящий чужой файл, — не помощь.
+ * `Path.toUri()` дописывает слэш каталогу, а сервер отдаёт этот URI в `inferFilePath` и потом
+ * склеивает результат с относительными путями — лишний разделитель там ни к чему.
  */
-private class EslintLanguageClient(project: Project) : LanguageClientImpl(project) {
-  override fun createSettings(): Any {
-    val eslint = JsonObject().apply {
-      add("validate", JsonPrimitive("on"))
-      add("packageManager", JsonPrimitive("npm"))
-      add("useESLintClass", JsonPrimitive(false))
-      add("experimental", JsonObject().apply { add("useFlatConfig", JsonPrimitive(false)) })
-      add("format", JsonPrimitive(false))
-      add("quiet", JsonPrimitive(false))
-      add("onIgnoredFiles", JsonPrimitive("off"))
-      add("run", JsonPrimitive("onType"))
-      add("nodePath", JsonPrimitive(""))
-      add("options", JsonObject())
-      add("problems", JsonObject().apply { add("shortenToSingleLine", JsonPrimitive(false)) })
-      add("codeAction", JsonObject().apply {
-        add("disableRuleComment", JsonObject().apply {
-          add("enable", JsonPrimitive(true))
-          add("location", JsonPrimitive("separateLine"))
-        })
-        add("showDocumentation", JsonObject().apply { add("enable", JsonPrimitive(true)) })
+internal fun workspaceFolderUri(basePath: String?): String? {
+  val path = basePath?.takeIf { it.isNotBlank() } ?: return null
+  val uri = runCatching { Path.of(path).toUri().toString() }.getOrNull() ?: return null
+  return uri.trimEnd('/')
+}
+
+/**
+ * Настройки для `workspace/configuration`.
+ *
+ * Три значения здесь — не вкус, а лечение падения `textDocument/codeAction` (владелец, 12.09.2026,
+ * Windows-сборка 0.5.0: «The "path" argument must be of type string. Received undefined» на каждом
+ * открытии файла):
+ *
+ * 1. **`workspaceFolder` обязателен.** Сервер выводит из него `workspaceFolderPath`, и без него тот
+ *    остаётся `undefined`.
+ * 2. **`nodePath` = `null`, а не пустая строка.** Пустую строку сервер считает заданным значением и
+ *    идёт склеивать её с `workspaceFolderPath` — на `undefined` это и падает. `null` означает
+ *    «ищи сам», что нам и нужно.
+ * 3. **`experimental` отправляется пустым объектом.** Мы принудительно выключали плоскую
+ *    конфигурацию (`useFlatConfig: false`), а ESLint 9 по умолчанию только на ней и работает.
+ *    Совсем убрать поле нельзя: сервер читает `settings.experimental.useFlatConfig` без проверки и
+ *    падает на `undefined` — проверено стендом.
+ *
+ * Остальные значения намеренно консервативные: правила берутся из конфигурации проекта, автоправок
+ * при сохранении нет, форматирование выключено. Линтер, самовольно правящий чужой файл, — не помощь.
+ */
+internal fun eslintSettings(workspaceFolderUri: String?): JsonObject {
+  val eslint = JsonObject().apply {
+    add("validate", JsonPrimitive("on"))
+    add("packageManager", JsonPrimitive("npm"))
+    add("useESLintClass", JsonPrimitive(false))
+    // Объект обязателен, а поле внутри — нет: сервер разыменовывает `settings.experimental`
+    // без проверки, но пустой объект оставляет выбор режима конфигурации за ним самим.
+    add("experimental", JsonObject())
+    add("format", JsonPrimitive(false))
+    add("quiet", JsonPrimitive(false))
+    add("onIgnoredFiles", JsonPrimitive("off"))
+    add("run", JsonPrimitive("onType"))
+    add("nodePath", JsonNull.INSTANCE)
+    add("options", JsonObject())
+    add("problems", JsonObject().apply { add("shortenToSingleLine", JsonPrimitive(false)) })
+    add("codeAction", JsonObject().apply {
+      add("disableRuleComment", JsonObject().apply {
+        add("enable", JsonPrimitive(true))
+        add("location", JsonPrimitive("separateLine"))
       })
-      // Автоправки при сохранении выключены: правка чужого файла без спроса — не то, чего ждут
-      // от подсветки ошибок.
-      add("codeActionOnSave", JsonObject().apply {
-        add("enable", JsonPrimitive(false))
-        add("mode", JsonPrimitive("all"))
+      add("showDocumentation", JsonObject().apply { add("enable", JsonPrimitive(true)) })
+    })
+    // Автоправки при сохранении выключены: правка чужого файла без спроса — не то, чего ждут
+    // от подсветки ошибок.
+    add("codeActionOnSave", JsonObject().apply {
+      add("enable", JsonPrimitive(false))
+      add("mode", JsonPrimitive("all"))
+    })
+    add("workingDirectory", JsonObject().apply { add("mode", JsonPrimitive("location")) })
+    if (workspaceFolderUri != null) {
+      add("workspaceFolder", JsonObject().apply {
+        add("uri", JsonPrimitive(workspaceFolderUri))
+        add("name", JsonPrimitive(workspaceFolderUri.substringAfterLast('/')))
       })
-      add("workingDirectory", JsonObject().apply { add("mode", JsonPrimitive("location")) })
     }
-    return JsonObject().apply { add("eslint", eslint) }
   }
+  return JsonObject().apply { add("eslint", eslint) }
 }
 
 /** Сервер поднимается только там, где у проекта есть своя конфигурация ESLint. */
 private class EslintClientFeatures : LSPClientFeatures() {
   override fun isEnabled(file: VirtualFile): Boolean {
-    val base = project?.basePath ?: return false
-    val root = runCatching { Path.of(base) }.getOrNull() ?: return false
-    val names = runCatching {
-      Files.list(root).use { stream -> stream.map { it.fileName.toString() }.toList() }
-    }.getOrDefault(emptyList())
-    val packageJson = runCatching { Files.readString(root.resolve("package.json")) }.getOrNull()
-    return EslintConfig.exists(names, packageJson)
+  val base = project?.basePath ?: return false
+  val root = runCatching { Path.of(base) }.getOrNull() ?: return false
+  val names = runCatching {
+    Files.list(root).use { stream -> stream.map { it.fileName.toString() }.toList() }
+  }.getOrDefault(emptyList())
+  val packageJson = runCatching { Files.readString(root.resolve("package.json")) }.getOrNull()
+  return EslintConfig.exists(names, packageJson)
   }
 }

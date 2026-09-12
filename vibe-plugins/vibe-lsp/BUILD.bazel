@@ -61,6 +61,8 @@ jvm_library(
         # module without LSP4IJ and the lsp4j it is built on.
         "@lib//vibe/lsp4ij:vibe-lsp4ij",
         "//libraries/lsp4j",
+        # Настройки для workspace/configuration собираются в JsonObject — тест читает их же.
+        "//libraries/gson",
     ],
     runtime_deps = [
         # do not sort,
