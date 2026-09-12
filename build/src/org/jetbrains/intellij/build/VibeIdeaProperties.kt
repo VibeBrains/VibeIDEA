@@ -176,6 +176,13 @@ open class VibeIdeaProperties(communityHomeDir: Path) : IdeaCommunityProperties(
     rootDirectoryName { _, _ -> "VibeIDEA.app" }
     icnsPath = "vibeidea-customization/resources/mac/vibeidea.icns"
     icnsPathForEAP = "vibeidea-customization/resources/mac/vibeidea.icns"
+    // The installer window. Left unset, the build ships IDEA CE's picture — it carries the
+    // «JetBrains IDEs» wordmark, which is somebody else's brand on our window and confusing besides.
+    // Ours is drawn from our own mark; the source SVG and the script that renders the two-page TIFF
+    // live next to it (vibe-plugins/tools/makeDmgBackground.sh), and every coordinate in it has a
+    // twin in platform/build-scripts/tools/mac/scripts/makedmg.py, which places the icons.
+    dmgImagePath = "vibeidea-customization/resources/mac/dmgBackground.tiff"
+    dmgImagePathForEAP = "vibeidea-customization/resources/mac/dmgBackground.tiff"
   }
 
   override fun createWindowsCustomizer(projectHome: Path): WindowsDistributionCustomizer = ideaCommunityWindowsCustomizer(projectHome) {

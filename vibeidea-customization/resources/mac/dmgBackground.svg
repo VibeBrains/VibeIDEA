@@ -1,0 +1,63 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 455 296" width="455" height="296">
+  <!-- Background of the VibeIDEA installer window. Rendered to dmgBackground.tiff by
+       vibe-plugins/tools/makeDmgBackground.sh; the build picks the TIFF up through
+       MacDistributionCustomizer.dmgImagePath (see VibeIdeaProperties).
+
+       Drawn from our own mark, not from a template: the three chevrons are the prompt glyph of the
+       product icon, they grow towards Applications and end in its spark — so the arrow IS the
+       product. Copying another product's window would be worse than shipping no design at all.
+
+       EVERY COORDINATE HERE HAS A TWIN in platform/build-scripts/tools/mac/scripts/makedmg.py,
+       which places the icons: the window is 455x296 (fwi0 blob), the app icon is centred at
+       (110, 167), Applications at (340, 167), icons are 100 points with the label below at 12 pt.
+       Move one without the other and the picture stops matching the window.
+
+       The two light plates are not decoration. Finder picks the label colour itself and turns it
+       dark as soon as a background image is present, so on this canvas a label without a plate is
+       black on near-black. The plate needs a solid light core under the text (blurred, ~0.9 alpha,
+       tinted rather than pure white) — see the dmg-installer skill. -->
+  <defs>
+    <linearGradient id="canvas" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#1b1526"/><stop offset="0.55" stop-color="#15131d"/><stop offset="1" stop-color="#100f16"/>
+    </linearGradient>
+    <radialGradient id="violet" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0" stop-color="#8b5cf6" stop-opacity="0.34"/><stop offset="1" stop-color="#8b5cf6" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="pink" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0" stop-color="#f472b6" stop-opacity="0.18"/><stop offset="1" stop-color="#f472b6" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="plate" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#efe9fb"/><stop offset="1" stop-color="#cfc2ee"/>
+    </linearGradient>
+    <filter id="soft" x="-40%" y="-140%" width="180%" height="380%"><feGaussianBlur stdDeviation="4.5"/></filter>
+  </defs>
+
+  <rect width="455" height="296" fill="url(#canvas)"/>
+  <ellipse cx="110" cy="150" rx="150" ry="120" fill="url(#violet)"/>
+  <ellipse cx="340" cy="150" rx="130" ry="105" fill="url(#pink)"/>
+
+  <!-- Wordmark. Ours, not the platform's: the stock image carries the upstream vendor's wordmark,
+       and shipping somebody else's name on our own window is both wrong and confusing. -->
+  <g opacity="0.95">
+    <rect x="18" y="18" width="10" height="10" rx="2.5" fill="#a78bfa"/>
+    <text x="34" y="27" font-family="SF Pro Text, Helvetica Neue, Arial" font-size="12" letter-spacing="0.6" fill="#c9c2da">VibeBrains IDEs</text>
+  </g>
+
+  <!-- The arrow: prompt chevrons growing towards Applications, then the spark of the icon. -->
+  <g fill="none" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M186 154 L197 167 L186 180" stroke="#a78bfa" stroke-opacity="0.35" stroke-width="3"/>
+    <path d="M206 154 L217 167 L206 180" stroke="#a78bfa" stroke-opacity="0.6" stroke-width="3.4"/>
+    <path d="M226 154 L237 167 L226 180" stroke="#a78bfa" stroke-opacity="0.9" stroke-width="3.8"/>
+    <path d="M251 167 l4.5 -9 l4.5 9 l-4.5 9 z" fill="#f0abfc" stroke="none" opacity="0.9"/>
+    <path d="M263 159 l2.6 -5.4 l2.6 5.4 l-2.6 5.4 z" fill="#f0abfc" stroke="none" opacity="0.55"/>
+  </g>
+
+  <!-- Plates under the labels Finder draws at y≈232 (icon centre 167 + half of 100 + text).
+       Measured on the built image (checkCentering.py from the dmg-installer skill): the label sits
+       2-3 points BELOW the geometric centre of the plate, so the plates are lowered by 2.5. -->
+  <rect x="56" y="221.5" width="108" height="26" rx="13" fill="url(#plate)" opacity="0.9" filter="url(#soft)"/>
+  <rect x="279" y="221.5" width="122" height="26" rx="13" fill="url(#plate)" opacity="0.9" filter="url(#soft)"/>
+
+  <!-- The build is unsigned: without this line macOS says «damaged» and people delete it. -->
+  <text x="227.5" y="279" text-anchor="middle" font-family="SF Pro Text, Helvetica Neue, Arial" font-size="9.5" fill="#8a819c">Первый запуск: правой кнопкой по VibeIDEA → «Открыть»</text>
+</svg>

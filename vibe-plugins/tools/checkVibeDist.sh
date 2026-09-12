@@ -43,6 +43,20 @@ case "$TARGET" in
     MOUNTED=$(mktemp -d)
     hdiutil attach "$TARGET" -nobrowse -readonly -mountpoint "$MOUNTED" >/dev/null
     ROOT_DIR="$MOUNTED/VibeIDEA.app/Contents"
+    # Фон окна установки обязан быть нашим. Оставленный по умолчанию, он приезжает от апстримной
+    # сборки — с чужим словесным знаком прямо в окне, которое видит каждый устанавливающий.
+    # Юнит-тесты и гейт брендинга сюда не достают: это картинка внутри образа. Поймано на 0.5.0.
+    OURS=vibeidea-customization/resources/mac/dmgBackground.tiff
+    SHIPPED=$(find "$MOUNTED/.background" -type f 2>/dev/null | head -1)
+    if [ -z "$SHIPPED" ]; then
+      echo "✖ в образе нет фона окна установки (.background) — окно откроется списком файлов"
+      exit 1
+    fi
+    if [ "$(shasum -a 256 "$SHIPPED" | awk '{print $1}')" != "$(shasum -a 256 "$OURS" | awk '{print $1}')" ]; then
+      echo "✖ фон окна установки в образе не наш: $(basename "$SHIPPED") не совпадает с $OURS"
+      echo "  Проверьте dmgImagePath в VibeIdeaProperties и пересоберите фон: ./vibe-plugins/tools/makeDmgBackground.sh"
+      exit 1
+    fi
     ;;
   *.tar.gz)
     UNPACKED=$(mktemp -d)
