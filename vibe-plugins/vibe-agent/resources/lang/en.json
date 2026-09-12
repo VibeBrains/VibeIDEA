@@ -1863,6 +1863,7 @@
   "mcp.offer.done": "the agent was offered the IDE tools: the import graph, corpus search, decisions, symbol usages",
   "mcp.offer.apiOff": "the IDE tools were not offered: the HTTP API is off (Settings → Tools → VibeIDEA → Agent)",
   "mcp.offer.agentCannot": "the IDE tools were not offered: the agent did not declare HTTP MCP support",
+  "mcp.refusal.untrusted": "the project is not marked as trusted, so changing files and starting work over MCP are off; only reading tools are available. A human can lift this: File → Trust Project",
   "mcp.offer.noToken": "the IDE tools were not offered: there is no API token (Tools → \"VibeIDEA: show the API token\")",
   "doctor.line.ideTools": "the IDE tools for the agent",
   "doctor.detail.ideToolsOn": "the MCP server is up on 127.0.0.1:{port} — the agent gets them when a session opens, if it speaks HTTP MCP",

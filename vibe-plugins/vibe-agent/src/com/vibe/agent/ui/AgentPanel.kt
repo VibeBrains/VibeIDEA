@@ -2795,8 +2795,9 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
       put("chars", text.length.toString())
       if (skills.isNotEmpty()) put("skills", skills.joinToString(",") { "${it.id}@${it.digest}" })
     }
+    turnId = com.vibe.agent.audit.TurnId.next()
     audit?.append(AuditEvent(System.currentTimeMillis(), AuditEvent.Action.PROMPT, ok = true, actor = turnActor,
-      model = "acp/${t.config.name}", meta = promptMeta))
+      turnId = turnId, model = "acp/${t.config.name}", meta = promptMeta))
     SwingUtilities.invokeLater {
       modePicker.setModes(c.modes)
       configPicker.setOptions(c.configOptions)
@@ -4703,6 +4704,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
 
   private fun markTerminalExit(terminalId: String, exitCode: Int?, signal: String?) {
     audit?.append(AuditEvent(System.currentTimeMillis(), AuditEvent.Action.TERMINAL, ok = exitCode == 0, actor = agentActor(),
+      callId = callIdOfTerminal(terminalId), turnId = turnId,
       meta = mapOf("exit" to (exitCode?.toString() ?: "signal:${signal ?: "?"}"))))
     SwingUtilities.invokeLater { terminalConsoles[terminalId]?.markExit(exitCode, signal) }
   }
@@ -4728,6 +4730,18 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
   }
 
   /** Emit a privacy-filtered tool-call audit record (no args/command bodies — only tool + target path). */
+  /**
+   * Ход, к которому относятся записи журнала. Живёт от промпта до промпта.
+   *
+   * Не идентификатор сессии: сессия у агента одна на весь разговор, а разбор идёт по одному ходу —
+   * «что было сделано после вот этой просьбы».
+   */
+  @Volatile private var turnId: String? = null
+
+  /** Вызов, создавший терминал: выход процесса — следствие именно его. */
+  private fun callIdOfTerminal(terminalId: String): String? =
+    toolCalls.snapshot().firstOrNull { it.terminalId == terminalId }?.id
+
   private fun auditToolCall(action: String, call: ToolCall) {
     val log = audit ?: return
     val tool = call.toolName ?: call.kind ?: "tool"
@@ -4737,6 +4751,8 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
       action = action,
       actor = agentActor(),
       ok = call.status != ToolCall.STATUS_FAILED,
+      callId = call.id,
+      turnId = turnId,
       files = target?.let { listOf(it) },
       meta = mapOf("tool" to tool, "status" to call.status),
     ))
@@ -4830,6 +4846,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     com.vibe.agent.sound.VibeSoundService.getInstance()
       .play(com.vibe.agent.sound.SoundPolicy.Event.AWAITING_PERMISSION, project)
     val toolCall = params["toolCall"]?.jsonObject
+    val permissionCallId = toolCall?.get("toolCallId")?.jsonPrimitive?.contentOrNull
     val title = toolCall?.get("title")?.jsonPrimitive?.contentOrNull ?: t("chat.permission.default")
     // preToolUse hook: this is one of the two points the client controls (the other is fs/write).
     val hookTool = toolCall?.get("name")?.jsonPrimitive?.contentOrNull ?: toolCall?.get("kind")?.jsonPrimitive?.contentOrNull
@@ -4874,6 +4891,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
       if (choice >= 0) options[choice].getValue("optionId").jsonPrimitive.content else null
     }
     audit?.append(AuditEvent(System.currentTimeMillis(), AuditEvent.Action.PERMISSION, ok = chosen != null, actor = com.vibe.agent.audit.AuditActor.HUMAN,
+      callId = permissionCallId, turnId = turnId,
       meta = mapOf("title" to title.take(120), "outcome" to if (chosen != null) "selected" else "cancelled") +
         (if (trifecta) mapOf("trifecta" to (outbound ?: "")) else emptyMap())))
     return buildJsonObject {
@@ -4912,7 +4930,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     path?.let { changedPaths.add(it) }
     val result = fileOps.writeTextFile(resolved)
     audit?.append(AuditEvent(System.currentTimeMillis(), AuditEvent.Action.FS_WRITE, ok = true, actor = agentActor(),
-      files = path?.let { listOf(it.take(ToolCallAudit.MAX_TARGET_LEN)) }))
+      turnId = turnId, files = path?.let { listOf(it.take(ToolCallAudit.MAX_TARGET_LEN)) }))
     return result
   }
 
@@ -4960,6 +4978,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
           project, t("chat.destructive.title"), body, request, onPhone, t("chat.destructive.run"))
       }
       audit?.append(AuditEvent(System.currentTimeMillis(), AuditEvent.Action.TERMINAL, ok = approved, actor = com.vibe.agent.audit.AuditActor.HUMAN,
+        turnId = turnId,
         meta = mapOf("gate" to "destructive", "reasons" to verdict.reasons.joinToString(","), "approved" to approved.toString())))
       if (!approved) throw IllegalStateException(t("chat.destructive.refused", "reasons" to verdict.reasons.joinToString(", ")))
     }

@@ -77,10 +77,17 @@ data class TokenUsage(
       val usage = chunk["usage"]?.jsonObject ?: return null
       val cached = usage["prompt_tokens_details"]?.jsonObject?.long("cached_tokens") ?: 0
       val prompt = usage.long("prompt_tokens")
+      // Токены оркестратора АДДИТИВНЫ, а не вложены в prompt/completion, — этим они отличаются от
+      // токенов рассуждения, которые сидят внутри completion. Модель-оркестратор (Sakana Fugu и ей
+      // подобные) зовёт другие модели, и вендор биллит эти токены по обычной цене. Не прибавив их,
+      // мы считаем ход дешевле, чем он стоит, и заниженная сумма молча уходит в журнал расхода и в
+      // потолок трат — то есть предохранитель срабатывает позже, чем должен.
+      val orchestrationCached = usage.long("orchestration_input_cached_tokens")
+      val orchestrationInput = usage.long("orchestration_input_tokens")
       return TokenUsage(
-        inputTokens = (prompt - cached).coerceAtLeast(0),
-        outputTokens = usage.long("completion_tokens"),
-        cacheReadTokens = cached,
+        inputTokens = (prompt - cached).coerceAtLeast(0) + (orchestrationInput - orchestrationCached).coerceAtLeast(0),
+        outputTokens = usage.long("completion_tokens") + usage.long("orchestration_output_tokens"),
+        cacheReadTokens = cached + orchestrationCached,
       ).takeIf { it.known }
     }
 

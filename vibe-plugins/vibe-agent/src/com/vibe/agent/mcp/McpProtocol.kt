@@ -96,6 +96,39 @@ object McpProtocol {
   const val TOOL_SYMBOL_USAGES = "vibe_symbol_usages"
 
   /**
+   * Что инструмент делает с машиной человека.
+   *
+   * Класс опасности объявляется здесь, а не выводится по имени: имя — подпись для агента, и оно
+   * меняется свободнее, чем права. Каждый новый инструмент обязан попасть в [RISK], иначе он
+   * считается опасным — неизвестное право безопаснее отклонить, чем выдать.
+   */
+  enum class Risk {
+    /** Только читает проект и наши журналы. */
+    READ,
+
+    /** Пишет файлы в проект. */
+    WRITE,
+
+    /** Запускает работу: агента, команду, процесс. */
+    EXECUTE,
+  }
+
+  private val RISK: Map<String, Risk> = mapOf(
+    TOOL_IMPORTERS to Risk.READ,
+    TOOL_IMPORTS to Risk.READ,
+    TOOL_PATH to Risk.READ,
+    TOOL_PROJECT to Risk.READ,
+    TOOL_CORPUS_SEARCH to Risk.READ,
+    TOOL_SYMBOL_USAGES to Risk.READ,
+    TOOL_DECISIONS_SEARCH to Risk.READ,
+    TOOL_DECISIONS_RECORD to Risk.WRITE,
+    TOOL_RUN to Risk.EXECUTE,
+  )
+
+  /** Класс опасности инструмента; неизвестное имя — [Risk.EXECUTE], то есть самое строгое. */
+  fun riskOf(name: String): Risk = RISK[name] ?: Risk.EXECUTE
+
+  /**
    * The tools, in a fixed order — the 2026 revision asks for a deterministic listing so clients can
    * cache it and so a prompt cache is not broken by a reshuffle that changes nothing.
    *

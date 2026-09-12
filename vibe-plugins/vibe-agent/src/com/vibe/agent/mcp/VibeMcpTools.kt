@@ -1,6 +1,7 @@
 // Copyright 2026 VibeBrains. Use of this source code is governed by the Apache 2.0 license.
 package com.vibe.agent.mcp
 
+import com.intellij.ide.trustedProjects.TrustedProjects
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.project.ProjectManager
 import com.vibe.agent.context.AccessPolicy
@@ -26,6 +27,9 @@ class VibeMcpTools(private val projectProvider: () -> Project? = { ProjectManage
   override fun call(name: String, arguments: JsonObject): McpServer.Tools.Result {
     val project = projectProvider()
       ?: return McpServer.Tools.Result("В IDE нет открытого проекта", isError = true)
+    if (!McpAccess.allowed(McpProtocol.riskOf(name), TrustedProjects.isProjectTrusted(project))) {
+      return McpServer.Tools.Result(McpAccess.refusal, isError = true)
+    }
     return when (name) {
       McpProtocol.TOOL_IMPORTERS -> edges(project, arguments, importers = true)
       McpProtocol.TOOL_IMPORTS -> edges(project, arguments, importers = false)

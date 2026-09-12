@@ -24,6 +24,17 @@ data class AuditEvent(
    * to «по чьей воле» in the first place. Making it a compile error is the point.
    */
   val actor: AuditActor,
+  /**
+   * Вызов инструмента, породивший запись, — `toolCallId` из реестра вызовов.
+   *
+   * Без него системное действие и просьба модели связывались только по времени: «модель попросила
+   * терминал» и «выполнилась команда, записался файл» лежали в журнале двумя независимыми строками.
+   * Поле обязано стоять у всего, что порождено вызовом: `tool_call:*`, `fs_write`, `terminal`,
+   * `permission`, `hook`.
+   */
+  val callId: String? = null,
+  /** Ход, внутри которого всё это произошло: цепочка `prompt → tool_call → fs_write` читается целиком. */
+  val turnId: String? = null,
   val files: List<String>? = null,
   val model: String? = null,
   val latencyMs: Long? = null,
@@ -34,6 +45,8 @@ data class AuditEvent(
     put("action", action)
     put("ok", ok)
     put("actor", actor.toJson())
+    callId?.let { put("callId", it) }
+    turnId?.let { put("turnId", it) }
     files?.takeIf { it.isNotEmpty() }?.let { list ->
       put("files", kotlinx.serialization.json.JsonArray(list.map { JsonPrimitive(it) }))
     }

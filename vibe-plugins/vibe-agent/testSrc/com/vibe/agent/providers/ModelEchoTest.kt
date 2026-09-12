@@ -57,4 +57,18 @@ class ModelEchoTest {
     assertFalse(ModelEcho.substituted("gpt-4o", "   "))
     assertFalse(ModelEcho.substituted("", "gpt-4o"))
   }
+  @Test
+  fun `плавающий алиас не считается подменой`() {
+    // Просьба «дай текущую сборку» и датированный ответ — одна модель. Иначе предупреждение
+    // срабатывало бы на каждом ходу через алиас и перестало бы что-либо значить.
+    assertFalse(ModelEcho.substituted("~openai/gpt-5-latest", "gpt-5-2026-08-01"))
+    assertFalse(ModelEcho.substituted("openai/gpt-5-latest", "openai/gpt-5"))
+    assertFalse(ModelEcho.substituted("claude-opus-5:latest", "claude-opus-5-20260801"))
+  }
+
+  @Test
+  fun `за алиасом другая модель по-прежнему подмена`() {
+    assertTrue(ModelEcho.substituted("~openai/gpt-5-latest", "gpt-5-mini-2026-08-01"))
+    assertTrue(ModelEcho.substituted("openai/gpt-5-latest", "claude-opus-5"))
+  }
 }

@@ -36,8 +36,16 @@ object ModelEcho {
     return !(asked == got || variantOf(asked, got) || variantOf(got, asked))
   }
 
-  /** `openai/gpt-4o` and `gpt-4o` are one model behind an aggregator's namespace. */
-  fun tail(id: String): String = id.substringAfterLast('/')
+  /**
+   * `openai/gpt-4o` and `gpt-4o` are one model behind an aggregator's namespace.
+   *
+   * Плавающий алиас приводится к базе: `~openai/gpt-5-latest` — это просьба «дай текущую сборку
+   * gpt-5», и вендор честно отвечает датированным снапшотом. Не сняв `~` и хвост `-latest`, мы
+   * сравнивали бы `gpt-5-latest` с `gpt-5-2026-08-01` и объявляли подменой КАЖДЫЙ такой ход —
+   * предупреждение, которое кричит всегда, перестают читать, и настоящая подмена теряется в нём.
+   */
+  fun tail(id: String): String =
+    id.removePrefix("~").substringAfterLast('/').removeSuffix("-latest").removeSuffix(":latest")
 
   /**
    * `gpt-4o` against `gpt-4o-2024-08-06`: the same alias, resolved to a dated build.
