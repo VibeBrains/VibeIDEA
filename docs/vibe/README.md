@@ -37,6 +37,7 @@
 - [manuals/decisionsSpec.md](manuals/decisionsSpec.md) — спека журнала решений `docs/decisions/`: что записывать, где лежит, как его видит агент (самодостаточная, для LLM).
 - [manuals/inboxSpec.md](manuals/inboxSpec.md) — спека входящего `docs/inbox/`: внешний документ в корпусе проекта, шапка происхождения, границы.
 - [manuals/auditSpec.md](manuals/auditSpec.md) — спека журнала `.vibe/audit.jsonl`: формат записей аудита агента (для парсеров/дашбордов).
+- [manuals/skillEvalsSpec.md](manuals/skillEvalsSpec.md) — спека `evals/evals.json`: случаи, которыми проверяется навык, и правила их написания (самодостаточная, для LLM).
 - [releaseDonationPhrases.md](releaseDonationPhrases.md) — фразы блока «Поддержать проект» в релизах: пул, отложенные, история использования.
 - [references/releaseNotes-v0.1.0.md](references/releaseNotes-v0.1.0.md) — заметки первого релиза: образец оформления, на который равняются следующие.
 - [references/phpstormParity.md](references/phpstormParity.md) — разбор паритета с PhpStorm: что включено, что проприетарно, что писать самим (03.09.2026).

@@ -91,6 +91,9 @@ object VibeDefaults {
     "servers.json" to "servers.json",
     "skills/design-vocabulary/SKILL.md" to "skills/design-vocabulary/SKILL.md",
     "skills/example/SKILL.md" to "skills/example/SKILL.md",
+    // Образец эвалов: случаи проверяют ровно то, что обещает SKILL.md примера.
+    "skills/example/evals/evals.json" to "skills/example/evals/evals.json",
+    "skills/example/evals/snippet.ts" to "skills/example/evals/snippet.ts",
     "skills/grill/SKILL.md" to "skills/grill/SKILL.md",
     "skills/implement-specs/SKILL.md" to "skills/implement-specs/SKILL.md",
     "skills/incident-review/SKILL.md" to "skills/incident-review/SKILL.md",

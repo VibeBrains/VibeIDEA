@@ -26,5 +26,6 @@ manuals/projectContextSpec.md
 manuals/providersSpec.md
 manuals/release.md
 manuals/serversSpec.md
+manuals/skillEvalsSpec.md
 manuals/skillsSpec.md
 manuals/telegramBridge.md

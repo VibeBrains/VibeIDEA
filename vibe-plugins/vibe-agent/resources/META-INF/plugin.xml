@@ -165,6 +165,8 @@
               text="Очистить учёт расхода" description="Стереть счётчики расхода"/>
       <action id="Vibe.SkillsCatalog" class="com.vibe.agent.skills.VibeSkillsCatalogAction"
               text="Навыки проекта" description="Состояние навыков относительно поставляемого набора и возврат к его версии"/>
+      <action id="Vibe.RunSkillEvals" class="com.vibe.agent.skills.VibeRunSkillEvalsAction"
+              text="Прогнать эвалы навыка" description="Прогон случаев из evals/evals.json навыка: ответ модели и вердикт судьи"/>
       <action id="Vibe.ValidateSkills" class="com.vibe.agent.skills.VibeValidateSkillsAction"
               text="Проверить скиллы проекта" description="Валидация .vibe/skills/&lt;id&gt;/SKILL.md по контракту Agent Skills"/>
       <action id="Vibe.ShowApiToken" class="com.vibe.agent.http.VibeShowApiTokenAction"
