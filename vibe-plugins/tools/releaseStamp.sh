@@ -9,6 +9,9 @@
 # Фаза 2 (releasePublish.sh) откажется публиковать что-либо, не совпадающее со штампом.
 #
 # Артефакты берутся по ОС сборки: на macOS — dmg, на Windows — инсталлятор .exe и архив .win.zip.
+# Плюс кросс-собранные: с выпуска 0.5.0 Linux (.tar.gz) и Windows (.exe и .win.zip) собираются на
+# маке (решения владельца 10.09.2026, manuals/release.md), и они обязаны попасть в штамп — фаза 2
+# публикует ровно то, что в нём записано, а артефакта мимо штампа для публикации не существует.
 # Гейт дистрибутива прогоняется по образу, который он умеет открыть (dmg или zip); .exe проверяется
 # тихой установкой перед штампом (manuals/release.md) — сборка своё сравнение exe и zip в dev-режиме
 # пропускает.
@@ -36,11 +39,18 @@ fi
 
 ARTIFACTS=out/vibeidea/artifacts
 newest() { ls -t "$ARTIFACTS"/$1 2>/dev/null | head -1 || true; }
+LINUX=""; WINZIP=""; WINEXE=""
 case "$(uname -s)" in
   Darwin)
     OS=macos
     IMAGE=$(newest '*.dmg')
     FILES=("$IMAGE")
+    LINUX=$(newest '*.tar.gz')
+    if [ -n "$LINUX" ]; then FILES+=("$LINUX"); fi
+    WINZIP=$(newest '*.win.zip')
+    if [ -n "$WINZIP" ]; then FILES+=("$WINZIP"); fi
+    WINEXE=$(newest '*.exe')
+    if [ -n "$WINEXE" ]; then FILES+=("$WINEXE"); fi
     ;;
   MINGW*|MSYS*|CYGWIN*)
     OS=windows
@@ -83,6 +93,18 @@ DIRTY=$(git status --porcelain | head -1)
 
 echo "  проверяю дистрибутив перед штампом"
 ./vibe-plugins/tools/checkVibeDist.sh "$IMAGE" >/dev/null || { echo "✖ гейт дистрибутива не прошёл — штамповать нечего"; exit 1; }
+# Кросс-собранные проверяются тем же гейтом — по тому, что он умеет открыть. У .tar.gz проверка
+# половинная: состав и индекс плагинов да, «серверы запускаются» нет — линуксовые бинари здесь
+# выполнить нечем (manuals/release.md). Инсталлятор .exe гейт не открывает вовсе: его проверяют
+# тихой установкой на Windows, и этот шаг остаётся ручным — штамп о нём говорит вслух.
+for extra in "$LINUX" "$WINZIP"; do
+  [ -n "$extra" ] || continue
+  echo "  проверяю $(basename "$extra")"
+  ./vibe-plugins/tools/checkVibeDist.sh "$extra" >/dev/null || { echo "✖ гейт дистрибутива не прошёл на $(basename "$extra")"; exit 1; }
+done
+if [ -n "$WINEXE" ]; then
+  echo "  ⚠ $(basename "$WINEXE") гейтом не проверяется: тихая установка на Windows — manuals/release.md"
+fi
 
 COMMIT=$(git rev-parse HEAD)
 # Тег уже есть (релиз под другую ОС вышел раньше) — сборка обязана быть либо ровно на нём, либо на
