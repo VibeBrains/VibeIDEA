@@ -66,10 +66,23 @@ jvm_library(
         "//libraries/lsp4j",
         # Настройки для workspace/configuration собираются в JsonObject — тест читает их же.
         "//libraries/gson",
+        # Переход по Ext JS проверяется на живой платформе: индекс и обработчик без неё не работают.
+        "//platform/testFramework",
+        "//libraries/junit4",
+        "//platform/indexing-api:indexing",
+        "//platform/lang-api:lang",
+        "//platform/core-api:core",
+        "//platform/core-impl",
+        "//platform/editor-ui-api:editor-ui",
+        "//platform/analysis-api:analysis",
     ],
     runtime_deps = [
         # do not sort,
         ":vibe-lsp",
+        # LSP4IJ поднимается в тестовом окружении вместе с нами и на старте лезет в lsp4j:
+        # без банки в classpath теста он валит любой тест, открывающий редактор.
+        "@lib//:libraries-eclipse-lsp4j-eclipse-lsp4j",
+        "@lib//:libraries-eclipse-lsp4j-jsonrpc-eclipse-lsp4j-jsonrpc",
     ],
 )
 

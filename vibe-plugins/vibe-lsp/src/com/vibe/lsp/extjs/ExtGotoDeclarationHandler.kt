@@ -5,6 +5,7 @@ import com.intellij.codeInsight.navigation.actions.GotoDeclarationHandler
 import com.intellij.openapi.editor.Editor
 import com.intellij.openapi.fileEditor.OpenFileDescriptor
 import com.intellij.openapi.project.Project
+import com.intellij.openapi.util.TextRange
 import com.intellij.openapi.vfs.VirtualFile
 import com.intellij.psi.PsiElement
 import com.intellij.psi.PsiFile
@@ -93,6 +94,12 @@ private class ExtDefinitionTarget(
   override fun getContainingFile(): PsiFile = file
 
   override fun getName(): String = name
+
+  // Смещение обязано быть у самого элемента, а не только внутри navigate(): по нему платформа
+  // показывает предпросмотр и выбирает строку в списке, когда объявлений найдено несколько.
+  override fun getTextOffset(): Int = offset
+
+  override fun getTextRange(): TextRange = TextRange(offset, offset + name.length)
 
   override fun canNavigate(): Boolean = file.virtualFile != null
 
