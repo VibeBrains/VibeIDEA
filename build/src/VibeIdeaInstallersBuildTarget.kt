@@ -2,6 +2,7 @@
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runBlocking
 import org.jetbrains.annotations.ApiStatus
+import org.jetbrains.intellij.build.BuildOptions
 import org.jetbrains.intellij.build.BuildPaths.Companion.COMMUNITY_ROOT
 import org.jetbrains.intellij.build.impl.SnapshotBuildNumber
 import org.jetbrains.intellij.build.VibeBuildNumber
@@ -14,7 +15,13 @@ object VibeIdeaInstallersBuildTarget {
   @JvmStatic
   fun main(args: Array<String>) {
     runBlocking(Dispatchers.Default) {
-      val options = OpenSourceCommunityInstallersBuildTarget.OPTIONS.copy()
+      // Upstream drops the Windows installer step when the build runs on macOS («generally not
+      // needed» — OpenSourceCommunityInstallersBuildTarget): IDEA CE has no .exe as a product. We
+      // need it. Since 0.5.0 Windows is built from this Mac (owner's decision 10.09.2026), and a
+      // person on Windows installs an .exe rather than unpacking an archive. NSIS cross-builds:
+      // the pinned NSIS archive carries makensis-mac-aarch64 (manuals/release.md).
+      val base = OpenSourceCommunityInstallersBuildTarget.OPTIONS
+      val options = base.copy(buildStepsToSkip = base.buildStepsToSkip - BuildOptions.WINDOWS_EXE_INSTALLER_STEP)
       // A real build number unless one was passed explicitly: a SNAPSHOT distribution considers
       // itself newer than anything an update channel could publish (see VibeBuildNumber).
       if (System.getProperty("build.number") == null) {
