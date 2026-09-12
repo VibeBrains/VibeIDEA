@@ -133,7 +133,7 @@ xattr -dr com.apple.quarantine /Applications/VibeIDEA.app
 
 ```bash
 shasum -a 256 VibeIDEA-0.5.0-aarch64.dmg
-# c15fcdb699340498b7ff98a3c470f216d4733e969e5637119d1651477c006512
+# 44ea2f5f90c269ffcf37512b90e37c294bb2d744555b8da908e1dee87ba722a8
 ```
 
 **Windows (x64):** `VibeIDEA-0.5.0.exe` — обычный инсталлятор; или `VibeIDEA-0.5.0.win.zip` —
