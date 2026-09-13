@@ -22,6 +22,7 @@ import com.vibe.agent.ui.VibeScroll
 class VibeLspConfigurable : Configurable {
   private val fields = LinkedHashMap<String, TextFieldWithBrowseButton>()
   private val phpEngine = com.intellij.openapi.ui.ComboBox(PhpEngine.entries.toTypedArray())
+  private val tsEngine = com.intellij.openapi.ui.ComboBox(TsEngine.entries.toTypedArray())
 
   override fun getDisplayName(): String = t("settings.lsp.title")
 
@@ -40,6 +41,18 @@ class VibeLspConfigurable : Configurable {
     phpEngine.selectedItem = PhpServerChoice.stored()
     builder.addLabeledComponent(t("settings.lsp.php.engine"), phpEngine)
     builder.addComponent(JBLabel("<html>" + t("settings.lsp.php.hint") + "</html>").apply {
+      foreground = com.intellij.ui.JBColor.GRAY
+    })
+    tsEngine.renderer = com.intellij.ui.SimpleListCellRenderer.create("") {
+      when (it) {
+        TsEngine.AUTO -> t("settings.lsp.ts.auto")
+        TsEngine.VTSLS -> t("settings.lsp.ts.vtsls")
+        TsEngine.TSC -> t("settings.lsp.ts.tsc")
+      }
+    }
+    tsEngine.selectedItem = TsServerChoice.stored()
+    builder.addLabeledComponent(t("settings.lsp.ts.engine"), tsEngine)
+    builder.addComponent(JBLabel("<html>" + t("settings.lsp.ts.hint") + "</html>").apply {
       foreground = com.intellij.ui.JBColor.GRAY
     })
     for (spec in LspDoctor.ALL) {
@@ -63,15 +76,18 @@ class VibeLspConfigurable : Configurable {
 
   override fun isModified(): Boolean =
     fields.any { (id, field) -> field.text.trim() != ServerPaths.get(id) } ||
-    phpEngine.selectedItem != PhpServerChoice.stored()
+    phpEngine.selectedItem != PhpServerChoice.stored() ||
+    tsEngine.selectedItem != TsServerChoice.stored()
 
   override fun apply() {
     fields.forEach { (id, field) -> ServerPaths.set(id, field.text) }
     (phpEngine.selectedItem as? PhpEngine)?.let { PhpServerChoice.store(it) }
+    (tsEngine.selectedItem as? TsEngine)?.let { TsServerChoice.store(it) }
   }
 
   override fun reset() {
     fields.forEach { (id, field) -> field.text = ServerPaths.get(id) }
     phpEngine.selectedItem = PhpServerChoice.stored()
+    tsEngine.selectedItem = TsServerChoice.stored()
   }
 }

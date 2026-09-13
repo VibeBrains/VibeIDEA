@@ -6,9 +6,17 @@ import com.redhat.devtools.lsp4ij.LanguageServerFactory
 import com.redhat.devtools.lsp4ij.server.ProcessStreamConnectionProvider
 import com.redhat.devtools.lsp4ij.server.StreamConnectionProvider
 
+/**
+ * The TypeScript server: the project's own TypeScript 7 in LSP mode when it has one, the bundled vtsls
+ * otherwise — see [TsServerChoice]. The id stays `vtsls` for the registration: it names the language
+ * slot, and renaming it would drop every user's per-server LSP4IJ settings.
+ */
 class VtslsServerFactory : LanguageServerFactory {
   override fun createConnectionProvider(project: Project): StreamConnectionProvider {
-    return VtslsConnectionProvider(project.basePath)
+    val base = project.basePath?.let { java.nio.file.Path.of(it) }
+    val windows = com.vibe.agent.util.ExecutableNames.isWindows()
+    val engine = TsServerChoice.forProject(TsServerChoice.stored(), base, windows)
+    return VtslsConnectionProvider(TsServerChoice.command(engine, base, windows) { ServerBinaries.vtslsCommand() }, project.basePath)
   }
 }
 
@@ -17,5 +25,5 @@ class VtslsServerFactory : LanguageServerFactory {
  * module and cannot build a display name for an anonymous subclass, which fails test discovery
  * for the whole module before a single test runs.
  */
-private class VtslsConnectionProvider(workingDirectory: String?) :
-  ProcessStreamConnectionProvider(ServerBinaries.vtslsCommand(), workingDirectory)
+private class VtslsConnectionProvider(command: List<String>, workingDirectory: String?) :
+  ProcessStreamConnectionProvider(command, workingDirectory)

@@ -36,6 +36,16 @@ class VibeLspDoctorAction : AnAction({ t("lsp.doctor.action") }) {
           appendLine("    " + t("lsp.doctor.needsRuntime", "runtime" to runtime))
         }
       }
+      // Which TypeScript server this project actually starts — and why a hand-picked tsc did not.
+      val base = e.project?.basePath?.let { java.nio.file.Path.of(it) }
+      val windows = com.vibe.agent.util.ExecutableNames.isWindows()
+      val chosen = TsServerChoice.stored()
+      val running = TsServerChoice.forProject(chosen, base, windows)
+      appendLine(
+        if (running == TsEngine.TSC && base != null) t("lsp.doctor.ts.tsc", "path" to TsServerChoice.projectTsc(base, windows).toString())
+        else t("lsp.doctor.ts.vtsls")
+      )
+      if (chosen == TsEngine.TSC && running != TsEngine.TSC) appendLine("    " + t("lsp.doctor.ts.tscUnavailable"))
       appendLine()
       appendLine(t("lsp.doctor.debuggers"))
       for (check in debuggers) {
