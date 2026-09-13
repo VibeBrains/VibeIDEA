@@ -39,9 +39,47 @@ object SkillEvals {
     val files: List<String> = emptyList(),
     val expectedOutput: String? = null,
     val expectations: List<String> = emptyList(),
+    /**
+     * Free checks: a pattern the answer must (or must not) contain.
+     *
+     * «В ответе есть `--dry-run`» used to cost a judge call like any other expectation. A case made
+     * only of assertions is graded without the judge at all.
+     */
+    val assertions: List<Assertion> = emptyList(),
   )
 
-  data class Suite(val skillName: String?, val description: String?, val cases: List<Case>)
+  data class Assertion(val pattern: String, val negate: Boolean) {
+    val regex: Regex = Regex(pattern, setOf(RegexOption.IGNORE_CASE, RegexOption.MULTILINE))
+  }
+
+  /**
+   * [runs] — attempts per case: one answer tells nothing about a model that answers differently every
+   * time. [baseline] — the same cases answered WITHOUT the skill: «1.00 with the skill» means nothing
+   * when it is 1.00 without it too.
+   */
+  data class Suite(
+    val skillName: String?,
+    val description: String?,
+    val cases: List<Case>,
+    val runs: Int = 1,
+    val baseline: Boolean = false,
+  )
+
+  const val MAX_RUNS = 10
+
+  /** A case goes to the judge when it has something only the judge can read, or nothing at all. */
+  fun needsJudge(case: Case): Boolean =
+    case.expectations.isNotEmpty() || case.expectedOutput != null || case.assertions.isEmpty()
+
+  /** The assertions the answer breaks, each named by its pattern. */
+  fun assertionFailures(case: Case, answer: String): List<String> = case.assertions.mapNotNull { assertion ->
+    val found = assertion.regex.containsMatchIn(answer)
+    when {
+      !assertion.negate && !found -> "regex: ${assertion.pattern}"
+      assertion.negate && found -> "not_regex: ${assertion.pattern}"
+      else -> null
+    }
+  }
 
   /** What the judge said about one case. */
   data class Verdict(val passed: Boolean, val failures: List<String>, val note: String?)
@@ -67,18 +105,32 @@ object SkillEvals {
     raw.forEachIndexed { index, element ->
       val obj = element as? JsonObject ?: return Read.Broken(t("skills.evals.badCase", "index" to index + 1))
       val prompt = obj.string("prompt") ?: return Read.Broken(t("skills.evals.noPrompt", "index" to index + 1))
+      val assertions = ArrayList<Assertion>()
+      (obj["assertions"] as? JsonArray).orEmpty().forEach { raw ->
+        val a = raw as? JsonObject ?: return Read.Broken(t("skills.evals.badAssertion", "index" to index + 1))
+        val type = a.string("type")
+        val pattern = a.string("pattern") ?: return Read.Broken(t("skills.evals.badAssertion", "index" to index + 1))
+        if (type != "regex" && type != "not_regex") return Read.Broken(t("skills.evals.badAssertion", "index" to index + 1))
+        // A pattern that does not compile is refused at reading, not discovered as a crash mid-run.
+        runCatching { Regex(pattern) }.getOrNull() ?: return Read.Broken(t("skills.evals.badAssertion", "index" to index + 1))
+        assertions += Assertion(pattern, negate = type == "not_regex")
+      }
       cases += Case(
         id = obj.string("id") ?: (index + 1).toString(),
         prompt = prompt,
         files = obj.strings("files"),
         expectedOutput = obj.string("expected_output"),
         expectations = obj.strings("expectations"),
+        assertions = assertions,
       )
     }
     if (cases.isEmpty()) return Read.Broken(t("skills.evals.noCases"))
     val ids = cases.map { it.id }
     if (ids.size != ids.distinct().size) return Read.Broken(t("skills.evals.duplicateId"))
-    return Read.Ok(Suite(root.string("skill_name"), root.string("description"), cases))
+    // Runs are clamped, never refused: a typo in a number must not cost the whole set of cases.
+    val runs = (root["runs"] as? JsonPrimitive)?.contentOrNull?.toIntOrNull()?.coerceIn(1, MAX_RUNS) ?: 1
+    val baseline = (root["baseline"] as? JsonPrimitive)?.booleanOrNull ?: false
+    return Read.Ok(Suite(root.string("skill_name"), root.string("description"), cases, runs, baseline))
   }
 
   /**
@@ -96,6 +148,13 @@ object SkillEvals {
     }
     return listOf(ChatMessage("system", system), ChatMessage("user", user))
   }
+
+  /**
+   * The same case without the skill: no skill body, the same no-tools rule. The only difference from
+   * [runMessages] is the one thing being measured.
+   */
+  fun baselineMessages(case: Case, attachments: Map<String, String>): List<ChatMessage> =
+    runMessages("", case, attachments).let { listOf(ChatMessage("system", NO_TOOLS)) + it.drop(1) }
 
   /** What the judge is asked: the checklist of the case and the answer as it came. */
   fun judgeMessages(case: Case, answer: String): List<ChatMessage> {

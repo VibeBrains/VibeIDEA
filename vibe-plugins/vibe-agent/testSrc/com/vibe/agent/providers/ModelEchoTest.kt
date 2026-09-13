@@ -71,4 +71,16 @@ class ModelEchoTest {
     assertTrue(ModelEcho.substituted("~openai/gpt-5-latest", "gpt-5-mini-2026-08-01"))
     assertTrue(ModelEcho.substituted("openai/gpt-5-latest", "claude-opus-5"))
   }
+
+  @Test
+  fun `quirks follow the snapshot behind a floating alias`() {
+    assertEquals("gpt-5-2026-08-01", ModelEcho.quirkId("~openai/gpt-5-latest", "gpt-5-2026-08-01"))
+  }
+
+  @Test
+  fun `quirks stay on the requested id when another model answered or nothing is known`() {
+    assertEquals("gpt-5-latest", ModelEcho.quirkId("gpt-5-latest", "claude-opus-5"))
+    assertEquals("gpt-5-latest", ModelEcho.quirkId("gpt-5-latest", null))
+    assertEquals("gpt-5-latest", ModelEcho.quirkId("gpt-5-latest", " "))
+  }
 }

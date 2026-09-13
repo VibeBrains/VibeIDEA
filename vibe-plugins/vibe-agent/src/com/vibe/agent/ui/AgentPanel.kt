@@ -293,6 +293,9 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
   /** Tokens spent since the person last spoke — the autopilot's stretch is capped in money, not only in turns. */
   private val stretchTokens = java.util.concurrent.atomic.AtomicLong(0)
 
+  /** The pipeline run in progress, so every spend line of its steps is summed into one bill. */
+  @Volatile private var pipelineRunId: String? = null
+
   /** CAS-guarded: concurrent finishers (reader/exit/pooled threads) must not double-finish. */
   private val turnInFlight = java.util.concurrent.atomic.AtomicBoolean(false)
   @Volatile private var disposed = false
@@ -3897,6 +3900,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
         territory = territory,
         pipelineId = pipeline.id,
       )
+      pipelineRunId = runId
       try {
         pipeline.steps.forEachIndexed { i, step ->
           val header = t("pipeline.step", "index" to (i + 1), "total" to pipeline.steps.size, "role" to step.role)
@@ -4025,6 +4029,11 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
           }
         }
         systemLine(t("pipeline.finished", "name" to pipeline.name, "outcome" to (if (failed) t("pipeline.outcome.failed") else t("pipeline.outcome.done"))))
+        // The bill next to the outcome: the task is the unit a cascade or a council is compared by.
+        runId?.let { id -> com.vibe.agent.budget.VibeSpendService.getInstance().ofRun(id) }?.let { bill ->
+          systemLine(if (bill.currency != null) t("pipeline.bill.cost", "tokens" to bill.tokens, "cost" to "%.4f".format(bill.cost), "currency" to bill.currency)
+                     else t("pipeline.bill.tokens", "tokens" to bill.tokens))
+        }
         runs.finished(
           runId,
           if (failed) com.vibe.agent.runs.AgentRunLedger.Status.FAILED else com.vibe.agent.runs.AgentRunLedger.Status.COMPLETED,
@@ -4034,6 +4043,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
       finally {
         currentRole = null
         currentScope = com.vibe.agent.pipelines.RolePaths.Scope()
+        pipelineRunId = null
         finishTurn()
       }
     }
@@ -4648,7 +4658,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     com.vibe.agent.budget.VibeSpendService.getInstance()
       // The split between the turn's files is an estimate by size — a request is billed whole.
       .record(currentRole, targetLabel(), delta, costDelta, currency?.takeIf { costDelta != null },
-              com.vibe.agent.budget.FileSpend.attribute(delta, turnAttachments), currentThreadId)
+              com.vibe.agent.budget.FileSpend.attribute(delta, turnAttachments), currentThreadId, pipelineRunId)
     stretchTokens.addAndGet(delta)
   }
 

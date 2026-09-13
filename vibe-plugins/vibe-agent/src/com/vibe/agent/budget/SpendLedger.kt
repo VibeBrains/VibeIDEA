@@ -38,6 +38,14 @@ object SpendLedger {
      * question fewer.
      */
     val threadId: String? = null,
+    /**
+     * The pipeline run this step belonged to.
+     *
+     * Everything was counted per turn, per step and per role, and there was no line for «this run
+     * cost X and ended with Y». Without the task as a unit, a cascade, a council and one expensive
+     * turn cannot be compared on our own work — only on other people's benchmarks.
+     */
+    val runId: String? = null,
   )
 
   data class Line(val name: String, val tokens: Long, val cost: Double, val currency: String?, val runs: Int)
@@ -69,6 +77,13 @@ object SpendLedger {
   fun byRole(entries: List<Entry>): List<Line> = group(entries) { it.role ?: CHAT }
 
   fun byTarget(entries: List<Entry>): List<Line> = group(entries) { it.target }
+
+  /** What one pipeline run cost, all its steps together. */
+  fun ofRun(entries: List<Entry>, runId: String): Line? {
+    val mine = entries.filter { it.runId == runId }
+    if (mine.isEmpty()) return null
+    return group(mine) { runId }.firstOrNull()
+  }
 
   /** What one conversation cost — the question people actually ask about money. */
   fun ofThread(entries: List<Entry>, threadId: String): Line? {

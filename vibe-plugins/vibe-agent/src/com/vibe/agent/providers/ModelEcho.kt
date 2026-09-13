@@ -61,6 +61,18 @@ object ModelEcho {
     return head.isNotEmpty() && head.all { it.isDigit() }
   }
 
+  /**
+   * The id quirks should be matched against: the snapshot that actually answered, when it is the same
+   * model as requested; the requested id otherwise.
+   *
+   * A floating alias (`~openai/gpt-5-latest`) never contains the dated build a quirk rule is written
+   * for, so quirks keyed by the snapshot never fired behind the alias. A real substitution keeps the
+   * requested id: the answering model is somebody else's choice, and silently switching the request
+   * shape to it would hide the substitution a second time.
+   */
+  fun quirkId(requested: String, answered: String?): String =
+    if (answered != null && answered.isNotBlank() && !substituted(requested, answered)) answered else requested
+
   private const val SEPARATORS = "-_:@."
 
   private fun JsonObject.string(key: String): String? =

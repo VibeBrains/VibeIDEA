@@ -69,9 +69,13 @@ class VibeRunSkillEvalsAction : AnAction(t("skills.evals.action.title")) {
     val index = Messages.showChooseDialog(project, t("skills.evals.choose"), title, null, ids, ids.first())
     val chosen = found.getOrNull(index) ?: return
     val cases = chosen.suite.cases.size
+    // Counted by the same rule the run follows: free cases skip the judge, runs and baseline multiply.
     val confirm = Messages.showYesNoDialog(
       project,
-      t("skills.evals.confirm", "cases" to cases, "calls" to cases * 2, "model" to target.second.id),
+      t("skills.evals.confirm", "cases" to cases, "calls" to SkillEvalRun.calls(chosen.suite), "model" to target.second.id) +
+        (if (chosen.suite.runs > 1 || chosen.suite.baseline)
+           "\n" + (if (chosen.suite.baseline) t("skills.evals.confirmShape.baseline", "runs" to chosen.suite.runs)
+                   else t("skills.evals.confirmShape.noBaseline", "runs" to chosen.suite.runs)) else ""),
       title, null,
     )
     if (confirm == Messages.YES) start(project, chosen, target)
@@ -152,9 +156,18 @@ class VibeRunSkillEvalsAction : AnAction(t("skills.evals.action.title")) {
         else -> append(t("skills.evals.report.failedCase", "case" to result.case.id,
                          "failures" to verdict.failures.joinToString("; ").ifEmpty { verdict.note ?: "" }))
       }
+      if (result.attempts.size > 1) {
+        append("\n").append(t("skills.evals.report.rate", "rate" to percent(result.rate), "runs" to result.attempts.size))
+      }
+      result.delta?.let { delta ->
+        append("\n").append(t("skills.evals.report.delta", "with" to percent(result.rate), "without" to percent(result.baselineRate),
+                               "delta" to (if (delta >= 0) "+" else "") + percent(delta)))
+      }
     }
     saved?.let { append("\n\n").append(t("skills.evals.report.saved", "path" to it.path)) }
   }
+
+  private fun percent(value: Double?): String = value?.let { "%.0f%%".format(it * 100) } ?: "—"
 
   private companion object {
     const val ATTACHMENT_LIMIT = 100_000

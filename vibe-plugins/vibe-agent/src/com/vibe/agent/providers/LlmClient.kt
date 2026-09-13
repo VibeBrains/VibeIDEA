@@ -163,6 +163,18 @@ class LlmClient(
   /** The model of the last completed request as the provider named it, or null when it named none. */
   fun lastAnsweredModel(): String? = lastAnsweredModel
 
+  /**
+   * Requested id → the snapshot that answered it, learned from replies of this client.
+   *
+   * Quirks are written for real builds, and a floating alias never contains the build name, so they
+   * used to miss behind `~vendor/model-latest`. The first reply teaches the snapshot; every later
+   * request of that model is shaped by it. A substitution by another model is not learned (see
+   * [ModelEcho.quirkId]).
+   */
+  private val snapshots = java.util.concurrent.ConcurrentHashMap<String, String>()
+
+  private fun quirkIdOf(model: ModelEntry): String = ModelEcho.quirkId(model.id, snapshots[model.id])
+
   private val json = Json { ignoreUnknownKeys = true }
   @Volatile private var cancelled: () -> Boolean = { false }
   @Volatile private var activeBody: java.io.InputStream? = null
@@ -213,6 +225,9 @@ class LlmClient(
           "anthropic" -> anthropicChat(provider, model, messages, onDelta)
           "gemini" -> geminiChat(provider, model, messages, onDelta)
           else -> openAiChat(provider, model, messages, onDelta)
+        }
+        lastAnsweredModel?.let { answered ->
+          if (ModelEcho.quirkId(model.id, answered) == answered) snapshots[model.id] = answered
         }
         return
       }
@@ -343,9 +358,10 @@ class LlmClient(
     // The quirks catalogue rewrites what this particular model refuses to be asked, and does it
     // BEFORE extraBody so a hand-written entry in providers.json always wins over our guess.
     val overrides = quirks()
-    val asked = ModelQuirks.applyToMessages(model.id, messages, overrides)
-    val streaming = ModelQuirks.supportsStreaming(model.id, overrides)
-    val body = withExtras(ModelQuirks.applyToBody(model.id, overrides = overrides, body = buildJsonObject {
+    val quirkId = quirkIdOf(model)
+    val asked = ModelQuirks.applyToMessages(quirkId, messages, overrides)
+    val streaming = ModelQuirks.supportsStreaming(quirkId, overrides)
+    val body = withExtras(ModelQuirks.applyToBody(quirkId, overrides = overrides, body = buildJsonObject {
       put("model", model.id)
       put("stream", true)
       // Without this the OpenAI wire streams no usage at all and the turn is billed by guesswork.
@@ -356,11 +372,11 @@ class LlmClient(
       model.topP?.let { put("top_p", it) }
       model.maxOutputTokens?.let { put("max_tokens", it) }
       // A model that requires its reasoning back gets it; no other model ever sees the field.
-      val echo = ModelQuirks.has(model.id, ModelQuirks.Quirk.ECHO_REASONING, overrides)
+      val echo = ModelQuirks.has(quirkId, ModelQuirks.Quirk.ECHO_REASONING, overrides)
       put("messages", JsonArray(asked.map { LlmMessages.openAi(it, echo) }))
     }.let { withReasoning(it, "openai", model) }), model.extraBody)
-    if (ModelQuirks.quirksOf(model.id, overrides).isNotEmpty()) {
-      logger<LlmClient>().info("Model quirks applied for " + model.id + ": " + ModelQuirks.noteOf(model.id, overrides))
+    if (ModelQuirks.quirksOf(quirkId, overrides).isNotEmpty()) {
+      logger<LlmClient>().info("Model quirks applied for " + quirkId + ": " + ModelQuirks.noteOf(quirkId, overrides))
     }
     val request = requestBuilder(provider, "chat/completions")
       .POST(HttpRequest.BodyPublishers.ofString(body.toString()))
@@ -418,7 +434,7 @@ class LlmClient(
     }.let { withReasoning(it, "anthropic", model) }
       // Quirks were applied on the OpenAI path only, which left the Anthropic-compatible endpoints
       // — where MiniMax and Qwen actually live — sending exactly the fields those models ignore.
-      .let { ModelQuirks.applyToBody(model.id, it, overrides, ModelQuirks.WIRE_ANTHROPIC) },
+      .let { ModelQuirks.applyToBody(quirkIdOf(model), it, overrides, ModelQuirks.WIRE_ANTHROPIC) },
       model.extraBody)
     val request = requestBuilder(provider, "messages")
       .header("anthropic-version", "2023-06-01")

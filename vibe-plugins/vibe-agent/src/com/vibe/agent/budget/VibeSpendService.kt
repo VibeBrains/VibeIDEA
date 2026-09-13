@@ -45,11 +45,12 @@ class VibeSpendService {
     costCurrency: String?,
     files: Map<String, Long> = emptyMap(),
     threadId: String? = null,
+    runId: String? = null,
   ) {
     if (tokens <= 0 && costAmount == null) return
     ensureLoaded()
     store.add(SpendLedger.Entry(System.currentTimeMillis(), role, target, tokens, costAmount, costCurrency,
-                                files, threadId))
+                                files, threadId, runId))
     dirty = true
     // Debounced on purpose: an update arrives with every streamed chunk, and rewriting the whole
     // file each time would turn a convenience into a stream of disk writes. The file is a report,
@@ -118,6 +119,7 @@ class VibeSpendService {
             value.jsonPrimitive.longOrNull?.let { path to it }
           }?.toMap().orEmpty(),
           threadId = e["thread"]?.jsonPrimitive?.contentOrNull,
+          runId = e["run"]?.jsonPrimitive?.contentOrNull,
         ))
       }
     }.onFailure { log.warn("spend.json could not be read: ${it.message}") }
@@ -145,10 +147,17 @@ class VibeSpendService {
               put("files", buildJsonObject { entry.files.forEach { (path, share) -> put(path, share) } })
             }
             entry.threadId?.let { put("thread", it) }
+            entry.runId?.let { put("run", it) }
           }
         }))
       }))
     }.onFailure { log.warn("spend.json could not be written: ${it.message}") }
+  }
+
+  /** What one pipeline run has cost so far. */
+  fun ofRun(runId: String): SpendLedger.Line? {
+    ensureLoaded()
+    return SpendLedger.ofRun(store.snapshot(), runId)
   }
 
   private fun file(): Path = Path.of(PathManager.getSystemPath(), "vibe", "spend.json")
