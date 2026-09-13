@@ -62,6 +62,17 @@ class SkillApprovalTest {
   }
 
   @Test
+  fun `a linked file has one digest in VibeIDEA and VibeIDE`() {
+    // Second shared vector (13.09.2026): a link is hashed by its target path and the target's content,
+    // as SkillFiles.scan encodes it. File hashes are sha256 of "a" and "b".
+    val shared = mapOf(
+      "SKILL.md" to "ca978112ca1bbdcafac231b39a23dc4da786eff8147c4e72b9807785afee48bb",
+      "scripts/run.sh" to "link:shared/run.sh:3e23e8160039594a33894f6564e1b1348bbd7a0088d42c4acb73eeaed59c009d",
+    )
+    assertEquals("f74191445ee3da6e786f4d8779221f8fd4eba023ee574d10d45bfd0e33b24e53", SkillApproval.digest(shared))
+  }
+
+  @Test
   fun `the changed files are named, not just counted`() {
     val changes = SkillApproval.changes(
       approved = files + ("old.md" to "o"),
