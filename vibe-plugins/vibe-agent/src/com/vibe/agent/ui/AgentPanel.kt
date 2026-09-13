@@ -2343,6 +2343,10 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
           finishTurn()
           return@executeOnPooledThread
         }
+        if (t is ChatTarget.Agent && agentLimitReached(t.config, runId = null)) {
+          finishTurn()
+          return@executeOnPooledThread
+        }
         when (t) {
           is ChatTarget.Model -> sendToLlm(t, startedAt)
           is ChatTarget.Agent -> sendToAcp(t, message.text, loaded, message.images, startedAt, skills)
@@ -2554,6 +2558,31 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
    * receipt. Per role rather than per run because the runaway case is not one expensive turn — it
    * is a reviewer restarted forty times by a loop nobody was watching.
    */
+  /**
+   * The agent's own ceilings from `.vibe/agents.json` (`limits`), asked BEFORE its turn.
+   *
+   * A ceiling reported after the spend is a receipt. The run ceiling counts only inside a pipeline run,
+   * where there is a run to bill; the daily ceilings count everywhere the agent works.
+   */
+  private fun agentLimitReached(config: AgentServerConfig, runId: String?): Boolean {
+    val limits = config.limits ?: return false
+    val spend = com.vibe.agent.budget.VibeSpendService.getInstance()
+    val (tokens, cost, currency) = spend.spentByTarget("acp/${config.name}")
+    val bill = runId?.let { spend.ofRun(it) }
+    val hit = limits.exceeded(tokens, cost, currency, bill?.cost, bill?.currency) ?: return false
+    val shown = if (hit.reason == com.vibe.agent.budget.AgentLimits.Reason.TOKENS_PER_DAY) "%,d".format(hit.spent.toLong()) else "%.4f".format(hit.spent)
+    val limit = if (hit.reason == com.vibe.agent.budget.AgentLimits.Reason.TOKENS_PER_DAY) "%,d".format(hit.limit.toLong()) else "%.4f".format(hit.limit)
+    val unit = limits.currency ?: currency ?: ""
+    systemLine(when (hit.reason) {
+      com.vibe.agent.budget.AgentLimits.Reason.COST_PER_DAY -> t("limits.costPerDay", "agent" to config.name, "spent" to shown, "limit" to limit, "currency" to unit)
+      com.vibe.agent.budget.AgentLimits.Reason.COST_PER_RUN -> t("limits.costPerRun", "agent" to config.name, "spent" to shown, "limit" to limit, "currency" to unit)
+      com.vibe.agent.budget.AgentLimits.Reason.TOKENS_PER_DAY -> t("limits.tokensPerDay", "agent" to config.name, "spent" to shown, "limit" to limit)
+    })
+    audit?.append(AuditEvent(System.currentTimeMillis(), AuditEvent.Action.HOOK, ok = false, actor = com.vibe.agent.audit.AuditActor.IDE,
+      meta = mapOf("event" to "agent_limit", "agent" to config.name, "reason" to hit.reason.name.lowercase())))
+    return true
+  }
+
   private fun roleBudgetExceeded(role: String): Boolean {
     val limit = VibeAgentSettings.roleBudgetTokens.toLong()
     if (limit <= 0) return false
@@ -4006,6 +4035,11 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
             return@forEachIndexed
           }
           if (roleBudgetExceeded(step.role)) {
+            failed = true
+            return@forEachIndexed
+          }
+          // A step on the pipeline's agent is its spend; a step on its own model is not the agent's.
+          if (step.model == null && agentLimitReached(agent, runId)) {
             failed = true
             return@forEachIndexed
           }

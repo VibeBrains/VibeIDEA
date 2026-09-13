@@ -116,6 +116,34 @@ object PipelinesFile {
 
   fun path(projectBase: String): Path = Path.of(projectBase, ".vibe", "pipelines.json")
 
+  /**
+   * `roles` of a pipeline: the model each role runs on when its step names none (agreed with VibeIDE,
+   * 13.09.2026 — names and the one-string model form are theirs).
+   *
+   * Refused as a whole pipeline, not per entry, for the same reasons a step is: an unknown role is a
+   * typo that would otherwise quietly change nothing, and a model for a role that writes is a promise
+   * we cannot keep — a direct model request has no tools and no files. VibeIDE lets any role have a
+   * model; that difference is stated in the spec rather than hidden.
+   */
+  private fun roleModelsOf(element: kotlinx.serialization.json.JsonElement?): Map<String, Pair<String?, String?>> {
+    val obj = element as? kotlinx.serialization.json.JsonObject ?: return emptyMap()
+    return obj.entries.associate { (role, value) ->
+      if (role !in ROLES) throw IllegalArgumentException(t("pipeline.warn.unknownRole", "role" to role, "roles" to ROLES.joinToString()))
+      val entry = value as? kotlinx.serialization.json.JsonObject
+      val resolved = StepModelRef.resolve(
+        entry?.get("provider")?.jsonPrimitive?.contentOrNull,
+        entry?.get("model")?.jsonPrimitive?.contentOrNull,
+      )
+      if ((resolved.first == null) != (resolved.second == null)) {
+        throw IllegalArgumentException(t("pipeline.warn.halfAddress", "role" to role))
+      }
+      if (resolved.second != null && !readOnly(role)) {
+        throw IllegalArgumentException(t("pipeline.warn.writingRoleOnOwnModel", "role" to role))
+      }
+      role to resolved
+    }
+  }
+
   fun load(projectBase: String?, onWarning: (String) -> Unit): List<Pipeline> {
     if (projectBase == null) return emptyList()
     val file = path(projectBase)
@@ -130,6 +158,7 @@ object PipelinesFile {
           val id = o["id"]?.jsonPrimitive?.contentOrNull
           if (id.isNullOrBlank()) { onWarning(t("pipeline.warn.noId")); continue }
           if (!seen.add(id)) { onWarning(t("pipeline.warn.duplicateId", "id" to id)); continue }
+          val roleModels = roleModelsOf(o["roles"])
           val steps = o["steps"]?.jsonArray?.map { s ->
             val so = s.jsonObject
             val role = so["role"]?.jsonPrimitive?.contentOrNull
@@ -139,10 +168,12 @@ object PipelinesFile {
             // `provider` + `model` is our older spelling and stays a synonym. The shared seed used the
             // pair, and VibeIDE never reads `provider` — its step silently ran on the role's default
             // model (found 13.09.2026). Reading both here keeps every existing file working.
-            val (provider, model) = StepModelRef.resolve(
+            val own = StepModelRef.resolve(
               so["provider"]?.jsonPrimitive?.contentOrNull,
               so["model"]?.jsonPrimitive?.contentOrNull,
             )
+            // The step's own model wins; a step without one takes its role's model from `roles`.
+            val (provider, model) = if (own.first == null && own.second == null) roleModels[role] ?: own else own
             // Половина адреса — это опечатка, а не выбор: провайдер без модели молча ушёл бы к
             // агенту пайплайна, и человек считал бы, что шаг идёт к его модели.
             if ((provider == null) != (model == null)) {

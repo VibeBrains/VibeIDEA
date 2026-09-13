@@ -87,6 +87,18 @@ class VibeSpendService {
   @Synchronized
   fun prime() = ensureLoaded()
 
+  /**
+   * What one target (`acp/<agent>`) spent inside the window: tokens, and money when every priced entry
+   * shares one currency. Mixed currencies give no money figure rather than a sum of apples and roubles.
+   */
+  fun spentByTarget(target: String, windowMs: Long = SpendLedger.DAY_MS): Triple<Long, Double?, String?> {
+    val mine = entries(windowMs).filter { it.target == target }
+    val priced = mine.filter { it.costAmount != null }
+    val currencies = priced.mapNotNull { it.costCurrency }.distinct()
+    val cost = if (priced.isEmpty() || currencies.size > 1) null else priced.sumOf { it.costAmount ?: 0.0 }
+    return Triple(mine.sumOf { it.tokens }, cost, currencies.singleOrNull())
+  }
+
   /** Tokens this role has spent inside the window — the number a budget is checked against. */
   fun spentByRole(role: String?, windowMs: Long = SpendLedger.DAY_MS): Long =
     SpendLedger.tokensOf(entries(windowMs), role)

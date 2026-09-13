@@ -25,6 +25,8 @@ data class AgentServerConfig(
    * ходит по соседним пакетам. Поле было описано в сиде с самого начала и не читалось.
    */
   val dir: String? = null,
+  /** Spending ceilings from the project entry's `limits`; null — none declared (see [com.vibe.agent.budget.AgentLimits]). */
+  val limits: com.vibe.agent.budget.AgentLimits? = null,
 )
 
 /**
@@ -121,6 +123,7 @@ object AcpConfig {
             args = o["args"]?.jsonArray?.map { it.jsonPrimitive.content } ?: emptyList(),
             env = o["env"]?.jsonObject?.mapValues { it.value.jsonPrimitive.content } ?: emptyMap(),
             dir = o["dir"]?.jsonPrimitive?.contentOrNull?.takeIf { it.isNotBlank() },
+            limits = com.vibe.agent.budget.AgentLimits.parse(o["limits"]),
           ))
         }
         catch (e: Exception) {
