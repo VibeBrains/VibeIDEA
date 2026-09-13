@@ -111,6 +111,7 @@ class McpStdioClientTest {
   @Test
   fun `an unknown tool name counts as writing`() {
     assertEquals(McpProtocol.Risk.READ, MemoryServerSource.riskOf("history_search"))
+    assertEquals(McpProtocol.Risk.READ, MemoryServerSource.riskOf("project_resolve"))
     assertEquals(McpProtocol.Risk.WRITE, MemoryServerSource.riskOf("memory_delete"))
     assertEquals(McpProtocol.Risk.WRITE, MemoryServerSource.riskOf("memory_export"))
   }

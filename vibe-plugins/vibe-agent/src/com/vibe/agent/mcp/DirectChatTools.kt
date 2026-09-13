@@ -141,7 +141,7 @@ class MemoryServerSource(
 
   companion object {
     /** VibeMemory's reading tools; everything else writes. */
-    val READ_TOOLS: Set<String> = setOf("memory_search", "memory_get", "history_search")
+    val READ_TOOLS: Set<String> = setOf("memory_search", "memory_get", "history_search", "project_resolve")
 
     fun riskOf(tool: String): McpProtocol.Risk =
       if (tool in READ_TOOLS) McpProtocol.Risk.READ else McpProtocol.Risk.WRITE
