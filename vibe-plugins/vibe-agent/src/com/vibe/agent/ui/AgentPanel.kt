@@ -166,16 +166,19 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
   // One shared audit log per project (writer here, reader in the viewer action) — see VibeAuditService.
   private val audit: AuditLog? = com.vibe.agent.audit.VibeAuditService.getInstance(project).get()
 
-  /** Tools of the direct chat: the shared memory server, started on the first turn that offers tools. */
-  private val directTools = com.vibe.agent.mcp.DirectChatTools(
-    connect = {
-      val offer = com.vibe.agent.mcp.MemoryServerOffer.resolve()
-      if (offer.reason != com.vibe.agent.mcp.MemoryServerOffer.Reason.OFFERED) null
-      else com.vibe.agent.mcp.McpStdioClient.start(offer.path.toString(), com.vibe.agent.mcp.MemoryServerOffer.ARGS,
-                                                   project.basePath?.let { java.nio.file.Path.of(it) })
-    },
-    clientVersion = com.intellij.openapi.application.ApplicationInfo.getInstance().fullVersion,
-  )
+  /** Tools of the direct chat: the IDE's own tools, then the shared memory server started on the first turn that offers tools. */
+  private val directTools = com.vibe.agent.mcp.DirectChatTools(listOf(
+    com.vibe.agent.mcp.IdeToolsSource { name, arguments -> com.vibe.agent.mcp.VibeMcpTools { project }.dispatch(project, name, arguments) },
+    com.vibe.agent.mcp.MemoryServerSource(
+      connect = {
+        val offer = com.vibe.agent.mcp.MemoryServerOffer.resolve()
+        if (offer.reason != com.vibe.agent.mcp.MemoryServerOffer.Reason.OFFERED) null
+        else com.vibe.agent.mcp.McpStdioClient.start(offer.path.toString(), com.vibe.agent.mcp.MemoryServerOffer.ARGS,
+                                                     project.basePath?.let { java.nio.file.Path.of(it) })
+      },
+      clientVersion = com.intellij.openapi.application.ApplicationInfo.getInstance().fullVersion,
+    ),
+  ))
 
   /** Why the direct chat goes without tools is said once per panel: a line on every turn stops being read. */
   @Volatile private var directToolsNoted = false
@@ -3320,15 +3323,11 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
       }
       return emptyList()
     }
-    return try {
-      directTools.specs()
-    }
-    catch (e: Exception) {
+    return directTools.specs { e ->
       if (!directToolsNoted) {
         directToolsNoted = true
         systemLine(t("directTools.unavailable", "reason" to (e.message ?: "")))
       }
-      emptyList()
     }
   }
 
@@ -3344,7 +3343,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     val started = System.currentTimeMillis()
     val result = directTools.execute(call) { asked, risk ->
       val verdict = com.vibe.agent.mcp.McpAccess.verdict(
-        risk, com.intellij.ide.trustedProjects.TrustedProjects.isProjectTrusted(project), allowWrite = true, allowExecute = false)
+        risk, com.intellij.ide.trustedProjects.TrustedProjects.isProjectTrusted(project), allowWrite = true, allowExecute = true)
       val refusal = com.vibe.agent.mcp.McpAccess.refusal(verdict)
       when {
         refusal != null -> false.also { systemLine(refusal) }

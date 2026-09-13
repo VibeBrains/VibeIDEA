@@ -34,6 +34,16 @@ class VibeMcpTools(private val projectProvider: () -> Project? = { ProjectManage
       allowExecute = com.vibe.agent.settings.VibeAgentSettings.mcpAllowExecute,
     )
     McpAccess.refusal(verdict)?.let { return McpServer.Tools.Result(it, isError = true) }
+    return dispatch(project, name, arguments)
+  }
+
+  /**
+   * Runs a tool with no access check of its own: the caller has already decided.
+   *
+   * The HTTP API checks the switches in [call]; the direct chat asks the person for every writing call and
+   * does not depend on switches meant for outside clients.
+   */
+  fun dispatch(project: Project, name: String, arguments: JsonObject): McpServer.Tools.Result {
     return when (name) {
       McpProtocol.TOOL_IMPORTERS -> edges(project, arguments, importers = true)
       McpProtocol.TOOL_IMPORTS -> edges(project, arguments, importers = false)

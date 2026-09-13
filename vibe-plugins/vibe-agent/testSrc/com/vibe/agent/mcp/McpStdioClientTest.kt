@@ -89,8 +89,8 @@ class McpStdioClientTest {
 
   @Test
   fun `reading runs unasked, writing only when approved`() {
-    val tools = DirectChatTools(connect = { memoryServer.client() }, clientVersion = "test", timeoutMs = 2_000)
-    assertEquals(listOf("memory_search", "memory_save"), tools.specs().map { it.name })
+    val tools = DirectChatTools(listOf(MemoryServerSource(connect = { memoryServer.client() }, clientVersion = "test", timeoutMs = 2_000)))
+    assertEquals(listOf("memory_search", "memory_save"), tools.specs { throw it }.map { it.name })
     val asked = ArrayList<McpProtocol.Risk>()
     val approveNothing = { _: ToolCall, risk: McpProtocol.Risk -> asked += risk; risk == McpProtocol.Risk.READ }
 
@@ -110,13 +110,36 @@ class McpStdioClientTest {
 
   @Test
   fun `an unknown tool name counts as writing`() {
-    assertEquals(McpProtocol.Risk.READ, DirectChatTools.riskOf("history_search"))
-    assertEquals(McpProtocol.Risk.WRITE, DirectChatTools.riskOf("memory_delete"))
-    assertEquals(McpProtocol.Risk.WRITE, DirectChatTools.riskOf("memory_export"))
+    assertEquals(McpProtocol.Risk.READ, MemoryServerSource.riskOf("history_search"))
+    assertEquals(McpProtocol.Risk.WRITE, MemoryServerSource.riskOf("memory_delete"))
+    assertEquals(McpProtocol.Risk.WRITE, MemoryServerSource.riskOf("memory_export"))
   }
 
   @Test
   fun `no installed server means no tools, not an error`() {
-    assertEquals(emptyList(), DirectChatTools(connect = { null }, clientVersion = "test").specs())
+    assertEquals(emptyList(), DirectChatTools(listOf(MemoryServerSource(connect = { null }, clientVersion = "test"))).specs { throw it })
+  }
+
+  @Test
+  fun `IDE tools come first, run_agent is not offered, and a failing source does not hide the others`() {
+    val calls = ArrayList<String>()
+    val ide = IdeToolsSource { name, _ -> calls += name; McpServer.Tools.Result("ok $name") }
+    val broken = object : DirectChatTools.Source {
+      override fun specs(): List<com.vibe.agent.providers.ToolSpec> = throw McpStdioClient.McpException("down")
+      override fun riskOf(tool: String) = McpProtocol.Risk.READ
+      override fun call(tool: String, arguments: JsonObject) = McpStdioClient.CallResult("", false)
+    }
+    val failures = ArrayList<Exception>()
+    val tools = DirectChatTools(listOf(ide, broken))
+    val names = tools.specs { failures += it }.map { it.name }
+    assertTrue(McpProtocol.TOOL_SYMBOL_USAGES in names)
+    assertFalse(McpProtocol.TOOL_RUN in names)
+    assertEquals(1, failures.size)
+
+    val allow = { _: ToolCall, risk: McpProtocol.Risk -> risk == McpProtocol.Risk.READ }
+    assertEquals("ok vibe_symbol_usages", tools.execute(ToolCall("1", McpProtocol.TOOL_SYMBOL_USAGES, "{}"), allow).text)
+    assertTrue(tools.execute(ToolCall("2", McpProtocol.TOOL_DECISIONS_RECORD, "{}"), allow).isError, "writing refused")
+    assertTrue(tools.execute(ToolCall("3", McpProtocol.TOOL_RUN, "{}"), allow).isError, "not offered")
+    assertEquals(listOf(McpProtocol.TOOL_SYMBOL_USAGES), calls)
   }
 }
