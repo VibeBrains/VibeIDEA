@@ -62,6 +62,7 @@ object VibeDefaults {
     "providers/arbr.jsonc" to "providers/arbr.jsonc",
     "providers/deepseek.jsonc" to "providers/deepseek.jsonc",
     "providers/google-gemini.jsonc" to "providers/google-gemini.jsonc",
+    "providers/inference-net.jsonc" to "providers/inference-net.jsonc",
     "providers/kimi.jsonc" to "providers/kimi.jsonc",
     "providers/meta-muse.jsonc" to "providers/meta-muse.jsonc",
     "providers/minimax.jsonc" to "providers/minimax.jsonc",

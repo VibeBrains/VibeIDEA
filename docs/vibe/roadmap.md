@@ -936,6 +936,7 @@
       инструментов. Ответ положен VibeMemory.
 - [x] **ReDoS в проверке версии Python** — ✅ (13.09.2026, next) шаблон без вложенных квантификаторов,
       строка общего вектора `uvx pkg@1` + 40×`a` + `!` в `SkillCodeScanTest` с таймаутом (хендофф VibeIDE).
+- [x] **Набор: провайдер inference.net** — ✅ (13.09.2026, next) указатель VibeBrains `5fe6d04`, файл в манифесте сеялки. Schematron — модель извлечения, не чат; в выборе модели появляется только при заведённом `INFERENCE_API_KEY`, скрывать через `active: false` в общем файле — после ответа VibeIDE.
 - [x] **Инструменты в прямом чате: цикл вызова и MCP-клиент stdio** — ✅ (13.09.2026, next) задача А от VibeMemory.
       `ToolCalls` — инструменты и вызовы на проводах openai, anthropic и gemini; `McpStdioClient` — initialize, tools/list
       с курсорами, tools/call; `DirectChatTools` — сервер памяти на панель, чтение без вопроса, запись с согласия; цикл в
