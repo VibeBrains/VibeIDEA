@@ -3071,6 +3071,64 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     decision.agentMessage?.let { systemLine(t("chat.projectCheck", "text" to it)) }
   }
 
+  /**
+   * Per thread: how many oldest wire messages a summary covers, and the summary itself.
+   *
+   * In memory on purpose: after a restart the fold is recomputed once. A summary written to disk
+   * would outlive the provider and model that produced it, and be sent to a different one unchecked.
+   */
+  private val compactions = java.util.concurrent.ConcurrentHashMap<String, Pair<Int, String>>()
+
+  /**
+   * Folds the oldest part of a long conversation into a summary before the window overflows.
+   *
+   * An ACP agent keeps its own window; the direct model path is ours, and it used to resend the whole
+   * transcript until the model silently forgot the beginning. The summary is a SYSTEM message, so no
+   * provider sees two user turns in a row; pinned messages from the folded part are kept verbatim —
+   * pinning is the person saying «не забывай это». A failed summary sends the history unfolded and
+   * says so: a turn must not be lost to its own housekeeping.
+   */
+  private fun compactForWindow(
+    t: ChatTarget.Model,
+    resolved: com.vibe.agent.providers.ResolvedProvider,
+    threadId: String,
+    transcript: List<ChatMessageRecord>,
+    wire: List<ChatMessage>,
+  ): List<ChatMessage> {
+    val estimates = wire.map { com.vibe.agent.context.ContextBudget.estimateTokens(it.text) }
+    val stored = compactions[threadId]?.takeIf { it.first <= wire.size }
+    val summaryTokens = stored?.second?.let { com.vibe.agent.context.ContextBudget.estimateTokens(it) } ?: 0
+    val cut = com.vibe.agent.context.HistoryCompaction.foldCount(estimates, t.model.contextWindow, stored?.first ?: 0, summaryTokens)
+    if (cut == 0) return wire
+    val summary = if (stored != null && stored.first == cut) stored.second else {
+      val folding = buildList {
+        stored?.let { add(ChatMessage("system", t("context.compacted.previous", "summary" to it.second))) }
+        addAll(wire.subList(stored?.first ?: 0, cut))
+        add(ChatMessage("user", t("context.compacted.request")))
+      }
+      val text = runCatching {
+        val out = StringBuilder()
+        LlmClient(projectBase = project.basePath).chat(resolved, t.model, folding, { llmCancel.get() }) { delta -> out.append(delta) }
+        out.toString().trim()
+      }.getOrElse { failure ->
+        systemLine(t("context.compacted.failed", "reason" to (failure.message ?: "")))
+        return wire
+      }
+      if (text.isEmpty()) {
+        systemLine(t("context.compacted.failed", "reason" to ""))
+        return wire
+      }
+      compactions[threadId] = cut to text
+      systemLine(t("context.compacted.done", "count" to cut, "window" to (t.model.contextWindow ?: 0)))
+      text
+    }
+    // Pinned records among the folded ones stay as they were written.
+    val pinned = transcript.filter { it.role != Role.OTHER }.take(cut).filter { it.pinned }.map {
+      ChatMessage(role = if (it.role == Role.USER) "user" else "assistant", text = it.wireText ?: it.text)
+    }
+    return listOf(ChatMessage("system", t("context.compacted.prefix", "summary" to summary))) + pinned + wire.drop(cut)
+  }
+
   private fun sendToLlm(t: ChatTarget.Model, startedAt: Long) {
     try {
       val resolved = ProvidersService.resolve(t.provider, project.basePath) { systemLine("[providers] $it") }
@@ -3107,7 +3165,8 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
         )
       }
       // A model declared non-vision must not receive images lingering in the history either.
-      val wire = if (t.model.vision == false) wireMessages.map { it.withoutImages() } else wireMessages
+      val uncompacted = if (t.model.vision == false) wireMessages.map { it.withoutImages() } else wireMessages
+      val wire = compactForWindow(t, resolved, threadId, transcript, uncompacted)
       // Said out loud when it happens: a broken prefix is invisible, and its whole cost lands on
       // the bill. The line names the turn where the conversation stopped being append-only.
       val lines = wire.map {

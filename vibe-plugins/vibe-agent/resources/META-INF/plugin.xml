@@ -20,6 +20,8 @@
   </applicationListeners>
 
   <extensions defaultExtensionNs="com.intellij">
+    <!-- Эвалы навыка без окна: отчёт в stdout, код выхода по порогу — чтобы гейт мог их звать. -->
+    <appStarter id="vibe-evals" implementation="com.vibe.agent.skills.VibeSkillEvalsStarter"/>
     <toolWindow id="VibeDesign" anchor="right" factoryClass="com.vibe.agent.design.DesignToolWindowFactory"
                 icon="/icons/vibeDesign.svg" doNotActivateOnStart="true"/>
     <toolWindow id="VibeAudit" anchor="bottom" factoryClass="com.vibe.agent.audit.VibeAuditToolWindowFactory"

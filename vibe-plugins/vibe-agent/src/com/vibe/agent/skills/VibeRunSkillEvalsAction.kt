@@ -47,7 +47,7 @@ class VibeRunSkillEvalsAction : AnAction(t("skills.evals.action.title")) {
           SkillEvals.Read.Missing -> Unit
         }
       }
-      val target = defaultModel(project.basePath)
+      val target = SkillEvalTarget.defaultModel(project.basePath)
       ApplicationManager.getApplication().invokeLater { begin(project, found, broken, target) }
     }
   }
@@ -125,14 +125,6 @@ class VibeRunSkillEvalsAction : AnAction(t("skills.evals.action.title")) {
       out[path] = runCatching { file.readText() }.getOrDefault("").take(ATTACHMENT_LIMIT)
     }
     return out
-  }
-
-  /** The model the chat would take by default: the one marked `default`, otherwise the first active. */
-  private fun defaultModel(projectBase: String?): Pair<ProviderEntry, ModelEntry>? {
-    val pairs = ProvidersService.load(projectBase) { }.flatMap { provider ->
-      provider.models.filter { it.active }.map { provider to it }
-    }
-    return pairs.firstOrNull { it.second.default } ?: pairs.firstOrNull()
   }
 
   private fun save(report: SkillEvalRun.Report): File? = runCatching {

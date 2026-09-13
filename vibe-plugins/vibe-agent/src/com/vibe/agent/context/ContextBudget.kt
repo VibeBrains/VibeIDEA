@@ -24,7 +24,10 @@ object ContextBudget {
     OK,
     /** Say it once and continue. */
     WARN,
-    /** Ask before spending: compact, continue anyway, or cancel. */
+    /**
+     * Past this the next turn is at risk. On the direct model path the oldest part is folded into a
+     * summary ([HistoryCompaction]); an ACP agent keeps its own window and is only told.
+     */
     BLOCK,
     /** The chat's own ceiling, set by the user, is reached. */
     SESSION_EXCEEDED,
