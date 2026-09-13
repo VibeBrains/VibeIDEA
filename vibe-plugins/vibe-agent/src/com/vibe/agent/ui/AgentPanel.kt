@@ -3718,7 +3718,12 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     // Смета ДО запуска: потолки расхода срабатывают уже на середине прогона, а разница между одним
     // ходом и шестью ролями видна только тому, кто за неё однажды заплатил.
     if (!confirmEstimate(chosen)) return
-    runPipeline(chosen, (target as? ChatTarget.Agent)?.config ?: agent, resumeStep(chosen) ?: return)
+    val runAgent = (target as? ChatTarget.Agent)?.config ?: agent
+    if (chosen.dynamic) {
+      runDynamicPipeline(chosen, runAgent)
+      return
+    }
+    runPipeline(chosen, runAgent, resumeStep(chosen) ?: return)
   }
 
   /**
@@ -3962,6 +3967,78 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
                ?: return null
     if (!file.startsWith(root)) return null
     return root.relativize(file).joinToString("/") { it.toString() }
+  }
+
+  /**
+   * A dynamic pipeline: the orchestrator drafts the steps, the person sees them, and only then they run.
+   *
+   * The drafting turn writes nothing — its scope denies every path, enforced at fs/write, not asked for
+   * in the prompt. The draft is read by the same step parser as the file ([PipelinesFile.planFromAnswer]),
+   * so a plan cannot pass a looser check than a hand-written pipeline. Consent is a dialog with the steps
+   * listed; closing it runs nothing. The approved steps run as an ordinary pipeline — checkpoints,
+   * gates, budgets and the run ledger all apply.
+   */
+  private fun runDynamicPipeline(pipeline: com.vibe.agent.pipelines.Pipeline, agent: AgentServerConfig) {
+    if (!history.tryBeginTurn(currentThreadId)) {
+      systemLine(t("chat.threadBusy"))
+      return
+    }
+    val drafting = pipeline.steps.single()
+    systemLine(t("pipeline.plan.planningStep"))
+    turnInFlight.set(true)
+    status.set(VibeAgentStatusService.State.RUNNING)
+    composer.busy = true
+    turnThreadId = currentThreadId
+    ApplicationManager.getApplication().executeOnPooledThread {
+      var planned: List<com.vibe.agent.pipelines.PipelineStep>? = null
+      try {
+        llmCancel.set(false)
+        currentRole = drafting.role
+        currentScope = com.vibe.agent.pipelines.RolePaths.Scope(deny = listOf("**"))
+        stepBuffer = StringBuilder()
+        turnSignals.clear()
+        turnSignals.add(com.vibe.agent.guard.Trifecta.Signal.UNTRUSTED_CONTENT)
+        val prompt = buildString {
+          appendLine(PipelinesFile.rolePreamble(drafting.role))
+          appendLine(t("pipeline.step.task", "task" to drafting.task))
+          appendLine(t("pipeline.plan.instruction", "roles" to (PipelinesFile.ROLES - PipelinesFile.ORCHESTRATOR).sorted().joinToString()))
+        }
+        val startedAt = System.currentTimeMillis()
+        val c = ensureClient(agent)
+        c.turnSession = c.openIsolatedSession().get(VibeAgentSettings.handshakeTimeoutSec.toLong(), TimeUnit.SECONDS)
+        try {
+          c.prompt(prompt).get()
+        }
+        finally {
+          c.turnSession = null
+        }
+        finishAgentBubble((System.currentTimeMillis() - startedAt) / 1000.0, t("pipeline.plan.title"))
+        when (val plan = PipelinesFile.planFromAnswer(stepBuffer?.toString().orEmpty()) { systemLine("[pipelines] $it") }) {
+          is PipelinesFile.Plan.Refused -> systemLine(plan.reason)
+          is PipelinesFile.Plan.Ok -> planned = plan.steps
+        }
+      }
+      catch (e: Exception) {
+        systemLine(t("pipeline.stepFailed", "header" to t("pipeline.plan.title"), "reason" to e.message))
+      }
+      finally {
+        stepBuffer = null
+        currentRole = null
+        currentScope = com.vibe.agent.pipelines.RolePaths.Scope()
+        finishTurn()
+      }
+      val steps = planned ?: return@executeOnPooledThread
+      val listed = steps.withIndex().joinToString("\n") { (i, step) -> "${i + 1}. ${step.role}: ${step.task.take(120)}" }
+      val approved = askOnEdt {
+        Messages.showYesNoDialog(project, t("pipeline.plan.confirm", "count" to steps.size, "steps" to listed),
+                                 t("pipeline.plan.title"), t("pipeline.plan.run"), t("common.cancel"), Messages.getQuestionIcon()) == Messages.YES
+      }
+      if (!approved) {
+        systemLine(t("pipeline.plan.declined"))
+        return@executeOnPooledThread
+      }
+      SwingUtilities.invokeLater { runPipeline(pipeline.copy(steps = steps, dynamic = false), agent) }
+    }
   }
 
   private fun runPipeline(pipeline: com.vibe.agent.pipelines.Pipeline, agent: AgentServerConfig, fromStep: Int = 0) {

@@ -84,6 +84,11 @@ data class Pipeline(
   val name: String = id,
   val description: String? = null,
   val steps: List<PipelineStep>,
+  /**
+   * The orchestrator drafts the steps, and a person sees them before anything runs (agreed with
+   * VibeIDE, 13.09.2026). The file holds exactly one `orchestrator` step — the drafting one.
+   */
+  val dynamic: Boolean = false,
 )
 
 /**
@@ -116,6 +121,41 @@ object PipelinesFile {
 
   fun path(projectBase: String): Path = Path.of(projectBase, ".vibe", "pipelines.json")
 
+  const val ORCHESTRATOR = "orchestrator"
+
+  sealed interface Plan {
+    data class Ok(val steps: List<PipelineStep>) : Plan
+    data class Refused(val reason: String) : Plan
+  }
+
+  /**
+   * The steps an orchestrator drafted, read by the same rules as the file.
+   *
+   * The answer is prose around a JSON object; the object with `steps` is taken from the first `{` to
+   * the last `}`. An orchestrator step inside a plan is refused: a plan that drafts plans has no end.
+   * Nothing here runs anything — the caller shows the plan and waits for consent.
+   */
+  fun planFromAnswer(answer: String, onWarning: (String) -> Unit = {}): Plan {
+    val start = answer.indexOf('{')
+    val end = answer.lastIndexOf('}')
+    if (start < 0 || end <= start) return Plan.Refused(t("pipeline.plan.noJson"))
+    val root = runCatching { json.parseToJsonElement(answer.substring(start, end + 1)).jsonObject }.getOrNull()
+      ?: return Plan.Refused(t("pipeline.plan.noJson"))
+    val array = root["steps"] as? kotlinx.serialization.json.JsonArray ?: return Plan.Refused(t("pipeline.plan.noJson"))
+    return try {
+      val steps = array.map { parseStep(it.jsonObject, emptyMap(), onWarning) }
+      when {
+        steps.isEmpty() -> Plan.Refused(t("pipeline.plan.invalid", "reason" to t("pipeline.warn.noSteps", "id" to "plan")))
+        steps.size > MAX_STEPS -> Plan.Refused(t("pipeline.plan.invalid", "reason" to t("pipeline.warn.tooManySteps", "id" to "plan", "max" to MAX_STEPS)))
+        steps.any { it.role == ORCHESTRATOR } -> Plan.Refused(t("pipeline.plan.nestedOrchestrator"))
+        else -> Plan.Ok(steps)
+      }
+    }
+    catch (e: Exception) {
+      Plan.Refused(t("pipeline.plan.invalid", "reason" to (e.message ?: "")))
+    }
+  }
+
   /**
    * `roles` of a pipeline: the model each role runs on when its step names none (agreed with VibeIDE,
    * 13.09.2026 — names and the one-string model form are theirs).
@@ -144,6 +184,78 @@ object PipelinesFile {
     }
   }
 
+  /**
+   * One step, validated — the same code for a step written in the file and a step drafted by an
+   * orchestrator: a plan that passed a looser check than the file would be the easiest way around it.
+   */
+  internal fun parseStep(so: kotlinx.serialization.json.JsonObject, roleModels: Map<String, Pair<String?, String?>>, onWarning: (String) -> Unit): PipelineStep {
+    val role = so["role"]?.jsonPrimitive?.contentOrNull
+      ?: throw IllegalArgumentException(t("pipeline.warn.stepNoRole"))
+    if (role !in ROLES) throw IllegalArgumentException(t("pipeline.warn.unknownRole", "role" to role, "roles" to ROLES.joinToString()))
+    // The canonical form is VibeIDE's: `"model": "provider/model"` in one string. The pair
+    // `provider` + `model` is our older spelling and stays a synonym. The shared seed used the
+    // pair, and VibeIDE never reads `provider` — its step silently ran on the role's default
+    // model (found 13.09.2026). Reading both here keeps every existing file working.
+    val own = StepModelRef.resolve(
+      so["provider"]?.jsonPrimitive?.contentOrNull,
+      so["model"]?.jsonPrimitive?.contentOrNull,
+    )
+    // The step's own model wins; a step without one takes its role's model from `roles`.
+    val (provider, model) = if (own.first == null && own.second == null) roleModels[role] ?: own else own
+    // Половина адреса — это опечатка, а не выбор: провайдер без модели молча ушёл бы к
+    // агенту пайплайна, и человек считал бы, что шаг идёт к его модели.
+    if ((provider == null) != (model == null)) {
+      throw IllegalArgumentException(t("pipeline.warn.halfAddress", "role" to role))
+    }
+    // Пишущая роль на своей модели — обещание, которого мы не сдержим: прямой запрос к
+    // провайдеру идёт без инструментов и без доступа к файлам.
+    if (model != null && !readOnly(role)) {
+      throw IllegalArgumentException(t("pipeline.warn.writingRoleOnOwnModel", "role" to role))
+    }
+    val contextWire = so["context"]?.jsonPrimitive?.contentOrNull?.trim()?.ifEmpty { null }
+    // Настройка, мёртвая В КОНТЕКСТЕ: поле разбирается, потребитель у него есть — но не на
+    // ЭТОМ шаге. Гейт мёртвых полей такое не видит по построению, он отвечает «есть ли
+    // потребитель», а не «работает ли он здесь». Снаружи неотличимо от работающей
+    // настройки: человек написал ограничение, IDE промолчала, ограничения нет.
+    //
+    // Здесь предупреждение, а не отказ: пишущая роль на своей модели — обещание, которого
+    // мы не сдержим, и пайплайн ронять правильно; бессмысленное поле — опечатка, и ронять
+    // из-за неё рабочий пайплайн значит наказывать за неё.
+    if (model != null) {
+      if ((so["maxSteps"]?.jsonPrimitive?.intOrNull ?: 0) > 0) {
+        onWarning(t("pipeline.warn.maxStepsOnOwnModel", "role" to role))
+      }
+      if (stringList(so["paths"]).isNotEmpty() || stringList(so["denyPaths"]).isNotEmpty()) {
+        onWarning(t("pipeline.warn.pathsOnOwnModel", "role" to role))
+      }
+      // A direct request has no session to share or to open.
+      if (contextWire != null) onWarning(t("pipeline.warn.contextOnOwnModel", "role" to role))
+    }
+    // An unknown value is a typo, and a typo falls back to the role's default out loud
+    // rather than dropping a working pipeline.
+    val context = contextWire?.let { wire ->
+      StepContext.parse(wire) ?: StepContext.defaultFor(role).also {
+        onWarning(t("pipeline.warn.unknownContext", "role" to role, "value" to wire, "default" to it.wire))
+      }
+    } ?: StepContext.defaultFor(role)
+    return PipelineStep(
+      role = role,
+      task = so["task"]?.jsonPrimitive?.contentOrNull?.ifBlank { null }
+        ?: throw IllegalArgumentException(t("pipeline.warn.stepNoTask")),
+      provider = provider,
+      model = model,
+      acceptance = so["acceptance"]?.jsonPrimitive?.contentOrNull,
+      maxTokens = so["maxTokens"]?.jsonPrimitive?.intOrNull,
+      maxSteps = so["maxSteps"]?.jsonPrimitive?.intOrNull,
+      escalation = so["escalation"]?.jsonPrimitive?.booleanOrNull ?: false,
+      continueOnFailure = so["continueOnFailure"]?.jsonPrimitive?.booleanOrNull ?: false,
+      ignorePreviousArtifacts = so["ignorePreviousArtifacts"]?.jsonPrimitive?.booleanOrNull ?: false,
+      paths = stringList(so["paths"]),
+      denyPaths = stringList(so["denyPaths"]),
+      context = context,
+    )
+  }
+
   fun load(projectBase: String?, onWarning: (String) -> Unit): List<Pipeline> {
     if (projectBase == null) return emptyList()
     val file = path(projectBase)
@@ -159,81 +271,19 @@ object PipelinesFile {
           if (id.isNullOrBlank()) { onWarning(t("pipeline.warn.noId")); continue }
           if (!seen.add(id)) { onWarning(t("pipeline.warn.duplicateId", "id" to id)); continue }
           val roleModels = roleModelsOf(o["roles"])
-          val steps = o["steps"]?.jsonArray?.map { s ->
-            val so = s.jsonObject
-            val role = so["role"]?.jsonPrimitive?.contentOrNull
-              ?: throw IllegalArgumentException(t("pipeline.warn.stepNoRole"))
-            if (role !in ROLES) throw IllegalArgumentException(t("pipeline.warn.unknownRole", "role" to role, "roles" to ROLES.joinToString()))
-            // The canonical form is VibeIDE's: `"model": "provider/model"` in one string. The pair
-            // `provider` + `model` is our older spelling and stays a synonym. The shared seed used the
-            // pair, and VibeIDE never reads `provider` — its step silently ran on the role's default
-            // model (found 13.09.2026). Reading both here keeps every existing file working.
-            val own = StepModelRef.resolve(
-              so["provider"]?.jsonPrimitive?.contentOrNull,
-              so["model"]?.jsonPrimitive?.contentOrNull,
-            )
-            // The step's own model wins; a step without one takes its role's model from `roles`.
-            val (provider, model) = if (own.first == null && own.second == null) roleModels[role] ?: own else own
-            // Половина адреса — это опечатка, а не выбор: провайдер без модели молча ушёл бы к
-            // агенту пайплайна, и человек считал бы, что шаг идёт к его модели.
-            if ((provider == null) != (model == null)) {
-              throw IllegalArgumentException(t("pipeline.warn.halfAddress", "role" to role))
-            }
-            // Пишущая роль на своей модели — обещание, которого мы не сдержим: прямой запрос к
-            // провайдеру идёт без инструментов и без доступа к файлам.
-            if (model != null && !readOnly(role)) {
-              throw IllegalArgumentException(t("pipeline.warn.writingRoleOnOwnModel", "role" to role))
-            }
-            val contextWire = so["context"]?.jsonPrimitive?.contentOrNull?.trim()?.ifEmpty { null }
-            // Настройка, мёртвая В КОНТЕКСТЕ: поле разбирается, потребитель у него есть — но не на
-            // ЭТОМ шаге. Гейт мёртвых полей такое не видит по построению, он отвечает «есть ли
-            // потребитель», а не «работает ли он здесь». Снаружи неотличимо от работающей
-            // настройки: человек написал ограничение, IDE промолчала, ограничения нет.
-            //
-            // Здесь предупреждение, а не отказ: пишущая роль на своей модели — обещание, которого
-            // мы не сдержим, и пайплайн ронять правильно; бессмысленное поле — опечатка, и ронять
-            // из-за неё рабочий пайплайн значит наказывать за неё.
-            if (model != null) {
-              if ((so["maxSteps"]?.jsonPrimitive?.intOrNull ?: 0) > 0) {
-                onWarning(t("pipeline.warn.maxStepsOnOwnModel", "role" to role))
-              }
-              if (stringList(so["paths"]).isNotEmpty() || stringList(so["denyPaths"]).isNotEmpty()) {
-                onWarning(t("pipeline.warn.pathsOnOwnModel", "role" to role))
-              }
-              // A direct request has no session to share or to open.
-              if (contextWire != null) onWarning(t("pipeline.warn.contextOnOwnModel", "role" to role))
-            }
-            // An unknown value is a typo, and a typo falls back to the role's default out loud
-            // rather than dropping a working pipeline.
-            val context = contextWire?.let { wire ->
-              StepContext.parse(wire) ?: StepContext.defaultFor(role).also {
-                onWarning(t("pipeline.warn.unknownContext", "role" to role, "value" to wire, "default" to it.wire))
-              }
-            } ?: StepContext.defaultFor(role)
-            PipelineStep(
-              role = role,
-              task = so["task"]?.jsonPrimitive?.contentOrNull?.ifBlank { null }
-                ?: throw IllegalArgumentException(t("pipeline.warn.stepNoTask")),
-              provider = provider,
-              model = model,
-              acceptance = so["acceptance"]?.jsonPrimitive?.contentOrNull,
-              maxTokens = so["maxTokens"]?.jsonPrimitive?.intOrNull,
-              maxSteps = so["maxSteps"]?.jsonPrimitive?.intOrNull,
-              escalation = so["escalation"]?.jsonPrimitive?.booleanOrNull ?: false,
-              continueOnFailure = so["continueOnFailure"]?.jsonPrimitive?.booleanOrNull ?: false,
-              ignorePreviousArtifacts = so["ignorePreviousArtifacts"]?.jsonPrimitive?.booleanOrNull ?: false,
-              paths = stringList(so["paths"]),
-              denyPaths = stringList(so["denyPaths"]),
-              context = context,
-            )
-          } ?: emptyList()
+          val steps = o["steps"]?.jsonArray?.map { s -> parseStep(s.jsonObject, roleModels, onWarning) } ?: emptyList()
           if (steps.isEmpty()) { onWarning(t("pipeline.warn.noSteps", "id" to id)); continue }
+          val dynamic = o["dynamic"]?.jsonPrimitive?.booleanOrNull ?: false
+          if (dynamic && (steps.size != 1 || steps.single().role != ORCHESTRATOR)) {
+            onWarning(t("pipeline.warn.dynamicShape", "id" to id)); continue
+          }
           if (steps.size > MAX_STEPS) { onWarning(t("pipeline.warn.tooManySteps", "id" to id, "max" to MAX_STEPS)); continue }
           result.add(Pipeline(
             id = id,
             name = o["name"]?.jsonPrimitive?.contentOrNull ?: id,
             description = o["description"]?.jsonPrimitive?.contentOrNull,
             steps = steps,
+            dynamic = dynamic,
           ))
         }
         catch (e: Exception) {
