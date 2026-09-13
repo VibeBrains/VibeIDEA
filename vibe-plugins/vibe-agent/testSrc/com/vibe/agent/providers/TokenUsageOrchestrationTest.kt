@@ -37,4 +37,27 @@ class TokenUsageOrchestrationTest {
     assertEquals(200, usage.outputTokens)
     assertEquals(400, usage.cacheReadTokens)
   }
+
+  @Test
+  fun `the nested token_details shape is read the same way`() {
+    val usage = TokenUsage.fromOpenAiChunk(chunk("""
+      {"usage":{"prompt_tokens":1000,"completion_tokens":200,
+        "token_details":{"orchestration_input_tokens":5000,"orchestration_output_tokens":800,
+          "orchestration_input_cached_tokens":1500}}}
+    """))!!
+    assertEquals(1000 + (5000 - 1500), usage.inputTokens)
+    assertEquals(200 + 800, usage.outputTokens)
+    assertEquals(1500, usage.cacheReadTokens)
+  }
+
+  @Test
+  fun `when both shapes arrive the tokens are not counted twice`() {
+    val usage = TokenUsage.fromOpenAiChunk(chunk("""
+      {"usage":{"prompt_tokens":1000,"completion_tokens":200,
+        "orchestration_input_tokens":5000,"orchestration_output_tokens":800,
+        "token_details":{"orchestration_input_tokens":5000,"orchestration_output_tokens":800}}}
+    """))!!
+    assertEquals(6000, usage.inputTokens)
+    assertEquals(1000, usage.outputTokens)
+  }
 }

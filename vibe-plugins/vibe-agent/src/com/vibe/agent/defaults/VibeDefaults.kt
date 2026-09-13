@@ -71,6 +71,7 @@ object VibeDefaults {
     "providers/opencode-zen.jsonc" to "providers/opencode-zen.jsonc",
     "providers/openrouter.jsonc" to "providers/openrouter.jsonc",
     "providers/qwen.jsonc" to "providers/qwen.jsonc",
+    "providers/sakana.jsonc" to "providers/sakana.jsonc",
     "providers/zai.jsonc" to "providers/zai.jsonc",
     "rules.md" to "rules.md",
     "rules/clean-rules.mdc" to "rules/clean-rules.mdc",

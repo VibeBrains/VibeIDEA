@@ -77,16 +77,21 @@ data class TokenUsage(
       val usage = chunk["usage"]?.jsonObject ?: return null
       val cached = usage["prompt_tokens_details"]?.jsonObject?.long("cached_tokens") ?: 0
       val prompt = usage.long("prompt_tokens")
-      // Токены оркестратора АДДИТИВНЫ, а не вложены в prompt/completion, — этим они отличаются от
-      // токенов рассуждения, которые сидят внутри completion. Модель-оркестратор (Sakana Fugu и ей
-      // подобные) зовёт другие модели, и вендор биллит эти токены по обычной цене. Не прибавив их,
-      // мы считаем ход дешевле, чем он стоит, и заниженная сумма молча уходит в журнал расхода и в
-      // потолок трат — то есть предохранитель срабатывает позже, чем должен.
-      val orchestrationCached = usage.long("orchestration_input_cached_tokens")
-      val orchestrationInput = usage.long("orchestration_input_tokens")
+      // Orchestrator tokens are ADDITIVE, not nested inside prompt/completion (unlike reasoning tokens,
+      // which live inside completion). An orchestrator model (Sakana Fugu and the like) calls other
+      // models and the vendor bills those tokens at the ordinary price; without them a turn is counted
+      // cheaper than it costs, and the understated sum silently reaches the spend ledger and the ceiling.
+      //
+      // The wire shape is undocumented by the vendor (checked 13.09.2026: neither console.sakana.ai nor
+      // the OpenRouter model page names the fields). Two shapes are known from secondary sources — flat
+      // `orchestration_*` in usage and the same names under `usage.token_details` — so both are read,
+      // the nested object winning when present, never summed together.
+      val orchestration = usage["token_details"]?.let { it as? JsonObject } ?: usage
+      val orchestrationCached = orchestration.long("orchestration_input_cached_tokens")
+      val orchestrationInput = orchestration.long("orchestration_input_tokens")
       return TokenUsage(
         inputTokens = (prompt - cached).coerceAtLeast(0) + (orchestrationInput - orchestrationCached).coerceAtLeast(0),
-        outputTokens = usage.long("completion_tokens") + usage.long("orchestration_output_tokens"),
+        outputTokens = usage.long("completion_tokens") + orchestration.long("orchestration_output_tokens"),
         cacheReadTokens = cached + orchestrationCached,
       ).takeIf { it.known }
     }
