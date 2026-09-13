@@ -122,6 +122,10 @@ object VibeAgentSettings {
   const val DEFAULT_HANDSHAKE_TIMEOUT_SEC = 60
   const val MIN_HANDSHAKE_TIMEOUT_SEC = 10
   const val MAX_HANDSHAKE_TIMEOUT_SEC = 600
+  const val DEFAULT_DIRECT_TOOLS_ENABLED = true
+  const val DEFAULT_DIRECT_TOOL_MAX_ROUNDS = 8
+  const val MIN_DIRECT_TOOL_MAX_ROUNDS = 1
+  const val MAX_DIRECT_TOOL_MAX_ROUNDS = 50
 
   private const val KEY_HOOKS_ENABLED = "vibe.agent.hooks.enabled"
   private const val KEY_AUDIT_ENABLED = "vibe.agent.audit.enabled"
@@ -138,6 +142,8 @@ object VibeAgentSettings {
   private const val KEY_BG_TTL_MIN = "vibe.agent.bg.ttlMinutes"
   private const val KEY_BG_POLL_SEC = "vibe.agent.bg.pollSeconds"
   private const val KEY_HANDSHAKE_TIMEOUT_SEC = "vibe.agent.handshakeTimeoutSec"
+  private const val KEY_DIRECT_TOOLS_ENABLED = "vibe.agent.directTools.enabled"
+  private const val KEY_DIRECT_TOOL_MAX_ROUNDS = "vibe.agent.directTools.maxRounds"
   private const val KEY_WATCH_SCENE_THRESHOLD = "vibe.agent.watch.sceneThreshold"
   private const val KEY_WATCH_MAX_FRAMES = "vibe.agent.watch.maxFrames"
   private const val KEY_WATCH_FRAME_HEIGHT = "vibe.agent.watch.frameHeight"
@@ -286,6 +292,16 @@ object VibeAgentSettings {
   var handshakeTimeoutSec: Int
     get() = props.getInt(KEY_HANDSHAKE_TIMEOUT_SEC, DEFAULT_HANDSHAKE_TIMEOUT_SEC).coerceIn(MIN_HANDSHAKE_TIMEOUT_SEC, MAX_HANDSHAKE_TIMEOUT_SEC)
     set(value) = props.setValue(KEY_HANDSHAKE_TIMEOUT_SEC, value.coerceIn(MIN_HANDSHAKE_TIMEOUT_SEC, MAX_HANDSHAKE_TIMEOUT_SEC), DEFAULT_HANDSHAKE_TIMEOUT_SEC)
+
+  /** The direct model chat offers the shared memory server's tools to the model. */
+  var directToolsEnabled: Boolean
+    get() = props.getBoolean(KEY_DIRECT_TOOLS_ENABLED, DEFAULT_DIRECT_TOOLS_ENABLED)
+    set(value) = props.setValue(KEY_DIRECT_TOOLS_ENABLED, value, DEFAULT_DIRECT_TOOLS_ENABLED)
+
+  /** How many tool rounds one direct-chat turn may take before it stops: a model calling tools in a loop spends a request per round. */
+  var directToolMaxRounds: Int
+    get() = props.getInt(KEY_DIRECT_TOOL_MAX_ROUNDS, DEFAULT_DIRECT_TOOL_MAX_ROUNDS).coerceIn(MIN_DIRECT_TOOL_MAX_ROUNDS, MAX_DIRECT_TOOL_MAX_ROUNDS)
+    set(value) = props.setValue(KEY_DIRECT_TOOL_MAX_ROUNDS, value.coerceIn(MIN_DIRECT_TOOL_MAX_ROUNDS, MAX_DIRECT_TOOL_MAX_ROUNDS), DEFAULT_DIRECT_TOOL_MAX_ROUNDS)
 
   var httpApiEnabled: Boolean
     get() = props.getBoolean(KEY_HTTP_API_ENABLED, DEFAULT_HTTP_API_ENABLED)

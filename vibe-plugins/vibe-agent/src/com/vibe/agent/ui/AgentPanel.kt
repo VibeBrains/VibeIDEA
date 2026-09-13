@@ -165,6 +165,20 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
   private val checkpoints: CheckpointService? = project.basePath?.let { CheckpointService(it) }
   // One shared audit log per project (writer here, reader in the viewer action) — see VibeAuditService.
   private val audit: AuditLog? = com.vibe.agent.audit.VibeAuditService.getInstance(project).get()
+
+  /** Tools of the direct chat: the shared memory server, started on the first turn that offers tools. */
+  private val directTools = com.vibe.agent.mcp.DirectChatTools(
+    connect = {
+      val offer = com.vibe.agent.mcp.MemoryServerOffer.resolve()
+      if (offer.reason != com.vibe.agent.mcp.MemoryServerOffer.Reason.OFFERED) null
+      else com.vibe.agent.mcp.McpStdioClient.start(offer.path.toString(), com.vibe.agent.mcp.MemoryServerOffer.ARGS,
+                                                   project.basePath?.let { java.nio.file.Path.of(it) })
+    },
+    clientVersion = com.intellij.openapi.application.ApplicationInfo.getInstance().fullVersion,
+  )
+
+  /** Why the direct chat goes without tools is said once per panel: a line on every turn stops being read. */
+  @Volatile private var directToolsNoted = false
   /** Tool-calls of the running turn, assembled from the session/update stream by id. */
   private val toolCalls = ToolCallRegistry()
 
@@ -486,6 +500,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     turnThreadId?.let { history.endTurn(it) }
     llmCancel.set(true)
     llmClient.cancel()
+    directTools.close()
     composer.queue.clear()
     turnInFlight.set(false)
     terminals.disposeAll()
@@ -3225,23 +3240,45 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
       // надо ДО траты, а не показать её в отчёте после.
       warnAboutCache(t.model)
       lastLlmTurnStartedAtMs = System.currentTimeMillis()
-      llmClient.chat(
-        resolved, t.model, wire, { llmCancel.get() },
-        onWaiting = { attempt, delayMs, reason ->
-          // Said out loud: a silent wait is indistinguishable from a hang, and the user reaches
-          // for Stop exactly when the provider was about to let us back in.
-          systemLine(t("retry.waiting", "attempt" to attempt, "seconds" to (delayMs / 1000),
-                       "reason" to (reason ?: "")))
-        },
-        // Мысль модели идёт в тот же сворачиваемый блок, что и мысль ACP-агента: у прямого LLM
-        // рассуждение выглядело молчанием, потому что показывать его было некуда.
-        // It is also kept with the answer: a model that requires it back (ECHO_REASONING) gets it
-        // in the next request.
-        onThought = { turnReasoning.append(it); appendThought(it) },
-      ) { delta -> appendAgentText(delta) }
+      val tools = directToolSpecs(t)
+      var request = wire
+      var usage = com.vibe.agent.providers.TokenUsage.NONE
+      var rounds = 0
+      // The tool loop: an answer that calls tools gets their results and is asked again, until the model
+      // answers in words, the person stops, or the ceiling is reached. Without tools it is one pass, as before.
+      while (true) {
+        val roundText = StringBuilder()
+        val roundReasoning = StringBuilder()
+        llmClient.chat(
+          resolved, t.model, request, { llmCancel.get() },
+          onWaiting = { attempt, delayMs, reason ->
+            // Said out loud: a silent wait is indistinguishable from a hang, and the user reaches
+            // for Stop exactly when the provider was about to let us back in.
+            systemLine(t("retry.waiting", "attempt" to attempt, "seconds" to (delayMs / 1000),
+                         "reason" to (reason ?: "")))
+          },
+          // Мысль модели идёт в тот же сворачиваемый блок, что и мысль ACP-агента: у прямого LLM
+          // рассуждение выглядело молчанием, потому что показывать его было некуда.
+          // It is also kept with the answer: a model that requires it back (ECHO_REASONING) gets it
+          // in the next request.
+          onThought = { turnReasoning.append(it); roundReasoning.append(it); appendThought(it) },
+          tools = tools,
+        ) { delta -> roundText.append(delta); appendAgentText(delta) }
+        usage = usage.merge(llmClient.lastUsage())
+        val calls = llmClient.lastToolCalls()
+        if (calls.isEmpty() || llmCancel.get()) break
+        if (rounds++ >= VibeAgentSettings.directToolMaxRounds) {
+          systemLine(t("directTools.roundsLimit", "limit" to VibeAgentSettings.directToolMaxRounds))
+          break
+        }
+        val results = calls.map { runDirectTool(it, t.model.id) }
+        request = request +
+          ChatMessage("assistant", roundText.toString(), reasoning = roundReasoning.toString().ifEmpty { null }, toolCalls = calls) +
+          ChatMessage(com.vibe.agent.providers.ToolCalls.ROLE, "", toolResults = results)
+      }
       // What the provider itself reported, and the price the owner of the key wrote down. Both may
       // be absent — then the accounting falls back to the old estimate, and says so by omission.
-      lastTurnUsage = llmClient.lastUsage()
+      lastTurnUsage = usage
       noteModelSubstitution(t.model.id, llmClient.lastAnsweredModel())
       // Цена берётся с оглядкой на срок: у модели с истёкшей акцией считать надо по costAfter.
       lastTurnPricing = com.vibe.agent.providers.PriceValidity.effective(t.model, java.time.LocalDate.now())
@@ -3268,6 +3305,61 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     finally {
       finishTurn()
     }
+  }
+
+  /** The tools this turn offers, or none — with the reason said once per panel. */
+  private fun directToolSpecs(target: ChatTarget.Model): List<com.vibe.agent.providers.ToolSpec> {
+    if (!VibeAgentSettings.directToolsEnabled) return emptyList()
+    if (!llmClient.supportsTools(target.model)) {
+      if (!directToolsNoted) {
+        directToolsNoted = true
+        systemLine(t("directTools.noToolsModel", "model" to target.model.id))
+      }
+      return emptyList()
+    }
+    return try {
+      directTools.specs()
+    }
+    catch (e: Exception) {
+      if (!directToolsNoted) {
+        directToolsNoted = true
+        systemLine(t("directTools.unavailable", "reason" to (e.message ?: "")))
+      }
+      emptyList()
+    }
+  }
+
+  /**
+   * One call of the model: named in the feed and in the audit journal (the tool, never its arguments).
+   * Reading runs; writing needs a trusted project and the person's yes, asked for this very call.
+   */
+  private fun runDirectTool(call: com.vibe.agent.providers.ToolCall, model: String): com.vibe.agent.providers.ToolResult {
+    systemLine(t("directTools.call", "tool" to call.name))
+    val actor = com.vibe.agent.audit.AuditActor(com.vibe.agent.audit.AuditActor.Kind.AGENT, agent = model)
+    audit?.append(AuditEvent(System.currentTimeMillis(), AuditEvent.Action.TOOL_CALL_START, ok = true, actor = actor,
+                             callId = call.id, model = model, meta = mapOf("tool" to call.name)))
+    val started = System.currentTimeMillis()
+    val result = directTools.execute(call) { asked, risk ->
+      val verdict = com.vibe.agent.mcp.McpAccess.verdict(
+        risk, com.intellij.ide.trustedProjects.TrustedProjects.isProjectTrusted(project), allowWrite = true, allowExecute = false)
+      val refusal = com.vibe.agent.mcp.McpAccess.refusal(verdict)
+      when {
+        refusal != null -> false.also { systemLine(refusal) }
+        risk == com.vibe.agent.mcp.McpProtocol.Risk.READ -> true
+        else -> askOnEdt {
+          Messages.showYesNoDialog(project,
+                                   t("directTools.approve", "tool" to asked.name, "args" to asked.arguments.take(DIRECT_TOOL_ARGS_PREVIEW)),
+                                   t("directTools.approveTitle"), Messages.getQuestionIcon()) == Messages.YES
+        }.also { approved ->
+          audit?.append(AuditEvent(System.currentTimeMillis(), AuditEvent.Action.PERMISSION, ok = approved,
+                                   actor = com.vibe.agent.audit.AuditActor.HUMAN, callId = asked.id, meta = mapOf("tool" to asked.name)))
+        }
+      }
+    }
+    audit?.append(AuditEvent(System.currentTimeMillis(), AuditEvent.Action.TOOL_CALL_DONE, ok = !result.isError, actor = actor,
+                             callId = call.id, model = model, latencyMs = System.currentTimeMillis() - started,
+                             meta = mapOf("tool" to call.name)))
+    return result
   }
 
   /**
@@ -5417,6 +5509,8 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     const val STICK_TO_BOTTOM_SLACK = 48
     /** Truncation of a command preview shown in a destructive-command confirm dialog. */
     const val DESTRUCTIVE_PREVIEW_LEN = 300
+    /** How much of a tool call's arguments the approval dialog shows: enough to recognise the record, not a wall of JSON. */
+    const val DIRECT_TOOL_ARGS_PREVIEW = 600
     /** Checkpoint label preview length. */
     const val CHECKPOINT_LABEL_LEN = 48
     /** ACP tool kinds that can change files (gates run when a turn used one). */

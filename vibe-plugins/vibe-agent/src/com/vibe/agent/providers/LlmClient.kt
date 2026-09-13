@@ -8,6 +8,7 @@ import com.vibe.agent.resilience.RetryPolicy
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonArray
@@ -31,6 +32,10 @@ data class ChatMessage(
   val images: List<ImagePart> = emptyList(),
   /** Assistant only: its reasoning as streamed; on the wire only for a model that requires it back. */
   val reasoning: String? = null,
+  /** Assistant only: the tools it called in this message (the direct chat's tool loop). */
+  val toolCalls: List<ToolCall> = emptyList(),
+  /** Role [ToolCalls.ROLE] only: the results of one round, answered together. */
+  val toolResults: List<ToolResult> = emptyList(),
 ) {
   /** Text-only copy for models without vision; the dropped images are named so the model knows context went missing. */
   fun withoutImages(): ChatMessage =
@@ -57,7 +62,8 @@ internal object LlmMessages {
   fun openAi(m: ChatMessage, echoReasoning: Boolean = false): JsonObject = buildJsonObject {
     put("role", m.role)
     if (echoReasoning && m.role == "assistant" && !m.reasoning.isNullOrEmpty()) put("reasoning_content", m.reasoning)
-    if (m.images.isEmpty()) put("content", m.text)
+    // An answer that only calls tools has no text; openai wants null there, not an empty string.
+    if (m.images.isEmpty()) put("content", if (m.toolCalls.isNotEmpty() && m.text.isBlank()) ToolCalls.NO_CONTENT else JsonPrimitive(m.text))
     else put("content", JsonArray(buildList {
       if (m.text.isNotBlank()) add(buildJsonObject { put("type", "text"); put("text", m.text) })
       m.images.forEach { img ->
@@ -67,6 +73,7 @@ internal object LlmMessages {
         })
       }
     }))
+    if (m.toolCalls.isNotEmpty()) put("tool_calls", ToolCalls.openAiCalls(m.toolCalls))
   }
 
   /** anthropic: "content" is a string, or [{type:image,source:{base64}}…,{type:text}]. */
@@ -75,7 +82,13 @@ internal object LlmMessages {
    * the same on the next turn, so the provider may bill it as a cache hit. Marked on the message
    * rather than on the whole request because that is where the boundary actually is.
    */
-  fun anthropic(m: ChatMessage, cacheable: Boolean = false, ttl: String? = null): JsonObject = buildJsonObject {
+  fun anthropic(m: ChatMessage, cacheable: Boolean = false, ttl: String? = null): JsonObject = when {
+    m.role == ToolCalls.ROLE -> ToolCalls.anthropicResults(m)
+    m.toolCalls.isNotEmpty() -> ToolCalls.anthropicAssistant(m)
+    else -> anthropicPlain(m, cacheable, ttl)
+  }
+
+  private fun anthropicPlain(m: ChatMessage, cacheable: Boolean, ttl: String?): JsonObject = buildJsonObject {
     put("role", m.role)
     if (m.images.isEmpty() && !cacheable) put("content", m.text)
     else if (m.images.isEmpty()) put("content", JsonArray(listOf(buildJsonObject {
@@ -109,7 +122,13 @@ internal object LlmMessages {
   }
 
   /** gemini: "parts" is [{text}] plus one {inlineData:{mimeType,data}} per image; assistant role becomes "model". */
-  fun gemini(m: ChatMessage): JsonObject = buildJsonObject {
+  fun gemini(m: ChatMessage): JsonObject = when {
+    m.role == ToolCalls.ROLE -> ToolCalls.geminiResults(m)
+    m.toolCalls.isNotEmpty() -> ToolCalls.geminiAssistant(m)
+    else -> geminiPlain(m)
+  }
+
+  private fun geminiPlain(m: ChatMessage): JsonObject = buildJsonObject {
     put("role", if (m.role == "assistant") "model" else "user")
     put("parts", JsonArray(buildList {
       if (m.images.isEmpty() || m.text.isNotBlank()) add(buildJsonObject { put("text", m.text) })
@@ -163,6 +182,15 @@ class LlmClient(
   /** The model of the last completed request as the provider named it, or null when it named none. */
   fun lastAnsweredModel(): String? = lastAnsweredModel
 
+  @Volatile private var offeredTools: List<ToolSpec> = emptyList()
+  @Volatile private var toolCalls = ToolCallAccumulator()
+
+  /** The tools the model called in the last completed request, in answer order; empty when it called none. */
+  fun lastToolCalls(): List<ToolCall> = toolCalls.calls()
+
+  /** False for a model the quirk catalogue marks [ModelQuirks.Quirk.NO_TOOLS]: a request with tools fails as a whole. */
+  fun supportsTools(model: ModelEntry): Boolean = !ModelQuirks.has(quirkIdOf(model), ModelQuirks.Quirk.NO_TOOLS, quirks())
+
   /**
    * Requested id → the snapshot that answered it, learned from replies of this client.
    *
@@ -204,12 +232,19 @@ class LlmClient(
      * мысли нет вовсе.
      */
     onThought: (String) -> Unit = {},
+    /**
+     * Tools the model may call. Empty — the request is exactly what it was before tools existed. The calls
+     * are read after the request with [lastToolCalls]; running them is the caller's business.
+     */
+    tools: List<ToolSpec> = emptyList(),
     onDelta: (String) -> Unit,
   ) {
     this.thought = onThought
     this.cancelled = isCancelled
     lastUsage = TokenUsage.NONE
     lastAnsweredModel = null
+    offeredTools = if (tools.isEmpty() || !supportsTools(model)) emptyList() else tools
+    toolCalls = ToolCallAccumulator()
     // The offline promise is kept HERE, at the single door out: a check in the UI would be a
     // reminder, and a reminder is not a guarantee. A local provider is still allowed — nothing
     // leaves the machine.
@@ -219,6 +254,8 @@ class LlmClient(
     var attempt = 1
     while (true) {
       try {
+        // A retry starts a new answer: calls half-collected from the failed stream are not calls.
+        toolCalls = ToolCallAccumulator()
         // The MODEL decides, falling back to the provider: one key can serve three formats
         // (OpenCode Go: MiniMax and Qwen over /v1/messages, GLM and Kimi over /v1/chat/completions).
         when (ProvidersService.protocolFor(provider.protocol, model.protocol)) {
@@ -326,6 +363,7 @@ class LlmClient(
         put("parts", JsonArray(listOf(buildJsonObject { put("text", system) })))
       })
       put("contents", JsonArray(messages.filter { it.role != "system" }.map(LlmMessages::gemini)))
+      if (offeredTools.isNotEmpty()) put("tools", ToolCalls.geminiTools(offeredTools))
       put("generationConfig", buildJsonObject {
         model.temperature?.let { put("temperature", it) }
         model.topP?.let { put("topP", it) }
@@ -350,6 +388,7 @@ class LlmClient(
       // У Gemini мысль и ответ лежат в одном массиве частей и различаются пометкой `thought`:
       // раньше бралась ПЕРВАЯ часть, то есть при включённых рассуждениях мысль уезжала в ответ.
       ReasoningStream.fromGeminiEvent(event)?.let { thought(it) }
+      toolCalls.geminiEvent(event)
       ReasoningStream.answerFromGeminiEvent(event)?.let { onDelta(it) }
     }
   }
@@ -373,7 +412,11 @@ class LlmClient(
       model.maxOutputTokens?.let { put("max_tokens", it) }
       // A model that requires its reasoning back gets it; no other model ever sees the field.
       val echo = ModelQuirks.has(quirkId, ModelQuirks.Quirk.ECHO_REASONING, overrides)
-      put("messages", JsonArray(asked.map { LlmMessages.openAi(it, echo) }))
+      // A round's results are one message here and several on this wire.
+      put("messages", JsonArray(asked.flatMap {
+        if (it.role == ToolCalls.ROLE) ToolCalls.openAiResults(it) else listOf(LlmMessages.openAi(it, echo))
+      }))
+      if (offeredTools.isNotEmpty()) put("tools", ToolCalls.openAiTools(offeredTools))
     }.let { withReasoning(it, "openai", model) }), model.extraBody)
     if (ModelQuirks.quirksOf(quirkId, overrides).isNotEmpty()) {
       logger<LlmClient>().info("Model quirks applied for " + quirkId + ": " + ModelQuirks.noteOf(quirkId, overrides))
@@ -395,6 +438,7 @@ class LlmClient(
       ModelEcho.fromOpenAiChunk(chunk)?.let { lastAnsweredModel = it }
       // reasoning_content — как его называют китайские OpenAI-совместимые эндпоинты (DeepSeek, GLM).
       ReasoningStream.fromOpenAiChunk(chunk)?.let { thought(it) }
+      toolCalls.openAiChunk(chunk)
       val delta = chunk["choices"]?.jsonArray?.firstOrNull()
         ?.jsonObject?.get("delta")?.jsonObject?.get("content")?.jsonPrimitive?.contentOrNull
       if (delta != null) onDelta(delta)
@@ -431,6 +475,7 @@ class LlmClient(
       put("messages", JsonArray(wire.mapIndexed { index, message ->
         LlmMessages.anthropic(message, cacheable = index == boundary, ttl = model.cacheTtl)
       }))
+      if (offeredTools.isNotEmpty()) put("tools", ToolCalls.anthropicTools(offeredTools))
     }.let { withReasoning(it, "anthropic", model) }
       // Quirks were applied on the OpenAI path only, which left the Anthropic-compatible endpoints
       // — where MiniMax and Qwen actually live — sending exactly the fields those models ignore.
@@ -451,6 +496,7 @@ class LlmClient(
       // Рассуждение приезжает тем же событием, но другой дельтой: без этой ветки модель молчала
       // ровно столько, сколько думала, и это выглядело как зависание.
       ReasoningStream.fromAnthropicEvent(obj)?.let { thought(it) }
+      toolCalls.anthropicEvent(obj)
       if (obj["type"]?.jsonPrimitive?.contentOrNull == "content_block_delta") {
         val text = obj["delta"]?.jsonObject?.get("text")?.jsonPrimitive?.contentOrNull
         if (text != null) onDelta(text)
@@ -518,6 +564,7 @@ class LlmClient(
     }
     val answer = json.parseToJsonElement(response.body()).jsonObject
     ModelEcho.fromOpenAiChunk(answer)?.let { lastAnsweredModel = it }
+    answer["choices"]?.jsonArray?.firstOrNull()?.jsonObject?.get("message")?.jsonObject?.let { toolCalls.openAiMessage(it) }
     return answer["choices"]?.jsonArray?.firstOrNull()
       ?.jsonObject?.get("message")?.jsonObject?.get("content")?.jsonPrimitive?.contentOrNull ?: ""
   }

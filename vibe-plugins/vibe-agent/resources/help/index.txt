@@ -12,6 +12,7 @@ manuals/dataSourcesSpec.md
 manuals/debugging.md
 manuals/decisionsSpec.md
 manuals/designSpec.md
+manuals/directChatTools.md
 manuals/hooksSpec.md
 manuals/httpApiSpec.md
 manuals/httpClientSpec.md

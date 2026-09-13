@@ -26,6 +26,9 @@ object MemoryServerOffer {
 
   private const val PROBE_SECONDS = 3L
 
+  /** Arguments of the server: the same for an ACP agent's record and for our own client. */
+  val ARGS: List<String> = listOf("--agent", AGENT_ID)
+
   enum class Reason { OFFERED, NOT_INSTALLED, NOT_RUNNING }
 
   data class Offer(val entry: Map<String, Any>?, val reason: Reason, val path: Path)
@@ -40,7 +43,7 @@ object MemoryServerOffer {
   fun entry(path: Path): Map<String, Any> = mapOf(
     "name" to NAME,
     "command" to path.toString(),
-    "args" to listOf("--agent", AGENT_ID),
+    "args" to ARGS,
     "env" to emptyList<Any>(),
   )
 

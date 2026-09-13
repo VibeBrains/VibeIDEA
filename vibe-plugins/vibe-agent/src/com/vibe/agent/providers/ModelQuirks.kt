@@ -70,6 +70,14 @@ object ModelQuirks {
      * key). Other models never get the field: a wire that does not expect it may reject it.
      */
     ECHO_REASONING,
+
+    /**
+     * Tools are not accepted: a request carrying `tools` is refused as a whole.
+     *
+     * The direct chat offers tools to every model it can; a model behind an endpoint without function
+     * calling would otherwise lose every turn to an HTTP 400, not just the tools.
+     */
+    NO_TOOLS,
   }
 
   /**

@@ -59,6 +59,8 @@ class VibeAgentConfigurable : Configurable, Configurable.NoScroll {
   private var checksMaxFileKb: JBIntSpinner? = null
   private var terminalEnabled: JBCheckBox? = null
   private var handshakeTimeout: JBIntSpinner? = null
+  private var directTools: JBCheckBox? = null
+  private var directToolRounds: JBIntSpinner? = null
   private var designMode: com.intellij.openapi.ui.ComboBox<String>? = null
   private var designAttempts: JBIntSpinner? = null
   private var fimEnabled: JBCheckBox? = null
@@ -150,6 +152,9 @@ class VibeAgentConfigurable : Configurable, Configurable.NoScroll {
     val mcpWrite = JBCheckBox(t("settings.agent.mcpAllowWrite"), VibeAgentSettings.mcpAllowWrite).also { mcpAllowWrite = it }
     val mcpExecute = JBCheckBox(t("settings.agent.mcpAllowExecute"), VibeAgentSettings.mcpAllowExecute).also { mcpAllowExecute = it }
     val handshake = JBIntSpinner(VibeAgentSettings.handshakeTimeoutSec, VibeAgentSettings.MIN_HANDSHAKE_TIMEOUT_SEC, VibeAgentSettings.MAX_HANDSHAKE_TIMEOUT_SEC).also { handshakeTimeout = it }
+    val tools = JBCheckBox(t("settings.agent.directTools"), VibeAgentSettings.directToolsEnabled).also { directTools = it }
+    val toolRounds = JBIntSpinner(VibeAgentSettings.directToolMaxRounds, VibeAgentSettings.MIN_DIRECT_TOOL_MAX_ROUNDS, VibeAgentSettings.MAX_DIRECT_TOOL_MAX_ROUNDS)
+      .also { directToolRounds = it }
 
     return FormBuilder.createFormBuilder()
       .addComponent(section(t("settings.agent.section.hooks")))
@@ -239,6 +244,9 @@ class VibeAgentConfigurable : Configurable, Configurable.NoScroll {
       .addComponent(hint(t("settings.agent.hint.mcpClasses")))
       .addComponent(section(t("settings.agent.section.connection")))
       .addLabeledComponent(t("settings.agent.handshake"), handshake)
+      .addComponent(tools)
+      .addLabeledComponent(t("settings.agent.directToolRounds"), toolRounds)
+      .addComponent(hint(t("settings.agent.hint.directTools")))
       .addComponent(hint(t("settings.agent.hint.handshakeHint")))
       .addComponent(section(t("settings.agent.section.more")))
       .addLabeledComponent(t("settings.agent.docsFolder"), docsFolder)
@@ -304,6 +312,8 @@ class VibeAgentConfigurable : Configurable, Configurable.NoScroll {
     checksMaxFileKb?.number != VibeAgentSettings.checksMaxFileKb ||
     terminalEnabled?.isSelected != VibeAgentSettings.terminalEnabled ||
     handshakeTimeout?.number != VibeAgentSettings.handshakeTimeoutSec ||
+    directTools?.isSelected != VibeAgentSettings.directToolsEnabled ||
+    directToolRounds?.number != VibeAgentSettings.directToolMaxRounds ||
     (designMode?.item ?: VibeAgentSettings.designMode) != VibeAgentSettings.designMode ||
     designAttempts?.number != VibeAgentSettings.designMaxAttempts ||
     fimEnabled?.isSelected != VibeAgentSettings.fimEnabled ||
@@ -358,6 +368,8 @@ class VibeAgentConfigurable : Configurable, Configurable.NoScroll {
     checksMaxFileKb?.let { VibeAgentSettings.checksMaxFileKb = it.number }
     terminalEnabled?.let { VibeAgentSettings.terminalEnabled = it.isSelected }
     handshakeTimeout?.let { VibeAgentSettings.handshakeTimeoutSec = it.number }
+    directTools?.let { VibeAgentSettings.directToolsEnabled = it.isSelected }
+    directToolRounds?.let { VibeAgentSettings.directToolMaxRounds = it.number }
     designMode?.let { VibeAgentSettings.designMode = it.item }
     designAttempts?.let { VibeAgentSettings.designMaxAttempts = it.number }
     fimEnabled?.let { VibeAgentSettings.fimEnabled = it.isSelected }
@@ -422,6 +434,8 @@ class VibeAgentConfigurable : Configurable, Configurable.NoScroll {
     checksMaxFiles?.number = VibeAgentSettings.checksMaxFiles
     checksMaxFileKb?.number = VibeAgentSettings.checksMaxFileKb
     handshakeTimeout?.number = VibeAgentSettings.handshakeTimeoutSec
+    directTools?.isSelected = VibeAgentSettings.directToolsEnabled
+    directToolRounds?.number = VibeAgentSettings.directToolMaxRounds
     terminalEnabled?.isSelected = VibeAgentSettings.terminalEnabled
     httpApiEnabled?.isSelected = VibeAgentSettings.httpApiEnabled
     httpApiPort?.number = VibeAgentSettings.httpApiPort

@@ -936,6 +936,11 @@
       инструментов. Ответ положен VibeMemory.
 - [x] **ReDoS в проверке версии Python** — ✅ (13.09.2026, next) шаблон без вложенных квантификаторов,
       строка общего вектора `uvx pkg@1` + 40×`a` + `!` в `SkillCodeScanTest` с таймаутом (хендофф VibeIDE).
+- [x] **Инструменты в прямом чате: цикл вызова и MCP-клиент stdio** — ✅ (13.09.2026, next) задача А от VibeMemory.
+      `ToolCalls` — инструменты и вызовы на проводах openai, anthropic и gemini; `McpStdioClient` — initialize, tools/list
+      с курсорами, tools/call; `DirectChatTools` — сервер памяти на панель, чтение без вопроса, запись с согласия; цикл в
+      `AgentPanel.sendToLlm` с потолком раундов и аудитом. Квирк `NO_TOOLS`. Мануал `manuals/directChatTools.md`, знание
+      `knowledge/architecture/directChatToolWires.md`, тесты `ToolCallsTest`, `McpStdioClientTest`.
 - [x] **Тестовые пути `qa` — общим файлом `.vibe/roles.json`** — ✅ (13.09.2026, next) `roles.qa.writePaths` в наборе VibeBrains вместо
       двух констант у двух продуктов; `RolesFile` читает файл раз на прогон. Ошибка границу не расширяет: нет файла или битый —
       вшитый `TEST_PATHS`, пустой список — запись запрещена. Форма и два условия согласованы с VibeIDE, файл заведён нами первыми.
