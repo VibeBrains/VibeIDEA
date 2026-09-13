@@ -12,7 +12,6 @@ class RoleRightsTest {
     // Иначе ревью и правка — один акт, и правку никто не ревьюил.
     assertFalse(RoleRights.mayWrite("code-reviewer"))
     assertFalse(RoleRights.mayWrite("security"))
-    assertFalse(RoleRights.mayWrite("qa"))
     assertFalse(RoleRights.mayWrite("explore"))
     assertFalse(RoleRights.mayWrite("planner"))
   }
@@ -59,6 +58,14 @@ class RoleRightsTest {
 
   @Test
   fun `the read-only list is exactly the roles that judge`() {
-    assertEquals(listOf("code-reviewer", "critic", "explore", "planner", "qa", "security"), RoleRights.readOnlyRoles())
+    assertEquals(listOf("code-reviewer", "critic", "explore", "planner", "security"), RoleRights.readOnlyRoles())
+  }
+
+  @Test
+  fun `qa writes, but only where tests live`() {
+    // 13.09.2026: a tester that may not write cannot leave a test behind. The write is narrowed by
+    // RolePaths.defaultScope, not left open — see QaRoleTest for the paths.
+    assertTrue(RoleRights.mayWrite("qa"))
+    assertTrue(RolePaths.effective("qa", RolePaths.Scope()).stated)
   }
 }

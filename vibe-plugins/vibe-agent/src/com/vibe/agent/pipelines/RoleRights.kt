@@ -30,7 +30,10 @@ object RoleRights {
     "explore" to READ_ONLY,
     "code-reviewer" to READ_AND_RUN,
     "security" to READ_AND_RUN,
-    "qa" to READ_AND_RUN,
+    // QA writes tests and nothing else: the write is FULL here and narrowed to test paths by
+    // [RolePaths.defaultScope]. A tester that may not write cannot leave a test behind, and one that
+    // may write anywhere «just fixes» the code it was meant to check.
+    "qa" to FULL,
     "planner" to READ_ONLY,
     // Критик судит чужой черновик и ничего не запускает: он часто живёт на своей модели, у которой
     // ни файлов, ни терминала нет в принципе — права здесь описывают то же самое для ACP-ветки.

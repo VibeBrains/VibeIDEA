@@ -63,6 +63,30 @@ object RolePaths {
   private fun normalize(path: String): String = path.replace('\\', '/').removePrefix("./").trimStart('/')
 
   /**
+   * The scope a role gets when its step states none.
+   *
+   * Only `qa` has one: it writes tests, and a tester that «just fixes» the code under test makes the
+   * test and the fix one act nobody checked. A step that states its own `paths` replaces this — a
+   * project with an unusual test layout says so, and no default can guess every layout.
+   */
+  fun defaultScope(role: String?): Scope = when (role?.trim()?.lowercase()) {
+    "qa" -> Scope(allow = TEST_PATHS)
+    else -> Scope()
+  }
+
+  /** Where tests live across the stacks this IDE serves: JVM, TS/JS, PHP, Python, Go. */
+  // Directories are written with explicit `**/` on both sides: a pattern like `tests/` is anchored at
+  // the project root by [matches], and tests live deep inside modules (`web/__tests__/`, `x/testSrc/`).
+  val TEST_PATHS: List<String> = listOf(
+    "**/test/**", "**/tests/**", "**/testSrc/**", "**/testData/**", "**/__tests__/**", "**/spec/**",
+    "*Test.kt", "*Test.java", "*Tests.kt", "*Test.php", "*.test.ts", "*.test.tsx", "*.test.js",
+    "*.spec.ts", "*.spec.tsx", "*.spec.js", "test_*.py", "*_test.py", "*_test.go",
+  )
+
+  /** The step's own scope wins; an unstated one falls back to the role default. */
+  fun effective(role: String?, stated: Scope): Scope = if (stated.stated) stated else defaultScope(role)
+
+  /**
    * Совпадение по правилу gitignore: `*` не переходит через `/`, `**` переходит, шаблон без `/`
    * внутри проверяется на любом уровне (как `node_modules` в .gitignore), шаблон, кончающийся на
    * `/`, означает каталог со всем содержимым.

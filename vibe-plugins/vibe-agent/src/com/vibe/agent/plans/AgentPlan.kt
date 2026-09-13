@@ -26,7 +26,12 @@ object AgentPlan {
 
   data class Step(val content: String, val status: Status, val priority: String? = null)
 
-  data class Plan(val steps: List<Step>, val updatedAtMs: Long = 0) {
+  /**
+   * [agent] is who was executing the plan when it was last updated — the target as the journal names
+   * it (`acp/claude`). A plan resumed by another agent or model is a different executor reading
+   * someone else's notes, and that is worth one line before it continues, not a silent handover.
+   */
+  data class Plan(val steps: List<Step>, val updatedAtMs: Long = 0, val agent: String? = null) {
     val done: Int get() = steps.count { it.status == Status.COMPLETED }
     val total: Int get() = steps.size
     val isFinished: Boolean get() = steps.isNotEmpty() && steps.all { it.status == Status.COMPLETED }
@@ -59,6 +64,7 @@ object AgentPlan {
 
   fun encode(plan: Plan): JsonObject = buildJsonObject {
     put("updatedAt", plan.updatedAtMs)
+    plan.agent?.let { put("agent", it) }
     put("steps", JsonArray(plan.steps.map { step ->
       buildJsonObject {
         put("content", step.content)
@@ -74,7 +80,17 @@ object AgentPlan {
       val content = entry["content"]?.jsonPrimitive?.contentOrNull ?: return@mapNotNull null
       Step(content, statusOf(entry["status"]?.jsonPrimitive?.contentOrNull), entry["priority"]?.jsonPrimitive?.contentOrNull)
     }
-    return Plan(steps, json["updatedAt"]?.jsonPrimitive?.longOrNull ?: 0)
+    return Plan(steps, json["updatedAt"]?.jsonPrimitive?.longOrNull ?: 0, json["agent"]?.jsonPrimitive?.contentOrNull)
+  }
+
+  /**
+   * The executor changed since the plan was written: null when unknown on either side or the same.
+   * Unknown is not «changed» — an old plan without the field must not warn on every resume.
+   */
+  fun executorChange(plan: Plan, current: String?): Pair<String, String>? {
+    val was = plan.agent ?: return null
+    val now = current ?: return null
+    return if (was == now) null else was to now
   }
 
   /** Checklist for the feed; [marks] keeps the glyphs out of this object and in the theme. */

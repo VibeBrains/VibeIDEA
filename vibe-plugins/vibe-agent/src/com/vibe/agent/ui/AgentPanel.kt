@@ -2492,7 +2492,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
    * still on disk after the IDE is restarted mid-task, which is exactly when one installs updates.
    */
   private fun onPlanUpdate(update: JsonObject) {
-    val plan = com.vibe.agent.plans.AgentPlan.parse(update, System.currentTimeMillis())
+    val plan = com.vibe.agent.plans.AgentPlan.parse(update, System.currentTimeMillis()).copy(agent = target?.auditName())
     val threadId = turnThreadId ?: currentThreadId ?: return
     com.vibe.agent.plans.PlanStore.getInstance(project).save(threadId, plan)
     if (plan.isEmpty) return
@@ -2503,6 +2503,12 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
       messages.add(console)
       revalidateScroll()
     }
+  }
+
+  /** One line when the plan is continued by another agent than the one that wrote it. */
+  private fun announceExecutorChange(plan: com.vibe.agent.plans.AgentPlan.Plan) {
+    val (was, now) = com.vibe.agent.plans.AgentPlan.executorChange(plan, target?.auditName()) ?: return
+    systemLine(t("plan.executorChanged", "was" to was, "now" to now))
   }
 
   private fun planMark(status: com.vibe.agent.plans.AgentPlan.Status): String = when (status) {
@@ -2522,6 +2528,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     if (plan.isEmpty || plan.isFinished) return
     systemLine(t("plan.unfinished", "done" to plan.done, "total" to plan.total,
                  "current" to (plan.current?.content ?: "")))
+    announceExecutorChange(plan)
   }
 
   /**
@@ -2755,6 +2762,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     val plan = runCatching { com.vibe.agent.plans.PlanStore.getInstance(project).load(threadId) }.getOrNull() ?: return prompt
     if (plan.isEmpty || plan.isFinished) return prompt
     systemLine(t("plan.carried", "done" to plan.done, "total" to plan.total))
+    announceExecutorChange(plan)
     val steps = com.vibe.agent.plans.AgentPlan.render(plan) { status ->
       when (status) {
         com.vibe.agent.plans.AgentPlan.Status.COMPLETED -> "[x]"
@@ -3604,7 +3612,31 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     // Смета ДО запуска: потолки расхода срабатывают уже на середине прогона, а разница между одним
     // ходом и шестью ролями видна только тому, кто за неё однажды заплатил.
     if (!confirmEstimate(chosen)) return
-    runPipeline(chosen, (target as? ChatTarget.Agent)?.config ?: agent)
+    runPipeline(chosen, (target as? ChatTarget.Agent)?.config ?: agent, resumeStep(chosen) ?: return)
+  }
+
+  /**
+   * Where to start: 0 for a fresh run, the unfinished step of an interrupted run of the same pipeline
+   * when the person chooses to continue, null when they cancel.
+   *
+   * Asked, not decided: the files may have moved on since the interruption, and only the person knows
+   * whether steps 1..N still describe the working tree.
+   */
+  private fun resumeStep(pipeline: com.vibe.agent.pipelines.Pipeline): Int? {
+    val point = com.vibe.agent.runs.PipelineResume.find(runs.runs(), pipeline.id, pipeline.steps.size) ?: return 0
+    val answer = Messages.showDialog(
+      project,
+      t("pipeline.resume.prompt", "name" to pipeline.name, "done" to point.fromStep, "total" to pipeline.steps.size,
+        "step" to (point.fromStep + 1)),
+      t("pipeline.resume.title"),
+      arrayOf(t("pipeline.resume.continue", "step" to (point.fromStep + 1)), t("pipeline.resume.restart"), t("common.cancel")),
+      0, Messages.getQuestionIcon(),
+    )
+    return when (answer) {
+      0 -> point.fromStep
+      1 -> 0
+      else -> null
+    }
   }
 
   /**
@@ -3826,7 +3858,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     return root.relativize(file).joinToString("/") { it.toString() }
   }
 
-  private fun runPipeline(pipeline: com.vibe.agent.pipelines.Pipeline, agent: AgentServerConfig) {
+  private fun runPipeline(pipeline: com.vibe.agent.pipelines.Pipeline, agent: AgentServerConfig, fromStep: Int = 0) {
     if (!history.tryBeginTurn(currentThreadId)) {
       systemLine(t("chat.threadBusy"))
       return
@@ -3863,10 +3895,18 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
         target = "acp/${agent.name}",
         maxSteps = pipeline.steps.size,
         territory = territory,
+        pipelineId = pipeline.id,
       )
       try {
         pipeline.steps.forEachIndexed { i, step ->
           val header = t("pipeline.step", "index" to (i + 1), "total" to pipeline.steps.size, "role" to step.role)
+          // Resumed run: steps before the interruption already ran and are not paid for twice. Their
+          // artifacts are not known to this run, so the first resumed step starts without that list.
+          if (i < fromStep) {
+            systemLine(t("pipeline.stepAlreadyDone", "header" to header))
+            runs.progress(runId, steps = i + 1, changedFiles = artifacts.size)
+            return@forEachIndexed
+          }
           if (failed && !step.continueOnFailure) {
             systemLine(t("pipeline.stepSkipped", "header" to header))
             return@forEachIndexed
@@ -3914,7 +3954,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
           }
           try {
             currentRole = step.role
-            currentScope = com.vibe.agent.pipelines.RolePaths.Scope(step.paths, step.denyPaths)
+            currentScope = com.vibe.agent.pipelines.RolePaths.effective(step.role, com.vibe.agent.pipelines.RolePaths.Scope(step.paths, step.denyPaths))
             changedPaths.clear()
             stepBuffer = StringBuilder()
             // Потолки ставятся ДО запроса и снимаются в finally: считать их у обычного хода

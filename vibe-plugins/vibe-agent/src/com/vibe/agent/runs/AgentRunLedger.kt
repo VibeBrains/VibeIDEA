@@ -64,6 +64,13 @@ object AgentRunLedger {
     val idempotencyKey: String? = null,
     /** Path prefixes this run claimed, so two runs do not write the same corner at once. */
     val territory: List<String> = emptyList(),
+    /**
+     * The pipeline this run executes, by id.
+     *
+     * The goal is words for a human; resuming needs the pipeline itself, and matching it by the goal
+     * text would resume the wrong one the day two pipelines share a name.
+     */
+    val pipelineId: String? = null,
   ) {
     val isFinished: Boolean get() = status != Status.RUNNING
     val needsAttention: Boolean get() = status == Status.ORPHANED || status == Status.FAILED
@@ -100,6 +107,7 @@ object AgentRunLedger {
     // Written only when set: an empty key in every record would double the size of a file whose
     // whole point is being readable by a human with `tail`.
     run.idempotencyKey?.let { put("idempotencyKey", it) }
+    run.pipelineId?.let { put("pipelineId", it) }
   }.toString()
 
   /** A broken line is skipped, never fatal: one bad write must not cost the whole history. */
@@ -122,6 +130,7 @@ object AgentRunLedger {
       changedFiles = obj.int("changedFiles") ?: 0,
       outcome = obj.str("outcome"),
       idempotencyKey = obj.str("idempotencyKey"),
+      pipelineId = obj.str("pipelineId"),
     )
   }
 

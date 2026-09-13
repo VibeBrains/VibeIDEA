@@ -53,6 +53,8 @@ class VibeAgentRunService(private val project: Project) : Disposable {
     idempotencyKey: String? = null,
     /** Path prefixes this run is about; empty claims nothing (see TerritoryGuess). */
     territory: List<String> = emptyList(),
+    /** The pipeline being run, so an interrupted run can be resumed by id rather than by its goal text. */
+    pipelineId: String? = null,
   ): String? {
     if (!isEnabled) return null
     val run = AgentRunLedger.Run(
@@ -67,6 +69,7 @@ class VibeAgentRunService(private val project: Project) : Disposable {
       maxSteps = maxSteps,
       idempotencyKey = idempotencyKey,
       territory = territory,
+      pipelineId = pipelineId,
     )
     append(run)
     return run.runId
