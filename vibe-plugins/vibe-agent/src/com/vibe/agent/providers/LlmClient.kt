@@ -36,6 +36,8 @@ data class ChatMessage(
   val toolCalls: List<ToolCall> = emptyList(),
   /** Role [ToolCalls.ROLE] only: the results of one round, answered together. */
   val toolResults: List<ToolResult> = emptyList(),
+  /** Assistant only, from the thread history: the tool rounds before this answer; expanded by [ToolRounds.expand] before sending. */
+  val toolRounds: List<ToolRound> = emptyList(),
 ) {
   /** Text-only copy for models without vision; the dropped images are named so the model knows context went missing. */
   fun withoutImages(): ChatMessage =

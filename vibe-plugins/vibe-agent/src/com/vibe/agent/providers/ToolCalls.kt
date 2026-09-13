@@ -232,3 +232,75 @@ class ToolCallAccumulator {
     ToolCall(id = pending.id ?: "call-$index", name = name, arguments = pending.arguments.toString())
   }
 }
+
+/** One round of the tool loop as the thread keeps it: what the model said, what it called, what came back. */
+data class ToolRound(val text: String, val calls: List<ToolCall>, val results: List<ToolResult>)
+
+/**
+ * Tool rounds in the thread history.
+ *
+ * Without them the next turn started without the results of the last one: the model had found the record,
+ * answered from it, and on the follow-up question knew only its own words about the record. The rounds are
+ * stored with the answer and expanded back into the request exactly as they were sent.
+ */
+object ToolRounds {
+  /** A result longer than this is stored cut: the thread file is rewritten on every turn. */
+  const val MAX_STORED_RESULT_CHARS = 20_000
+
+  /** Stands for the final answer of a turn that ended on tool calls with no words — no wire takes an empty assistant. */
+  const val NO_ANSWER = "[no answer]"
+
+  fun forStorage(rounds: List<ToolRound>): List<ToolRound> = rounds.map { round ->
+    round.copy(results = round.results.map { result ->
+      if (result.text.length <= MAX_STORED_RESULT_CHARS) result
+      else result.copy(text = result.text.take(MAX_STORED_RESULT_CHARS) + "\n[truncated: ${result.text.length} chars]")
+    })
+  }
+
+  /**
+   * Messages as the model saw them: each assistant message carrying rounds becomes the rounds followed by the
+   * final answer. The stored text is the whole feed of the turn — every round's words and then the answer —
+   * so the answer is what follows the rounds' text.
+   */
+  fun expand(messages: List<ChatMessage>): List<ChatMessage> = messages.flatMap { m ->
+    if (m.role != "assistant" || m.toolRounds.isEmpty()) return@flatMap listOf(m)
+    val said = m.toolRounds.joinToString("") { it.text }
+    val answer = (if (m.text.startsWith(said)) m.text.substring(said.length) else m.text).ifBlank { NO_ANSWER }
+    m.toolRounds.flatMap { round ->
+      listOf(
+        ChatMessage("assistant", round.text, toolCalls = round.calls),
+        ChatMessage(ToolCalls.ROLE, "", toolResults = round.results),
+      )
+    } + m.copy(text = answer, toolRounds = emptyList())
+  }
+
+  fun toJson(rounds: List<ToolRound>): JsonArray = JsonArray(rounds.map { round ->
+    buildJsonObject {
+      put("text", round.text)
+      put("calls", JsonArray(round.calls.map { buildJsonObject { put("id", it.id); put("name", it.name); put("arguments", it.arguments) } }))
+      put("results", JsonArray(round.results.map {
+        buildJsonObject {
+          put("callId", it.callId)
+          put("name", it.name)
+          put("text", it.text)
+          if (it.isError) put("isError", true)
+        }
+      }))
+    }
+  })
+
+  /** Tolerant: a broken round is dropped, not the thread. */
+  fun fromJson(element: JsonElement?): List<ToolRound> = (element as? JsonArray).orEmpty().mapNotNull { entry ->
+    val o = entry as? JsonObject ?: return@mapNotNull null
+    fun JsonObject.s(key: String) = (this[key] as? kotlinx.serialization.json.JsonPrimitive)?.contentOrNull
+    val calls = (o["calls"] as? JsonArray).orEmpty().mapNotNull { c ->
+      val co = c as? JsonObject ?: return@mapNotNull null
+      ToolCall(co.s("id") ?: return@mapNotNull null, co.s("name") ?: return@mapNotNull null, co.s("arguments").orEmpty())
+    }
+    val results = (o["results"] as? JsonArray).orEmpty().mapNotNull { r ->
+      val ro = r as? JsonObject ?: return@mapNotNull null
+      ToolResult(ro.s("callId") ?: return@mapNotNull null, ro.s("name").orEmpty(), ro.s("text").orEmpty(), ro.s("isError") == "true")
+    }
+    if (calls.isEmpty()) null else ToolRound(o.s("text").orEmpty(), calls, results)
+  }
+}

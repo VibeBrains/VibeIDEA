@@ -41,9 +41,11 @@ class ChatMessageRecord(
    * other model it is never sent. The feed does not draw it from here.
    */
   val reasoning: String? = null,
+  /** ASSISTANT only: the tool rounds of the turn, so the next request carries what the tools returned. */
+  val toolRounds: List<com.vibe.agent.providers.ToolRound> = emptyList(),
 ) {
   fun withPinned(pinned: Boolean): ChatMessageRecord =
-    ChatMessageRecord(role, text, images, at, wireText, pinned, reasoning)
+    ChatMessageRecord(role, text, images, at, wireText, pinned, reasoning, toolRounds)
 }
 
 /** Per-thread snapshot of composer choices (restored when the tab is activated). */
@@ -138,6 +140,7 @@ object ChatTranscriptCodec {
         m.wireText?.let { put("wireText", it) }
         if (m.pinned) put("pinned", true)
         m.reasoning?.let { put("reasoning", it) }
+        if (m.toolRounds.isNotEmpty()) put("toolRounds", com.vibe.agent.providers.ToolRounds.toJson(m.toolRounds))
         if (m.images.isNotEmpty()) put("images", JsonArray(m.images.map { img ->
           buildJsonObject {
             put("name", img.name)
@@ -173,6 +176,7 @@ object ChatTranscriptCodec {
         wireText = m.str("wireText"),
         pinned = (m["pinned"] as? kotlinx.serialization.json.JsonPrimitive)?.content == "true",
         reasoning = m.str("reasoning"),
+        toolRounds = com.vibe.agent.providers.ToolRounds.fromJson(m["toolRounds"]),
       )
     }
     return ChatThread(

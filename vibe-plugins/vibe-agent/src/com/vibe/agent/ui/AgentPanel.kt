@@ -3221,11 +3221,13 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
           text = r.wireText ?: r.text,
           images = if (index in imageBearing) r.images.map { ImagePart(it.mimeType, it.base64) } else emptyList(),
           reasoning = r.reasoning,
+          toolRounds = r.toolRounds,
         )
       }
       // A model declared non-vision must not receive images lingering in the history either.
       val uncompacted = if (t.model.vision == false) wireMessages.map { it.withoutImages() } else wireMessages
-      val wire = compactForWindow(t, resolved, threadId, transcript, uncompacted)
+      // Expanded after compaction: compaction cuts by transcript positions, one message per record.
+      val wire = com.vibe.agent.providers.ToolRounds.expand(compactForWindow(t, resolved, threadId, transcript, uncompacted))
       // Said out loud when it happens: a broken prefix is invisible, and its whole cost lands on
       // the bill. The line names the turn where the conversation stopped being append-only.
       val lines = wire.map {
@@ -3272,6 +3274,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
           break
         }
         val results = calls.map { runDirectTool(it, t.model.id) }
+        turnToolRounds.add(com.vibe.agent.providers.ToolRound(roundText.toString(), calls, results))
         request = request +
           ChatMessage("assistant", roundText.toString(), reasoning = roundReasoning.toString().ifEmpty { null }, toolCalls = calls) +
           ChatMessage(com.vibe.agent.providers.ToolCalls.ROLE, "", toolResults = results)
@@ -4685,6 +4688,8 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
    * agent's thoughts have no next request of ours to go into.
    */
   private val turnReasoning = StringBuffer()
+  /** Tool rounds of the current direct-chat turn; stored with the answer by finishAgentBubble. */
+  private val turnToolRounds = java.util.Collections.synchronizedList(ArrayList<com.vibe.agent.providers.ToolRound>())
 
   private fun finishAgentBubble(seconds: Double, suffix: String?) {
     val threadId = turnThreadId
@@ -4699,8 +4704,11 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
       turnReasoning.setLength(0)
       r.ifBlank { null }
     }
+    val toolRounds = synchronized(turnToolRounds) {
+      com.vibe.agent.providers.ToolRounds.forStorage(turnToolRounds.toList()).also { turnToolRounds.clear() }
+    }
     if (threadId != null && fullText.isNotBlank()) {
-      history.append(threadId, ChatMessageRecord(Role.ASSISTANT, fullText, at = nowIso(), reasoning = reasoning))
+      history.append(threadId, ChatMessageRecord(Role.ASSISTANT, fullText, at = nowIso(), reasoning = reasoning, toolRounds = toolRounds))
       // The provider's own numbers when it reported them; the old length-based guess only when it
       // did not. The guess counted the ANSWER and nothing else, so a request carrying two hundred
       // thousand tokens of context cost, in the report, as much as the sentence it produced —
