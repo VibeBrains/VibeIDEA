@@ -108,6 +108,9 @@ object VibeAgentSettings {
 
   // --- incoming HTTP API (VibeIDE contract: loopback only, off by default) ---
   const val DEFAULT_HTTP_API_ENABLED = false
+  // Off by default: an MCP client gets the reading tools only until a human opens a class on purpose.
+  const val DEFAULT_MCP_ALLOW_WRITE = false
+  const val DEFAULT_MCP_ALLOW_EXECUTE = false
   /** 0 = any free port; the chosen one is reported in the settings page and the panel log. */
   const val DEFAULT_HTTP_API_PORT = 0
   const val MIN_HTTP_API_PORT = 0
@@ -201,6 +204,8 @@ object VibeAgentSettings {
   private const val KEY_KNOWN_PROJECTS = "vibe.agent.context.knownProjects"
   private const val KEY_HTTP_API_ENABLED = "vibe.agent.httpApi.enabled"
   private const val KEY_HTTP_API_PORT = "vibe.agent.httpApi.port"
+  private const val KEY_MCP_ALLOW_WRITE = "vibe.agent.mcp.allowWrite"
+  private const val KEY_MCP_ALLOW_EXECUTE = "vibe.agent.mcp.allowExecute"
 
   private val props get() = PropertiesComponent.getInstance()
 
@@ -289,6 +294,14 @@ object VibeAgentSettings {
   var httpApiPort: Int
     get() = props.getInt(KEY_HTTP_API_PORT, DEFAULT_HTTP_API_PORT).coerceIn(MIN_HTTP_API_PORT, MAX_HTTP_API_PORT)
     set(value) = props.setValue(KEY_HTTP_API_PORT, value.coerceIn(MIN_HTTP_API_PORT, MAX_HTTP_API_PORT), DEFAULT_HTTP_API_PORT)
+
+  var mcpAllowWrite: Boolean
+    get() = props.getBoolean(KEY_MCP_ALLOW_WRITE, DEFAULT_MCP_ALLOW_WRITE)
+    set(value) = props.setValue(KEY_MCP_ALLOW_WRITE, value, DEFAULT_MCP_ALLOW_WRITE)
+
+  var mcpAllowExecute: Boolean
+    get() = props.getBoolean(KEY_MCP_ALLOW_EXECUTE, DEFAULT_MCP_ALLOW_EXECUTE)
+    set(value) = props.setValue(KEY_MCP_ALLOW_EXECUTE, value, DEFAULT_MCP_ALLOW_EXECUTE)
 
   var maskSecretsInContext: Boolean
     get() = props.getBoolean(KEY_MASK_SECRETS, DEFAULT_MASK_SECRETS_IN_CONTEXT)

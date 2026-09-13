@@ -71,6 +71,8 @@ class VibeAgentConfigurable : Configurable, Configurable.NoScroll {
   private var warnForeign: JBCheckBox? = null
   private var httpApiEnabled: JBCheckBox? = null
   private var httpApiPort: JBIntSpinner? = null
+  private var mcpAllowWrite: JBCheckBox? = null
+  private var mcpAllowExecute: JBCheckBox? = null
 
   override fun getDisplayName(): String = t("settings.agent.title")
 
@@ -145,6 +147,8 @@ class VibeAgentConfigurable : Configurable, Configurable.NoScroll {
     val httpApi = JBCheckBox(t("settings.agent.httpApi"), VibeAgentSettings.httpApiEnabled).also { httpApiEnabled = it }
     val apiPort = JBIntSpinner(VibeAgentSettings.httpApiPort, VibeAgentSettings.MIN_HTTP_API_PORT, VibeAgentSettings.MAX_HTTP_API_PORT)
       .also { httpApiPort = it }
+    val mcpWrite = JBCheckBox(t("settings.agent.mcpAllowWrite"), VibeAgentSettings.mcpAllowWrite).also { mcpAllowWrite = it }
+    val mcpExecute = JBCheckBox(t("settings.agent.mcpAllowExecute"), VibeAgentSettings.mcpAllowExecute).also { mcpAllowExecute = it }
     val handshake = JBIntSpinner(VibeAgentSettings.handshakeTimeoutSec, VibeAgentSettings.MIN_HANDSHAKE_TIMEOUT_SEC, VibeAgentSettings.MAX_HANDSHAKE_TIMEOUT_SEC).also { handshakeTimeout = it }
 
     return FormBuilder.createFormBuilder()
@@ -230,6 +234,9 @@ class VibeAgentConfigurable : Configurable, Configurable.NoScroll {
       .addComponent(httpApi)
       .addLabeledComponent(t("settings.agent.httpPort"), apiPort)
       .addComponent(hint(t("settings.agent.hint.httpApiHint")))
+      .addComponent(mcpWrite)
+      .addComponent(mcpExecute)
+      .addComponent(hint(t("settings.agent.hint.mcpClasses")))
       .addComponent(section(t("settings.agent.section.connection")))
       .addLabeledComponent(t("settings.agent.handshake"), handshake)
       .addComponent(hint(t("settings.agent.hint.handshakeHint")))
@@ -308,7 +315,9 @@ class VibeAgentConfigurable : Configurable, Configurable.NoScroll {
     maskSecrets?.isSelected != VibeAgentSettings.maskSecretsInContext ||
     warnForeign?.isSelected != VibeAgentSettings.warnForeignProject ||
     httpApiEnabled?.isSelected != VibeAgentSettings.httpApiEnabled ||
-    httpApiPort?.number != VibeAgentSettings.httpApiPort
+    httpApiPort?.number != VibeAgentSettings.httpApiPort ||
+    mcpAllowWrite?.isSelected != VibeAgentSettings.mcpAllowWrite ||
+    mcpAllowExecute?.isSelected != VibeAgentSettings.mcpAllowExecute
 
   override fun apply() {
     hooksEnabled?.let { VibeAgentSettings.hooksEnabled = it.isSelected }
@@ -359,6 +368,8 @@ class VibeAgentConfigurable : Configurable, Configurable.NoScroll {
     runLedgerDays?.let { VibeAgentSettings.runLedgerRetentionDays = it.number }
     maskSecrets?.let { VibeAgentSettings.maskSecretsInContext = it.isSelected }
     warnForeign?.let { VibeAgentSettings.warnForeignProject = it.isSelected }
+    mcpAllowWrite?.let { VibeAgentSettings.mcpAllowWrite = it.isSelected }
+    mcpAllowExecute?.let { VibeAgentSettings.mcpAllowExecute = it.isSelected }
     // Port first: the listener is (re)started below with the value that has just been stored.
     httpApiPort?.let { VibeAgentSettings.httpApiPort = it.number }
     httpApiEnabled?.let { box ->
@@ -372,6 +383,8 @@ class VibeAgentConfigurable : Configurable, Configurable.NoScroll {
   }
 
   override fun reset() {
+    mcpAllowWrite?.isSelected = VibeAgentSettings.mcpAllowWrite
+    mcpAllowExecute?.isSelected = VibeAgentSettings.mcpAllowExecute
     hooksEnabled?.isSelected = VibeAgentSettings.hooksEnabled
     auditEnabled?.isSelected = VibeAgentSettings.auditEnabled
     auditRotation?.number = VibeAgentSettings.auditRotationMb

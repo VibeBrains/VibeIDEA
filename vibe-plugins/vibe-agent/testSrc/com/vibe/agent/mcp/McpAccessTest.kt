@@ -1,65 +1,82 @@
 // Copyright 2026 VibeBrains. Use of this source code is governed by the Apache 2.0 license.
 package com.vibe.agent.mcp
 
+import com.vibe.agent.mcp.McpAccess.Verdict
+import com.vibe.agent.mcp.McpProtocol.Risk
 import kotlin.test.Test
 import kotlin.test.assertEquals
-import kotlin.test.assertFalse
+import kotlin.test.assertNotEquals
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 /**
- * Доверие проекта на пути MCP.
+ * What MCP tools may do: project trust first, then the class switches.
  *
- * Гейт против возврата дефекта: хуки в недоверенном проекте отказывали, а `/mcp` пускал запуск
- * агента и запись файлов. Снаружи разница была невидима, поэтому её сторожит тест, а не память.
+ * Guards two defects at once. `/mcp` did not ask for trust while hooks in the same project refused;
+ * and turning on the HTTP API for the import graph silently handed out agent runs.
  */
 class McpAccessTest {
+  private fun verdict(risk: Risk, trusted: Boolean, write: Boolean = false, execute: Boolean = false) =
+    McpAccess.verdict(risk, trusted, write, execute)
+
   @Test
-  fun `в недоверенном проекте читать можно`() {
-    assertTrue(McpAccess.allowed(McpProtocol.Risk.READ, trusted = false))
+  fun `reading is always allowed`() {
+    assertEquals(Verdict.ALLOWED, verdict(Risk.READ, trusted = false))
+    assertEquals(Verdict.ALLOWED, verdict(Risk.READ, trusted = true))
   }
 
   @Test
-  fun `в недоверенном проекте писать и запускать нельзя`() {
-    assertFalse(McpAccess.allowed(McpProtocol.Risk.WRITE, trusted = false))
-    assertFalse(McpAccess.allowed(McpProtocol.Risk.EXECUTE, trusted = false))
+  fun `untrusted project stays read-only even with both switches on`() {
+    assertEquals(Verdict.UNTRUSTED, verdict(Risk.WRITE, trusted = false, write = true, execute = true))
+    assertEquals(Verdict.UNTRUSTED, verdict(Risk.EXECUTE, trusted = false, write = true, execute = true))
   }
 
   @Test
-  fun `в доверенном проекте разрешено всё`() {
-    for (risk in McpProtocol.Risk.entries) {
-      assertTrue(McpAccess.allowed(risk, trusted = true), "класс $risk")
-    }
+  fun `in a trusted project writing and executing are off by default`() {
+    assertEquals(Verdict.DISABLED, verdict(Risk.WRITE, trusted = true))
+    assertEquals(Verdict.DISABLED, verdict(Risk.EXECUTE, trusted = true))
   }
 
   @Test
-  fun `запуск агента и запись решения объявлены опасными`() {
-    assertEquals(McpProtocol.Risk.EXECUTE, McpProtocol.riskOf(McpProtocol.TOOL_RUN))
-    assertEquals(McpProtocol.Risk.WRITE, McpProtocol.riskOf(McpProtocol.TOOL_DECISIONS_RECORD))
+  fun `each switch opens only its own class`() {
+    assertEquals(Verdict.ALLOWED, verdict(Risk.WRITE, trusted = true, write = true))
+    assertEquals(Verdict.DISABLED, verdict(Risk.EXECUTE, trusted = true, write = true))
+    assertEquals(Verdict.ALLOWED, verdict(Risk.EXECUTE, trusted = true, execute = true))
+    assertEquals(Verdict.DISABLED, verdict(Risk.WRITE, trusted = true, execute = true))
   }
 
   @Test
-  fun `у каждого объявленного инструмента есть класс опасности`() {
-    // Неизвестное имя падает в EXECUTE, поэтому забытый инструмент просто перестал бы работать в
-    // недоверенном проекте молча. Тест требует осознанного решения для каждого имени из списка.
-    val known = McpProtocol.TOOLS.map { it.name }.toSet()
-    val readable = known.filter { McpProtocol.riskOf(it) == McpProtocol.Risk.READ }
-    assertEquals(
-      known.size - 2,
-      readable.size,
-      "читающих инструментов должно быть на два меньше общего числа: запись решения и запуск агента",
-    )
+  fun `settings defaults keep writing and executing closed`() {
+    assertEquals(false, com.vibe.agent.settings.VibeAgentSettings.DEFAULT_MCP_ALLOW_WRITE)
+    assertEquals(false, com.vibe.agent.settings.VibeAgentSettings.DEFAULT_MCP_ALLOW_EXECUTE)
   }
 
   @Test
-  fun `неизвестный инструмент считается опасным`() {
-    assertEquals(McpProtocol.Risk.EXECUTE, McpProtocol.riskOf("vibe_something_new"))
+  fun `agent run and decision record are declared dangerous`() {
+    assertEquals(Risk.EXECUTE, McpProtocol.riskOf(McpProtocol.TOOL_RUN))
+    assertEquals(Risk.WRITE, McpProtocol.riskOf(McpProtocol.TOOL_DECISIONS_RECORD))
   }
 
   @Test
-  fun `отказ называет причину и способ её снять`() {
-    // Отказ без причины агент читает как поломку инструмента и пробует снова; названная причина
-    // превращает его в решение человека, которое агент передаст словами.
-    assertTrue(McpAccess.refusal.contains("доверенным"), McpAccess.refusal)
-    assertTrue(McpAccess.refusal.contains("Trust Project"), McpAccess.refusal)
+  fun `every listed tool except the two dangerous ones is reading`() {
+    // An unknown name falls to EXECUTE, so a tool forgotten in the list would silently stop working.
+    // This forces a deliberate decision for every name in the listing.
+    val names = McpProtocol.TOOLS.map { it.name }
+    assertEquals(names.size - 2, names.count { McpProtocol.riskOf(it) == Risk.READ })
+  }
+
+  @Test
+  fun `unknown tool is treated as the most dangerous`() {
+    assertEquals(Risk.EXECUTE, McpProtocol.riskOf("vibe_something_new"))
+  }
+
+  @Test
+  fun `each refusal names where it is lifted`() {
+    assertNull(McpAccess.refusal(Verdict.ALLOWED))
+    val untrusted = McpAccess.refusal(Verdict.UNTRUSTED)!!
+    val disabled = McpAccess.refusal(Verdict.DISABLED)!!
+    assertTrue("Trust Project" in untrusted, untrusted)
+    assertTrue("Settings" in disabled, disabled)
+    assertNotEquals(untrusted, disabled)
   }
 }

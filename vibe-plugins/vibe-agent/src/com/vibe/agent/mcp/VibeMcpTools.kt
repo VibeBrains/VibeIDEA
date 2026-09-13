@@ -27,9 +27,13 @@ class VibeMcpTools(private val projectProvider: () -> Project? = { ProjectManage
   override fun call(name: String, arguments: JsonObject): McpServer.Tools.Result {
     val project = projectProvider()
       ?: return McpServer.Tools.Result("В IDE нет открытого проекта", isError = true)
-    if (!McpAccess.allowed(McpProtocol.riskOf(name), TrustedProjects.isProjectTrusted(project))) {
-      return McpServer.Tools.Result(McpAccess.refusal, isError = true)
-    }
+    val verdict = McpAccess.verdict(
+      McpProtocol.riskOf(name),
+      trusted = TrustedProjects.isProjectTrusted(project),
+      allowWrite = com.vibe.agent.settings.VibeAgentSettings.mcpAllowWrite,
+      allowExecute = com.vibe.agent.settings.VibeAgentSettings.mcpAllowExecute,
+    )
+    McpAccess.refusal(verdict)?.let { return McpServer.Tools.Result(it, isError = true) }
     return when (name) {
       McpProtocol.TOOL_IMPORTERS -> edges(project, arguments, importers = true)
       McpProtocol.TOOL_IMPORTS -> edges(project, arguments, importers = false)

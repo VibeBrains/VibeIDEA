@@ -4,26 +4,39 @@ package com.vibe.agent.mcp
 import com.vibe.agent.i18n.VibeI18n.t
 
 /**
- * Что инструменты MCP могут делать в проекте, которому человек не доверял.
+ * What MCP tools may do on this machine.
  *
- * Доверие проекта — это ответ на вопрос «запускать ли здесь чужой код». Наши хуки его спрашивают и
- * в недоверенном проекте честно отказывают, а путь `/mcp` не спрашивал вовсе: внешний клиент через
- * включённый HTTP API запускал работу агента и писал файлы. Две половины продукта отвечали на один
- * вопрос по-разному, и снаружи это было неотличимо от исправности.
+ * Two independent questions, asked in this order:
+ * 1. Is the project trusted? Trust answers «may foreign code run here». Our hooks always asked it and
+ *    refused in an untrusted project, while `/mcp` did not ask at all — an outside client started the
+ *    agent and wrote files. Untrusted means reading only, whatever the settings say.
+ * 2. Did the human open this class of tool? Turning on the HTTP API for the import graph must not
+ *    silently hand out `vibe_run_agent` as well, so writing and executing are separate switches, both
+ *    off by default.
  *
- * Правило fail-closed: чтение остаётся — оно не даёт проекту исполниться, — а запись и запуск
- * отказывают, пока человек не отметит проект доверенным.
+ * Reading is never gated: it lets nothing in the project execute.
  */
 object McpAccess {
-  /**
-   * Отказ называет причину и способ её снять.
-   *
-   * Отказ без причины агент читает как поломку инструмента и идёт пробовать снова; названная
-   * причина превращает его в решение человека, которое агент передаст словами.
-   */
-  val refusal: String get() = t("mcp.refusal.untrusted")
+  enum class Verdict { ALLOWED, UNTRUSTED, DISABLED }
 
-  /** Разрешён ли инструмент этого класса опасности при таком доверии проекта. */
-  fun allowed(risk: McpProtocol.Risk, trusted: Boolean): Boolean =
-    trusted || risk == McpProtocol.Risk.READ
+  fun verdict(risk: McpProtocol.Risk, trusted: Boolean, allowWrite: Boolean, allowExecute: Boolean): Verdict = when {
+    risk == McpProtocol.Risk.READ -> Verdict.ALLOWED
+    // Trust first: an untrusted project stays read-only even with both switches on.
+    !trusted -> Verdict.UNTRUSTED
+    risk == McpProtocol.Risk.WRITE -> if (allowWrite) Verdict.ALLOWED else Verdict.DISABLED
+    else -> if (allowExecute) Verdict.ALLOWED else Verdict.DISABLED
+  }
+
+  /**
+   * The refusal names the reason and the way to lift it.
+   *
+   * A bare refusal reads to the agent as a broken tool and it retries; a named reason turns it into a
+   * human decision the agent can pass on in words. The two reasons are lifted in different places, so
+   * they are two texts.
+   */
+  fun refusal(verdict: Verdict): String? = when (verdict) {
+    Verdict.ALLOWED -> null
+    Verdict.UNTRUSTED -> t("mcp.refusal.untrusted")
+    Verdict.DISABLED -> t("mcp.refusal.disabled")
+  }
 }

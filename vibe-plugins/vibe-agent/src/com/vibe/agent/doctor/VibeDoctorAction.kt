@@ -276,6 +276,20 @@ class VibeDoctorAction : AnAction({ t("doctor.action") }) {
         }
       }
       lines.add(VibeDiagnosis.Line(t("doctor.line.mcpProbe"), state, detail))
+
+      // Silence here used to look exactly like «all is fine»: the server answered, and nobody could
+      // tell whether it was handing out writes in a project nobody trusted.
+      val trusted = com.intellij.ide.trustedProjects.TrustedProjects.isProjectTrusted(project)
+      val write = VibeAgentSettings.mcpAllowWrite
+      val execute = VibeAgentSettings.mcpAllowExecute
+      val (accessState, accessDetail) = when {
+        !trusted -> VibeDiagnosis.State.WARN to t("doctor.detail.mcpAccessUntrusted")
+        write && execute -> VibeDiagnosis.State.OK to t("doctor.detail.mcpAccessAll")
+        execute -> VibeDiagnosis.State.OK to t("doctor.detail.mcpAccessExecute")
+        write -> VibeDiagnosis.State.OK to t("doctor.detail.mcpAccessWrite")
+        else -> VibeDiagnosis.State.OK to t("doctor.detail.mcpAccessReadOnly")
+      }
+      lines.add(VibeDiagnosis.Line(t("doctor.line.mcpAccess"), accessState, accessDetail))
     }
 
     lines.add(VibeDiagnosis.Line(
