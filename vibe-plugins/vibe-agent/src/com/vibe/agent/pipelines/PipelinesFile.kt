@@ -135,8 +135,14 @@ object PipelinesFile {
             val role = so["role"]?.jsonPrimitive?.contentOrNull
               ?: throw IllegalArgumentException(t("pipeline.warn.stepNoRole"))
             if (role !in ROLES) throw IllegalArgumentException(t("pipeline.warn.unknownRole", "role" to role, "roles" to ROLES.joinToString()))
-            val provider = so["provider"]?.jsonPrimitive?.contentOrNull?.ifBlank { null }
-            val model = so["model"]?.jsonPrimitive?.contentOrNull?.ifBlank { null }
+            // The canonical form is VibeIDE's: `"model": "provider/model"` in one string. The pair
+            // `provider` + `model` is our older spelling and stays a synonym. The shared seed used the
+            // pair, and VibeIDE never reads `provider` — its step silently ran on the role's default
+            // model (found 13.09.2026). Reading both here keeps every existing file working.
+            val (provider, model) = StepModelRef.resolve(
+              so["provider"]?.jsonPrimitive?.contentOrNull,
+              so["model"]?.jsonPrimitive?.contentOrNull,
+            )
             // Половина адреса — это опечатка, а не выбор: провайдер без модели молча ушёл бы к
             // агенту пайплайна, и человек считал бы, что шаг идёт к его модели.
             if ((provider == null) != (model == null)) {
