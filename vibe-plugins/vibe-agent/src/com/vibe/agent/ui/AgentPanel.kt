@@ -690,6 +690,21 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     return offer
   }
 
+  /**
+   * The shared VibeMemory server — offered to every ACP agent this IDE starts, when it is installed and
+   * answers. The reason it was not offered is named in the feed once per session: an agent without the
+   * common memory looks exactly like an agent with it until the day it forgets what was agreed.
+   */
+  override fun memoryServer(): Map<String, Any>? {
+    val offer = com.vibe.agent.mcp.MemoryServerOffer.resolve()
+    systemLine(when (offer.reason) {
+      com.vibe.agent.mcp.MemoryServerOffer.Reason.OFFERED -> t("mcp.memory.offered")
+      com.vibe.agent.mcp.MemoryServerOffer.Reason.NOT_INSTALLED -> t("mcp.memory.notInstalled", "path" to offer.path.toString())
+      com.vibe.agent.mcp.MemoryServerOffer.Reason.NOT_RUNNING -> t("mcp.memory.notRunning", "path" to offer.path.toString())
+    })
+    return offer.entry
+  }
+
   override fun onConfigOptionsChanged(options: List<com.vibe.agent.acp.SessionConfigOption>) {
     SwingUtilities.invokeLater { configPicker.setOptions(options) }
   }

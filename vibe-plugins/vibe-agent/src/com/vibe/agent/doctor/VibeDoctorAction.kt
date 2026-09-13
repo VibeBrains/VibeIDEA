@@ -233,6 +233,17 @@ class VibeDoctorAction : AnAction({ t("doctor.action") }) {
       if (apiRunning) t("doctor.detail.ideToolsOn", "port" to apiService.port)
       else t("doctor.detail.ideToolsOff"),
     ))
+    // The shared memory the agents get: installed and answering, or why not.
+    val memory = com.vibe.agent.mcp.MemoryServerOffer.resolve()
+    lines.add(VibeDiagnosis.Line(
+      t("doctor.line.memory"),
+      if (memory.reason == com.vibe.agent.mcp.MemoryServerOffer.Reason.OFFERED) VibeDiagnosis.State.OK else VibeDiagnosis.State.ABSENT,
+      when (memory.reason) {
+        com.vibe.agent.mcp.MemoryServerOffer.Reason.OFFERED -> t("doctor.detail.memoryOn", "path" to memory.path.toString())
+        com.vibe.agent.mcp.MemoryServerOffer.Reason.NOT_INSTALLED -> t("doctor.detail.memoryMissing", "path" to memory.path.toString())
+        com.vibe.agent.mcp.MemoryServerOffer.Reason.NOT_RUNNING -> t("doctor.detail.memoryBroken", "path" to memory.path.toString())
+      },
+    ))
 
     // Голос: чем расшифровывается и идёт ли расшифровка во время записи. Иначе «кнопка не
     // работает» выясняется первой же заметкой, а причин у этого три разных.

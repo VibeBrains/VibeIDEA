@@ -87,6 +87,9 @@ data class SkillFiles(
       return SkillFiles(walk.entries.sortedBy { it.path }, walk.escaping.sorted(), walk.incomplete, walk.scripts.toSortedMap())
     }
 
+    /** A link target as the digest names it: relative to the skills root, `/`-separated. */
+    internal fun linkTarget(root: Path, real: Path): String = root.relativize(real).joinToString("/") { it.toString() }
+
     fun sha256(bytes: ByteArray): String =
       MessageDigest.getInstance("SHA-256").digest(bytes).joinToString("") { "%02x".format(it.toInt() and 0xFF) }
   }
@@ -124,15 +127,22 @@ data class SkillFiles(
     /**
      * A link counts by its CONTENT while it stays inside the skills tree — what it points at is what
      * runs. Leaving the tree, or pointing at nothing, makes it an escape.
+     *
+     * The line is built from the TARGET — its path relative to the skills root — not from the text of
+     * the link (agreed with VibeIDE, 13.09.2026): the VS Code file service gives a real path but never
+     * the raw link text, and `../shared/x.sh` and an absolute path to the same file are one skill.
+     * An escaping link keeps the text: there is no target inside the tree to name, and the validator
+     * refuses such a skill anyway.
      */
     private fun link(file: Path, path: String): FileVisitResult {
-      val target = try { Files.readSymbolicLink(file).toString() } catch (e: IOException) { "?" }
       val real = try { file.toRealPath() } catch (e: IOException) { null }
       if (real == null || !real.startsWith(root)) {
+        val text = try { Files.readSymbolicLink(file).toString() } catch (e: IOException) { "?" }
         escaping.add(path)
-        entries.add(Entry(path, "link:$target", executable = false))
+        entries.add(Entry(path, "link:$text", executable = false))
         return FileVisitResult.CONTINUE
       }
+      val target = linkTarget(root, real)
       if (!Files.isRegularFile(real)) {
         entries.add(Entry(path, "link:$target:dir", executable = false))
         return FileVisitResult.CONTINUE

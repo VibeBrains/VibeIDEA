@@ -187,7 +187,10 @@ object SkillCodeScan {
   private val PEP723_START = Regex("#\\s*///\\s*script")
   private val PEP723_END = Regex("#\\s*///")
   private val EXACT_SEMVER = Regex("v?\\d+\\.\\d+\\.\\d+([-+][0-9A-Za-z.-]+)?")
-  private val PYTHON_VERSION = Regex("v?\\d+(\\.\\d+)*([.-]?[A-Za-z0-9]+)*")
+  // Each repetition of the group starts with a separator, so every character has exactly one way to
+  // match. The previous `(\\.\\d+)*([.-]?[A-Za-z0-9]+)*` was `(a+)*`: on an almost-version from a
+  // foreign skill (`uvx pkg@1aaaa…a!`) backtracking doubled with every character (VibeIDE, 11.09.2026).
+  private val PYTHON_VERSION = Regex("v?\\d[A-Za-z0-9]*([.-][A-Za-z0-9]+)*")
   private val COMMIT = Regex("[0-9a-f]{7,40}")
   private val UVX_VALUE_OPTIONS = setOf(
     "--with", "--with-editable", "--with-requirements", "--python", "-p", "--index", "--index-url",

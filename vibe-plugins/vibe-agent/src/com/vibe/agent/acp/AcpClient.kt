@@ -58,6 +58,9 @@ class AcpClient(
      * а этот класс — транспорт, и знать о настройках ему незачем.
      */
     fun ideToolsFor(agentSupportsHttp: Boolean): Map<String, Any>? = null
+
+    /** The shared memory server for this agent, or null — see [com.vibe.agent.mcp.MemoryServerOffer]. */
+    fun memoryServer(): Map<String, Any>? = null
     /** Called on the reader thread; must return the permission outcome (closed dialog = refusal). */
     fun onRequestPermission(params: JsonObject): JsonElement
 
@@ -242,7 +245,7 @@ class AcpClient(
       // Решение о том, можно ли, принимает [IdeToolsOffer]; здесь только форма запроса.
       sessionParams = buildJsonObject {
         put("cwd", workingDir ?: System.getProperty("user.home"))
-        put("mcpServers", JsonArray(ideTools?.let { listOf(toJson(it)) } ?: emptyList()))
+        put("mcpServers", JsonArray(listOfNotNull(ideTools, handler.memoryServer()).map { toJson(it) }))
       }
       openSession(previousSessionId)
     }

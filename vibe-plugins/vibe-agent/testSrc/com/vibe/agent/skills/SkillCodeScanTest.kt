@@ -27,4 +27,13 @@ class SkillCodeScanTest {
     val fenced = "Установка:\n```\nnpx some-tool\n```"
     assertEquals(listOf(SkillCodeScan.Kind.UNPINNED_RUNNER), SkillCodeScan.scanSkill(fenced).map { it.kind })
   }
+
+  @Test
+  @org.junit.jupiter.api.Timeout(2)
+  fun `an almost-version does not make the scan backtrack forever`() {
+    // The shared vector line with VibeIDE: `uvx pkg@1` + 40 × `a` + `!` is unpinned and answers at once.
+    val script = "uvx pkg@1" + "a".repeat(40) + "!"
+    val fenced = "Запуск:\n```\n$script\n```"
+    assertEquals(listOf(SkillCodeScan.Kind.UNPINNED_RUNNER), SkillCodeScan.scanSkill(fenced).map { it.kind })
+  }
 }
