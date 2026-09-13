@@ -2,6 +2,7 @@
 package com.vibe.agent.providers
 
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.longOrNull
@@ -75,7 +76,15 @@ data class TokenUsage(
      */
     fun fromOpenAiChunk(chunk: JsonObject): TokenUsage? {
       val usage = chunk["usage"]?.jsonObject ?: return null
-      val cached = usage["prompt_tokens_details"]?.jsonObject?.long("cached_tokens") ?: 0
+      // DeepSeek documents `prompt_cache_hit_tokens` as required and `cached_tokens` as optional, and
+      // its own prose places hit/miss both inside `prompt_tokens_details` and at the top of usage. A
+      // missing `cached_tokens` would price the whole cached prompt as a miss — up to fifty times too
+      // much on Flash — so the hit count is read as a fallback, in both places.
+      val details = usage["prompt_tokens_details"] as? JsonObject
+      val cached = details?.longOrNull("cached_tokens")
+                   ?: details?.longOrNull("prompt_cache_hit_tokens")
+                   ?: usage.longOrNull("prompt_cache_hit_tokens")
+                   ?: 0
       val prompt = usage.long("prompt_tokens")
       // Orchestrator tokens are ADDITIVE, not nested inside prompt/completion (unlike reasoning tokens,
       // which live inside completion). An orchestrator model (Sakana Fugu and the like) calls other
@@ -96,6 +105,8 @@ data class TokenUsage(
       ).takeIf { it.known }
     }
 
-    private fun JsonObject.long(name: String): Long = this[name]?.jsonPrimitive?.longOrNull ?: 0
+    private fun JsonObject.long(name: String): Long = longOrNull(name) ?: 0
+
+    private fun JsonObject.longOrNull(name: String): Long? = (this[name] as? JsonPrimitive)?.longOrNull
   }
 }

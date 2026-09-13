@@ -56,6 +56,30 @@ object ShellSafetyAnalyzer {
   private val GIT_RESET_HARD = Regex("(^|\\s)reset\\b.*--hard\\b", RegexOption.IGNORE_CASE)
   private val GIT_CLEAN_FORCE = Regex("(^|\\s)clean\\b.*-(f|fd|fdx)\\b", RegexOption.IGNORE_CASE)
 
+  /** Reason codes for a command that touches what the agent may never rewrite. */
+  const val PROTECTED_JOURNAL = "protected-journal"
+  const val PROTECTED_EVALS = "protected-evals"
+
+  /** Programs that only read what they are given: naming the journal to them is not a rewrite. */
+  private val PATH_READERS = setOf("cat", "less", "more", "head", "tail", "grep", "rg", "wc", "jq", "zcat", "gzcat", "Get-Content")
+
+  /**
+   * The protected-path reason for one argument, or null.
+   *
+   * The same rules as AccessPolicy, so the two doors cannot disagree: a redirect target (`>>path`),
+   * a `./` prefix, a Windows separator and a leading absolute project path all fold to the relative
+   * form the policy reads.
+   */
+  internal fun protectedPathReason(arg: String): String? {
+    val cleaned = arg.trimStart('>', '<', '&', '1', '2').trim('"', '\'').replace('\\', '/').removePrefix("./")
+    val fromVibe = cleaned.indexOf(".vibe/").takeIf { it >= 0 }?.let { cleaned.substring(it) } ?: return null
+    return when {
+      com.vibe.agent.context.AccessPolicy.isProtectedJournal(fromVibe) -> PROTECTED_JOURNAL
+      com.vibe.agent.context.AccessPolicy.isProtectedEvals(fromVibe) -> PROTECTED_EVALS
+      else -> null
+    }
+  }
+
   /** A Windows drive, the one argument that tells `format D:` from `npm run format`. */
   private val DRIVE = Regex("[A-Za-z]:")
 
@@ -83,6 +107,13 @@ object ShellSafetyAnalyzer {
     // Windows `format D:` — the name alone is too common to judge (`npm run format`), the drive is not.
     if (program == "format" && cleanArgs.any { DRIVE.matches(it) }) reasons.add("format-drive")
     if (writesDisk(program, cleanArgs)) reasons.add("disk-tool")
+    // A shell command is the one way around AccessPolicy: `echo … >> .vibe/local/audit.jsonl` never
+    // reaches fs/write. Readers stay quiet — reading the journal is allowed, rewriting it is not.
+    if (program !in PATH_READERS) {
+      for (arg in cleanArgs) {
+        protectedPathReason(arg)?.let { if (it !in reasons) reasons.add(it) }
+      }
+    }
     if (reasons.isNotEmpty()) return Result(Safety.DESTRUCTIVE, reasons, target, cleanArgs)
     if (cleanArgs.isEmpty()) {
       for (p in AMBIGUOUS_COMMANDS) if (p.re.containsMatchIn(program)) return Result(Safety.AMBIGUOUS, listOf(p.reason), target, cleanArgs)

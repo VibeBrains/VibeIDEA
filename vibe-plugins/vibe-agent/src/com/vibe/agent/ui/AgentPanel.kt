@@ -258,7 +258,18 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
   @Volatile private var planCarryPending = false
 
   /** Признаки «трифекты», накопленные за текущий ход; разбор — [com.vibe.agent.guard.Trifecta]. */
-  private val turnSignals = java.util.concurrent.ConcurrentHashMap.newKeySet<com.vibe.agent.guard.Trifecta.Signal>()
+  /**
+   * Trifecta signals per conversation thread, not per turn.
+   *
+   * A leak spread over turns — a secret read in turn 1, foreign text in turn 3, `curl` in turn 5 —
+   * never had all three signals in one turn, so it was never seen. The threshold is unchanged (all
+   * three are still required), so the warning stays as rare as it was.
+   */
+  private val sessionSignals = java.util.concurrent.ConcurrentHashMap<String, MutableSet<com.vibe.agent.guard.Trifecta.Signal>>()
+
+  /** The signals of the thread the turn runs in; a thread is a session, a new chat starts clean. */
+  private val turnSignals: MutableSet<com.vibe.agent.guard.Trifecta.Signal>
+    get() = sessionSignals.computeIfAbsent(turnThreadId ?: currentThreadId) { java.util.concurrent.ConcurrentHashMap.newKeySet() }
   /** Did the turn end in anything other than a normal finish? The autopilot refuses to resume such a turn. */
   @Volatile private var turnEndedBadly = false
   /** What travelled in this turn's context, for the per-file spend estimate. */
@@ -2782,7 +2793,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     terminalConsoles.clear()
     changedPaths.clear()
     turnHadMutatingTool = false
-    turnSignals.clear()
+    // Signals are NOT cleared here: they live for the whole thread (see [sessionSignals]).
     // Ход, начатый не человеком за этой клавиатурой (входящий HTTP API, мост, дежурная проверка,
     // пайплайн), несёт текст, которого никто не читал глазами.
     if (turnActor != com.vibe.agent.audit.AuditActor.HUMAN) {
@@ -2797,7 +2808,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     }
     turnId = com.vibe.agent.audit.TurnId.next()
     audit?.append(AuditEvent(System.currentTimeMillis(), AuditEvent.Action.PROMPT, ok = true, actor = turnActor,
-      turnId = turnId, model = "acp/${t.config.name}", meta = promptMeta))
+      turnId = turnId, sessionId = turnThreadId ?: currentThreadId, model = "acp/${t.config.name}", meta = promptMeta))
     SwingUtilities.invokeLater {
       modePicker.setModes(c.modes)
       configPicker.setOptions(c.configOptions)
@@ -3370,6 +3381,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     if (index < 0) return
     openTabIds.removeAt(index)
     drafts.remove(id)
+    sessionSignals.remove(id)
     deleteIfEmpty(id)
     if (id == currentThreadId) {
       // The left neighbour wins, else the right one; no tabs left → a fresh chat (the view is never empty).
@@ -4704,7 +4716,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
 
   private fun markTerminalExit(terminalId: String, exitCode: Int?, signal: String?) {
     audit?.append(AuditEvent(System.currentTimeMillis(), AuditEvent.Action.TERMINAL, ok = exitCode == 0, actor = agentActor(),
-      callId = callIdOfTerminal(terminalId), turnId = turnId,
+      callId = callIdOfTerminal(terminalId), turnId = turnId, sessionId = turnThreadId ?: currentThreadId,
       meta = mapOf("exit" to (exitCode?.toString() ?: "signal:${signal ?: "?"}"))))
     SwingUtilities.invokeLater { terminalConsoles[terminalId]?.markExit(exitCode, signal) }
   }
@@ -4752,7 +4764,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
       actor = agentActor(),
       ok = call.status != ToolCall.STATUS_FAILED,
       callId = call.id,
-      turnId = turnId,
+      turnId = turnId, sessionId = turnThreadId ?: currentThreadId,
       files = target?.let { listOf(it) },
       meta = mapOf("tool" to tool, "status" to call.status),
     ))
@@ -4891,7 +4903,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
       if (choice >= 0) options[choice].getValue("optionId").jsonPrimitive.content else null
     }
     audit?.append(AuditEvent(System.currentTimeMillis(), AuditEvent.Action.PERMISSION, ok = chosen != null, actor = com.vibe.agent.audit.AuditActor.HUMAN,
-      callId = permissionCallId, turnId = turnId,
+      callId = permissionCallId, turnId = turnId, sessionId = turnThreadId ?: currentThreadId,
       meta = mapOf("title" to title.take(120), "outcome" to if (chosen != null) "selected" else "cancelled") +
         (if (trifecta) mapOf("trifecta" to (outbound ?: "")) else emptyMap())))
     return buildJsonObject {
@@ -4930,7 +4942,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     path?.let { changedPaths.add(it) }
     val result = fileOps.writeTextFile(resolved)
     audit?.append(AuditEvent(System.currentTimeMillis(), AuditEvent.Action.FS_WRITE, ok = true, actor = agentActor(),
-      turnId = turnId, files = path?.let { listOf(it.take(ToolCallAudit.MAX_TARGET_LEN)) }))
+      turnId = turnId, sessionId = turnThreadId ?: currentThreadId, files = path?.let { listOf(it.take(ToolCallAudit.MAX_TARGET_LEN)) }))
     return result
   }
 
@@ -4978,7 +4990,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
           project, t("chat.destructive.title"), body, request, onPhone, t("chat.destructive.run"))
       }
       audit?.append(AuditEvent(System.currentTimeMillis(), AuditEvent.Action.TERMINAL, ok = approved, actor = com.vibe.agent.audit.AuditActor.HUMAN,
-        turnId = turnId,
+        turnId = turnId, sessionId = turnThreadId ?: currentThreadId,
         meta = mapOf("gate" to "destructive", "reasons" to verdict.reasons.joinToString(","), "approved" to approved.toString())))
       if (!approved) throw IllegalStateException(t("chat.destructive.refused", "reasons" to verdict.reasons.joinToString(", ")))
     }

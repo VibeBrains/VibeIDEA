@@ -49,7 +49,13 @@ object Elicitation {
 
   enum class Mode { FORM, URL, UNKNOWN }
 
-  /** Одно поле формы. Тип — из JSON Schema; всё, чего мы не понимаем, показывается строкой. */
+  /**
+   * One form field. The type comes from the JSON Schema; anything we do not understand is a string.
+   *
+   * [options] are the wire values (`enum` or `oneOf[].const`), [labels] their human titles in the
+   * same order — `oneOf` exists precisely so the agent can say «Staging» and receive `stg`, and
+   * showing `stg` in the list would drop the one thing the agent asked us to show.
+   */
   data class Field(
     val name: String,
     val title: String,
@@ -58,9 +64,30 @@ object Elicitation {
     val required: Boolean = false,
     val description: String? = null,
     val default: String? = null,
+    val labels: List<String> = emptyList(),
+    val integer: Boolean = false,
+    val minLength: Int? = null,
+    val maxLength: Int? = null,
+    val pattern: String? = null,
+    val format: String? = null,
+    val minimum: Double? = null,
+    val maximum: Double? = null,
+    val minItems: Int? = null,
+    val maxItems: Int? = null,
   ) {
-    enum class Kind { STRING, NUMBER, BOOLEAN, ENUM }
+    enum class Kind { STRING, NUMBER, BOOLEAN, ENUM, MULTI }
+
+    /** The label shown for a wire value; the value itself when the agent gave no title. */
+    fun labelOf(value: String): String = labels.getOrNull(options.indexOf(value))?.takeIf { it.isNotBlank() } ?: value
   }
+
+  /** Why a filled value is not acceptable; the dialog turns it into words, the logic stays here. */
+  data class Invalid(val field: Field, val reason: Reason, val limit: String? = null) {
+    enum class Reason { NOT_NUMBER, NOT_INTEGER, TOO_SHORT, TOO_LONG, PATTERN, FORMAT, BELOW_MINIMUM, ABOVE_MAXIMUM, TOO_FEW, TOO_MANY }
+  }
+
+  /** How several choices of a [Field.Kind.MULTI] field travel inside the flat `values` map. */
+  const val MULTI_SEPARATOR = "\n"
 
   data class Request(
     val mode: Mode,
@@ -88,15 +115,32 @@ object Elicitation {
     val properties = schema?.get("properties")?.jsonObject
     val fields = properties?.entries?.map { (name, element) ->
       val property = element.jsonObject
-      val options = property["enum"]?.jsonArray?.mapNotNull { it.jsonPrimitive.contentOrNull }.orEmpty()
+      val type = property.string("type")
+      // A multi-select is `type: array` whose `items` carry the choices; single choice sits on the
+      // property itself. Both accept the plain `enum` and the titled `oneOf`/`anyOf` form.
+      val items = (property["items"] as? JsonObject)?.takeIf { type == "array" }
+      val (options, labels) = choicesOf(items ?: property)
       Field(
         name = name,
-        title = property["title"]?.jsonPrimitive?.contentOrNull ?: name,
-        kind = kindOf(property["type"]?.jsonPrimitive?.contentOrNull, options),
+        title = property.string("title") ?: name,
+        kind = when {
+          items != null -> Field.Kind.MULTI
+          else -> kindOf(type, options)
+        },
         options = options,
         required = name in required,
-        description = property["description"]?.jsonPrimitive?.contentOrNull,
-        default = property["default"]?.jsonPrimitive?.contentOrNull,
+        description = property.string("description"),
+        default = defaultOf(property["default"]),
+        labels = labels,
+        integer = type == "integer",
+        minLength = property.int("minLength"),
+        maxLength = property.int("maxLength"),
+        pattern = property.string("pattern"),
+        format = property.string("format"),
+        minimum = property.double("minimum"),
+        maximum = property.double("maximum"),
+        minItems = property.int("minItems"),
+        maxItems = property.int("maxItems"),
       )
     }.orEmpty()
     return Request(
@@ -107,6 +151,32 @@ object Elicitation {
       elicitationId = params["elicitationId"]?.jsonPrimitive?.contentOrNull,
     )
   }
+
+  /** `enum` gives values only; `oneOf`/`anyOf` of `{const, title}` give values with their titles. */
+  private fun choicesOf(schema: JsonObject): Pair<List<String>, List<String>> {
+    schema["enum"]?.let { enum ->
+      val values = (enum as? kotlinx.serialization.json.JsonArray)?.mapNotNull { (it as? JsonPrimitive)?.contentOrNull }.orEmpty()
+      return values to emptyList()
+    }
+    val titled = (schema["oneOf"] ?: schema["anyOf"]) as? kotlinx.serialization.json.JsonArray ?: return emptyList<String>() to emptyList()
+    val pairs = titled.mapNotNull { entry ->
+      val o = entry as? JsonObject ?: return@mapNotNull null
+      val value = (o["const"] as? JsonPrimitive)?.contentOrNull ?: return@mapNotNull null
+      value to (o.string("title") ?: value)
+    }
+    return pairs.map { it.first } to pairs.map { it.second }
+  }
+
+  /** A multi-select default is an array; it travels as the same separated string the dialog reads back. */
+  private fun defaultOf(element: kotlinx.serialization.json.JsonElement?): String? = when (element) {
+    is kotlinx.serialization.json.JsonArray -> element.mapNotNull { (it as? JsonPrimitive)?.contentOrNull }.joinToString(MULTI_SEPARATOR)
+    is JsonPrimitive -> element.contentOrNull
+    else -> null
+  }
+
+  private fun JsonObject.string(key: String): String? = (this[key] as? JsonPrimitive)?.contentOrNull
+  private fun JsonObject.int(key: String): Int? = string(key)?.toDoubleOrNull()?.toInt()
+  private fun JsonObject.double(key: String): Double? = string(key)?.toDoubleOrNull()
 
   private fun kindOf(type: String?, options: List<String>): Field.Kind = when {
     options.isNotEmpty() -> Field.Kind.ENUM
@@ -141,6 +211,10 @@ object Elicitation {
                 ?: raw.toDoubleOrNull()?.let { put(name, it) }
                 ?: put(name, raw)
               Field.Kind.BOOLEAN -> put(name, raw.equals("true", ignoreCase = true))
+              // An array where the schema asked for an array: a joined string would be a schema
+              // violation the agent can only reject.
+              Field.Kind.MULTI -> put(name, kotlinx.serialization.json.JsonArray(
+                raw.split(MULTI_SEPARATOR).filter { it.isNotEmpty() }.map { JsonPrimitive(it) }))
               else -> put(name, JsonPrimitive(raw))
             }
           }
@@ -151,4 +225,58 @@ object Elicitation {
   /** Заполнено ли обязательное. Пустая строка — не ответ. */
   fun missing(fields: List<Field>, values: Map<String, String>): List<Field> =
     fields.filter { it.required && values[it.name].isNullOrBlank() }
+
+  /**
+   * The first value that breaks its own schema, or null.
+   *
+   * Checked before «send», because the agent sent the constraints: a value that violates them comes
+   * back as the agent's error, and from outside that reads as «the client is broken». Empty optional
+   * values are not checked — absence is allowed, a wrong value is not.
+   */
+  fun invalid(fields: List<Field>, values: Map<String, String>): Invalid? {
+    for (field in fields) {
+      val raw = values[field.name].orEmpty()
+      if (field.kind == Field.Kind.MULTI) {
+        val count = raw.split(MULTI_SEPARATOR).count { it.isNotEmpty() }
+        if (count == 0 && !field.required) continue
+        field.minItems?.let { if (count < it) return Invalid(field, Invalid.Reason.TOO_FEW, it.toString()) }
+        field.maxItems?.let { if (count > it) return Invalid(field, Invalid.Reason.TOO_MANY, it.toString()) }
+        continue
+      }
+      if (raw.isEmpty()) continue
+      when (field.kind) {
+        Field.Kind.NUMBER -> {
+          val number = raw.toDoubleOrNull() ?: return Invalid(field, Invalid.Reason.NOT_NUMBER)
+          if (field.integer && raw.toLongOrNull() == null) return Invalid(field, Invalid.Reason.NOT_INTEGER)
+          field.minimum?.let { if (number < it) return Invalid(field, Invalid.Reason.BELOW_MINIMUM, plain(it)) }
+          field.maximum?.let { if (number > it) return Invalid(field, Invalid.Reason.ABOVE_MAXIMUM, plain(it)) }
+        }
+        Field.Kind.STRING -> {
+          field.minLength?.let { if (raw.length < it) return Invalid(field, Invalid.Reason.TOO_SHORT, it.toString()) }
+          field.maxLength?.let { if (raw.length > it) return Invalid(field, Invalid.Reason.TOO_LONG, it.toString()) }
+          field.pattern?.let { pattern ->
+            // A pattern we cannot compile is the agent's mistake, not the human's: never block on it.
+            val regex = runCatching { Regex(pattern) }.getOrNull()
+            if (regex != null && !regex.containsMatchIn(raw)) return Invalid(field, Invalid.Reason.PATTERN, pattern)
+          }
+          field.format?.let { format -> if (!formatOk(format, raw)) return Invalid(field, Invalid.Reason.FORMAT, format) }
+        }
+        else -> Unit
+      }
+    }
+    return null
+  }
+
+  private fun plain(value: Double): String = if (value % 1.0 == 0.0) value.toLong().toString() else value.toString()
+
+  /** The four formats ACP names; an unknown format is not ours to enforce. */
+  internal fun formatOk(format: String, value: String): Boolean = when (format) {
+    "email" -> EMAIL.matches(value)
+    "uri" -> runCatching { java.net.URI(value).scheme != null }.getOrDefault(false)
+    "date" -> runCatching { java.time.LocalDate.parse(value) }.isSuccess
+    "date-time" -> runCatching { java.time.OffsetDateTime.parse(value) }.isSuccess
+    else -> true
+  }
+
+  private val EMAIL = Regex("^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$")
 }

@@ -60,4 +60,28 @@ class TokenUsageOrchestrationTest {
     assertEquals(6000, usage.inputTokens)
     assertEquals(1000, usage.outputTokens)
   }
+
+  @Test
+  fun `DeepSeek cache hits count when cached_tokens is absent`() {
+    val nested = TokenUsage.fromOpenAiChunk(chunk("""
+      {"usage":{"prompt_tokens":1000,"completion_tokens":10,
+        "prompt_tokens_details":{"prompt_cache_hit_tokens":800,"prompt_cache_miss_tokens":200}}}
+    """))!!
+    assertEquals(200, nested.inputTokens)
+    assertEquals(800, nested.cacheReadTokens)
+    val flat = TokenUsage.fromOpenAiChunk(chunk("""
+      {"usage":{"prompt_tokens":1000,"completion_tokens":10,"prompt_cache_hit_tokens":800,"prompt_cache_miss_tokens":200}}
+    """))!!
+    assertEquals(200, flat.inputTokens)
+    assertEquals(800, flat.cacheReadTokens)
+  }
+
+  @Test
+  fun `cached_tokens wins over the hit count when both arrive`() {
+    val usage = TokenUsage.fromOpenAiChunk(chunk("""
+      {"usage":{"prompt_tokens":1000,"completion_tokens":10,
+        "prompt_tokens_details":{"cached_tokens":600,"prompt_cache_hit_tokens":800}}}
+    """))!!
+    assertEquals(600, usage.cacheReadTokens)
+  }
 }

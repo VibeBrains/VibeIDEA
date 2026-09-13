@@ -43,9 +43,16 @@ class ElicitationDialog(
     }
     for (field in request.fields) {
       val component: JComponent = when (field.kind) {
-        Elicitation.Field.Kind.ENUM -> ComboBox(field.options.toTypedArray()).apply {
-          field.default?.let { selectedItem = it }
-          editors[field.name] = { selectedItem?.toString().orEmpty() }
+        // The list shows the agent's titles and sends back the wire values they stand for.
+        Elicitation.Field.Kind.ENUM -> ComboBox(field.options.map { field.labelOf(it) }.toTypedArray()).apply {
+          field.default?.let { selectedItem = field.labelOf(it) }
+          editors[field.name] = { field.options.getOrNull(selectedIndex).orEmpty() }
+        }
+        Elicitation.Field.Kind.MULTI -> {
+          val chosen = field.default?.split(Elicitation.MULTI_SEPARATOR).orEmpty().toSet()
+          val boxes = field.options.map { value -> value to JBCheckBox(field.labelOf(value), value in chosen) }
+          editors[field.name] = { boxes.filter { it.second.isSelected }.joinToString(Elicitation.MULTI_SEPARATOR) { it.first } }
+          javax.swing.JPanel(com.intellij.ui.components.panels.VerticalLayout(0)).apply { boxes.forEach { add(it.second) } }
         }
         Elicitation.Field.Kind.BOOLEAN -> JBCheckBox("", field.default?.equals("true", ignoreCase = true) ?: false).apply {
           editors[field.name] = { isSelected.toString() }
@@ -73,9 +80,26 @@ class ElicitationDialog(
   fun values(): Map<String, String> = editors.mapValues { (_, read) -> read() }
 
   override fun doValidate(): ValidationInfo? {
-    val missing = Elicitation.missing(request.fields, values())
-    if (missing.isEmpty()) return null
-    val field = missing.first()
-    return ValidationInfo(t("elicit.required", "field" to field.title), components[field])
+    val values = values()
+    Elicitation.missing(request.fields, values).firstOrNull()?.let { field ->
+      return ValidationInfo(t("elicit.required", "field" to field.title), components[field])
+    }
+    val invalid = Elicitation.invalid(request.fields, values) ?: return null
+    val field = invalid.field.title
+    val limit = invalid.limit.orEmpty()
+    // One t() per branch, literally: the catalogue gate counts a key as used only where it is called.
+    val message = when (invalid.reason) {
+      Elicitation.Invalid.Reason.NOT_NUMBER -> t("elicit.invalid.number", "field" to field)
+      Elicitation.Invalid.Reason.NOT_INTEGER -> t("elicit.invalid.integer", "field" to field)
+      Elicitation.Invalid.Reason.TOO_SHORT -> t("elicit.invalid.minLength", "field" to field, "limit" to limit)
+      Elicitation.Invalid.Reason.TOO_LONG -> t("elicit.invalid.maxLength", "field" to field, "limit" to limit)
+      Elicitation.Invalid.Reason.PATTERN -> t("elicit.invalid.pattern", "field" to field, "limit" to limit)
+      Elicitation.Invalid.Reason.FORMAT -> t("elicit.invalid.format", "field" to field, "limit" to limit)
+      Elicitation.Invalid.Reason.BELOW_MINIMUM -> t("elicit.invalid.minimum", "field" to field, "limit" to limit)
+      Elicitation.Invalid.Reason.ABOVE_MAXIMUM -> t("elicit.invalid.maximum", "field" to field, "limit" to limit)
+      Elicitation.Invalid.Reason.TOO_FEW -> t("elicit.invalid.minItems", "field" to field, "limit" to limit)
+      Elicitation.Invalid.Reason.TOO_MANY -> t("elicit.invalid.maxItems", "field" to field, "limit" to limit)
+    }
+    return ValidationInfo(message, components[invalid.field])
   }
 }

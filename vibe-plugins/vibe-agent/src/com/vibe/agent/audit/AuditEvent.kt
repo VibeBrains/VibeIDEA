@@ -35,6 +35,13 @@ data class AuditEvent(
   val callId: String? = null,
   /** Ход, внутри которого всё это произошло: цепочка `prompt → tool_call → fs_write` читается целиком. */
   val turnId: String? = null,
+  /**
+   * The conversation thread: a session spans many turns.
+   *
+   * A leak can be legal call by call and turn by turn and only show as a sequence across the thread;
+   * reading that sequence must be a filter, not a join over timestamps.
+   */
+  val sessionId: String? = null,
   val files: List<String>? = null,
   val model: String? = null,
   val latencyMs: Long? = null,
@@ -47,6 +54,7 @@ data class AuditEvent(
     put("actor", actor.toJson())
     callId?.let { put("callId", it) }
     turnId?.let { put("turnId", it) }
+    sessionId?.let { put("sessionId", it) }
     files?.takeIf { it.isNotEmpty() }?.let { list ->
       put("files", kotlinx.serialization.json.JsonArray(list.map { JsonPrimitive(it) }))
     }

@@ -139,15 +139,22 @@ class HttpApiPolicyTest {
   }
 
   @Test
-  fun `a foreign Origin is refused with 403, one from this machine passes`() {
+  fun `any Origin is refused with 403, local pages included`() {
     // MCP 2026-07-28: «If the Origin header is present and invalid, servers MUST respond with HTTP
-    // 403 Forbidden». Checked on every path: the reason is the listener's, not the protocol's.
-    for (origin in listOf("https://evil.example.com", "null", "http://127.0.0.1.evil.com", "chrome-extension://abc", "file://")) {
+    // 403 Forbidden». Our clients never send Origin, so a page on a neighbouring local port is refused
+    // here and does not reach the token check at all.
+    val origins = listOf(
+      "https://evil.example.com", "null", "http://127.0.0.1.evil.com", "chrome-extension://abc", "file://",
+      "http://localhost:3000", "http://127.0.0.1:7391", "https://[::1]:5173", "HTTP://LOCALHOST",
+    )
+    for (origin in origins) {
       assertEquals(403, refusal(request(origin = origin)).code, origin)
     }
-    for (origin in listOf("http://localhost:3000", "http://127.0.0.1:7391", "https://[::1]:5173", "HTTP://LOCALHOST")) {
-      assertIs<HttpApiPolicy.Decision.Run>(HttpApiPolicy.decide(request(origin = origin), token), origin)
-    }
+  }
+
+  @Test
+  fun `a request without Origin still runs`() {
+    assertIs<HttpApiPolicy.Decision.Run>(HttpApiPolicy.decide(request(), token))
   }
 
   @Test

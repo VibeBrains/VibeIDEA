@@ -198,7 +198,7 @@ class VibeHttpApiE2ETest {
   }
 
   @Test
-  fun `a page from another site is refused, and no answer carries CORS headers`() {
+  fun `a page from any origin is refused, and no answer carries CORS headers`() {
     // java.net.http rather than HttpURLConnection: the latter treats Origin as a restricted header
     // and may drop a hand-set one silently — the test would pass without Origin ever reaching us.
     val client = HttpClient.newBuilder().version(HttpClient.Version.HTTP_1_1).build()
@@ -213,8 +213,9 @@ class VibeHttpApiE2ETest {
     val foreign = ask("https://evil.example.com")
     assertEquals(403, foreign.statusCode(), foreign.body())
     assertTrue(foreign.headers().firstValue("Access-Control-Allow-Origin").isEmpty)
+    // A local page too: our clients send no Origin, and a neighbouring dev server must not reach the token.
     val local = ask("http://localhost:3000")
-    assertEquals(200, local.statusCode(), local.body())
+    assertEquals(403, local.statusCode(), local.body())
     assertTrue(local.headers().firstValue("Access-Control-Allow-Origin").isEmpty)
   }
 

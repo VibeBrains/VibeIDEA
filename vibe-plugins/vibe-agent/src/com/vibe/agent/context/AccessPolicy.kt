@@ -58,6 +58,8 @@ object AccessPolicy {
   val PROTECTED_JOURNALS: Set<String> = setOf(
     ".vibe/audit.jsonl",
     ".vibe/checkpoints.jsonl",
+    ".vibe/local/audit.jsonl",
+    ".vibe/local/checkpoints.jsonl",
   )
 
   /**
@@ -71,10 +73,31 @@ object AccessPolicy {
     // Folded: on a case-insensitive disk `.VIBE/AUDIT.JSONL` is the journal itself.
     val key = foldCase(relative)
     if (key in PROTECTED_JOURNALS) return true
-    val name = key.removePrefix(".vibe/")
-    if (name != key.substringAfterLast('/')) return false
+    // The journals are written to `.vibe/local/` (runtime state that does not travel with the repo),
+    // and the rule used to know only the old `.vibe/` location — so the LIVE journal was writable by
+    // the agent through plain fs/write while its legacy path was guarded. Both folders count: old
+    // projects still carry files there until the migration moves them.
+    val name = JOURNAL_FOLDERS.firstNotNullOfOrNull { folder -> key.removePrefix(folder).takeIf { it != key } }
+               ?: return false
+    if (name.contains('/')) return false
     return (name.startsWith("audit.") || name.startsWith("checkpoints.")) &&
            (name.endsWith(".jsonl") || name.endsWith(".jsonl.gz"))
+  }
+
+  /** Where the journals live: `.vibe/local/` now, `.vibe/` in projects not yet migrated. Longest first. */
+  private val JOURNAL_FOLDERS = listOf(".vibe/local/", ".vibe/")
+
+  /**
+   * Is this project-relative path inside a skill's eval cases (`.vibe/skills/<id>/evals/…`)?
+   *
+   * Eval cases judge the agent, so the agent must not rewrite them: tuning your own grader is the
+   * core of the 2026 OpenAI – Hugging Face incident. Skill approval is bound to the whole directory
+   * digest, so an edit would drop the approval — but dropping it after the fact is not the same as
+   * refusing the write. Reading stays open: the agent may need the cases to understand the skill.
+   */
+  fun isProtectedEvals(relative: String): Boolean {
+    val parts = foldCase(relative).split('/')
+    return parts.size >= 4 && parts[0] == ".vibe" && parts[1] == "skills" && parts[3] == "evals"
   }
 
   fun of(path: String, roots: Roots): Access {
@@ -88,6 +111,8 @@ object AccessPolicy {
         // Before every other rule, and not overridable by any of them: a setting that could open the
         // journal for writing would be a setting that switches accountability off.
         if (isProtectedJournal(relative)) return Access.READ_ONLY
+        // Same rank as the journals, for the same reason: no setting may let the judged edit the judge.
+        if (isProtectedEvals(relative)) return Access.READ_ONLY
         if (roots.ignore.isIgnored(relative)) return Access.DENIED
         if (roots.sourceFolders.any { isInside(foldCase(normalized), foldCase(joinRelative(base, it))) }) {
           return Access.READ_ONLY

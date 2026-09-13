@@ -7,8 +7,6 @@ import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
-import java.net.URI
-import java.net.URISyntaxException
 import java.nio.charset.StandardCharsets
 import java.security.MessageDigest
 
@@ -99,10 +97,11 @@ object HttpApiPolicy {
 
     // 3. Origin. MCP 2026-07-28 makes validating it a MUST («If the Origin header is present and
     //    invalid, servers MUST respond with HTTP 403 Forbidden»), and it is checked on every path:
-    //    the reason belongs to the listener, not to the protocol — a page open in the owner's
-    //    browser attaches its Origin to whatever it sends here. A page served from this machine
-    //    passes, as a local Host does; a foreign site or `null` (a sandboxed frame, a file) does not.
-    if (request.origin != null && !isLocalOrigin(request.origin)) {
+    //    the reason belongs to the listener, not to the protocol. ANY Origin is refused, local ones
+    //    included: the clients we serve (agents, CI, curl) never send it — only a browser does — and a
+    //    page on a neighbouring local port (a dev server, another app) used to pass this step and be
+    //    stopped by the token alone. One barrier where two were possible.
+    if (request.origin != null) {
       return Decision.Refuse(403, "недопустимый Origin: ${request.origin}")
     }
 
@@ -163,19 +162,5 @@ object HttpApiPolicy {
     return name in LOCAL_NAMES
   }
 
-  /**
-   * An `Origin` of a page served from this machine: `http(s)://` plus the names [isLocalHost]
-   * accepts, on any port. No stricter than Host on purpose — a local page is stopped by the token and
-   * by the CORS headers we never send, and a rule that refuses it would buy nothing the two do not.
-   */
-  fun isLocalOrigin(origin: String?): Boolean {
-    val uri = try { URI(origin?.trim() ?: return false) } catch (e: URISyntaxException) { return false }
-    val scheme = uri.scheme?.lowercase() ?: return false
-    if (scheme !in ORIGIN_SCHEMES) return false
-    val host = uri.host?.removePrefix("[")?.removeSuffix("]")?.lowercase() ?: return false
-    return host in LOCAL_NAMES
-  }
-
   private val LOCAL_NAMES = setOf("localhost", "127.0.0.1", "::1", "0:0:0:0:0:0:0:1")
-  private val ORIGIN_SCHEMES = setOf("http", "https")
 }
