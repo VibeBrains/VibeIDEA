@@ -22,7 +22,10 @@
     <postStartupActivity implementation="com.vibe.lsp.VibeLspSuggestionSilencer"/>
     <!-- Ext JS: переход по имени класса и по пути в строке. JS-ядра в открытой платформе нет,
          поэтому и индекс, и переход считают по тексту файла. -->
-    <fileBasedIndex implementation="com.vibe.lsp.extjs.ExtDefineIndex"/>
+    <fileBasedIndex implementation="com.vibe.lsp.extjs.ExtDefineIndexExtension"/>
+    <fileBasedIndex implementation="com.vibe.lsp.extjs.ExtClassIndexExtension"/>
+    <fileBasedIndex implementation="com.vibe.lsp.extjs.ExtMethodIndexExtension"/>
+    <fileBasedIndex implementation="com.vibe.lsp.extjs.ExtEventIndexExtension"/>
     <gotoDeclarationHandler implementation="com.vibe.lsp.extjs.ExtGotoDeclarationHandler"/>
   </extensions>
 
