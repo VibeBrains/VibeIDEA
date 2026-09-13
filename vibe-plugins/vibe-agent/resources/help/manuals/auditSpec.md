@@ -47,6 +47,7 @@ JSONL: одна строка — один JSON-объект, завершённ�
 | `fs_write` | Запись файла через клиента | — (путь в `files`) |
 | `hook` | Отработала цепочка хуков | `event`, `tool`, `blocked`, `broken` |
 | `model_substituted` | Ответила не та модель, которую просили (прокси, агрегатор, запасная цель); `ok` — `false` | `asked`, `answered` |
+| `revoke` | Человек отозвал разом все одобрения проекта (навыки и команды). `meta.skills`, `meta.commands` — сколько снято |
 | `verify_gate:result` | Прогон VERIFY-GATE | `ran`, `exit` |
 | `turn_check:result` | Проверки хода нашли проблемы | `findings`, `mode` |
 | `circuit_breaker_opened` | Сработал защитный предохранитель | `breaker`, `reason` |

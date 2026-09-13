@@ -56,6 +56,8 @@ class VibeAuditPanel(private val project: Project) : JPanel(BorderLayout()), Dis
       add(follow)
       add(onlyFailures.also { it.addActionListener { render() } })
       add(com.vibe.agent.ui.composer.PillButton(t("audit.clearView"), outlined = true) { lines.clear(); render() })
+      add(com.vibe.agent.ui.composer.PillButton(t("audit.summary"), outlined = true) { showSummary() })
+      add(com.vibe.agent.ui.composer.PillButton(t("audit.revoke"), outlined = true) { revokeApprovals() })
     }
     val header = JPanel().apply {
       layout = javax.swing.BoxLayout(this, javax.swing.BoxLayout.Y_AXIS)
@@ -116,6 +118,61 @@ class VibeAuditPanel(private val project: Project) : JPanel(BorderLayout()), Dis
     if (follow.isSelected) area.caretPosition = area.document.length
   }
 
+  /**
+   * «What did the agent read, write and run» over the lines this panel holds.
+   *
+   * The journal answers «what happened at 14:02»; this answers «what did this agent touch», which is
+   * the question after an agent was working with private files.
+   */
+  private fun showSummary() {
+    val agents = AuditReadSummary.of(lines.toList())
+    val text = if (agents.isEmpty()) t("audit.summary.empty") else buildString {
+      for (agent in agents) {
+        appendLine(t("audit.summary.agent", "agent" to agent.name, "read" to agent.read.size,
+                     "written" to agent.written.size, "commands" to agent.commands))
+        if (agent.read.isNotEmpty()) appendLine(t("audit.summary.read", "files" to agent.read.take(SUMMARY_FILES).joinToString(", ")))
+        if (agent.written.isNotEmpty()) appendLine(t("audit.summary.written", "files" to agent.written.take(SUMMARY_FILES).joinToString(", ")))
+      }
+      appendLine()
+      append(t("audit.summary.note"))
+    }
+    com.intellij.openapi.ui.Messages.showInfoMessage(project, text, t("audit.summary.title"))
+  }
+
+  /**
+   * Withdraws every approval of the project in one step: granting was always one click, and
+   * withdrawing must not be «edit the skill and wait for the next question».
+   *
+   * Only approvals that actually exist are counted and cleared, so the confirmation names real numbers.
+   */
+  private fun revokeApprovals() {
+    val props = com.intellij.ide.util.PropertiesComponent.getInstance(project)
+    val base = project.basePath
+    val skills = com.vibe.agent.skills.SkillsStore.list(base).map { it.pkg.id }
+      .filter { props.getValue(com.vibe.agent.safety.ApprovalKeys.SKILL + it) != null }
+    val commands = base?.let { dir ->
+      val file = Path.of(dir, com.vibe.agent.commands.ProjectCommands.FILE)
+      val text = runCatching { Files.readString(file) }.getOrNull() ?: return@let emptyList()
+      com.vibe.agent.commands.ProjectCommands.parse(text).commands.map { it.id }
+    }.orEmpty().filter { props.getValue(com.vibe.agent.safety.ApprovalKeys.COMMAND + it) != null }
+    val title = t("audit.revoke")
+    if (skills.isEmpty() && commands.isEmpty()) {
+      com.intellij.openapi.ui.Messages.showInfoMessage(project, t("audit.revoke.none"), title)
+      return
+    }
+    val answer = com.intellij.openapi.ui.Messages.showYesNoDialog(
+      project, t("audit.revoke.confirm", "skills" to skills.size, "commands" to commands.size), title,
+      com.intellij.openapi.ui.Messages.getWarningIcon(),
+    )
+    if (answer != com.intellij.openapi.ui.Messages.YES) return
+    com.vibe.agent.safety.ApprovalKeys.all(skills, commands).forEach { props.unsetValue(it) }
+    VibeAuditService.getInstance(project).get()?.append(AuditEvent(
+      ts = System.currentTimeMillis(), action = AuditEvent.Action.REVOKE, ok = true, actor = AuditActor.HUMAN,
+      meta = mapOf("skills" to skills.size.toString(), "commands" to commands.size.toString()),
+    ))
+    com.intellij.openapi.ui.Messages.showInfoMessage(project, t("audit.revoke.done", "skills" to skills.size, "commands" to commands.size), title)
+  }
+
   override fun dispose() {
     timer.cancel(false)
   }
@@ -123,6 +180,9 @@ class VibeAuditPanel(private val project: Project) : JPanel(BorderLayout()), Dis
   private companion object {
     /** One tick never reads more than this: a burst of writes must not stall the EDT hop. */
     const val MAX_CHUNK = 1L * 1024 * 1024
+
+    /** Files named per agent in the summary; the counts above them stay exact. */
+    const val SUMMARY_FILES = 20
   }
 }
 

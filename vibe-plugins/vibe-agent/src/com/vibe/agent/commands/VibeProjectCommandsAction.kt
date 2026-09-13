@@ -96,7 +96,7 @@ class VibeProjectCommandsAction : AnAction({ t("commands.action") }) {
   }
 
   companion object {
-    private const val KEY_PREFIX = "vibe.commands.approved."
+    private const val KEY_PREFIX = com.vibe.agent.safety.ApprovalKeys.COMMAND
 
     /**
      * Shared with the number-key actions: the approval, the secret substitution and the terminal

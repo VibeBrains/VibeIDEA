@@ -95,6 +95,14 @@ data class AuditEvent(
     const val MODEL_SUBSTITUTED = "model_substituted"
 
     /**
+     * A person withdrew every approval of the project in one step — skills and commands.
+     *
+     * Granting was always one click, withdrawing was «edit the text and wait for the next question».
+     * In `meta` — `skills` and `commands`, how many approvals were cleared.
+     */
+    const val REVOKE = "revoke"
+
+    /**
      * Агент попросил у человека данные (`elicitation/create`) — и что тот ответил.
      *
      * Отдельно от `permission`, потому что это другой вопрос: разрешение отвечает «да/нет» на

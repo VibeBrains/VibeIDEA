@@ -5176,10 +5176,10 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     const val OUTPUT_COMMAND = "/output"
     const val SPEND_COMMAND = "/spend"
     /** Per project: a skill of the same name in another repository is another skill. */
-    const val SKILL_APPROVAL_KEY = "vibe.skill.approved."
+    const val SKILL_APPROVAL_KEY = com.vibe.agent.safety.ApprovalKeys.SKILL
 
     /** The approved path → hash map, beside the digest: lets the next question name what changed. */
-    const val SKILL_APPROVED_FILES_KEY = "vibe.skill.approvedFiles."
+    const val SKILL_APPROVED_FILES_KEY = com.vibe.agent.safety.ApprovalKeys.SKILL_FILES
     const val GIT_COMMAND = "/git"
     const val COUNCIL_COMMAND = "/council"
     const val HANDOFF_COMMAND = "/handoff"
