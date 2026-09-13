@@ -37,4 +37,12 @@ class QaRoleTest {
     assertFalse(RolePaths.effective("backend-dev", RolePaths.Scope()).stated)
     assertFalse(RolePaths.mayWrite("tests/x.test.ts", RolePaths.effective("code-reviewer", RolePaths.Scope())) && RoleRights.mayWrite("code-reviewer"))
   }
+
+  @Test
+  fun `a deny rule alone narrows the default instead of removing it`() {
+    val scope = RolePaths.effective("qa", RolePaths.Scope(deny = listOf("**/fixtures/**")))
+    assertFalse(RolePaths.mayWrite("src/main/kotlin/Foo.kt", scope), "code under test must stay closed")
+    assertTrue(RolePaths.mayWrite("tests/UserTest.php", scope))
+    assertFalse(RolePaths.mayWrite("tests/fixtures/data.json", scope))
+  }
 }

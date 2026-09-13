@@ -83,8 +83,16 @@ object RolePaths {
     "*.spec.ts", "*.spec.tsx", "*.spec.js", "test_*.py", "*_test.py", "*_test.go",
   )
 
-  /** The step's own scope wins; an unstated one falls back to the role default. */
-  fun effective(role: String?, stated: Scope): Scope = if (stated.stated) stated else defaultScope(role)
+  /**
+   * The scope a step actually writes under.
+   *
+   * The step's own ALLOW list replaces the role default; its deny list is added on top of whatever
+   * allows. A step with only `denyPaths` used to count as «stated» and dropped the default entirely —
+   * a `qa` step with one deny rule could then write anywhere but that rule. A deny narrows, it never
+   * widens (the same reading as VibeIDE's `QA_DEFAULT_WRITE_PATHS`, found by comparing the two, 13.09.2026).
+   */
+  fun effective(role: String?, stated: Scope): Scope =
+    if (stated.allow.isNotEmpty()) stated else defaultScope(role).copy(deny = stated.deny)
 
   /**
    * Совпадение по правилу gitignore: `*` не переходит через `/`, `**` переходит, шаблон без `/`
