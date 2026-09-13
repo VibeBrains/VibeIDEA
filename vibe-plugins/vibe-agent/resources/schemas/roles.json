@@ -1,0 +1,23 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Умолчания ролей VibeIDEA (.vibe/roles.json)",
+  "type": "object",
+  "properties": {
+    "version": { "type": "integer", "const": 1 },
+    "roles": {
+      "type": "object",
+      "properties": {
+        "qa": {
+          "type": "object",
+          "properties": {
+            "writePaths": {
+              "type": "array",
+              "description": "Куда шаг qa пишет без своих paths. Синтаксис gitignore. Пустой список запрещает запись целиком.",
+              "items": { "type": "string", "minLength": 1 }
+            }
+          }
+        }
+      }
+    }
+  }
+}

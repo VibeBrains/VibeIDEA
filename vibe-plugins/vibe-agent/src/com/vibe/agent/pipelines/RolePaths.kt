@@ -69,12 +69,13 @@ object RolePaths {
    * test and the fix one act nobody checked. A step that states its own `paths` replaces this — a
    * project with an unusual test layout says so, and no default can guess every layout.
    */
-  fun defaultScope(role: String?): Scope = when (role?.trim()?.lowercase()) {
-    "qa" -> Scope(allow = TEST_PATHS)
+  // [qa] is the project's `qa` default from `.vibe/roles.json` (RolesFile); the built-in list when absent.
+  fun defaultScope(role: String?, qa: Scope = Scope(allow = TEST_PATHS)): Scope = when (role?.trim()?.lowercase()) {
+    "qa" -> qa
     else -> Scope()
   }
 
-  /** Where tests live across the stacks this IDE serves: JVM, TS/JS, PHP, Python, Go. */
+  /** Where tests live across the stacks this IDE serves: JVM, TS/JS, PHP, Python, Go. The fallback of `roles.json` — keep equal to its seed. */
   // Directories are written with explicit `**/` on both sides: a pattern like `tests/` is anchored at
   // the project root by [matches], and tests live deep inside modules (`web/__tests__/`, `x/testSrc/`).
   val TEST_PATHS: List<String> = listOf(
@@ -91,8 +92,9 @@ object RolePaths {
    * a `qa` step with one deny rule could then write anywhere but that rule. A deny narrows, it never
    * widens (the same reading as VibeIDE's `QA_DEFAULT_WRITE_PATHS`, found by comparing the two, 13.09.2026).
    */
-  fun effective(role: String?, stated: Scope): Scope =
-    if (stated.allow.isNotEmpty()) stated else defaultScope(role).copy(deny = stated.deny)
+  fun effective(role: String?, stated: Scope, qa: Scope = Scope(allow = TEST_PATHS)): Scope =
+    if (stated.allow.isNotEmpty()) stated
+    else defaultScope(role, qa).let { it.copy(deny = it.deny + stated.deny) }
 
   /**
    * Совпадение по правилу gitignore: `*` не переходит через `/`, `**` переходит, шаблон без `/`

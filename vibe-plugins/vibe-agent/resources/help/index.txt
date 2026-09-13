@@ -25,6 +25,7 @@ manuals/pipelinesSpec.md
 manuals/projectContextSpec.md
 manuals/providersSpec.md
 manuals/release.md
+manuals/rolesSpec.md
 manuals/serversSpec.md
 manuals/skillEvalsSpec.md
 manuals/skillsSpec.md

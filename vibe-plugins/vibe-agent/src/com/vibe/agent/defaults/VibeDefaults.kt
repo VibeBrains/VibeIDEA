@@ -51,6 +51,7 @@ object VibeDefaults {
     "prompts/example.md" to "prompts/example.md",
     "prompts/pipeline.md" to "prompts/pipeline.md",
     "requests.http" to "requests.http",
+    "roles.json" to "roles.json",
     // Provider catalog: auto-loaded by ProvidersService (unlike the *.example.jsonc seeds),
     // `active` is the toggle — owner's decision №24. One file per provider.
     "patrols.json" to "patrols.json",

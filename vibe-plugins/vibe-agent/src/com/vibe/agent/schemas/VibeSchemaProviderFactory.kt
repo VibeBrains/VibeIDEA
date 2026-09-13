@@ -43,6 +43,7 @@ class VibeSchemaProviderFactory : JsonSchemaProviderFactory {
     val FILES = listOf(
       ".vibe/commands.json" to "commands",
       ".vibe/pipelines.json" to "pipelines",
+      ".vibe/roles.json" to "roles",
       ".vibe/hooks.json" to "hooks",
       ".vibe/servers.json" to "servers",
       ".vibe/providers.json" to "providers",

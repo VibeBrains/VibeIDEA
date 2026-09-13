@@ -4047,6 +4047,8 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
       return
     }
     systemLine(t("pipeline.header", "name" to pipeline.name, "count" to pipeline.steps.size))
+    // Read once per run: a file edited mid-run must not move the boundary between two steps.
+    val qaScope = com.vibe.agent.pipelines.RolesFile.load(project.basePath) { systemLine("[roles] $it") }
     turnInFlight.set(true)
     status.set(VibeAgentStatusService.State.RUNNING)
     composer.busy = true
@@ -4143,7 +4145,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
           }
           try {
             currentRole = step.role
-            currentScope = com.vibe.agent.pipelines.RolePaths.effective(step.role, com.vibe.agent.pipelines.RolePaths.Scope(step.paths, step.denyPaths))
+            currentScope = com.vibe.agent.pipelines.RolePaths.effective(step.role, com.vibe.agent.pipelines.RolePaths.Scope(step.paths, step.denyPaths), qaScope)
             changedPaths.clear()
             stepBuffer = StringBuilder()
             // Потолки ставятся ДО запроса и снимаются в finally: считать их у обычного хода
