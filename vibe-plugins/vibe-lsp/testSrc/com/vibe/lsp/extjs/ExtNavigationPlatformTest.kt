@@ -150,4 +150,44 @@ class ExtNavigationPlatformTest : BasePlatformTestCase() {
     val targets = targetsAt("app/ExecModal.js", child, "Ext.window.Window")
     assertTrue("несуществующий класс не должен давать цели", targets == null || targets.isEmpty())
   }
+
+  private val numberConfigs = """
+    Ext.define('app.constants.NumberConfigs', {
+      singleton: true,
+      spinnerInteger: { allowDecimals: false },
+      spinnerDecimal: { allowDecimals: true }
+    });
+  """.trimIndent()
+
+  private val form = """
+    Ext.define('app.OrderForm', {
+      extend: 'app.BaseGrid',
+      initComponent: function () {
+        const _ths = this;
+        const constants = app.constants;
+        const spinnerInteger = constants.NumberConfigs.spinnerInteger;
+        _ths.reload();
+        const win = this.up('window');
+        win.spinnerDecimal;
+      }
+    });
+  """.trimIndent()
+
+  fun `test псевдоним this с любым именем ведёт в метод родителя`() {
+    addHierarchy()
+    val targets = targetsAt("app/OrderForm.js", form, "reload", from = "_ths.reload")
+    assertSingleTarget(targets, "BaseGrid.js", baseGrid.indexOf("reload"))
+  }
+
+  fun `test свойство singleton-константы по цепочке ведёт в объявление`() {
+    myFixture.addFileToProject("app/constants/NumberConfigs.js", numberConfigs)
+    val targets = targetsAt("app/OrderForm.js", form, "spinnerInteger", from = "NumberConfigs.")
+    assertSingleTarget(targets, "NumberConfigs.js", numberConfigs.indexOf("spinnerInteger"))
+  }
+
+  fun `test свойство у получателя неизвестного класса находится по имени`() {
+    myFixture.addFileToProject("app/constants/NumberConfigs.js", numberConfigs)
+    val targets = targetsAt("app/OrderForm.js", form, "spinnerDecimal", from = "win.")
+    assertSingleTarget(targets, "NumberConfigs.js", numberConfigs.indexOf("spinnerDecimal"))
+  }
 }

@@ -867,6 +867,10 @@
       Соседу — хендофф `sessions/sakana-usage-shape.md`. Разбор —
       [orchestratorUsage.md](knowledge/agents/orchestratorUsage.md).
 
+### Ext JS: псевдонимы this и свойства по цепочке (14.09.2026)
+
+- [x] **Псевдоним `this` читается из кода, свойства в индексе, цепочка к singleton** — ✅ (14.09.2026, next) `selfAliases` вместо списка `{this, me}`; `ExtMemberIndex` (методы и свойства, версия 3); `A.B.член` ищет класс `B`/`….B`, иначе члены по имени до двадцати. Повод — `constants.NumberConfigs.spinnerInteger` у владельца. Тесты `ExtScanTest`, `ExtNavigationPlatformTest`.
+
 ### Релиз 0.6.0 (14.09.2026)
 
 - [x] **VibeIDEA 0.6.0 опубликован** — ✅ (14.09.2026, main) [релиз](https://github.com/VibeBrains/VibeIDEA/releases/tag/v0.6.0): четыре артефакта трёх ОС с одной машины, штамп на `372844c73e`, заметки — [references/releaseNotes-v0.6.0.md](references/releaseNotes-v0.6.0.md). Обе фазы подряд по прямой команде владельца, сборку между фазами в руках не проверяли.

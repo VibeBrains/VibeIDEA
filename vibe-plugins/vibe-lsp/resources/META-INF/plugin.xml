@@ -24,7 +24,7 @@
          поэтому и индекс, и переход считают по тексту файла. -->
     <fileBasedIndex implementation="com.vibe.lsp.extjs.ExtDefineIndexExtension"/>
     <fileBasedIndex implementation="com.vibe.lsp.extjs.ExtClassIndexExtension"/>
-    <fileBasedIndex implementation="com.vibe.lsp.extjs.ExtMethodIndexExtension"/>
+    <fileBasedIndex implementation="com.vibe.lsp.extjs.ExtMemberIndexExtension"/>
     <fileBasedIndex implementation="com.vibe.lsp.extjs.ExtEventIndexExtension"/>
     <gotoDeclarationHandler implementation="com.vibe.lsp.extjs.ExtGotoDeclarationHandler"/>
   </extensions>

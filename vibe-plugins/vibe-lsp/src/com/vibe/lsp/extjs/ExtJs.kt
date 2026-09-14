@@ -304,6 +304,31 @@ fun classAt(classes: List<ExtClass>, offset: Int): ExtClass? =
 fun methodAt(cls: ExtClass, offset: Int): ExtMember? =
   cls.members.filter { it.kind == ExtMember.Kind.METHOD && offset in it.valueStart..it.valueEnd }.minByOrNull { it.valueEnd - it.valueStart }
 
+/**
+ * Names that stand for `this` at [offset]: `this` itself and every variable the enclosing method assigns it to.
+ *
+ * Ext code saves `this` under any name — `me`, `_this`, `_ths`, `ths`, `scope` — and a list of names would always
+ * miss the next one. So the code is read instead: `var X = this`, `const X = this`, `X = this`. An assignment of
+ * `this.up('window')` is another component, not the class, and does not count. Outside a method only `this` does.
+ */
+fun selfAliases(text: CharSequence, cls: ExtClass?, offset: Int): Set<String> {
+  val method = cls?.let { methodAt(it, offset) } ?: return setOf(THIS)
+  val start = method.valueStart.coerceIn(0, text.length)
+  val end = method.valueEnd.coerceIn(start, text.length)
+  val tokens = tokenize(text.subSequence(start, end))
+  val aliases = linkedSetOf(THIS)
+  for (i in tokens.indices) {
+    if (tokens[i].kind == TokKind.IDENT && tokens.getOrNull(i + 1).isPunct("=") &&
+        tokens.getOrNull(i + 2).isIdent(THIS) && !tokens.getOrNull(i + 3).isPunct(".") &&
+        !tokens.getOrNull(i - 1).isPunct("=") && !tokens.getOrNull(i - 1).isPunct("!")) {
+      aliases += tokens[i].text
+    }
+  }
+  return aliases
+}
+
+private const val THIS = "this"
+
 /** The identifier under the caret (the caret right after it counts too). */
 fun identifierAt(text: CharSequence, offset: Int): ExtSymbol? {
   if (text.isEmpty()) return null

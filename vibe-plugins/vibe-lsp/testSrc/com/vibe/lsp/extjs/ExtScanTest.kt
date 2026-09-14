@@ -122,4 +122,23 @@ class ExtScanTest {
     assertEquals("a.A", partial.classes.single().extend)
     assertEquals(listOf("extend", "foo"), partial.classes.single().members.map { it.name })
   }
+
+  @Test
+  fun `any variable assigned this is an alias, a component taken from this is not`() {
+    val text = """
+      Ext.define('app.Form', {
+        onSave: function () {
+          var _ths = this, win = this.up('window');
+          const scope = this;
+          let same = _ths == this;
+          ths = this;
+          _ths.reload(); scope.reload(); win.close();
+        }
+      });
+    """.trimIndent()
+    val cls = scanFile(text).classes.single()
+    val aliases = selfAliases(text, cls, text.indexOf("_ths.reload"))
+    assertEquals(setOf("this", "_ths", "scope", "ths"), aliases)
+    assertEquals(setOf("this"), selfAliases(text, cls, text.indexOf("onSave")))
+  }
 }

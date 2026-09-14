@@ -26,7 +26,7 @@ import java.io.DataOutput
  *
  * **Bump [VERSION] on any change of the scan** — otherwise projects opened before keep maps built by old code.
  */
-private const val VERSION = 2
+private const val VERSION = 3
 
 private val SCAN = Key.create<ExtFileScan>("vibe.extjs.scan")
 
@@ -71,8 +71,8 @@ object ExtDefineIndex : ExtIndexHolder<Int>("com.vibe.lsp.extjs.definitions")
 /** Class name → its parent, mixins and members. */
 object ExtClassIndex : ExtIndexHolder<ExtClassInfo>("com.vibe.lsp.extjs.classes")
 
-/** Method name → where a class declares it: the fallback when the receiver's class is unknown. */
-object ExtMethodIndex : ExtIndexHolder<List<Int>>("com.vibe.lsp.extjs.methods")
+/** Member name (method or property) → where a class declares it: the fallback when the receiver's class is unknown. */
+object ExtMemberIndex : ExtIndexHolder<List<Int>>("com.vibe.lsp.extjs.members")
 
 /** Event name → every place that fires or listens to it. */
 object ExtEventIndex : ExtIndexHolder<List<Int>>("com.vibe.lsp.extjs.events")
@@ -134,10 +134,11 @@ internal class ExtClassIndexExtension : ExtIndex<ExtClassInfo>() {
   override fun getValueExternalizer(): DataExternalizer<ExtClassInfo> = ClassInfoExternalizer
 }
 
-internal class ExtMethodIndexExtension : ExtIndex<List<Int>>() {
-  override fun getName(): ID<String, List<Int>> = ExtMethodIndex.NAME
+internal class ExtMemberIndexExtension : ExtIndex<List<Int>>() {
+  override fun getName(): ID<String, List<Int>> = ExtMemberIndex.NAME
   override fun getIndexer(): DataIndexer<String, List<Int>, FileContent> = DataIndexer { content ->
-    scanOf(content).classes.flatMap { it.members }.filter { it.kind == ExtMember.Kind.METHOD }
+    // Properties too: `constants.NumberConfigs.spinnerInteger` is a property, and indexing methods only answered «nothing».
+    scanOf(content).classes.flatMap { it.members }.filter { it.kind != ExtMember.Kind.CONFIG }
       .groupBy({ it.name }, { it.offset })
   }
   override fun getValueExternalizer(): DataExternalizer<List<Int>> = IntListExternalizer

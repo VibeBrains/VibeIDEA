@@ -23,11 +23,13 @@ import com.intellij.util.indexing.FileBasedIndex
  *
  * What the caret can be on:
  * - a string: a class name, an alias or short xtype, an event name, or a path to a project file
- * - `this.name` / `me.name`: a member of the current class, its mixins, then up the `extend` chain
+ * - `this.name`, and `X.name` where the method assigned `X = this` (`me`, `_ths`, `scope`…): a member of the current
+ *   class, its mixins, then up the `extend` chain
  * - `callParent` / `callSuper`: the same-named method of the parent
  * - `getFoo` / `setFoo` / `applyFoo` / `updateFoo`: the `foo` key of a `config` block in the chain
  * - a key of a `listeners` object: every place the event is fired or listened to
- * - `other.method()` with an unknown receiver: methods of that name across the project, when there are few
+ * - `A.B.name`: the member of a class named `B` or `….B` (a singleton of constants); otherwise members of that name
+ *   across the project, methods and properties, when there are few
  */
 class ExtGotoDeclarationHandler : GotoDeclarationHandler {
   override fun getGotoDeclarationTargets(sourceElement: PsiElement?, offset: Int, editor: Editor): Array<PsiElement>? {
@@ -61,12 +63,13 @@ class ExtGotoDeclarationHandler : GotoDeclarationHandler {
     if (scan.events.any { it.offset == word.offset }) return eventTargets(project, word.name, currentFile, word.offset)
     val cls = classAt(scan.classes, word.offset)
     val receiver = receiverOf(text, word.offset)
+    val self = selfAliases(text, cls, word.offset)
 
-    if (cls != null && receiver in SELF && word.name in PARENT_CALLS) {
+    if (cls != null && receiver in self && word.name in PARENT_CALLS) {
       val method = methodAt(cls, word.offset)?.name ?: return null
       return inHierarchy(project, listOfNotNull(cls.extend)) { it.name == method && it.kind == ExtMember.Kind.METHOD }
     }
-    if (cls != null && receiver in SELF) {
+    if (cls != null && receiver in self) {
       val own = cls.members.filter { it.name == word.name && it.kind != ExtMember.Kind.CONFIG }
       if (own.isNotEmpty()) return own.mapNotNull { targetIn(project, currentFile, it.offset, it.name) }
       val start = cls.mixins + listOfNotNull(cls.extend)
@@ -78,9 +81,10 @@ class ExtGotoDeclarationHandler : GotoDeclarationHandler {
         .takeIf { it.isNotEmpty() }?.let { return it }
       return inHierarchy(project, start) { it.name == config && it.kind == ExtMember.Kind.CONFIG }
     }
-    if (receiver != null && isCalled(text, word.offset + word.name.length)) {
-      val candidates = offsetsIn(project, ExtMethodIndex.NAME, word.name)
-      return candidates.takeIf { it.size <= MAX_BY_NAME_TARGETS }
+    if (receiver != null) {
+      inClassesNamed(project, receiver) { it.name == word.name }.takeIf { it.isNotEmpty() }?.let { return it }
+      val candidates = offsetsIn(project, ExtMemberIndex.NAME, word.name)
+      return candidates.takeIf { it.isNotEmpty() && it.size <= MAX_BY_NAME_TARGETS }
     }
     return null
   }
@@ -105,6 +109,23 @@ class ExtGotoDeclarationHandler : GotoDeclarationHandler {
       if (found.isNotEmpty()) return found
     }
     return emptyList()
+  }
+
+  /**
+   * Members of the classes whose name is [shortName] or ends with `.shortName`: `constants.NumberConfigs.spinnerInteger`
+   * names the singleton `app.constants.NumberConfigs`, and the full name is rarely written at the use site.
+   */
+  private fun inClassesNamed(project: Project, shortName: String, match: (ExtMemberInfo) -> Boolean): List<PsiElement> {
+    val index = FileBasedIndex.getInstance()
+    val keys = index.getAllKeys(ExtClassIndex.NAME, project).filter { it == shortName || it.endsWith(".$shortName") }
+    val found = ArrayList<PsiElement>()
+    for (key in keys.take(MAX_CLASSES_BY_SHORT_NAME)) {
+      index.processValues(ExtClassIndex.NAME, key, null, { file, info ->
+        info.members.filter(match).forEach { member -> targetIn(project, file, member.offset, member.name)?.let(found::add) }
+        true
+      }, GlobalSearchScope.allScope(project))
+    }
+    return found
   }
 
   private fun eventTargets(project: Project, name: String, currentFile: VirtualFile, selfOffset: Int): List<PsiElement> =
@@ -160,13 +181,13 @@ class ExtGotoDeclarationHandler : GotoDeclarationHandler {
   }
 
   private companion object {
-    /** `me` is the Ext convention for a saved `this`. */
-    val SELF = setOf("this", "me")
-
     val PARENT_CALLS = setOf("callParent", "callSuper")
 
     /** More same-named methods than this is a common word (`load`, `create`), not a navigation. */
     const val MAX_BY_NAME_TARGETS = 20
+
+    /** A short name shared by more classes than this is not an address. */
+    const val MAX_CLASSES_BY_SHORT_NAME = 10
 
     /** A cycle in `extend`/`mixins` must not hang the click. */
     const val MAX_HIERARCHY_CLASSES = 50
