@@ -3148,6 +3148,9 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
    */
   private val compactions = java.util.concurrent.ConcurrentHashMap<String, Pair<Int, String>>()
 
+  /** Per thread: how many oldest wire messages carry dropped tool results. Only moves forward, like a fold. */
+  private val shrunkResults = java.util.concurrent.ConcurrentHashMap<String, Int>()
+
   /**
    * Folds the oldest part of a long conversation into a summary before the window overflows.
    *
@@ -3163,16 +3166,35 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     threadId: String,
     transcript: List<ChatMessageRecord>,
     wire: List<ChatMessage>,
+    tools: List<com.vibe.agent.providers.ToolSpec>,
   ): List<ChatMessage> {
-    val estimates = wire.map { com.vibe.agent.context.ContextBudget.estimateTokens(it.text) }
+    val policy = com.vibe.agent.context.HistoryCompaction.Policy(
+      VibeAgentSettings.compactTriggerPercent, VibeAgentSettings.compactTargetPercent, VibeAgentSettings.compactKeepRecent)
+    // Tool schemas travel in every request; the estimate used to see only message text.
+    val fixed = com.vibe.agent.providers.ToolCalls.schemaTokens(tools)
     val stored = compactions[threadId]?.takeIf { it.first <= wire.size }
     val summaryTokens = stored?.second?.let { com.vibe.agent.context.ContextBudget.estimateTokens(it) } ?: 0
-    val cut = com.vibe.agent.context.HistoryCompaction.foldCount(estimates, t.model.contextWindow, stored?.first ?: 0, summaryTokens)
-    if (cut == 0) return wire
+    // Old tool results go before any summary: the answers built on them stay, the bulk goes.
+    var shrunkUpTo = (shrunkResults[threadId] ?: 0).coerceAtMost(wire.size)
+    var current = com.vibe.agent.providers.ToolRounds.shrinkResults(wire, shrunkUpTo)
+    var estimates = current.map(com.vibe.agent.providers.ToolRounds::estimatedTokens)
+    if (com.vibe.agent.context.HistoryCompaction.overTrigger(estimates, t.model.contextWindow, stored?.first ?: 0, summaryTokens, fixed, policy)) {
+      val candidate = (wire.size - policy.keepRecent).coerceAtLeast(shrunkUpTo)
+      val newlyShrunk = wire.subList(shrunkUpTo, candidate).count { it.toolRounds.isNotEmpty() }
+      if (newlyShrunk > 0) {
+        shrunkUpTo = candidate
+        shrunkResults[threadId] = candidate
+        current = com.vibe.agent.providers.ToolRounds.shrinkResults(wire, shrunkUpTo)
+        estimates = current.map(com.vibe.agent.providers.ToolRounds::estimatedTokens)
+        systemLine(t("context.compacted.resultsShrunk", "count" to newlyShrunk))
+      }
+    }
+    val cut = com.vibe.agent.context.HistoryCompaction.foldCount(estimates, t.model.contextWindow, stored?.first ?: 0, summaryTokens, fixed, policy)
+    if (cut == 0) return current
     val summary = if (stored != null && stored.first == cut) stored.second else {
       val folding = buildList {
         stored?.let { add(ChatMessage("system", t("context.compacted.previous", "summary" to it.second))) }
-        addAll(wire.subList(stored?.first ?: 0, cut))
+        addAll(current.subList(stored?.first ?: 0, cut))
         add(ChatMessage("user", t("context.compacted.request")))
       }
       val text = runCatching {
@@ -3181,11 +3203,11 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
         out.toString().trim()
       }.getOrElse { failure ->
         systemLine(t("context.compacted.failed", "reason" to (failure.message ?: "")))
-        return wire
+        return current
       }
       if (text.isEmpty()) {
         systemLine(t("context.compacted.failed", "reason" to ""))
-        return wire
+        return current
       }
       compactions[threadId] = cut to text
       systemLine(t("context.compacted.done", "count" to cut, "window" to (t.model.contextWindow ?: 0)))
@@ -3195,7 +3217,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     val pinned = transcript.filter { it.role != Role.OTHER }.take(cut).filter { it.pinned }.map {
       ChatMessage(role = if (it.role == Role.USER) "user" else "assistant", text = it.wireText ?: it.text)
     }
-    return listOf(ChatMessage("system", t("context.compacted.prefix", "summary" to summary))) + pinned + wire.drop(cut)
+    return listOf(ChatMessage("system", t("context.compacted.prefix", "summary" to summary))) + pinned + current.drop(cut)
   }
 
   private fun sendToLlm(t: ChatTarget.Model, startedAt: Long) {
@@ -3237,7 +3259,9 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
       // A model declared non-vision must not receive images lingering in the history either.
       val uncompacted = if (t.model.vision == false) wireMessages.map { it.withoutImages() } else wireMessages
       // Expanded after compaction: compaction cuts by transcript positions, one message per record.
-      val wire = com.vibe.agent.providers.ToolRounds.expand(compactForWindow(t, resolved, threadId, transcript, uncompacted))
+      // Built before compaction: the tool schemas count towards the window.
+      val tools = directToolSpecs(t)
+      val wire = com.vibe.agent.providers.ToolRounds.expand(compactForWindow(t, resolved, threadId, transcript, uncompacted, tools))
       // Said out loud when it happens: a broken prefix is invisible, and its whole cost lands on
       // the bill. The line names the turn where the conversation stopped being append-only.
       val lines = wire.map {
@@ -3248,11 +3272,15 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
                      "total" to lastWireLines.size))
       }
       lastWireLines = lines
+      val toolNames = tools.map { it.name }
+      if (com.vibe.agent.history.WirePrefix.toolSetChanged(lastToolNames, toolNames)) {
+        systemLine(t("cache.toolsChanged", "before" to (lastToolNames?.size ?: 0), "after" to toolNames.size))
+      }
+      lastToolNames = toolNames
       // Кэш протухает по часам, а не по действиям: пауза дороже, чем кажется, и сказать об этом
       // надо ДО траты, а не показать её в отчёте после.
       warnAboutCache(t.model)
       lastLlmTurnStartedAtMs = System.currentTimeMillis()
-      val tools = directToolSpecs(t)
       var request = wire
       var usage = com.vibe.agent.providers.TokenUsage.NONE
       var rounds = 0
@@ -4976,6 +5004,8 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
 
   /** The previous turn's wire, to notice when an earlier message changed under us. */
   @Volatile private var lastWireLines: List<com.vibe.agent.history.WirePrefix.Line> = emptyList()
+  /** Tool names of the previous direct request: a changed list rewrites the start of the request. */
+  private var lastToolNames: List<String>? = null
 
   /** What the provider reported for the turn that just finished, and the price to apply to it. */
   /**

@@ -67,4 +67,12 @@ class WirePrefixTest {
     assertEquals(0, WirePrefix.imageCut(emptyList(), keep = 4, previousCut = null, newImageArrived = false))
     assertEquals(5, WirePrefix.imageCut(emptyList(), keep = 4, previousCut = 5, newImageArrived = true))
   }
+
+  @org.junit.jupiter.api.Test
+  fun `a changed tool list is a cache break, the first request is not`() {
+    kotlin.test.assertFalse(WirePrefix.toolSetChanged(null, listOf("a")))
+    kotlin.test.assertFalse(WirePrefix.toolSetChanged(listOf("a", "b"), listOf("a", "b")))
+    kotlin.test.assertTrue(WirePrefix.toolSetChanged(listOf("a", "b"), listOf("a")))
+    kotlin.test.assertTrue(WirePrefix.toolSetChanged(listOf("a", "b"), listOf("b", "a")))
+  }
 }

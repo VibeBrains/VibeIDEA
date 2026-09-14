@@ -83,4 +83,12 @@ class ModelEchoTest {
     assertEquals("gpt-5-latest", ModelEcho.quirkId("gpt-5-latest", null))
     assertEquals("gpt-5-latest", ModelEcho.quirkId("gpt-5-latest", " "))
   }
+
+  @Test
+  fun `a retired alias served by the next generation is a substitution`() {
+    // DeepSeek routes deepseek-v4-flash to V4.1 Flash and answers with its own id (api-docs.deepseek.com/updates,
+    // 10.09.2026); the price and quirks of the requested id no longer describe what answered.
+    assertTrue(ModelEcho.substituted("deepseek-v4-flash", "deepseek-flash"))
+    assertTrue(ModelEcho.substituted("deepseek/deepseek-v4-flash", "deepseek-flash"))
+  }
 }

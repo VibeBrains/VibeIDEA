@@ -61,6 +61,9 @@ class VibeAgentConfigurable : Configurable, Configurable.NoScroll {
   private var handshakeTimeout: JBIntSpinner? = null
   private var directTools: JBCheckBox? = null
   private var directToolRounds: JBIntSpinner? = null
+  private var compactTrigger: JBIntSpinner? = null
+  private var compactTarget: JBIntSpinner? = null
+  private var compactKeep: JBIntSpinner? = null
   private var designMode: com.intellij.openapi.ui.ComboBox<String>? = null
   private var designAttempts: JBIntSpinner? = null
   private var fimEnabled: JBCheckBox? = null
@@ -155,6 +158,12 @@ class VibeAgentConfigurable : Configurable, Configurable.NoScroll {
     val tools = JBCheckBox(t("settings.agent.directTools"), VibeAgentSettings.directToolsEnabled).also { directTools = it }
     val toolRounds = JBIntSpinner(VibeAgentSettings.directToolMaxRounds, VibeAgentSettings.MIN_DIRECT_TOOL_MAX_ROUNDS, VibeAgentSettings.MAX_DIRECT_TOOL_MAX_ROUNDS)
       .also { directToolRounds = it }
+    val trigger = JBIntSpinner(VibeAgentSettings.compactTriggerPercent, VibeAgentSettings.MIN_COMPACT_TRIGGER_PERCENT, VibeAgentSettings.MAX_COMPACT_TRIGGER_PERCENT)
+      .also { compactTrigger = it }
+    val target = JBIntSpinner(VibeAgentSettings.compactTargetPercent, VibeAgentSettings.MIN_COMPACT_TARGET_PERCENT, VibeAgentSettings.MAX_COMPACT_TARGET_PERCENT)
+      .also { compactTarget = it }
+    val keep = JBIntSpinner(VibeAgentSettings.compactKeepRecent, VibeAgentSettings.MIN_COMPACT_KEEP_RECENT, VibeAgentSettings.MAX_COMPACT_KEEP_RECENT)
+      .also { compactKeep = it }
 
     return FormBuilder.createFormBuilder()
       .addComponent(section(t("settings.agent.section.hooks")))
@@ -247,6 +256,10 @@ class VibeAgentConfigurable : Configurable, Configurable.NoScroll {
       .addComponent(tools)
       .addLabeledComponent(t("settings.agent.directToolRounds"), toolRounds)
       .addComponent(hint(t("settings.agent.hint.directTools")))
+      .addLabeledComponent(t("settings.agent.compactTrigger"), trigger)
+      .addLabeledComponent(t("settings.agent.compactTarget"), target)
+      .addLabeledComponent(t("settings.agent.compactKeep"), keep)
+      .addComponent(hint(t("settings.agent.hint.compaction")))
       .addComponent(hint(t("settings.agent.hint.handshakeHint")))
       .addComponent(section(t("settings.agent.section.more")))
       .addLabeledComponent(t("settings.agent.docsFolder"), docsFolder)
@@ -314,6 +327,9 @@ class VibeAgentConfigurable : Configurable, Configurable.NoScroll {
     handshakeTimeout?.number != VibeAgentSettings.handshakeTimeoutSec ||
     directTools?.isSelected != VibeAgentSettings.directToolsEnabled ||
     directToolRounds?.number != VibeAgentSettings.directToolMaxRounds ||
+    compactTrigger?.number != VibeAgentSettings.compactTriggerPercent ||
+    compactTarget?.number != VibeAgentSettings.compactTargetPercent ||
+    compactKeep?.number != VibeAgentSettings.compactKeepRecent ||
     (designMode?.item ?: VibeAgentSettings.designMode) != VibeAgentSettings.designMode ||
     designAttempts?.number != VibeAgentSettings.designMaxAttempts ||
     fimEnabled?.isSelected != VibeAgentSettings.fimEnabled ||
@@ -370,6 +386,9 @@ class VibeAgentConfigurable : Configurable, Configurable.NoScroll {
     handshakeTimeout?.let { VibeAgentSettings.handshakeTimeoutSec = it.number }
     directTools?.let { VibeAgentSettings.directToolsEnabled = it.isSelected }
     directToolRounds?.let { VibeAgentSettings.directToolMaxRounds = it.number }
+    compactTrigger?.let { VibeAgentSettings.compactTriggerPercent = it.number }
+    compactTarget?.let { VibeAgentSettings.compactTargetPercent = it.number }
+    compactKeep?.let { VibeAgentSettings.compactKeepRecent = it.number }
     designMode?.let { VibeAgentSettings.designMode = it.item }
     designAttempts?.let { VibeAgentSettings.designMaxAttempts = it.number }
     fimEnabled?.let { VibeAgentSettings.fimEnabled = it.isSelected }
@@ -436,6 +455,9 @@ class VibeAgentConfigurable : Configurable, Configurable.NoScroll {
     handshakeTimeout?.number = VibeAgentSettings.handshakeTimeoutSec
     directTools?.isSelected = VibeAgentSettings.directToolsEnabled
     directToolRounds?.number = VibeAgentSettings.directToolMaxRounds
+    compactTrigger?.number = VibeAgentSettings.compactTriggerPercent
+    compactTarget?.number = VibeAgentSettings.compactTargetPercent
+    compactKeep?.number = VibeAgentSettings.compactKeepRecent
     terminalEnabled?.isSelected = VibeAgentSettings.terminalEnabled
     httpApiEnabled?.isSelected = VibeAgentSettings.httpApiEnabled
     httpApiPort?.number = VibeAgentSettings.httpApiPort

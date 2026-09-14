@@ -42,6 +42,15 @@ object WirePrefix {
     previous.isEmpty() || (current.size >= previous.size && sharedPrefix(previous, current) == previous.size)
 
   /**
+   * Did the tool list change since the previous request?
+   *
+   * The list travels before the messages, so a changed list rewrites the start of the request: the cache
+   * misses from the first byte, and nothing in the conversation shows why. Null — there was no previous
+   * request in this thread, which is not a change.
+   */
+  fun toolSetChanged(previous: List<String>?, current: List<String>): Boolean = previous != null && previous != current
+
+  /**
    * Which messages may still carry their images.
    *
    * Images are the most expensive thing in a history and the first thing worth dropping — but

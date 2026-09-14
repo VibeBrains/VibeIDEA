@@ -61,4 +61,22 @@ class ToolRoundsTest {
     assertEquals(1, parsed.size)
     assertEquals("n", parsed.single().calls.single().name)
   }
+
+  @Test
+  fun `the tool exchange counts towards the window`() {
+    val plain = ChatMessage("assistant", "Looking. It is roles.json.")
+    val withRounds = plain.copy(toolRounds = listOf(round.copy(results = listOf(ToolResult("c1", "memory_search", "x".repeat(4000))))))
+    assertTrue(ToolRounds.estimatedTokens(withRounds) >= ToolRounds.estimatedTokens(plain) + 1000)
+  }
+
+  @Test
+  fun `old results are dropped, recent ones and the calls stay, and dropping twice changes nothing`() {
+    val older = ChatMessage("assistant", "Looking. It is roles.json.", toolRounds = listOf(round))
+    val recent = ChatMessage("assistant", "Again.", toolRounds = listOf(round))
+    val once = ToolRounds.shrinkResults(listOf(older, ChatMessage("user", "and?"), recent), upTo = 2)
+    assertTrue(once[0].toolRounds.single().results.single().text.startsWith("[tool result dropped"))
+    assertEquals(listOf(call), once[0].toolRounds.single().calls)
+    assertEquals("found roles.json", once[2].toolRounds.single().results.single().text)
+    assertEquals(once, ToolRounds.shrinkResults(once, upTo = 2))
+  }
 }

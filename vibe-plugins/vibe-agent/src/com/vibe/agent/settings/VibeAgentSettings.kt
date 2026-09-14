@@ -126,6 +126,12 @@ object VibeAgentSettings {
   const val DEFAULT_DIRECT_TOOL_MAX_ROUNDS = 8
   const val MIN_DIRECT_TOOL_MAX_ROUNDS = 1
   const val MAX_DIRECT_TOOL_MAX_ROUNDS = 50
+  const val MIN_COMPACT_TRIGGER_PERCENT = 50
+  const val MAX_COMPACT_TRIGGER_PERCENT = 95
+  const val MIN_COMPACT_TARGET_PERCENT = 20
+  const val MAX_COMPACT_TARGET_PERCENT = 80
+  const val MIN_COMPACT_KEEP_RECENT = 2
+  const val MAX_COMPACT_KEEP_RECENT = 50
 
   private const val KEY_HOOKS_ENABLED = "vibe.agent.hooks.enabled"
   private const val KEY_AUDIT_ENABLED = "vibe.agent.audit.enabled"
@@ -144,6 +150,9 @@ object VibeAgentSettings {
   private const val KEY_HANDSHAKE_TIMEOUT_SEC = "vibe.agent.handshakeTimeoutSec"
   private const val KEY_DIRECT_TOOLS_ENABLED = "vibe.agent.directTools.enabled"
   private const val KEY_DIRECT_TOOL_MAX_ROUNDS = "vibe.agent.directTools.maxRounds"
+  private const val KEY_COMPACT_TRIGGER_PERCENT = "vibe.agent.compaction.triggerPercent"
+  private const val KEY_COMPACT_TARGET_PERCENT = "vibe.agent.compaction.targetPercent"
+  private const val KEY_COMPACT_KEEP_RECENT = "vibe.agent.compaction.keepRecent"
   private const val KEY_WATCH_SCENE_THRESHOLD = "vibe.agent.watch.sceneThreshold"
   private const val KEY_WATCH_MAX_FRAMES = "vibe.agent.watch.maxFrames"
   private const val KEY_WATCH_FRAME_HEIGHT = "vibe.agent.watch.frameHeight"
@@ -302,6 +311,21 @@ object VibeAgentSettings {
   var directToolMaxRounds: Int
     get() = props.getInt(KEY_DIRECT_TOOL_MAX_ROUNDS, DEFAULT_DIRECT_TOOL_MAX_ROUNDS).coerceIn(MIN_DIRECT_TOOL_MAX_ROUNDS, MAX_DIRECT_TOOL_MAX_ROUNDS)
     set(value) = props.setValue(KEY_DIRECT_TOOL_MAX_ROUNDS, value.coerceIn(MIN_DIRECT_TOOL_MAX_ROUNDS, MAX_DIRECT_TOOL_MAX_ROUNDS), DEFAULT_DIRECT_TOOL_MAX_ROUNDS)
+
+  /** Direct chat folds its history when the window is this full, percent. */
+  var compactTriggerPercent: Int
+    get() = props.getInt(KEY_COMPACT_TRIGGER_PERCENT, com.vibe.agent.context.HistoryCompaction.TRIGGER_PERCENT).coerceIn(MIN_COMPACT_TRIGGER_PERCENT, MAX_COMPACT_TRIGGER_PERCENT)
+    set(value) = props.setValue(KEY_COMPACT_TRIGGER_PERCENT, value.coerceIn(MIN_COMPACT_TRIGGER_PERCENT, MAX_COMPACT_TRIGGER_PERCENT), com.vibe.agent.context.HistoryCompaction.TRIGGER_PERCENT)
+
+  /** ...down to this share of the window, percent. */
+  var compactTargetPercent: Int
+    get() = props.getInt(KEY_COMPACT_TARGET_PERCENT, com.vibe.agent.context.HistoryCompaction.TARGET_PERCENT).coerceIn(MIN_COMPACT_TARGET_PERCENT, MAX_COMPACT_TARGET_PERCENT)
+    set(value) = props.setValue(KEY_COMPACT_TARGET_PERCENT, value.coerceIn(MIN_COMPACT_TARGET_PERCENT, MAX_COMPACT_TARGET_PERCENT), com.vibe.agent.context.HistoryCompaction.TARGET_PERCENT)
+
+  /** ...never touching this many of the latest messages. */
+  var compactKeepRecent: Int
+    get() = props.getInt(KEY_COMPACT_KEEP_RECENT, com.vibe.agent.context.HistoryCompaction.KEEP_RECENT).coerceIn(MIN_COMPACT_KEEP_RECENT, MAX_COMPACT_KEEP_RECENT)
+    set(value) = props.setValue(KEY_COMPACT_KEEP_RECENT, value.coerceIn(MIN_COMPACT_KEEP_RECENT, MAX_COMPACT_KEEP_RECENT), com.vibe.agent.context.HistoryCompaction.KEEP_RECENT)
 
   var httpApiEnabled: Boolean
     get() = props.getBoolean(KEY_HTTP_API_ENABLED, DEFAULT_HTTP_API_ENABLED)

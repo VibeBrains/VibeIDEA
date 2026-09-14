@@ -160,6 +160,10 @@ object ToolCalls {
 
   /** The blank content of an assistant message that only calls tools: null, not an empty string. */
   val NO_CONTENT: JsonElement = JsonNull
+
+  /** What the tool list costs every request: names, descriptions and schemas travel each time. */
+  fun schemaTokens(tools: List<ToolSpec>): Long =
+    com.vibe.agent.context.ContextBudget.estimateTokens(tools.map { it.name + it.description + it.schema.toString() })
 }
 
 /**
@@ -249,6 +253,32 @@ object ToolRounds {
 
   /** Stands for the final answer of a turn that ended on tool calls with no words — no wire takes an empty assistant. */
   const val NO_ANSWER = "[no answer]"
+
+  /** Prefix of a result dropped to fit the window; model-facing, so plain and in English. */
+  private const val SHRUNK_PREFIX = "[tool result dropped to fit the context window: "
+
+  /** A message's weight in the window, the tool exchange before it included. */
+  fun estimatedTokens(m: ChatMessage): Long = com.vibe.agent.context.ContextBudget.estimateTokens(m.text) +
+    m.toolRounds.sumOf { round ->
+      com.vibe.agent.context.ContextBudget.estimateTokens(
+        listOf(round.text) + round.calls.map { it.name + it.arguments } + round.results.map { it.text })
+    }
+
+  /**
+   * The first [upTo] messages with their tool results replaced by a short note — calls and words stay.
+   *
+   * Results are the heaviest and least lasting part of a long session: the model has already answered from
+   * them. Dropping them is cheaper than a summary and keeps every decision the model wrote down. A dropped
+   * result is not dropped again, so the same boundary gives byte-identical messages turn after turn.
+   */
+  fun shrinkResults(messages: List<ChatMessage>, upTo: Int): List<ChatMessage> = messages.mapIndexed { index, m ->
+    if (index >= upTo || m.toolRounds.isEmpty()) m
+    else m.copy(toolRounds = m.toolRounds.map { round ->
+      round.copy(results = round.results.map { result ->
+        if (result.text.startsWith(SHRUNK_PREFIX)) result else result.copy(text = SHRUNK_PREFIX + result.text.length + " chars]")
+      })
+    })
+  }
 
   fun forStorage(rounds: List<ToolRound>): List<ToolRound> = rounds.map { round ->
     round.copy(results = round.results.map { result ->
