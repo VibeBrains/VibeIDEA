@@ -132,6 +132,9 @@ object VibeAgentSettings {
   const val MAX_COMPACT_TARGET_PERCENT = 80
   const val MIN_COMPACT_KEEP_RECENT = 2
   const val MAX_COMPACT_KEEP_RECENT = 50
+  const val DEFAULT_TOOL_SEARCH_THRESHOLD = 20
+  const val MIN_TOOL_SEARCH_THRESHOLD = 5
+  const val MAX_TOOL_SEARCH_THRESHOLD = 200
 
   private const val KEY_HOOKS_ENABLED = "vibe.agent.hooks.enabled"
   private const val KEY_AUDIT_ENABLED = "vibe.agent.audit.enabled"
@@ -153,6 +156,7 @@ object VibeAgentSettings {
   private const val KEY_COMPACT_TRIGGER_PERCENT = "vibe.agent.compaction.triggerPercent"
   private const val KEY_COMPACT_TARGET_PERCENT = "vibe.agent.compaction.targetPercent"
   private const val KEY_COMPACT_KEEP_RECENT = "vibe.agent.compaction.keepRecent"
+  private const val KEY_TOOL_SEARCH_THRESHOLD = "vibe.agent.directTools.searchThreshold"
   private const val KEY_WATCH_SCENE_THRESHOLD = "vibe.agent.watch.sceneThreshold"
   private const val KEY_WATCH_MAX_FRAMES = "vibe.agent.watch.maxFrames"
   private const val KEY_WATCH_FRAME_HEIGHT = "vibe.agent.watch.frameHeight"
@@ -326,6 +330,11 @@ object VibeAgentSettings {
   var compactKeepRecent: Int
     get() = props.getInt(KEY_COMPACT_KEEP_RECENT, com.vibe.agent.context.HistoryCompaction.KEEP_RECENT).coerceIn(MIN_COMPACT_KEEP_RECENT, MAX_COMPACT_KEEP_RECENT)
     set(value) = props.setValue(KEY_COMPACT_KEEP_RECENT, value.coerceIn(MIN_COMPACT_KEEP_RECENT, MAX_COMPACT_KEEP_RECENT), com.vibe.agent.context.HistoryCompaction.KEEP_RECENT)
+
+  /** Past this many tools the direct chat offers a tool search instead of every schema. */
+  var toolSearchThreshold: Int
+    get() = props.getInt(KEY_TOOL_SEARCH_THRESHOLD, DEFAULT_TOOL_SEARCH_THRESHOLD).coerceIn(MIN_TOOL_SEARCH_THRESHOLD, MAX_TOOL_SEARCH_THRESHOLD)
+    set(value) = props.setValue(KEY_TOOL_SEARCH_THRESHOLD, value.coerceIn(MIN_TOOL_SEARCH_THRESHOLD, MAX_TOOL_SEARCH_THRESHOLD), DEFAULT_TOOL_SEARCH_THRESHOLD)
 
   var httpApiEnabled: Boolean
     get() = props.getBoolean(KEY_HTTP_API_ENABLED, DEFAULT_HTTP_API_ENABLED)

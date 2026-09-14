@@ -3148,6 +3148,9 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
    */
   private val compactions = java.util.concurrent.ConcurrentHashMap<String, Pair<Int, String>>()
 
+  /** Per thread: tools the model loaded through the tool search; the set only grows within a thread. */
+  private val loadedTools = java.util.concurrent.ConcurrentHashMap<String, MutableSet<String>>()
+
   /** Per thread: how many oldest wire messages carry dropped tool results. Only moves forward, like a fold. */
   private val shrunkResults = java.util.concurrent.ConcurrentHashMap<String, Int>()
 
@@ -3260,7 +3263,9 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
       val uncompacted = if (t.model.vision == false) wireMessages.map { it.withoutImages() } else wireMessages
       // Expanded after compaction: compaction cuts by transcript positions, one message per record.
       // Built before compaction: the tool schemas count towards the window.
-      val tools = directToolSpecs(t)
+      val allTools = directToolSpecs(t)
+      val loaded = loadedTools.getOrPut(threadId) { java.util.Collections.synchronizedSet(LinkedHashSet()) }
+      var tools = com.vibe.agent.mcp.ToolSearch.offered(allTools, loaded, VibeAgentSettings.toolSearchThreshold)
       val wire = com.vibe.agent.providers.ToolRounds.expand(compactForWindow(t, resolved, threadId, transcript, uncompacted, tools))
       // Said out loud when it happens: a broken prefix is invisible, and its whole cost lands on
       // the bill. The line names the turn where the conversation stopped being append-only.
@@ -3311,7 +3316,12 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
           systemLine(t("directTools.roundsLimit", "limit" to VibeAgentSettings.directToolMaxRounds))
           break
         }
-        val results = calls.map { runDirectTool(it, t.model.id) }
+        val results = calls.map { call ->
+          if (call.name == com.vibe.agent.mcp.ToolSearch.NAME) searchTools(call, allTools, loaded)
+          else runDirectTool(call, t.model.id)
+        }
+        // A search may have loaded tools: the next round offers them.
+        tools = com.vibe.agent.mcp.ToolSearch.offered(allTools, loaded, VibeAgentSettings.toolSearchThreshold)
         turnToolRounds.add(com.vibe.agent.providers.ToolRound(roundText.toString(), calls, results))
         request = request +
           ChatMessage("assistant", roundText.toString(), reasoning = roundReasoning.toString().ifEmpty { null }, toolCalls = calls) +
@@ -3364,6 +3374,23 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
         systemLine(t("directTools.unavailable", "reason" to (e.message ?: "")))
       }
     }
+  }
+
+  /**
+   * The model's tool search, answered inside the IDE: nothing leaves the machine, nothing to approve.
+   * Found tools join the thread's loaded set and are offered from the next round on.
+   */
+  private fun searchTools(
+    call: com.vibe.agent.providers.ToolCall,
+    all: List<com.vibe.agent.providers.ToolSpec>,
+    loaded: MutableSet<String>,
+  ): com.vibe.agent.providers.ToolResult {
+    val query = (call.argumentsObject()["query"] as? kotlinx.serialization.json.JsonPrimitive)?.contentOrNull.orEmpty()
+    val found = com.vibe.agent.mcp.ToolSearch.search(query, all)
+    loaded.addAll(found.map { it.name })
+    systemLine(t("directTools.searched", "query" to query,
+                 "found" to (found.joinToString { it.name }.ifEmpty { t("directTools.searchedNothing") })))
+    return com.vibe.agent.providers.ToolResult(call.id, call.name, com.vibe.agent.mcp.ToolSearch.answer(found))
   }
 
   /**

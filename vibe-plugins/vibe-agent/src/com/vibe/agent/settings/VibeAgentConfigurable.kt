@@ -64,6 +64,7 @@ class VibeAgentConfigurable : Configurable, Configurable.NoScroll {
   private var compactTrigger: JBIntSpinner? = null
   private var compactTarget: JBIntSpinner? = null
   private var compactKeep: JBIntSpinner? = null
+  private var toolSearchThreshold: JBIntSpinner? = null
   private var designMode: com.intellij.openapi.ui.ComboBox<String>? = null
   private var designAttempts: JBIntSpinner? = null
   private var fimEnabled: JBCheckBox? = null
@@ -164,6 +165,8 @@ class VibeAgentConfigurable : Configurable, Configurable.NoScroll {
       .also { compactTarget = it }
     val keep = JBIntSpinner(VibeAgentSettings.compactKeepRecent, VibeAgentSettings.MIN_COMPACT_KEEP_RECENT, VibeAgentSettings.MAX_COMPACT_KEEP_RECENT)
       .also { compactKeep = it }
+    val searchThreshold = JBIntSpinner(VibeAgentSettings.toolSearchThreshold, VibeAgentSettings.MIN_TOOL_SEARCH_THRESHOLD, VibeAgentSettings.MAX_TOOL_SEARCH_THRESHOLD)
+      .also { toolSearchThreshold = it }
 
     return FormBuilder.createFormBuilder()
       .addComponent(section(t("settings.agent.section.hooks")))
@@ -255,6 +258,7 @@ class VibeAgentConfigurable : Configurable, Configurable.NoScroll {
       .addLabeledComponent(t("settings.agent.handshake"), handshake)
       .addComponent(tools)
       .addLabeledComponent(t("settings.agent.directToolRounds"), toolRounds)
+      .addLabeledComponent(t("settings.agent.toolSearchThreshold"), searchThreshold)
       .addComponent(hint(t("settings.agent.hint.directTools")))
       .addLabeledComponent(t("settings.agent.compactTrigger"), trigger)
       .addLabeledComponent(t("settings.agent.compactTarget"), target)
@@ -330,6 +334,7 @@ class VibeAgentConfigurable : Configurable, Configurable.NoScroll {
     compactTrigger?.number != VibeAgentSettings.compactTriggerPercent ||
     compactTarget?.number != VibeAgentSettings.compactTargetPercent ||
     compactKeep?.number != VibeAgentSettings.compactKeepRecent ||
+    toolSearchThreshold?.number != VibeAgentSettings.toolSearchThreshold ||
     (designMode?.item ?: VibeAgentSettings.designMode) != VibeAgentSettings.designMode ||
     designAttempts?.number != VibeAgentSettings.designMaxAttempts ||
     fimEnabled?.isSelected != VibeAgentSettings.fimEnabled ||
@@ -389,6 +394,7 @@ class VibeAgentConfigurable : Configurable, Configurable.NoScroll {
     compactTrigger?.let { VibeAgentSettings.compactTriggerPercent = it.number }
     compactTarget?.let { VibeAgentSettings.compactTargetPercent = it.number }
     compactKeep?.let { VibeAgentSettings.compactKeepRecent = it.number }
+    toolSearchThreshold?.let { VibeAgentSettings.toolSearchThreshold = it.number }
     designMode?.let { VibeAgentSettings.designMode = it.item }
     designAttempts?.let { VibeAgentSettings.designMaxAttempts = it.number }
     fimEnabled?.let { VibeAgentSettings.fimEnabled = it.isSelected }
@@ -458,6 +464,7 @@ class VibeAgentConfigurable : Configurable, Configurable.NoScroll {
     compactTrigger?.number = VibeAgentSettings.compactTriggerPercent
     compactTarget?.number = VibeAgentSettings.compactTargetPercent
     compactKeep?.number = VibeAgentSettings.compactKeepRecent
+    toolSearchThreshold?.number = VibeAgentSettings.toolSearchThreshold
     terminalEnabled?.isSelected = VibeAgentSettings.terminalEnabled
     httpApiEnabled?.isSelected = VibeAgentSettings.httpApiEnabled
     httpApiPort?.number = VibeAgentSettings.httpApiPort
