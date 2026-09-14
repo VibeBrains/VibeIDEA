@@ -4031,6 +4031,51 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
    * Расход шага учитывается там же, где расход обычного хода: иначе каскад «дешёвая модель, потом
    * дорогая» нельзя было бы сравнить с одной дорогой — а он ради этого сравнения и существует.
    */
+  /**
+   * Holds an `offPeak` step until its model leaves the price peak; false — the run was cancelled.
+   *
+   * Visible and skippable, as in VibeIDE: a run that silently stops for hours looks hung. The wait ends by itself at
+   * the off-peak minute, by «Запустить сейчас», or by cancelling — the notification's button or Stop. A model with
+   * no price by the hour starts at once and says why: the field cannot defer to a schedule nobody declared.
+   */
+  private fun waitForOffPeak(pipeline: com.vibe.agent.pipelines.Pipeline, index: Int, step: com.vibe.agent.pipelines.PipelineStep): Boolean {
+    val providerId = step.provider ?: return true
+    val modelId = step.model ?: return true
+    val schedule = providers.firstOrNull { it.id == providerId }?.models?.firstOrNull { it.id == modelId }
+      ?.pricing?.timeOfDay?.takeIf { it.stated }
+    if (schedule == null) {
+      systemLine(t("pipeline.offPeak.noSchedule", "role" to step.role, "model" to modelId))
+      return true
+    }
+    val now = java.time.Instant.now()
+    val until = schedule.nextOffPeak(now) ?: return true
+    if (!until.isAfter(now)) return true
+    val text = t("pipeline.offPeak.waiting", "pipeline" to pipeline.name, "role" to step.role, "model" to modelId,
+                 "time" to java.time.format.DateTimeFormatter.ofPattern("HH:mm").withZone(java.time.ZoneOffset.UTC).format(until))
+    systemLine(text)
+    audit?.append(AuditEvent(System.currentTimeMillis(), AuditEvent.Action.HOOK, ok = true, actor = com.vibe.agent.audit.AuditActor.IDE,
+                             meta = mapOf("event" to OFF_PEAK_WAIT, "pipeline" to pipeline.id, "step" to (index + 1).toString(),
+                                          "model" to modelId, "until" to until.toString())))
+    val decision = java.util.concurrent.CompletableFuture<Boolean>()
+    val notification = com.intellij.notification.NotificationGroupManager.getInstance()
+      .getNotificationGroup(com.vibe.agent.ui.VibeNotifications.AGENT)
+      .createNotification(text, com.intellij.notification.NotificationType.INFORMATION)
+      .addAction(com.intellij.notification.NotificationAction.createSimpleExpiring(t("pipeline.offPeak.runNow")) { decision.complete(true) })
+      .addAction(com.intellij.notification.NotificationAction.createSimpleExpiring(t("pipeline.offPeak.cancel")) { decision.complete(false) })
+    SwingUtilities.invokeLater { if (!disposed) notification.notify(project) }
+    try {
+      while (!decision.isDone) {
+        if (llmCancel.get() || disposed) return false
+        if (!java.time.Instant.now().isBefore(until)) return true
+        Thread.sleep(OFF_PEAK_POLL_MS)
+      }
+      return decision.get()
+    }
+    finally {
+      notification.expire()
+    }
+  }
+
   private fun runModelStep(providerId: String, modelId: String, prompt: String) {
     val provider = providers.firstOrNull { it.id == providerId }
       ?: throw IllegalStateException(t("pipeline.step.noProvider", "id" to providerId))
@@ -4223,6 +4268,8 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
       // The snapshot before the first step: a judge on its own model gets the run's diff against it.
       var runCheckpoint: com.vibe.agent.checkpoints.Checkpoint? = null
       var failed = false
+      // Отменён человеком, пока шаг ждал конца пика: дальше не идёт ни один шаг, даже continueOnFailure.
+      var runCancelled = false
       // Принял ли гейт последний проверенный шаг. Null — гейта нет вовсе: тогда «эскалация»
       // ничего не значит и шаг выполняется как обычный.
       var lastGateAccepted: Boolean? = null
@@ -4249,7 +4296,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
             runs.progress(runId, steps = i + 1, changedFiles = artifacts.size)
             return@forEachIndexed
           }
-          if (failed && !step.continueOnFailure) {
+          if (runCancelled || (failed && !step.continueOnFailure)) {
             systemLine(t("pipeline.stepSkipped", "header" to header))
             return@forEachIndexed
           }
@@ -4276,6 +4323,12 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
           // A step on the pipeline's agent is its spend; a step on its own model is not the agent's.
           if (step.model == null && agentLimitReached(agent, runId)) {
             failed = true
+            return@forEachIndexed
+          }
+          if (step.offPeak && !waitForOffPeak(pipeline, i, step)) {
+            failed = true
+            runCancelled = true
+            systemLine(t("pipeline.offPeak.cancelled", "header" to header))
             return@forEachIndexed
           }
           systemLine("$header ${step.task.take(80)}")
@@ -5515,6 +5568,10 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
 
     /** Метка пропуска шага эскалации в журнале: по ней считается окупаемость каскада. */
     const val CASCADE_SKIP = "pipelineEscalationSkipped"
+    /** Audit event of a step waiting for its model to leave the price peak. */
+    const val OFF_PEAK_WAIT = "pipeline_off_peak_wait"
+    /** How often a waiting step checks the clock, Stop and the notification buttons. */
+    const val OFF_PEAK_POLL_MS = 1_000L
 
     /** Сколько ходов помнит счётчик контекстного налога: разговор длиннее — это уже журнал расхода. */
     const val MAX_TRACKED_TURNS = 200

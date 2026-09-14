@@ -55,6 +55,13 @@ data class PipelineStep(
   val denyPaths: List<String> = emptyList(),
   /** Whose context the step sees, see [StepContext]; by default a judge starts clean. */
   val context: StepContext = StepContext.defaultFor(role),
+  /**
+   * Run the step only outside its model's price peak (`cost.timeOfDay`); the run waits, visibly and skippably.
+   *
+   * VibeIDE's field and semantics (14.09.2026): it requires the step's own `model`, because the schedule belongs
+   * to a model and a step that takes its role's model has none written on it.
+   */
+  val offPeak: Boolean = false,
 )
 
 /**
@@ -238,6 +245,10 @@ object PipelinesFile {
         onWarning(t("pipeline.warn.unknownContext", "role" to role, "value" to wire, "default" to it.wire))
       }
     } ?: StepContext.defaultFor(role)
+    val offPeak = so["offPeak"]?.jsonPrimitive?.booleanOrNull ?: false
+    if (offPeak && own.second == null) {
+      throw IllegalArgumentException(t("pipeline.warn.offPeakNeedsModel", "role" to role))
+    }
     return PipelineStep(
       role = role,
       task = so["task"]?.jsonPrimitive?.contentOrNull?.ifBlank { null }
@@ -253,6 +264,7 @@ object PipelinesFile {
       paths = stringList(so["paths"]),
       denyPaths = stringList(so["denyPaths"]),
       context = context,
+      offPeak = offPeak,
     )
   }
 

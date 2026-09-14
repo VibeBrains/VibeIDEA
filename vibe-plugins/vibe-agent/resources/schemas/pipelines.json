@@ -81,6 +81,10 @@
                 "continueOnFailure": {
                   "type": "boolean"
                 },
+                "offPeak": {
+                  "type": "boolean",
+                  "description": "Запускать шаг только вне пика цен его модели (cost.timeOfDay). Требует model у самого шага; пока модель в пике, прогон ждёт с кнопками «Запустить сейчас» и «Отменить прогон»."
+                },
                 "ignorePreviousArtifacts": {
                   "type": "boolean"
                 },

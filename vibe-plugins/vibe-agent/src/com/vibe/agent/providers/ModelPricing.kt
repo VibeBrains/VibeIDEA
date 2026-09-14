@@ -6,6 +6,9 @@ import java.time.Instant
 import java.time.ZoneOffset
 import java.time.temporal.ChronoField
 
+private const val SECONDS_PER_MINUTE = 60L
+private const val OFF_PEAK_SEARCH_MINUTES = 7 * 24 * 60 + 1
+
 /**
  * What a million tokens of this model costs, as the owner of the key wrote it down.
  *
@@ -99,6 +102,22 @@ data class ModelPricing(
      * spending ceiling, an underestimate is not.
      */
     fun factorAt(at: Instant?): Double = if (at == null || !stated || isPeak(at)) 1.0 else offPeakFactor
+
+    /**
+     * The first off-peak moment at or after [at], to the minute; null when a whole week holds no off-peak minute.
+     *
+     * A week and a minute is the search range, as in VibeIDE's `nextOffPeakMoment`: peak days repeat weekly, so a
+     * schedule with no off-peak minute in a week has none at all.
+     */
+    fun nextOffPeak(at: Instant): Instant? {
+      if (!isPeak(at)) return at
+      val start = at.truncatedTo(java.time.temporal.ChronoUnit.MINUTES)
+      for (minute in 1..OFF_PEAK_SEARCH_MINUTES) {
+        val candidate = start.plusSeconds(minute * SECONDS_PER_MINUTE)
+        if (!isPeak(candidate)) return candidate
+      }
+      return null
+    }
   }
 
   /**
