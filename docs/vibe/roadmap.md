@@ -946,7 +946,7 @@
       четыре индекса на одно чтение файла (объявления, классы, методы, события); переход по `this`/`me` через примеси и
       `extend`, `callParent`, геттерам config, событиям, короткому xtype; минифицированный код не индексируется.
       Тесты `ExtScanTest`, `ExtNavigationPlatformTest`; знание `knowledge/languages/extJsNavigation.md`.
-- [x] **Набор: провайдер inference.net** — ✅ (13.09.2026, next) указатель VibeBrains `5fe6d04`, файл в манифесте сеялки. Schematron — модель извлечения, не чат; в выборе модели появляется только при заведённом `INFERENCE_API_KEY`, скрывать через `active: false` в общем файле — после ответа VibeIDE.
+- [x] **Набор: провайдер inference.net** — ✅ (13.09.2026, next) указатель VibeBrains `5fe6d04`, файл в манифесте сеялки. Schematron — модель извлечения, не чат; в выборе модели появляется только при заведённом `INFERENCE_API_KEY`, скрыты `active: false` на моделях — VibeIDE проверил, что их извлечению это не мешает (набор `d21a4dc`, 14.09.2026).
 - [x] **Инструменты в прямом чате: цикл вызова и MCP-клиент stdio** — ✅ (13.09.2026, next) задача А от VibeMemory.
       `ToolCalls` — инструменты и вызовы на проводах openai, anthropic и gemini; `McpStdioClient` — initialize, tools/list
       с курсорами, tools/call; `DirectChatTools` — сервер памяти на панель, чтение без вопроса, запись с согласия; цикл в
