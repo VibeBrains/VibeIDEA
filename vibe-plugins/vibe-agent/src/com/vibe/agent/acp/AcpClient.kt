@@ -335,7 +335,7 @@ class AcpClient(
   }
 
   /**
-   * Boolean configuration options of the session, as the agent last reported them.
+   * Configuration options of the session, as the agent last reported them.
    *
    * The agent owns this list: it names the switches, their captions and their current values, and
    * every answer to `session/set_config_option` carries the whole set back. We never keep our own
@@ -346,14 +346,21 @@ class AcpClient(
     private set
 
   /** Flips one boolean option; the agent answers with the full, current set. */
-  fun setConfigOption(configId: String, value: Boolean): CompletableFuture<Unit> {
+  fun setConfigOption(configId: String, value: Boolean): CompletableFuture<Unit> = sendConfigOption(buildJsonObject {
+    put("configId", configId)
+    put("type", SessionConfigOptions.TYPE_BOOLEAN)
+    put("value", value)
+  })
+
+  /** Picks one value of a select option. The spec's select request carries no `type`. */
+  fun setConfigChoice(configId: String, value: String): CompletableFuture<Unit> = sendConfigOption(buildJsonObject {
+    put("configId", configId)
+    put("value", value)
+  })
+
+  private fun sendConfigOption(params: JsonObject): CompletableFuture<Unit> {
     val sid = checkNotNull(sessionId) { "no session" }
-    return request("session/set_config_option", buildJsonObject {
-      put("sessionId", sid)
-      put("configId", configId)
-      put("type", "boolean")
-      put("value", value)
-    }).thenApply { result ->
+    return request("session/set_config_option", JsonObject(mapOf("sessionId" to JsonPrimitive(sid)) + params)).thenApply { result ->
       // Только когда набор ДЕЙСТВИТЕЛЬНО пришёл: агент, ответивший «ок» без поля, не должен
       // выглядеть как агент, отобравший все свои тумблеры.
       val answered = result as? JsonObject
@@ -404,25 +411,7 @@ class AcpClient(
     return SessionModes(currentModeId = current, available = available)
   }
 
-  /**
-   * Boolean options out of a `session/new` result, a `set_config_option` answer or an update.
-   *
-   * Anything that is not a boolean option is dropped rather than shown as text: the protocol has
-   * other types, and a switch drawn for something that is not a switch sets the wrong value.
-   */
-  private fun parseConfigOptions(source: JsonObject): List<SessionConfigOption> =
-    (source["configOptions"] as? JsonArray).orEmpty().mapNotNull { entry ->
-      val option = entry as? JsonObject ?: return@mapNotNull null
-      val id = option["id"]?.stringOrNull() ?: return@mapNotNull null
-      if (option["type"]?.stringOrNull() != CONFIG_TYPE_BOOLEAN) return@mapNotNull null
-      val value = (option["value"] as? JsonPrimitive)?.booleanOrNull ?: return@mapNotNull null
-      SessionConfigOption(
-        id = id,
-        name = option["name"]?.stringOrNull() ?: id,
-        description = option["description"]?.stringOrNull(),
-        value = value,
-      )
-    }
+  private fun parseConfigOptions(source: JsonObject): List<SessionConfigOption> = SessionConfigOptions.parse(source)
 
   private fun JsonElement.stringOrNull(): String? = (this as? JsonPrimitive)?.contentOrNull
 
@@ -614,7 +603,6 @@ class AcpClient(
 
     private const val UPDATE_CURRENT_MODE = "current_mode_update"
     private const val UPDATE_CONFIG_OPTIONS = "config_options_update"
-    private const val CONFIG_TYPE_BOOLEAN = "boolean"
 
     private val EXTRA_PATH: String = listOf(
       System.getProperty("user.home") + "/.local/bin",

@@ -139,25 +139,29 @@ class ModePicker(private val onChoose: (modeId: String) -> Unit) {
 }
 
 /**
- * «Настройки ▾» pill: boolean configuration switches the agent advertises for this session.
+ * «Настройки ▾» pill: the configuration options the agent advertises for this session — switches and choices.
  *
- * A separate pill from «Режим ▾» on purpose: a mode is one choice out of several and shows the
- * chosen one in its caption, while these are independent switches whose captions belong to the
- * agent. Hidden whenever the agent offers none — most do, and an always-present empty menu reads
- * as a broken feature.
+ * A separate pill from «Режим ▾» on purpose: these are the agent's own settings with the agent's own captions.
+ * Hidden whenever the agent offers none — most do, and an always-present empty menu reads as a broken feature.
+ * A switch flips on click; a choice opens its values with the current one checked.
  *
  * The list is never edited locally: the click reports the wanted value, and the caller redraws
  * from what the agent answered.
  */
-class ConfigOptionsPicker(private val onToggle: (configId: String, value: Boolean) -> Unit) {
+class ConfigOptionsPicker(
+  private val onToggle: (configId: String, value: Boolean) -> Unit,
+  private val onChoose: (configId: String, value: String) -> Unit,
+) {
   private var options: List<SessionConfigOption> = emptyList()
   val pill = PillButton(text = "", dropdown = true) { show() }.apply { isVisible = false }
 
   fun setOptions(options: List<SessionConfigOption>?) {
     this.options = options.orEmpty()
     pill.isVisible = this.options.isNotEmpty()
-    val on = this.options.count { it.value }
-    pill.text = t("picker.config.label", "on" to on, "total" to this.options.size)
+    val toggles = this.options.map { it.kind }.filterIsInstance<SessionConfigOption.Toggle>()
+    pill.text =
+      if (toggles.size == this.options.size) t("picker.config.label", "on" to toggles.count { it.on }, "total" to toggles.size)
+      else t("picker.config.count", "total" to this.options.size)
     pill.toolTipText = t("picker.config.tooltip")
     pill.revalidate()
   }
@@ -167,12 +171,41 @@ class ConfigOptionsPicker(private val onToggle: (configId: String, value: Boolea
     JBPopupFactory.getInstance().createPopupChooserBuilder(options)
       .setRenderer(object : ColoredListCellRenderer<SessionConfigOption>() {
         override fun customizeCellRenderer(list: JList<out SessionConfigOption>, value: SessionConfigOption, index: Int, isSelected: Boolean, hasFocus: Boolean) {
-          icon = if (value.value) AllIcons.Actions.Checked else EmptyIcon.ICON_16
+          when (val kind = value.kind) {
+            is SessionConfigOption.Toggle -> {
+              icon = if (kind.on) AllIcons.Actions.Checked else EmptyIcon.ICON_16
+              append(value.name)
+            }
+            is SessionConfigOption.Choice -> {
+              icon = EmptyIcon.ICON_16
+              append(value.name)
+              append(": ${kind.currentName}", SimpleTextAttributes.REGULAR_BOLD_ATTRIBUTES)
+            }
+          }
+          value.description?.let { append("  $it", SimpleTextAttributes.GRAYED_ATTRIBUTES) }
+        }
+      })
+      .setItemChosenCallback { option ->
+        when (val kind = option.kind) {
+          is SessionConfigOption.Toggle -> onToggle(option.id, !kind.on)
+          is SessionConfigOption.Choice -> showChoices(option.id, kind)
+        }
+      }
+      .createPopup()
+      .also { com.vibe.agent.ui.VibeScroll.thinAllIn(it.content) }
+      .showUnderneathOf(pill)
+  }
+
+  private fun showChoices(configId: String, choice: SessionConfigOption.Choice) {
+    JBPopupFactory.getInstance().createPopupChooserBuilder(choice.options)
+      .setRenderer(object : ColoredListCellRenderer<SessionConfigOption.Choice.Option>() {
+        override fun customizeCellRenderer(list: JList<out SessionConfigOption.Choice.Option>, value: SessionConfigOption.Choice.Option, index: Int, isSelected: Boolean, hasFocus: Boolean) {
+          icon = if (value.value == choice.current) AllIcons.Actions.Checked else EmptyIcon.ICON_16
           append(value.name)
           value.description?.let { append("  $it", SimpleTextAttributes.GRAYED_ATTRIBUTES) }
         }
       })
-      .setItemChosenCallback { option -> onToggle(option.id, !option.value) }
+      .setItemChosenCallback { option -> if (option.value != choice.current) onChoose(configId, option.value) }
       .createPopup()
       .also { com.vibe.agent.ui.VibeScroll.thinAllIn(it.content) }
       .showUnderneathOf(pill)

@@ -385,7 +385,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
   })
   private val modelPicker = ModelPicker({ selectTarget(it) }, { openSettings() })
   private val modePicker = ModePicker { modeId -> switchMode(modeId) }
-  private val configPicker = com.vibe.agent.ui.composer.ConfigOptionsPicker { id, value -> switchConfigOption(id, value) }
+  private val configPicker = com.vibe.agent.ui.composer.ConfigOptionsPicker({ id, value -> switchConfigOption(id, value) }, { id, value -> switchConfigChoice(id, value) })
   private val historyCallbacks = object : ThreadListPanel.Callbacks {
     override fun onOpen(threadId: String) = activateThread(threadId)
     override fun onOpenAtMessage(threadId: String, messageIndex: Int) = openThreadAt(threadId, messageIndex)
@@ -669,17 +669,24 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
    * answer carries the whole set, and an option that silently refused to change would otherwise
    * keep showing the value we wanted rather than the one in force.
    */
-  private fun switchConfigOption(configId: String, value: Boolean) {
+  private fun switchConfigOption(configId: String, value: Boolean) =
+    sendConfigChange({ reason -> t("chat.configNotSwitched", "reason" to reason) }) { it.setConfigOption(configId, value) }
+
+  /** Picks a value of a select option; redrawn from the agent's answer, as a switch is. */
+  private fun switchConfigChoice(configId: String, value: String) =
+    sendConfigChange({ reason -> t("chat.configNotChosen", "reason" to reason) }) { it.setConfigChoice(configId, value) }
+
+  private fun sendConfigChange(failure: (String?) -> String, send: (AcpClient) -> java.util.concurrent.CompletableFuture<Unit>) {
     val c = client ?: return
     ApplicationManager.getApplication().executeOnPooledThread {
       try {
-        c.setConfigOption(configId, value).whenComplete { _, error ->
-          if (error != null) systemLine(t("chat.configNotSwitched", "reason" to error.message))
+        send(c).whenComplete { _, error ->
+          if (error != null) systemLine(failure(error.message))
           SwingUtilities.invokeLater { configPicker.setOptions(c.configOptions) }
         }
       }
       catch (e: Exception) {
-        systemLine(t("chat.configNotSwitched", "reason" to e.message))
+        systemLine(failure(e.message))
       }
     }
   }
