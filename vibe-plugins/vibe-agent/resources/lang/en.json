@@ -714,6 +714,7 @@
   "hooks.result.refusedSilently": "the «{hook}» hook refused the action without an explanation",
   "hooks.result.badExit": "the «{hook}» hook exited with code {code} (a refusal is code {refuseCode})",
   "hooks.result.foreignAsk": "the «{hook}» hook asks to prompt the human: that is Claude Code's «ask» decision, while our hooks answer only «allowed» (exit 0) or «refused» (exit 2). The action was not stopped — the permission mode decides",
+  "hooks.result.foreignUpdatedInput": "hook «{hook}» rewrote the call's arguments (Claude Code updatedInput), which the IDE cannot apply to what the agent runs — the call goes with its original arguments, and the hook counts as broken",
   "hooks.header.blocked": "The action was stopped by a project check:",
   "hooks.header.flagged": "A project check found a problem with what was just done:",
   "hooks.output.clipped": "…(output truncated)",

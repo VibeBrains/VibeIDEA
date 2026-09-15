@@ -21,7 +21,7 @@ data class AgentCapabilities(
    */
   val mcpHttp: Boolean = false,
   /**
-   * Агент умеет `session/resume` (`agentCapabilities.loadSession`).
+   * Агент умеет `session/resume` (`agentCapabilities.sessionCapabilities.resume`; `loadSession` — другой метод, `session/load`).
    *
    * Спрашиваем, а не предполагаем, по той же причине, что и про MCP: клиент, зовущий метод,
    * которого агент не знает, получает ошибку вместо разговора — и человек видит «агент сломался»

@@ -169,4 +169,19 @@ class HookOutcomeTest {
     assertEquals(HookVerdict.REFUSE, r.verdict)
     assertEquals("стоп", r.message)
   }
+
+  @Test
+  fun `a Claude Code hook that rewrites the call is not read as a plain allow`() {
+    val allowWithRewrite = verdict(0, out = """{"hookSpecificOutput":{"permissionDecision":"allow","updatedInput":{"command":"npm test -- --ci"}}}""")
+    assertEquals(HookVerdict.BROKEN, allowWithRewrite.verdict)
+    assertTrue(allowWithRewrite.message!!.contains("updatedInput"))
+    assertEquals(HookVerdict.BROKEN, verdict(0, out = """{"hookSpecificOutput":{"updatedInput":{"file_path":"/tmp/x"}}}""").verdict)
+  }
+
+  @Test
+  fun `a refusal that also rewrites the call stays a refusal`() {
+    val r = verdict(0, out = """{"hookSpecificOutput":{"permissionDecision":"deny","permissionDecisionReason":"no","updatedInput":{"command":"ls"}}}""")
+    assertEquals(HookVerdict.REFUSE, r.verdict)
+    assertEquals("no", r.message)
+  }
 }

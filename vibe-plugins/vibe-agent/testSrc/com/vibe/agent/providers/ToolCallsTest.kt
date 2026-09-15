@@ -111,4 +111,21 @@ class ToolCallsTest {
     assertEquals(obj("""{"role":"assistant","content":"hi"}"""), LlmMessages.openAi(plain))
     assertEquals(obj("""{"role":"assistant","content":"hi"}"""), LlmMessages.anthropic(plain))
   }
+
+  @Test
+  fun `gemini thought signatures are kept on the call and sent back on its part`() {
+    val acc = ToolCallAccumulator()
+    acc.geminiEvent(obj("""{"candidates":[{"content":{"parts":[{"functionCall":{"name":"memory_search","args":{"query":"roles"}},"thoughtSignature":"c2lnLTE="}]}}]}"""))
+    val got = acc.calls().single()
+    assertEquals("c2lnLTE=", got.signature)
+    val part = ToolCalls.geminiAssistant(ChatMessage("assistant", "", toolCalls = listOf(got)))["parts"]!!.jsonArray.single().jsonObject
+    assertEquals("c2lnLTE=", part["thoughtSignature"]!!.jsonPrimitive.content)
+    assertTrue("thoughtSignature" !in ToolCalls.geminiAssistant(ChatMessage("assistant", "", toolCalls = listOf(call)))["parts"]!!.jsonArray.single().jsonObject)
+  }
+
+  @Test
+  fun `a signature survives the thread history`() {
+    val signed = ToolRound("", listOf(call.copy(signature = "c2lnLTE=")), listOf(ToolResult("c1", "memory_search", "ok")))
+    assertEquals(listOf(signed), ToolRounds.fromJson(ToolRounds.toJson(listOf(signed))))
+  }
 }

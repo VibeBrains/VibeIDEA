@@ -17,8 +17,13 @@ import kotlinx.serialization.json.put
 /** A tool offered to the model: the name it calls, a sentence, and a JSON schema of its arguments. */
 data class ToolSpec(val name: String, val description: String, val schema: JsonObject)
 
-/** One call the model asked for. [arguments] is the raw JSON text as the wire delivered it. */
-data class ToolCall(val id: String, val name: String, val arguments: String) {
+/**
+ * One call the model asked for. [arguments] is the raw JSON text as the wire delivered it.
+ *
+ * [signature] is Gemini's `thoughtSignature` on the `functionCall` part: Gemini 3 refuses the next request with 400
+ * «Function call is missing a thought_signature» unless the part goes back with it, byte for byte.
+ */
+data class ToolCall(val id: String, val name: String, val arguments: String, val signature: String? = null) {
   /** The arguments as an object; a model that sent nothing or broken JSON gets an empty object. */
   fun argumentsObject(): JsonObject =
     runCatching { Json.parseToJsonElement(arguments.ifBlank { "{}" }).jsonObject }.getOrDefault(JsonObject(emptyMap()))
@@ -140,6 +145,7 @@ object ToolCalls {
       m.toolCalls.forEach { call ->
         add(buildJsonObject {
           put("functionCall", buildJsonObject { put("name", call.name); put("args", call.argumentsObject()) })
+          call.signature?.let { put("thoughtSignature", it) }
         })
       }
     }))
@@ -173,7 +179,7 @@ object ToolCalls {
  * keyed by the position of the call in the answer; gemini sends each call whole. One collector per request.
  */
 class ToolCallAccumulator {
-  private class Pending(var id: String? = null, var name: String? = null, val arguments: StringBuilder = StringBuilder())
+  private class Pending(var id: String? = null, var name: String? = null, val arguments: StringBuilder = StringBuilder(), var signature: String? = null)
 
   private val byIndex = java.util.TreeMap<Int, Pending>()
   private var geminiCount = 0
@@ -226,6 +232,7 @@ class ToolCallAccumulator {
       byIndex[position] = Pending(
         id = "gemini-$position",
         name = call["name"]?.jsonPrimitive?.contentOrNull,
+        signature = (part["thoughtSignature"] as? kotlinx.serialization.json.JsonPrimitive)?.contentOrNull,
       ).also { it.arguments.append((call["args"] as? JsonObject ?: JsonObject(emptyMap())).toString()) }
     }
   }
@@ -233,7 +240,7 @@ class ToolCallAccumulator {
   /** Complete calls in answer order; a fragment without a name is not a call. */
   fun calls(): List<ToolCall> = byIndex.entries.mapNotNull { (index, pending) ->
     val name = pending.name?.takeIf { it.isNotBlank() } ?: return@mapNotNull null
-    ToolCall(id = pending.id ?: "call-$index", name = name, arguments = pending.arguments.toString())
+    ToolCall(id = pending.id ?: "call-$index", name = name, arguments = pending.arguments.toString(), signature = pending.signature)
   }
 }
 
@@ -307,7 +314,7 @@ object ToolRounds {
   fun toJson(rounds: List<ToolRound>): JsonArray = JsonArray(rounds.map { round ->
     buildJsonObject {
       put("text", round.text)
-      put("calls", JsonArray(round.calls.map { buildJsonObject { put("id", it.id); put("name", it.name); put("arguments", it.arguments) } }))
+      put("calls", JsonArray(round.calls.map { buildJsonObject { put("id", it.id); put("name", it.name); put("arguments", it.arguments); it.signature?.let { s -> put("signature", s) } } }))
       put("results", JsonArray(round.results.map {
         buildJsonObject {
           put("callId", it.callId)
@@ -325,7 +332,7 @@ object ToolRounds {
     fun JsonObject.s(key: String) = (this[key] as? kotlinx.serialization.json.JsonPrimitive)?.contentOrNull
     val calls = (o["calls"] as? JsonArray).orEmpty().mapNotNull { c ->
       val co = c as? JsonObject ?: return@mapNotNull null
-      ToolCall(co.s("id") ?: return@mapNotNull null, co.s("name") ?: return@mapNotNull null, co.s("arguments").orEmpty())
+      ToolCall(co.s("id") ?: return@mapNotNull null, co.s("name") ?: return@mapNotNull null, co.s("arguments").orEmpty(), co.s("signature"))
     }
     val results = (o["results"] as? JsonArray).orEmpty().mapNotNull { r ->
       val ro = r as? JsonObject ?: return@mapNotNull null

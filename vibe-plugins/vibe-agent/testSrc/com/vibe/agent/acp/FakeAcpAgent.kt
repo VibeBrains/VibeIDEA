@@ -89,6 +89,9 @@ object FakeAcpAgent {
               put("embeddedContext", true)
             })
             if (scenario == "auth") put("auth", buildJsonObject { put("logout", buildJsonObject { }) })
+            // `session/resume` and `session/load` are independent capabilities (protocol/v1/session-setup).
+            if (scenario == "resume") put("sessionCapabilities", buildJsonObject { put("resume", buildJsonObject { }) })
+            if (scenario == "loadOnly") put("loadSession", true)
           })
           // Both kinds the protocol defines, and one it may define later: the client names that one, never acts on it.
           if (scenario == "auth") put("authMethods", JsonArray(listOf(

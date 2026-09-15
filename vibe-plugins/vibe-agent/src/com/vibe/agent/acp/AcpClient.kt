@@ -391,7 +391,10 @@ class AcpClient(
       image = prompt?.get("image").booleanOrFalse(),
       embeddedContext = prompt?.get("embeddedContext").booleanOrFalse(),
       mcpHttp = mcp?.get("http").booleanOrFalse(),
-      resumeSession = agent?.get("loadSession").booleanOrFalse(),
+      // `session/resume` is `sessionCapabilities.resume`; `loadSession` is the separate, history-replaying
+      // `session/load` (agentclientprotocol.com/protocol/v1/session-setup). Reading resume from loadSession left
+      // an agent built to the spec without its session after every IDE restart.
+      resumeSession = (agent?.get("sessionCapabilities") as? JsonObject)?.get("resume") is JsonObject,
       logout = AgentAuth.logoutSupported(agent),
     )
   }

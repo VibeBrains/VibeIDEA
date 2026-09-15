@@ -102,6 +102,19 @@ class AcpClientE2ETest {
   }
 
   @Test
+  fun `resume is read from sessionCapabilities, not from loadSession`() {
+    val resuming = start("resume", TestHandler())
+    resuming.initializeAndOpenSession().get(30, TimeUnit.SECONDS)
+    assertEquals(true, resuming.capabilities?.resumeSession)
+    // tearDown stops only the last client the harness remembers; the first one is ours to stop.
+    resuming.stop()
+
+    val loadOnly = start("loadOnly", TestHandler())
+    loadOnly.initializeAndOpenSession().get(30, TimeUnit.SECONDS)
+    assertEquals(false, loadOnly.capabilities?.resumeSession, "session/load is another method; it does not promise session/resume")
+  }
+
+  @Test
   fun `the client announces fs access and the claude terminal_output meta, terminal exec only when allowed`() {
     // The Claude adapter streams Bash output through `_meta.terminal_output`; losing that key in a
     // refactor would silently kill the live terminal view, and nothing else would notice.

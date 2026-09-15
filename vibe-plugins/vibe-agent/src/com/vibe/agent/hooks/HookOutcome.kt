@@ -24,7 +24,7 @@ import kotlinx.serialization.json.contentOrNull
 enum class HookVerdict { OK, NOTE, REFUSE, BROKEN }
 
 /** What a hook written for Claude Code said on exit 0. */
-enum class ForeignDecision { REFUSE, ALLOW, ASK }
+enum class ForeignDecision { REFUSE, ALLOW, ASK, REWRITE }
 
 data class ForeignVerdict(val decision: ForeignDecision, val reason: String?)
 
@@ -62,6 +62,9 @@ object HookOutcome {
           ForeignDecision.ALLOW -> HookResult(hook, HookVerdict.OK, null)
           // We have no third answer, and quietly reading «ask» as «allowed» would lose the intent.
           ForeignDecision.ASK -> HookResult(hook, HookVerdict.BROKEN, t("hooks.result.foreignAsk", "hook" to hook.name()))
+          // The hook meant the call to run with other arguments. We cannot rewrite what the agent runs, and running
+          // the original as «allowed» would do exactly what the hook was written to prevent — so it is said out loud.
+          ForeignDecision.REWRITE -> HookResult(hook, HookVerdict.BROKEN, t("hooks.result.foreignUpdatedInput", "hook" to hook.name()))
         }
       }
       REFUSE_EXIT_CODE -> {
@@ -91,9 +94,11 @@ object HookOutcome {
     if (!text.startsWith("{") || !text.endsWith("}")) return null
     val root = runCatching { json.parseToJsonElement(text) as? JsonObject }.getOrNull() ?: return null
     (root["hookSpecificOutput"] as? JsonObject)?.let { specific ->
-      specific.string("permissionDecision")?.let { permission ->
-        return verdictFor(permission, specific.string("permissionDecisionReason"))
-      }
+      val permission = specific.string("permissionDecision")?.let { verdictFor(it, specific.string("permissionDecisionReason")) }
+      // A refusal stays a refusal; anything else that comes with new arguments is a rewrite we cannot honour.
+      if (permission?.decision == ForeignDecision.REFUSE) return permission
+      if (specific["updatedInput"] is JsonObject) return ForeignVerdict(ForeignDecision.REWRITE, specific.string("permissionDecisionReason"))
+      permission?.let { return it }
     }
     root.string("decision")?.let { decision -> return verdictFor(decision, root.string("reason")) }
     if ((root["continue"] as? JsonPrimitive)?.booleanOrNull == false) {
