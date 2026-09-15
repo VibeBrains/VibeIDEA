@@ -49,7 +49,8 @@ object AcpConfig {
 
   val DEFAULT_AGENTS: List<AgentServerConfig> = listOf(
     AgentServerConfig(
-      name = "Claude Code",
+      // «Claude Agent»: Agent SDK branding allows it and forbids «Claude Code» in other products (decision №94).
+      name = "Claude Agent",
       command = "npx",
       args = listOf("-y", "@agentclientprotocol/claude-agent-acp"),
       env = emptyMap(),

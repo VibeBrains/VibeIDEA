@@ -872,9 +872,9 @@
 - [x] **Разбор восьми тем** — ✅ (15.09.2026, next) [references/research20260915.md](references/research20260915.md): четыре исследования, ключевые утверждения перепроверены командами и первоисточниками.
 - [x] **Продолжение сессии ACP по `sessionCapabilities.resume`** — ✅ (15.09.2026, next) признак читается из `sessionCapabilities.resume`; E2E-тест со сценариями `resume` и `loadOnly`.
 - [x] **Подписи мыслей Gemini 3 в цикле инструментов** — ✅ (15.09.2026, next) `ToolCall.signature`: читается у части с `functionCall`, уходит обратно в ту же часть, хранится в раундах треда; тесты `ToolCallsTest`.
-- [ ] **«Claude Code» → «Claude Agent» в общем сиде** — правила брендинга Agent SDK; пересмотреть №76, мигрировать ключ сессии.
+- [x] **«Claude Code» → «Claude Agent» в общем сиде** — ✅ (15.09.2026, next) сид и запись по умолчанию переименованы (решение №94 взамен №76); `AcpSessionMemory` переносит запомненную сессию со старого имени; разделитель ключа — escape вместо сырого NUL, хэш прежний. Тест `AcpSessionMemoryTest`.
 - [x] **`updatedInput` хука Claude Code не терять молча** — ✅ (15.09.2026, next) `ForeignDecision.REWRITE` — сломанный хук с предупреждением, отказ вместе с `updatedInput` остаётся отказом; строка в `hooksSpec.md`, тесты `HookOutcomeTest`.
-- [ ] **Сиды: `tool_stream` у GLM-5.3, факты паузы биллинга Claude, пример адаптера 0.77.0, пресет пайплайна без гейта**.
+- [x] **Сиды: `tool_stream` у GLM-5.3, факты паузы биллинга Claude, пример адаптера 0.77.0, пресет пайплайна без гейта** — ✅ (15.09.2026, next) набор VibeBrains; пресет `split-by-difficulty` принят загрузчиком (гейт сидов); №65 дополнено фактами паузы.
 - [ ] **ACP: `default_mcp_settings.use_custom_mcp`, `messageId`, `session/close`, `list`/`delete`, fork под возможностью, откат в трёх режимах**.
 
 ### Ext JS: псевдонимы this и свойства по цепочке (14.09.2026)
