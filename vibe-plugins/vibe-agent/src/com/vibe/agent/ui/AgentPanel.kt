@@ -721,6 +721,11 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
    * common memory looks exactly like an agent with it until the day it forgets what was agreed.
    */
   override fun memoryServer(): Map<String, Any>? {
+    // The person's own word in ~/.jetbrains/acp.json wins over our offer.
+    if (com.vibe.agent.acp.AcpConfig.useCustomMcp() == false) {
+      systemLine(t("mcp.memory.disabledByAcpJson", "path" to com.vibe.agent.acp.AcpConfig.configPath().toString()))
+      return null
+    }
     val offer = com.vibe.agent.mcp.MemoryServerOffer.resolve()
     systemLine(when (offer.reason) {
       com.vibe.agent.mcp.MemoryServerOffer.Reason.OFFERED -> t("mcp.memory.offered")
@@ -4730,10 +4735,62 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
         systemLine(t("chat.branch.done"))
       }
     })
+    val rewind = JLabel(REWIND_ICON).apply {
+      toolTipText = t("chat.rewind.tooltip")
+      cursor = java.awt.Cursor.getPredefinedCursor(java.awt.Cursor.HAND_CURSOR)
+      foreground = META_FG
+      font = com.intellij.util.ui.JBFont.label().deriveFont(11f)
+    }
+    rewind.addMouseListener(object : java.awt.event.MouseAdapter() {
+      override fun mouseClicked(e: java.awt.event.MouseEvent) {
+        rewindTo(recordIndex)
+      }
+    })
     strip.add(pin)
+    strip.add(rewind)
     strip.add(branch)
     strip.add(meta)
     return strip
+  }
+
+  /**
+   * Back to the moment before this message: the files to the checkpoint its turn took, and the conversation to a branch
+   * that ends before it, with the message back in the composer to edit and send again.
+   *
+   * Both halves already existed apart — the checkpoint line restores files, the branch copies the conversation — and
+   * going back meant finding the right checkpoint by its time and label by eye. The original thread stays: a branch,
+   * not a cut. The dialog names what will be restored, and says so when the turn took no snapshot.
+   */
+  private fun rewindTo(recordIndex: Int) {
+    val threadId = currentThreadId ?: return
+    if (turnInFlight.get()) {
+      systemLine(t("chat.rewind.busy"))
+      return
+    }
+    val thread = history.get(threadId) ?: return
+    val record = thread.messages.getOrNull(recordIndex)?.takeIf { it.role == Role.USER } ?: return
+    fun millis(iso: String?): Long? = iso?.let { runCatching { Instant.parse(it).toEpochMilli() }.getOrNull() }
+    val nextAt = thread.messages.drop(recordIndex + 1).firstOrNull { it.role == Role.USER }?.let { millis(it.at) }
+    val service = checkpoints
+    val checkpoint = millis(record.at)?.let { at -> service?.let { com.vibe.agent.checkpoints.RewindPoint.checkpointFor(it.list(), at, nextAt) } }
+    val question = if (checkpoint != null) t("chat.rewind.confirmFiles", "hash" to checkpoint.hash.take(8))
+                   else t("chat.rewind.confirmConversation")
+    if (Messages.showYesNoDialog(project, question, t("chat.rewind.title"), Messages.getWarningIcon()) != Messages.YES) return
+    val copy = if (recordIndex == 0) history.create(project.basePath, project.name)
+               else history.branch(threadId, recordIndex - 1) ?: return
+    activateThread(copy.id)
+    composer.restoreDraft(com.vibe.agent.ui.composer.ComposedMessage(record.text, emptyList(), emptyList()))
+    if (checkpoint == null || service == null) {
+      systemLine(t("chat.rewind.conversationOnly"))
+      return
+    }
+    ApplicationManager.getApplication().executeOnPooledThread {
+      val restored = service.restore(checkpoint)
+      systemLine(if (restored) t("chat.rewind.filesDone", "hash" to checkpoint.hash.take(8)) else t("chat.checkpoint.failed"))
+      ApplicationManager.getApplication().invokeLater {
+        com.intellij.openapi.vfs.VfsUtil.markDirtyAndRefresh(true, true, true, com.intellij.openapi.vfs.LocalFileSystem.getInstance().findFileByPath(project.basePath!!))
+      }
+    }
   }
 
   private fun buildAssistantRow(text: String, time: String): JPanel = AgentMessage().let { m ->
@@ -5624,6 +5681,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     const val PIN_ON = "📌"
     const val PIN_OFF = "📍"
     const val BRANCH_ICON = "⑂"
+    const val REWIND_ICON = "↶"
     /** How long an external caller waits just for the turn to START (EDT hop + validation). */
     const val SUBMIT_TIMEOUT_SEC = 30L
     val NO_IMAGE_AGENT: String get() = t("chat.noImagesCapability")

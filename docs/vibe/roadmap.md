@@ -875,7 +875,8 @@
 - [x] **«Claude Code» → «Claude Agent» в общем сиде** — ✅ (15.09.2026, next) сид и запись по умолчанию переименованы (решение №94 взамен №76); `AcpSessionMemory` переносит запомненную сессию со старого имени; разделитель ключа — escape вместо сырого NUL, хэш прежний. Тест `AcpSessionMemoryTest`.
 - [x] **`updatedInput` хука Claude Code не терять молча** — ✅ (15.09.2026, next) `ForeignDecision.REWRITE` — сломанный хук с предупреждением, отказ вместе с `updatedInput` остаётся отказом; строка в `hooksSpec.md`, тесты `HookOutcomeTest`.
 - [x] **Сиды: `tool_stream` у GLM-5.3, факты паузы биллинга Claude, пример адаптера 0.77.0, пресет пайплайна без гейта** — ✅ (15.09.2026, next) набор VibeBrains; пресет `split-by-difficulty` принят загрузчиком (гейт сидов); №65 дополнено фактами паузы.
-- [ ] **ACP: `default_mcp_settings.use_custom_mcp`, `messageId`, `session/close`, `list`/`delete`, fork под возможностью, откат в трёх режимах**.
+- [x] **ACP: `session/close`, `use_custom_mcp`, откат к сообщению** — ✅ (15.09.2026, next) `session/close` при остановке агента с `sessionCapabilities.close` (E2E); `AcpConfig.useCustomMcp` выключает передачу сервера памяти; кнопка «↶» — чекпоинт по времени хода (`RewindPoint`) и ветка до сообщения. Попутно: уведомление настроек сессии называлось `config_options_update` вместо `config_option_update` по спеке — агент, менявший настройку сам, не был слышен. `list`/`delete` по тредам не делаются, `use_idea_mcp` не читается — решение №95.
+- [ ] **Одна сессия агента на тред** — нужно решение: под ветку через `session/fork` и `messageId`; сейчас сессия одна на панель (решение №95).
 
 ### Ext JS: псевдонимы this и свойства по цепочке (14.09.2026)
 

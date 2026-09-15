@@ -72,6 +72,20 @@ object AcpConfig {
     return project + machine.filterNot { it.name.trim().lowercase() in overridden }
   }
 
+  /**
+   * `default_mcp_settings.use_custom_mcp` of `~/.jetbrains/acp.json`: false — the person does not want MCP servers from
+   * the IDE handed to agents. Null when the file or the block is absent: then nothing was said, and the IDE offers its
+   * servers as before. `use_idea_mcp` is not read: it names the upstream AI assistant's own built-in server, which this IDE does not
+   * have, and applying it to our IDE tools would switch them off for everyone whose file carries the block (decision №95).
+   */
+  fun useCustomMcp(): Boolean? = useCustomMcp(configPath().takeIf { Files.isRegularFile(it) }?.let { runCatching { Files.readString(it) }.getOrNull() })
+
+  internal fun useCustomMcp(text: String?): Boolean? {
+    val root = text?.let { runCatching { json.parseToJsonElement(com.vibe.agent.util.VibeJsonc.strip(it)).jsonObject }.getOrNull() } ?: return null
+    val settings = root["default_mcp_settings"] as? JsonObject ?: return null
+    return settings["use_custom_mcp"]?.jsonPrimitive?.booleanOrNull
+  }
+
   private fun loadMachine(onWarning: (String) -> Unit): List<AgentServerConfig> {
     val path = configPath()
     if (!Files.isRegularFile(path)) return emptyList()

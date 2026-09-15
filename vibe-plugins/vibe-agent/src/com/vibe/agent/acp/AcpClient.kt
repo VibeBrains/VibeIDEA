@@ -1,5 +1,6 @@
 // Copyright 2026 VibeBrains. Use of this source code is governed by the Apache 2.0 license.
 package com.vibe.agent.acp
+import java.util.concurrent.TimeUnit
 
 import com.vibe.agent.i18n.VibeI18n.t
 
@@ -154,6 +155,7 @@ class AcpClient(
   }
 
   fun stop() {
+    closeSessionBeforeStop()
     stopped = true
     process?.destroy()
     process = null
@@ -166,6 +168,17 @@ class AcpClient(
     // Тумблеры принадлежат сессии: у мёртвого клиента их нет, как нет и режимов.
     configOptions = emptyList()
     failPending("agent stopped")
+  }
+
+  /**
+   * `session/close` for an agent that declared it, before the process goes: an agent that keeps sessions beyond its
+   * process (the Claude adapter writes them to disk) otherwise keeps every one the IDE ever opened. Waits briefly —
+   * closing the IDE must not hang on an agent that does not answer.
+   */
+  private fun closeSessionBeforeStop() {
+    val sid = sessionId ?: return
+    if (stopped || capabilities?.closeSession != true || process?.isAlive != true) return
+    runCatching { request("session/close", buildJsonObject { put("sessionId", sid) }).get(CLOSE_WAIT_MS, TimeUnit.MILLISECONDS) }
   }
 
   private fun failPending(reason: String) {
@@ -395,6 +408,7 @@ class AcpClient(
       // `session/load` (agentclientprotocol.com/protocol/v1/session-setup). Reading resume from loadSession left
       // an agent built to the spec without its session after every IDE restart.
       resumeSession = (agent?.get("sessionCapabilities") as? JsonObject)?.get("resume") is JsonObject,
+      closeSession = (agent?.get("sessionCapabilities") as? JsonObject)?.get("close") is JsonObject,
       logout = AgentAuth.logoutSupported(agent),
     )
   }
@@ -605,7 +619,9 @@ class AcpClient(
     const val PROTOCOL_VERSION = 1
 
     private const val UPDATE_CURRENT_MODE = "current_mode_update"
-    private const val UPDATE_CONFIG_OPTIONS = "config_options_update"
+    /** How long stopping waits for `session/close`; an agent that stays silent is stopped anyway. */
+    private const val CLOSE_WAIT_MS = 1_000L
+    private const val UPDATE_CONFIG_OPTIONS = "config_option_update"
 
     private val EXTRA_PATH: String = listOf(
       System.getProperty("user.home") + "/.local/bin",

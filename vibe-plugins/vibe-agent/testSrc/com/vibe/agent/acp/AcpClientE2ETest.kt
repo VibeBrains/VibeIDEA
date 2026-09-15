@@ -61,13 +61,13 @@ class AcpClientE2ETest {
   }
 
   /** Starts the client against the fake agent running the given scenario. */
-  private fun start(scenario: String, handler: AcpClient.Handler, terminal: Boolean = false): AcpClient {
+  private fun start(scenario: String, handler: AcpClient.Handler, terminal: Boolean = false, env: Map<String, String> = emptyMap()): AcpClient {
     val java = System.getProperty("java.home") + "/bin/java"
     val config = AgentServerConfig(
       name = "fake",
       command = java,
       args = listOf("-cp", System.getProperty("java.class.path"), FakeAcpAgent::class.java.name, scenario),
-      env = emptyMap(),
+      env = env,
     )
     return AcpClient(config, workingDir = null, handler = handler, advertiseTerminalExec = terminal)
       .also { client = it; it.start() }
@@ -99,6 +99,21 @@ class AcpClientE2ETest {
     assertEquals("default", modes.currentModeId)
     assertEquals(listOf("default", "plan"), modes.available.map { it.id })
     assertEquals("только чтение", modes.available.last().description)
+  }
+
+  @Test
+  fun `stopping closes the session only for an agent that declared close`(@org.junit.jupiter.api.io.TempDir dir: java.nio.file.Path) {
+    val mark = dir.resolve("closed")
+    val closing = start("close", TestHandler(), env = mapOf("FAKE_ACP_CLOSE_MARK" to mark.toString()))
+    val sessionId = closing.initializeAndOpenSession().get(30, TimeUnit.SECONDS)
+    closing.stop()
+    assertTrue(java.nio.file.Files.readString(mark).contains(sessionId), "session/close must reach the agent before the process goes")
+
+    val silent = dir.resolve("silent")
+    val plain = start("basic", TestHandler(), env = mapOf("FAKE_ACP_CLOSE_MARK" to silent.toString()))
+    plain.initializeAndOpenSession().get(30, TimeUnit.SECONDS)
+    plain.stop()
+    assertFalse(java.nio.file.Files.exists(silent), "an agent without sessionCapabilities.close gets no session/close")
   }
 
   @Test

@@ -30,6 +30,8 @@ data class AgentCapabilities(
   val resumeSession: Boolean = false,
   /** The agent can log out by the protocol (`agentCapabilities.auth.logout`). */
   val logout: Boolean = false,
+  /** The agent frees a session on `session/close` (`sessionCapabilities.close`, stable since 23.04.2026). */
+  val closeSession: Boolean = false,
 )
 
 /**

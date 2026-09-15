@@ -92,6 +92,7 @@ object FakeAcpAgent {
             // `session/resume` and `session/load` are independent capabilities (protocol/v1/session-setup).
             if (scenario == "resume") put("sessionCapabilities", buildJsonObject { put("resume", buildJsonObject { }) })
             if (scenario == "loadOnly") put("loadSession", true)
+            if (scenario == "close") put("sessionCapabilities", buildJsonObject { put("close", buildJsonObject { }) })
           })
           // Both kinds the protocol defines, and one it may define later: the client names that one, never acts on it.
           if (scenario == "auth") put("authMethods", JsonArray(listOf(
@@ -146,6 +147,11 @@ object FakeAcpAgent {
       "session/prompt" -> {
         val session = (params["sessionId"] as? JsonPrimitive)?.contentOrNull ?: SESSION_ID
         Thread { runPrompt(scenario, id, session) }.start()
+      }
+      "session/close" -> {
+        // Marked in a file the test names: after stop() the client can no longer be asked what it sent.
+        System.getenv("FAKE_ACP_CLOSE_MARK")?.let { java.io.File(it).writeText(params["sessionId"]?.toString().orEmpty()) }
+        send(result(id, JsonObject(emptyMap())))
       }
       else -> send(error(id, -32601, "fake agent does not know $method"))
     }
