@@ -867,6 +867,16 @@
       Соседу — хендофф `sessions/sakana-usage-shape.md`. Разбор —
       [orchestratorUsage.md](knowledge/agents/orchestratorUsage.md).
 
+### Разбор дайджеста 15.09.2026
+
+- [x] **Разбор восьми тем** — ✅ (15.09.2026, next) [references/research20260915.md](references/research20260915.md): четыре исследования, ключевые утверждения перепроверены командами и первоисточниками.
+- [ ] **Продолжение сессии ACP по `sessionCapabilities.resume`** — дефект: `AcpClient.kt:394` берёт признак из `loadSession`; возможности независимы по спеке.
+- [ ] **Подписи мыслей Gemini 3 в цикле инструментов** — `thoughtSignature` не сохраняется; Gemini 3 отвечает 400 со второго раунда.
+- [ ] **«Claude Code» → «Claude Agent» в общем сиде** — правила брендинга Agent SDK; пересмотреть №76, мигрировать ключ сессии.
+- [ ] **`updatedInput` хука Claude Code не терять молча**.
+- [ ] **Сиды: `tool_stream` у GLM-5.3, факты паузы биллинга Claude, пример адаптера 0.77.0, пресет пайплайна без гейта**.
+- [ ] **ACP: `default_mcp_settings.use_custom_mcp`, `messageId`, `session/close`, `list`/`delete`, fork под возможностью, откат в трёх режимах**.
+
 ### Ext JS: псевдонимы this и свойства по цепочке (14.09.2026)
 
 - [x] **Псевдоним `this` читается из кода, свойства в индексе, цепочка к singleton** — ✅ (14.09.2026, next) `selfAliases` вместо списка `{this, me}`; `ExtMemberIndex` (методы и свойства, версия 3); `A.B.член` ищет класс `B`/`….B`, иначе члены по имени до двадцати. Повод — `constants.NumberConfigs.spinnerInteger` у владельца. Тесты `ExtScanTest`, `ExtNavigationPlatformTest`.
