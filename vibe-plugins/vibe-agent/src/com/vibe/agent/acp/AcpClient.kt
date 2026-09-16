@@ -95,8 +95,18 @@ class AcpClient(
   private val nextId = AtomicLong(1)
   private val pending = ConcurrentHashMap<Long, CompletableFuture<JsonElement>>()
 
+  /** The current session: the one prompts, modes and switches go to. One of [open], or null. */
   @Volatile var sessionId: String? = null
     private set
+
+  /** Modes and switches of one open session: each session has its own, and a thread's pickers show its own. */
+  private class SessionState(@Volatile var modes: SessionModes?, @Volatile var configOptions: List<SessionConfigOption>)
+
+  /**
+   * Sessions opened on this connection for the chat, by id — one per conversation thread. An isolated session of a
+   * pipeline step is not here: it is nobody's thread and nothing is remembered about it.
+   */
+  private val open = ConcurrentHashMap<String, SessionState>()
 
   /** Parsed from the `initialize` result; null until initialized or after [stop]. */
   @Volatile var capabilities: AgentCapabilities? = null
@@ -106,9 +116,8 @@ class AcpClient(
   @Volatile var authMethods: List<AuthMethod> = emptyList()
     private set
 
-  /** Parsed from the `session/new` result; null when the agent reports no modes or after [stop]. */
-  @Volatile var modes: SessionModes? = null
-    private set
+  /** Modes of the current session, as opened or last reported; null when the agent reports none or there is no session. */
+  val modes: SessionModes? get() = sessionId?.let { open[it]?.modes }
 
   /** Set by [stop] before the process is destroyed so the exit thread stays quiet. */
   @Volatile private var stopped = false
@@ -160,25 +169,48 @@ class AcpClient(
     process?.destroy()
     process = null
     sessionId = null
+    promptedSession = null
     // An isolated session dies with the process; a stale id here would route the next prompt nowhere.
     turnSession = null
     capabilities = null
     authMethods = emptyList()
-    modes = null
-    // Тумблеры принадлежат сессии: у мёртвого клиента их нет, как нет и режимов.
-    configOptions = emptyList()
+    // Тумблеры и режимы принадлежат сессиям: у мёртвого клиента их нет.
+    open.clear()
     failPending("agent stopped")
   }
 
   /**
-   * `session/close` for an agent that declared it, before the process goes: an agent that keeps sessions beyond its
-   * process (the Claude adapter writes them to disk) otherwise keeps every one the IDE ever opened. Waits briefly —
-   * closing the IDE must not hang on an agent that does not answer.
+   * `session/close` for every open session of an agent that declared it, before the process goes: an agent that keeps
+   * sessions beyond its process (the Claude adapter writes them to disk) otherwise keeps every one the IDE ever opened.
+   * Sent together and waited for once, briefly — closing the IDE must not hang on an agent that does not answer.
    */
   private fun closeSessionBeforeStop() {
-    val sid = sessionId ?: return
     if (stopped || capabilities?.closeSession != true || process?.isAlive != true) return
-    runCatching { request("session/close", buildJsonObject { put("sessionId", sid) }).get(CLOSE_WAIT_MS, TimeUnit.MILLISECONDS) }
+    val closing = open.keys.map { sid -> request("session/close", buildJsonObject { put("sessionId", sid) }) }
+    if (closing.isEmpty()) return
+    runCatching { CompletableFuture.allOf(*closing.toTypedArray()).get(CLOSE_WAIT_MS, TimeUnit.MILLISECONDS) }
+  }
+
+  /** Whether [sessionId] is open on this connection for the chat. */
+  fun isOpen(sessionId: String): Boolean = open.containsKey(sessionId)
+
+  /** Makes an open session current; false — it is not open here (the process was replaced, or it was closed). */
+  fun switchTo(sessionId: String): Boolean {
+    if (!open.containsKey(sessionId)) return false
+    this.sessionId = sessionId
+    return true
+  }
+
+  /**
+   * Closes one session the chat no longer shows — its thread was deleted or its tab closed. Only for an agent that
+   * declared `sessionCapabilities.close`; for any other the session is merely forgotten here, since there is nothing to
+   * send. Forgotten first: a prompt must not race into a session being closed.
+   */
+  fun closeSession(sessionId: String): CompletableFuture<Unit> {
+    if (open.remove(sessionId) == null) return CompletableFuture.completedFuture(Unit)
+    if (this.sessionId == sessionId) this.sessionId = null
+    if (capabilities?.closeSession != true || process?.isAlive != true) return CompletableFuture.completedFuture(Unit)
+    return request("session/close", buildJsonObject { put("sessionId", sessionId) }).thenApply { }
   }
 
   private fun failPending(reason: String) {
@@ -265,9 +297,11 @@ class AcpClient(
   }
 
   /**
-   * Opens the chat's session on an initialized connection, resuming [previousSessionId] when the
-   * agent can. Apart from [initializeAndOpenSession] for the sign-in: after `authenticate` the
-   * session is opened again on the same connection, without a second handshake.
+   * Opens a chat session on an initialized connection, resuming [previousSessionId] when the
+   * agent can, and makes it current. Apart from [initializeAndOpenSession] for the sign-in: after
+   * `authenticate` the session is opened again on the same connection, without a second handshake.
+   * Also how a second thread gets its own session on a running agent: sessions live side by side on
+   * one connection, each with its own context.
    */
   fun openSession(previousSessionId: String? = null): CompletableFuture<String> {
     val params = sessionParams ?: return CompletableFuture.failedFuture(IllegalStateException("not initialized"))
@@ -289,8 +323,7 @@ class AcpClient(
       val id = obj["sessionId"]?.jsonPrimitive?.contentOrNull
         ?: previousSessionId
         ?: error("agent returned no sessionId")
-      modes = parseModes(obj)
-      configOptions = parseConfigOptions(obj)
+      open[id] = SessionState(parseModes(obj), parseConfigOptions(obj))
       sessionId = id
       id
     }
@@ -341,6 +374,7 @@ class AcpClient(
 
   fun prompt(blocks: List<ContentBlock>): CompletableFuture<JsonElement> {
     val sid = turnSession ?: checkNotNull(sessionId) { "no session" }
+    promptedSession = sid
     return request("session/prompt", buildJsonObject {
       put("sessionId", sid)
       put("prompt", JsonArray(blocks.map { it.toJson() }))
@@ -355,8 +389,7 @@ class AcpClient(
    * idea of what is on — a switch remembered locally is a switch that lies after the agent
    * changes it for its own reasons.
    */
-  @Volatile var configOptions: List<SessionConfigOption> = emptyList()
-    private set
+  val configOptions: List<SessionConfigOption> get() = sessionId?.let { open[it]?.configOptions }.orEmpty()
 
   /** Flips one boolean option; the agent answers with the full, current set. */
   fun setConfigOption(configId: String, value: Boolean): CompletableFuture<Unit> = sendConfigOption(buildJsonObject {
@@ -377,7 +410,7 @@ class AcpClient(
       // Только когда набор ДЕЙСТВИТЕЛЬНО пришёл: агент, ответивший «ок» без поля, не должен
       // выглядеть как агент, отобравший все свои тумблеры.
       val answered = result as? JsonObject
-      if (answered?.get("configOptions") != null) configOptions = parseConfigOptions(answered)
+      if (answered?.get("configOptions") != null) open[sid]?.configOptions = parseConfigOptions(answered)
       Unit
     }
   }
@@ -389,7 +422,7 @@ class AcpClient(
       put("sessionId", sid)
       put("modeId", modeId)
     }).thenApply {
-      modes = modes?.copy(currentModeId = modeId)
+      open[sid]?.let { it.modes = it.modes?.copy(currentModeId = modeId) }
       Unit
     }
   }
@@ -434,9 +467,15 @@ class AcpClient(
 
   private fun JsonElement?.booleanOrFalse(): Boolean = (this as? JsonPrimitive)?.booleanOrNull ?: false
 
-  /** Cancels the running turn — in [turnSession] while a step with a fresh context runs. */
+  /**
+   * The session the last prompt went to. «Стоп» goes there, not to the current session: the person may have opened
+   * another thread while the turn runs, and its session is not the one working.
+   */
+  @Volatile private var promptedSession: String? = null
+
+  /** Cancels the running turn — in [turnSession] while a step with a fresh context runs, else where it was prompted. */
   fun cancel() {
-    val sid = turnSession ?: sessionId ?: return
+    val sid = turnSession ?: promptedSession ?: sessionId ?: return
     notify("session/cancel", buildJsonObject { put("sessionId", sid) })
   }
 
@@ -528,18 +567,21 @@ class AcpClient(
 
   private fun onSessionUpdateNotification(params: JsonObject) {
     val update = params["update"] as? JsonObject
-    // Modes and switches belong to the chat's session: an isolated one changing its own must not
-    // repaint the chat's pickers with a state the chat does not have. Its text still reaches the feed.
-    val chatSession = params["sessionId"]?.stringOrNull().let { it == null || it == sessionId }
-    if (chatSession && update?.get("sessionUpdate")?.stringOrNull() == UPDATE_CONFIG_OPTIONS) {
-      configOptions = parseConfigOptions(update)
-      handler.onConfigOptionsChanged(configOptions)
+    // Modes and switches belong to the session that reported them: kept for it, and the pickers hear only of the
+    // current one — another thread's session or an isolated one must not repaint them with a state the open thread does
+    // not have. Its text still reaches the feed.
+    val sid = params["sessionId"]?.stringOrNull() ?: sessionId
+    val state = sid?.let { open[it] }
+    val current = sid != null && sid == sessionId
+    if (state != null && update?.get("sessionUpdate")?.stringOrNull() == UPDATE_CONFIG_OPTIONS) {
+      state.configOptions = parseConfigOptions(update)
+      if (current) handler.onConfigOptionsChanged(state.configOptions)
     }
-    if (chatSession && update?.get("sessionUpdate")?.stringOrNull() == UPDATE_CURRENT_MODE) {
+    if (state != null && update?.get("sessionUpdate")?.stringOrNull() == UPDATE_CURRENT_MODE) {
       val modeId = update["currentModeId"]?.stringOrNull()
       if (modeId != null) {
-        modes = modes?.copy(currentModeId = modeId)
-        handler.onModeChanged(modeId)
+        state.modes = state.modes?.copy(currentModeId = modeId)
+        if (current) handler.onModeChanged(modeId)
       }
     }
     handler.onSessionUpdate(params)

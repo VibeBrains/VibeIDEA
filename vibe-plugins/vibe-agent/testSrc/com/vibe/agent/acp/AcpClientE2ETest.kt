@@ -336,6 +336,60 @@ class AcpClientE2ETest {
   }
 
   @Test
+  fun `each thread's session lives on one connection with its own modes`() {
+    val c = start("sessions", TestHandler())
+    val first = c.initializeAndOpenSession().get(30, TimeUnit.SECONDS)
+    val second = c.openSession().get(30, TimeUnit.SECONDS)
+    assertTrue(first != second, "a second thread gets its own session")
+    assertEquals(second, c.sessionId, "the session just opened is current")
+    assertTrue(c.isOpen(first) && c.isOpen(second))
+
+    c.prompt("во втором треде").get(30, TimeUnit.SECONDS)
+    await { texts().contains("session=$second") }
+    await { c.modes?.currentModeId == "plan" }
+
+    assertTrue(c.switchTo(first))
+    assertEquals("default", c.modes?.currentModeId, "the first thread keeps its own mode")
+    c.prompt("в первом треде").get(30, TimeUnit.SECONDS)
+    await { texts().contains("session=$first") }
+    assertFalse(c.switchTo("no-such-session"), "a session never opened here is not switched to")
+  }
+
+  @Test
+  fun `closing one thread's session keeps the rest, and stopping closes what is left`(@org.junit.jupiter.api.io.TempDir dir: java.nio.file.Path) {
+    val mark = dir.resolve("closed")
+    val c = start("close", TestHandler(), env = mapOf("FAKE_ACP_CLOSE_MARK" to mark.toString()))
+    val first = c.initializeAndOpenSession().get(30, TimeUnit.SECONDS)
+    val second = c.openSession().get(30, TimeUnit.SECONDS)
+    val third = c.openSession().get(30, TimeUnit.SECONDS)
+
+    c.closeSession(first).get(30, TimeUnit.SECONDS)
+    assertFalse(c.isOpen(first))
+    assertEquals(third, c.sessionId, "closing another thread's session leaves the current one current")
+    c.closeSession(third).get(30, TimeUnit.SECONDS)
+    assertEquals(null, c.sessionId, "a closed current session is not current any more")
+    assertTrue(c.isOpen(second))
+
+    c.stop()
+    val closed = java.nio.file.Files.readAllLines(mark).map { it.trim('"') }
+    assertEquals(listOf(first, third, second), closed, "each session is closed once")
+  }
+
+  @Test
+  fun `stop reaches the session that was prompted after another thread became current`() {
+    val c = start("cancelSession", TestHandler())
+    val first = c.initializeAndOpenSession().get(30, TimeUnit.SECONDS)
+    val second = c.openSession().get(30, TimeUnit.SECONDS)
+    val turn = c.prompt("долгая задача во втором треде")
+    await { texts().contains("работаю…") }
+
+    c.switchTo(first)
+    c.cancel()
+    assertEquals("cancelled", turn.get(30, TimeUnit.SECONDS).jsonObject["stopReason"]?.jsonPrimitive?.content)
+    await { texts().contains("отменена сессия $second") }
+  }
+
+  @Test
   fun `cancel reaches the session the turn actually runs in`() {
     val c = start("cancelSession", TestHandler())
     c.initializeAndOpenSession().get(30, TimeUnit.SECONDS)

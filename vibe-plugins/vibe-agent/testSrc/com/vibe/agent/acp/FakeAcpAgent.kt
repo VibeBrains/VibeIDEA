@@ -142,15 +142,15 @@ object FakeAcpAgent {
         notifyUpdate(buildJsonObject {
           put("sessionUpdate", "current_mode_update")
           put("currentModeId", params["modeId"] ?: JsonPrimitive("default"))
-        })
+        }, (params["sessionId"] as? JsonPrimitive)?.contentOrNull ?: SESSION_ID)
       }
       "session/prompt" -> {
         val session = (params["sessionId"] as? JsonPrimitive)?.contentOrNull ?: SESSION_ID
         Thread { runPrompt(scenario, id, session) }.start()
       }
       "session/close" -> {
-        // Marked in a file the test names: after stop() the client can no longer be asked what it sent.
-        System.getenv("FAKE_ACP_CLOSE_MARK")?.let { java.io.File(it).writeText(params["sessionId"]?.toString().orEmpty()) }
+        // Marked in a file the test names, one line per closed session: after stop() the client can no longer be asked.
+        System.getenv("FAKE_ACP_CLOSE_MARK")?.let { java.io.File(it).appendText(params["sessionId"]?.toString().orEmpty() + "\n") }
         send(result(id, JsonObject(emptyMap())))
       }
       else -> send(error(id, -32601, "fake agent does not know $method"))

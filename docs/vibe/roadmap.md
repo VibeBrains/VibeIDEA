@@ -876,7 +876,7 @@
 - [x] **`updatedInput` хука Claude Code не терять молча** — ✅ (15.09.2026, next) `ForeignDecision.REWRITE` — сломанный хук с предупреждением, отказ вместе с `updatedInput` остаётся отказом; строка в `hooksSpec.md`, тесты `HookOutcomeTest`.
 - [x] **Сиды: `tool_stream` у GLM-5.3, факты паузы биллинга Claude, пример адаптера 0.77.0, пресет пайплайна без гейта** — ✅ (15.09.2026, next) набор VibeBrains; пресет `split-by-difficulty` принят загрузчиком (гейт сидов); №65 дополнено фактами паузы.
 - [x] **ACP: `session/close`, `use_custom_mcp`, откат к сообщению** — ✅ (15.09.2026, next) `session/close` при остановке агента с `sessionCapabilities.close` (E2E); `AcpConfig.useCustomMcp` выключает передачу сервера памяти; кнопка «↶» — чекпоинт по времени хода (`RewindPoint`) и ветка до сообщения. Попутно: уведомление настроек сессии называлось `config_options_update` вместо `config_option_update` по спеке — агент, менявший настройку сам, не был слышен. `list`/`delete` по тредам не делаются, `use_idea_mcp` не читается — решение №95.
-- [ ] **Одна сессия агента на тред** — нужно решение: под ветку через `session/fork` и `messageId`; сейчас сессия одна на панель (решение №95).
+- [x] **Своя сессия агента у каждого треда** — ✅ (16.09.2026, next) сессии тредов на одном процессе (`AcpClient`: `openSession`/`switchTo`/`closeSession`, режимы и настройки по сессии, «Стоп» — в сессию хода); ключ памяти — агент и тред, старая запись переезжает к одному треду; `session/close` при закрытии вкладки, вытеснении и удалении треда. `session/fork` нестабилен в v1 и не берётся, `messageId` ветку не даёт — решение №96, разбор в [knowledge/agents/acpSessionsPerThread.md](knowledge/agents/acpSessionsPerThread.md).
 
 ### Ext JS: псевдонимы this и свойства по цепочке (14.09.2026)
 

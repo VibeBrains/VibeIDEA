@@ -162,6 +162,10 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
   @Volatile private var clientConfig: AgentServerConfig? = null
   /** Guards check-then-act on [client]: ensureClient (pooled), onProcessExit (exit thread), dispose (EDT). */
   private val clientLock = Any()
+  /** Serializes which session is current: a turn's, a tab switch's. Held across a handshake, so never taken on the EDT. */
+  private val sessionLock = Any()
+  /** Thread → its session on the running [client]; emptied whenever the client is replaced or gone. */
+  private val threadSessions = java.util.concurrent.ConcurrentHashMap<String, String>()
   private val checkpoints: CheckpointService? = project.basePath?.let { CheckpointService(it) }
   // One shared audit log per project (writer here, reader in the viewer action) — see VibeAuditService.
   private val audit: AuditLog? = com.vibe.agent.audit.VibeAuditService.getInstance(project).get()
@@ -269,10 +273,10 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
   @Volatile private var stepLimitHit: com.vibe.agent.pipelines.StepLimits.Verdict? = null
 
   /**
-   * Set when the agent opened a session it could not resume: the first turn in it carries the
-   * unfinished plan, which a new session otherwise knows nothing about.
+   * Threads whose agent session was opened new rather than resumed: the first turn in each carries
+   * the unfinished plan, which a new session otherwise knows nothing about.
    */
-  @Volatile private var planCarryPending = false
+  private val planCarryThreads: MutableSet<String> = java.util.concurrent.ConcurrentHashMap.newKeySet()
 
   /** Признаки «трифекты», накопленные за текущий ход; разбор — [com.vibe.agent.guard.Trifecta]. */
   /**
@@ -512,6 +516,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
       client?.stop()
       client = null
       clientConfig = null
+      threadSessions.clear()
     }
   }
 
@@ -2424,6 +2429,8 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
         if (!startTurn(queued, endedThreadId ?: currentThreadId)) composer.restoreDraft(queued)
         return@invokeLater
       }
+      // The person moved to another thread during the turn: its session becomes current only now.
+      if (endedThreadId != null && endedThreadId != currentThreadId) followThreadSession(currentThreadId)
       maybeAutopilot(endedThreadId ?: currentThreadId, stalled)
     }
   }
@@ -2720,7 +2727,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
         // Still in the handshake: nothing to session/cancel — kill the process, pending futures fail, the turn ends.
         synchronized(clientLock) {
           c.stop()
-          if (client === c) { client = null; clientConfig = null }
+          if (client === c) { client = null; clientConfig = null; threadSessions.clear() }
         }
       }
       else c.cancel()
@@ -2833,9 +2840,8 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
    * «продолжай по плану» then continues nothing. Once per new session, and only an unfinished plan.
    */
   private fun prependCarriedPlan(prompt: String): String {
-    if (!planCarryPending) return prompt
-    planCarryPending = false
     val threadId = turnThreadId ?: currentThreadId ?: return prompt
+    if (!planCarryThreads.remove(threadId)) return prompt
     val plan = runCatching { com.vibe.agent.plans.PlanStore.getInstance(project).load(threadId) }.getOrNull() ?: return prompt
     if (plan.isEmpty || plan.isFinished) return prompt
     systemLine(t("plan.carried", "done" to plan.done, "total" to plan.total))
@@ -2864,7 +2870,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     val designed = if (design != null) DesignContextFile.promptBlock(design) + "\n" + text else text
     // The client first: whether the agent could resume its session is known only once it is open,
     // and a session it could not resume gets the unfinished plan in front of the prompt.
-    val c = ensureClient(t.config)
+    val c = ensureClient(t.config, turnThreadId ?: currentThreadId)
     val fullPrompt = prependMinimalism(prependProjectRules(prependKnowledge(prependCarriedPlan(designed), text), text, loaded))
     // A fresh turn: tool-call ids and the changed-files set are per-turn.
     toolCalls.reset()
@@ -3455,14 +3461,29 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     }
   }
 
-  private fun ensureClient(config: AgentServerConfig): AcpClient {
+  /**
+   * The running agent with [threadId]'s own session made current — one session per thread (decision №96).
+   *
+   * One process and one handshake per agent; each thread opens its session on that connection the first time it needs
+   * it, resuming the one remembered for it, and later turns only switch to it. Serialized by [sessionLock]: a tab
+   * switched while a turn is starting must not make another thread's session current under the turn's prompt.
+   */
+  private fun ensureClient(config: AgentServerConfig, threadId: String): AcpClient = synchronized(sessionLock) {
+    val running = synchronized(clientLock) {
+      check(!disposed) { t("chat.panelClosed") }
+      client?.takeIf { it.isAlive && it.capabilities != null && clientConfig == config }
+    }
+    if (running != null) {
+      val known = threadSessions[threadId]
+      if (known != null && running.switchTo(known)) return running
+      return openThreadSession(running, config, threadId, handshake = false)
+    }
     val fresh = synchronized(clientLock) {
       // Checked INSIDE the lock: dispose() completes under it, so a racing turn thread
       // cannot spawn an orphan process after the panel is gone.
       check(!disposed) { t("chat.panelClosed") }
-      val existing = client
-      if (existing != null && existing.isAlive && existing.sessionId != null && clientConfig == config) return existing
-      existing?.stop()
+      client?.stop()
+      threadSessions.clear()
       systemLine(t("chat.agentStarting", "command" to (config.command + " " + config.args.joinToString(" "))))
       // "dir" записи — рабочая папка агента в монорепо: он видит её своим корнем и не ходит
       // по соседним пакетам. Поле было описано в сиде с самого начала и не читалось.
@@ -3475,63 +3496,121 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
         auditAgentStart(config, workingDir)
       }
     }
+    return openThreadSession(fresh, config, threadId, handshake = true)
+  }
+
+  /**
+   * Opens [threadId]'s session on [c] — with the handshake when the process is new — resuming the session remembered
+   * for the thread. A sign-in the agent asks for is handled here, whichever thread first meets it. Returns the client
+   * the session is on — a new one when the person chose to reconnect after signing in elsewhere.
+   */
+  private fun openThreadSession(c: AcpClient, config: AgentServerConfig, threadId: String, handshake: Boolean): AcpClient {
     val handshakeSec = VibeAgentSettings.handshakeTimeoutSec.toLong()
     try {
-      // Возобновляем прошлую сессию этого агента в этой папке, если она известна и он это умеет:
-      // лента переживала перезапуск IDE и раньше, а агент — нет, и человек пересказывал контекст
+      // Возобновляем прошлую сессию этого треда, если она известна и агент это умеет: лента
+      // переживала перезапуск IDE и раньше, а агент — нет, и человек пересказывал контекст
       // заново. Отказ агента возобновлять обрабатывается внутри — открывается новая.
-      val remembered = AcpSessionMemory.recall(config.name, project.basePath)
+      val remembered = AcpSessionMemory.recall(config.name, threadId, project.basePath)
       try {
-        fresh.initializeAndOpenSession(remembered).get(handshakeSec, TimeUnit.SECONDS)
+        (if (handshake) c.initializeAndOpenSession(remembered) else c.openSession(remembered)).get(handshakeSec, TimeUnit.SECONDS)
       }
       catch (e: java.util.concurrent.ExecutionException) {
         if (!com.vibe.agent.acp.AgentAuth.isAuthRequired(e)) throw e
         // The agent wants a sign-in first: its ways, exactly as it declared them (decision №82).
         val choice = askOnEdt {
-          com.vibe.agent.acp.AgentLoginDialog(project, config, fresh.authMethods).let { if (it.showAndGet()) it.choice() else null }
+          com.vibe.agent.acp.AgentLoginDialog(project, config, c.authMethods).let { if (it.showAndGet()) it.choice() else null }
         }
         when (choice) {
           is com.vibe.agent.acp.AgentLoginDialog.Choice.Authenticate -> {
-            signIn(fresh, config, choice.method)
-            fresh.openSession(remembered).get(handshakeSec, TimeUnit.SECONDS)
+            signIn(c, config, choice.method)
+            c.openSession(remembered).get(handshakeSec, TimeUnit.SECONDS)
           }
           // Signed in outside the IDE: what the spec prescribes next is a new connection and handshake.
           com.vibe.agent.acp.AgentLoginDialog.Choice.Reconnect -> {
-            drop(fresh)
-            return ensureClient(config)
+            drop(c)
+            return ensureClient(config, threadId)
           }
           null -> {
-            drop(fresh)
+            drop(c)
             throw IllegalStateException(t("auth.notLoggedIn", "agent" to config.name))
           }
         }
       }
-      fresh.sessionId?.let { AcpSessionMemory.remember(config.name, project.basePath, it) }
+      val opened = checkNotNull(c.sessionId) { "agent returned no sessionId" }
+      threadSessions[threadId] = opened
+      AcpSessionMemory.remember(config.name, threadId, opened)
       // Not the session asked for — none remembered, expired, or the agent cannot resume: it knows
       // nothing of this thread's plan, so the first turn in it carries the plan.
-      if (remembered == null || fresh.sessionId != remembered) planCarryPending = true
+      if (remembered == null || opened != remembered) planCarryThreads.add(threadId)
     }
     catch (e: TimeoutException) {
-      drop(fresh)
+      drop(c)
       throw IllegalStateException(t("chat.handshakeTimeout", "seconds" to handshakeSec, "path" to AcpConfig.configPath()))
     }
-    systemLine(t("chat.sessionOpen") + (fresh.modes?.let { m -> t("chat.modeSuffix", "mode" to (m.available.firstOrNull { it.id == m.currentModeId }?.name ?: m.currentModeId)) } ?: ""))
+    systemLine(t("chat.sessionOpen") + (c.modes?.let { m -> t("chat.modeSuffix", "mode" to (m.available.firstOrNull { it.id == m.currentModeId }?.name ?: m.currentModeId)) } ?: ""))
     // Пилюли режима и тумблеров — по СВЕЖЕЙ сессии, здесь, а не на пути хода: после
     // переподключения они иначе остаются пустыми до следующего оплаченного сообщения.
-    SwingUtilities.invokeLater {
-      modePicker.setModes(fresh.modes)
-      configPicker.setOptions(fresh.configOptions)
-    }
+    showSessionPickers(c)
     // A fresh session starts a fresh context — drop the stale usage chip until the agent reports anew.
     SwingUtilities.invokeLater { composer.setUsage(null, null, warn = false) }
-    return fresh
+    return c
+  }
+
+  /** The pickers show the client's current session — read now, painted on the EDT. */
+  private fun showSessionPickers(c: AcpClient?) {
+    val modes = c?.modes
+    val options = c?.configOptions
+    SwingUtilities.invokeLater {
+      modePicker.setModes(modes)
+      configPicker.setOptions(options)
+    }
+  }
+
+  /**
+   * After the open thread changed: the agent's current session follows it, and the pickers show that thread's own
+   * modes and switches. A thread the running agent has no session for yet gets one now — opening a session costs no
+   * model request, and pickers left empty until a paid message are what [openThreadSession] exists to avoid. While a
+   * turn runs nothing is switched — its session must stay current under its prompt — and the pickers of any other
+   * thread stay empty until it ends.
+   */
+  private fun followThreadSession(threadId: String) {
+    val config = synchronized(clientLock) { clientConfig.takeIf { client?.isAlive == true } }
+    val agentTarget = (target as? ChatTarget.Agent)?.config
+    if (config == null || agentTarget != config) return
+    if (turnInFlight.get()) {
+      if (threadId != turnThreadId) showSessionPickers(null)
+      return
+    }
+    ApplicationManager.getApplication().executeOnPooledThread {
+      synchronized(sessionLock) {
+        if (disposed || turnInFlight.get() || currentThreadId != threadId) return@executeOnPooledThread
+        runCatching { ensureClient(config, threadId) }
+          .onSuccess { showSessionPickers(it) }
+          .onFailure { systemLine(t("chat.reconnectFailed", "reason" to (it.message ?: it.javaClass.simpleName))) }
+      }
+    }
+  }
+
+  /**
+   * The thread is gone from view — deleted, or its tab closed — so its session is closed on the agent (decision №96).
+   * The remembered id is kept: a thread opened again resumes it, and one restored from the trash too. Not the session
+   * of a running turn.
+   */
+  private fun closeThreadSession(threadId: String) {
+    if (turnInFlight.get() && turnThreadId == threadId) return
+    val sid = threadSessions.remove(threadId) ?: return
+    val c = client ?: return
+    ApplicationManager.getApplication().executeOnPooledThread {
+      runCatching { c.closeSession(sid).get(VibeAgentSettings.handshakeTimeoutSec.toLong(), TimeUnit.SECONDS) }
+        .onFailure { systemLine("[acp] session/close: ${(it.cause ?: it).message}") }
+    }
   }
 
   /** Stops a client that did not reach a session, and forgets it if it is still the current one. */
   private fun drop(stale: AcpClient) {
     synchronized(clientLock) {
       stale.stop()
-      if (client === stale) { client = null; clientConfig = null }
+      if (client === stale) { client = null; clientConfig = null; threadSessions.clear() }
     }
   }
 
@@ -3621,6 +3700,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     // полное» line would already be said and therefore never repeated.
     resetChatCounters()
     announceUnfinishedPlan(id)
+    followThreadSession(id)
     composer.focusInput()
   }
 
@@ -3630,6 +3710,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
       val victim = openTabIds.firstOrNull { it != currentThreadId && it != turnThreadId } ?: return
       openTabIds.remove(victim)
       drafts.remove(victim)
+      closeThreadSession(victim)
       deleteIfEmpty(victim)
     }
   }
@@ -3657,6 +3738,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     openTabIds.removeAt(index)
     drafts.remove(id)
     sessionSignals.remove(id)
+    closeThreadSession(id)
     deleteIfEmpty(id)
     if (id == currentThreadId) {
       // The left neighbour wins, else the right one; no tabs left → a fresh chat (the view is never empty).
@@ -3700,7 +3782,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     val removed = openTabIds.filter { history.get(it) == null }
     if (removed.isNotEmpty()) {
       openTabIds.removeAll(removed.toSet())
-      removed.forEach { drafts.remove(it) }
+      removed.forEach { drafts.remove(it); closeThreadSession(it) }
       if (currentThreadId in removed) {
         val next = openTabIds.firstOrNull() ?: history.create(project.basePath, project.name).id
         activateThread(next, saveCurrentDraft = false)
@@ -3732,14 +3814,16 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
       client?.stop()
       client = null
       clientConfig = null
+      threadSessions.clear()
       config
     }
+    val threadId = currentThreadId
     SwingUtilities.invokeLater { modePicker.setModes(null); configPicker.setOptions(null) }
     systemLine(t("chat.reconnecting"))
     // Рукопожатие блокирует до ответа чужого процесса — не на EDT.
     com.intellij.openapi.application.ApplicationManager.getApplication().executeOnPooledThread {
       try {
-        ensureClient(config)
+        ensureClient(config, threadId)
       }
       catch (e: Exception) {
         systemLine(t("chat.reconnectFailed", "reason" to (e.message ?: e.javaClass.simpleName)))
@@ -4210,7 +4294,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
           appendLine(t("pipeline.plan.instruction", "roles" to (PipelinesFile.ROLES - PipelinesFile.ORCHESTRATOR).sorted().joinToString()))
         }
         val startedAt = System.currentTimeMillis()
-        val c = ensureClient(agent)
+        val c = ensureClient(agent, turnThreadId ?: currentThreadId)
         c.turnSession = c.openIsolatedSession().get(VibeAgentSettings.handshakeTimeoutSec.toLong(), TimeUnit.SECONDS)
         try {
           c.prompt(prompt).get()
@@ -4382,7 +4466,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
               null
             }
             else {
-              val c = ensureClient(agent)
+              val c = ensureClient(agent, turnThreadId ?: currentThreadId)
               // A judging step starts clean: a new session of the same agent, not remembered, while
               // the chat's session stays current for the next turn (decision №80). An agent that
               // cannot open one fails the step with the reason — judging in the chat's session
@@ -5594,6 +5678,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
       if (this.client !== client) return
       this.client = null
       clientConfig = null
+      threadSessions.clear()
     }
     // The other end of the boundary audited in [auditAgentStart]: an agent that dies mid-run leaves
     // the journal its exit code, not only a line in a feed nobody kept.
