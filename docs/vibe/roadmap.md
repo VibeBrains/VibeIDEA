@@ -878,6 +878,15 @@
 - [x] **ACP: `session/close`, `use_custom_mcp`, откат к сообщению** — ✅ (15.09.2026, next) `session/close` при остановке агента с `sessionCapabilities.close` (E2E); `AcpConfig.useCustomMcp` выключает передачу сервера памяти; кнопка «↶» — чекпоинт по времени хода (`RewindPoint`) и ветка до сообщения. Попутно: уведомление настроек сессии называлось `config_options_update` вместо `config_option_update` по спеке — агент, менявший настройку сам, не был слышен. `list`/`delete` по тредам не делаются, `use_idea_mcp` не читается — решение №95.
 - [x] **Своя сессия агента у каждого треда** — ✅ (16.09.2026, next) сессии тредов на одном процессе (`AcpClient`: `openSession`/`switchTo`/`closeSession`, режимы и настройки по сессии, «Стоп» — в сессию хода); ключ памяти — агент и тред, старая запись переезжает к одному треду; `session/close` при закрытии вкладки, вытеснении и удалении треда. `session/fork` нестабилен в v1 и не берётся, `messageId` ветку не даёт — решение №96, разбор в [knowledge/agents/acpSessionsPerThread.md](knowledge/agents/acpSessionsPerThread.md).
 
+### Дайджест 16.09.2026
+
+- [x] **Разбор девяти тем** — ✅ (16.09.2026, next) [references/research20260916.md](references/research20260916.md): четыре исследования, спорные утверждения перепроверены по коду (`AgentRegistry.deliveryOf`, `McpStdioClient`, `functional.md`).
+- [ ] **Доки: «Claude Agent» в пункте каталога ACP, 41 агент реестра вместо 57** — правка документации.
+- [ ] **Сиды: `token_plan/remains` в `minimax.jsonc`, уточнение слуха 3×/2× в `zai.jsonc`, цена в примере `deepseek-anthropic`** — VibeBrains.
+- [ ] **`McpStdioClient`: `resultType: input_required` — явная ошибка** — фича (малая).
+- [ ] **Остаток подписки по ответу вендора** — нужно решение: API Z.ai недокументирован, риск блокировки ключа.
+- [ ] **Репозиторий в контексте шага с `model`** — нужно решение: крупная фича под 1M-окна.
+
 ### Ext JS: псевдонимы this и свойства по цепочке (14.09.2026)
 
 - [x] **Псевдоним `this` читается из кода, свойства в индексе, цепочка к singleton** — ✅ (14.09.2026, next) `selfAliases` вместо списка `{this, me}`; `ExtMemberIndex` (методы и свойства, версия 3); `A.B.член` ищет класс `B`/`….B`, иначе члены по имени до двадцати. Повод — `constants.NumberConfigs.spinnerInteger` у владельца. Тесты `ExtScanTest`, `ExtNavigationPlatformTest`.
