@@ -881,11 +881,11 @@
 ### Дайджест 16.09.2026
 
 - [x] **Разбор девяти тем** — ✅ (16.09.2026, next) [references/research20260916.md](references/research20260916.md): четыре исследования, спорные утверждения перепроверены по коду (`AgentRegistry.deliveryOf`, `McpStdioClient`, `functional.md`).
-- [ ] **Доки: «Claude Agent» в пункте каталога ACP, 41 агент реестра вместо 57** — правка документации.
-- [ ] **Сиды: `token_plan/remains` в `minimax.jsonc`, уточнение слуха 3×/2× в `zai.jsonc`, цена в примере `deepseek-anthropic`** — VibeBrains.
-- [ ] **`McpStdioClient`: `resultType: input_required` — явная ошибка** — фича (малая).
-- [ ] **Остаток подписки по ответу вендора** — нужно решение: API Z.ai недокументирован, риск блокировки ключа.
-- [ ] **Репозиторий в контексте шага с `model`** — нужно решение: крупная фича под 1M-окна.
+- [x] **Доки: «Claude Agent» в пункте каталога ACP, 41 агент реестра вместо 57** — ✅ (17.09.2026, next) `functional.md`, `research20260915.md`.
+- [x] **Сиды: `quota` в `minimax.jsonc` и `zai.jsonc`, уточнение слуха 3×/2× (про GLM-5.1), цена и `vision` в примере `deepseek-anthropic`, закомментированный пример `repo-review`** — ✅ (17.09.2026, next) VibeBrains.
+- [x] **`McpStdioClient`: `resultType` не `complete` — явная ошибка** — ✅ (17.09.2026, next) `input_required` и незнакомый тип возвращаются модели ошибкой с именем, а не пустым успехом; тест на фейковом сервере.
+- [x] **Остаток подписки по ответу вендора** — ✅ (17.09.2026, next) поле `quota` провайдера, `SubscriptionQuota` (MiniMax по правилам CLI вендора, Z.ai с `CREDIT_LIMIT`), `SubscriptionQuotaFetch` без перенаправлений и фонового опроса, раздел в `/spend` и «Расходах»; решение №97, [knowledge/agents/subscriptionQuota.md](knowledge/agents/subscriptionQuota.md).
+- [x] **Репозиторий в запросе шага со своей моделью (`pack`)** — ✅ (17.09.2026, next) `RepoPack`: файлы под git, без двоичных и секретов, целиком или отказ с размером; оценка цены до запроса и сверка с денежными потолками; загрузчик отвергает `pack` у шага агента и без `maxTokens`; решение №97.
 
 ### Ext JS: псевдонимы this и свойства по цепочке (14.09.2026)
 

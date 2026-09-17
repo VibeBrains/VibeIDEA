@@ -149,12 +149,24 @@ class McpStdioClient(private val input: InputStream, private val output: OutputS
     return tools
   }
 
-  /** One call; the text parts of the result joined, other parts named by type so nothing vanishes silently. */
+  /**
+   * One call; the text parts of the result joined, other parts named by type so nothing vanishes silently.
+   *
+   * A result of the 2026-07-28 revision says what it is in `resultType`. Only a complete one carries the tool's output:
+   * `input_required` asks the client for input and to call again (MRTR), which the direct chat cannot do, and an unknown
+   * type is a shape we cannot read. Both come back as an error that names them — read as content they would be an empty
+   * success, and the model would take «nothing found» for the answer. No `resultType` is the older revision: complete.
+   */
   fun callTool(name: String, arguments: JsonObject, timeoutMs: Long): CallResult {
     val result = request("tools/call", buildJsonObject {
       put("name", name)
       put("arguments", arguments)
     }, timeoutMs)
+    when (val type = result["resultType"]?.jsonPrimitive?.contentOrNull) {
+      null, RESULT_COMPLETE -> {}
+      RESULT_INPUT_REQUIRED -> return CallResult(INPUT_REQUIRED_MESSAGE.format(name), isError = true)
+      else -> return CallResult(UNKNOWN_RESULT_MESSAGE.format(name, type), isError = true)
+    }
     val text = (result["content"] as? JsonArray).orEmpty().joinToString("\n") { part ->
       val obj = part as? JsonObject
       when (val type = obj?.get("type")?.jsonPrimitive?.contentOrNull) {
@@ -181,6 +193,15 @@ class McpStdioClient(private val input: InputStream, private val output: OutputS
   companion object {
     /** A piped stream notices its close within a second; waiting a little longer covers a slow machine. */
     private const val READER_JOIN_MS = 2_000L
+
+    const val RESULT_COMPLETE = "complete"
+    const val RESULT_INPUT_REQUIRED = "input_required"
+
+    // Tool results go back to the model, not to the interface: written in English like the rest of the wire.
+    private const val INPUT_REQUIRED_MESSAGE =
+      "The MCP server asked for additional input before completing %s (resultType input_required). " +
+      "This client cannot answer such requests; the call did not complete."
+    private const val UNKNOWN_RESULT_MESSAGE = "The MCP server returned %s with an unknown resultType \"%s\"; the result was not read."
 
     /** Starts the server process; its stderr is discarded — it is a log, not a protocol. */
     fun start(command: String, args: List<String>, workingDir: Path?): McpStdioClient {

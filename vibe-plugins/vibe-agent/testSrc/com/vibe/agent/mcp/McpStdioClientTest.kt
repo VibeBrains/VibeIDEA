@@ -55,8 +55,13 @@ class McpStdioClientTest {
         if (params["cursor"] == null) """"result":{"tools":[{"name":"memory_search","description":"Search","inputSchema":{"type":"object"}}],"nextCursor":"p2"}"""
         else """"result":{"tools":[{"name":"memory_save","description":"Save"}]}"""
       "tools/call" ->
-        if (params["name"]!!.jsonPrimitive.content == "memory_search") """"result":{"content":[{"type":"text","text":"one record"}]}"""
-        else """"error":{"code":-32602,"message":"id is required"}"""
+        when (params["name"]!!.jsonPrimitive.content) {
+          "memory_search" -> """"result":{"content":[{"type":"text","text":"one record"}]}"""
+          "memory_new" -> """"result":{"resultType":"complete","content":[{"type":"text","text":"saved"}]}"""
+          "memory_ask" -> """"result":{"resultType":"input_required","inputRequests":{"q":{"method":"elicitation/create"}},"requestState":"s1"}"""
+          "memory_future" -> """"result":{"resultType":"deferred"}"""
+          else -> """"error":{"code":-32602,"message":"id is required"}"""
+        }
       else -> null
     }
   }
@@ -68,6 +73,18 @@ class McpStdioClientTest {
     assertEquals(listOf("memory_search", "memory_save"), client.listTools(2_000).map { it.name })
     assertEquals(McpStdioClient.CallResult("one record", false), client.callTool("memory_search", JsonObject(emptyMap()), 2_000))
     assertTrue("notifications/initialized" in memoryServer.seen)
+    client.close()
+  }
+
+  @Test
+  fun `a result that is not complete is an error that names it, not an empty success`() {
+    val client = memoryServer.client()
+    client.initialize("test", 2_000)
+    assertEquals(McpStdioClient.CallResult("saved", false), client.callTool("memory_new", JsonObject(emptyMap()), 2_000))
+    val asked = client.callTool("memory_ask", JsonObject(emptyMap()), 2_000)
+    assertTrue(asked.isError && "input_required" in asked.text && "memory_ask" in asked.text, asked.text)
+    val unknown = client.callTool("memory_future", JsonObject(emptyMap()), 2_000)
+    assertTrue(unknown.isError && "deferred" in unknown.text, unknown.text)
     client.close()
   }
 

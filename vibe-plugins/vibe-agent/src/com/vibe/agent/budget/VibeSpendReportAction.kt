@@ -17,8 +17,14 @@ class VibeSpendReportAction : AnAction({ t("spend.action") }) {
     val service = VibeSpendService.getInstance()
     val day = service.entries(SpendLedger.DAY_MS)
     val week = service.entries(7 * SpendLedger.DAY_MS)
+    val providers = com.vibe.agent.providers.ProvidersService.load(e.project?.basePath) { }
+    // The vendors are asked over the network: under a cancellable progress, not on the EDT as it is.
+    val askedAt = System.currentTimeMillis()
+    val quota = com.intellij.openapi.progress.ProgressManager.getInstance().runProcessWithProgressSynchronously<List<String>, RuntimeException>(
+      { QuotaLines.render(com.vibe.agent.providers.SubscriptionQuotaFetch.fetchAll(providers, e.project?.basePath), askedAt) },
+      t("spend.quota.progress"), true, e.project)
     if (week.isEmpty()) {
-      Messages.showInfoMessage(e.project, t("spend.empty"), t("spend.title"))
+      Messages.showInfoMessage(e.project, (listOf(t("spend.empty")) + quota).joinToString("\n"), t("spend.title"))
       return
     }
     val report = buildString {
@@ -45,7 +51,6 @@ class VibeSpendReportAction : AnAction({ t("spend.action") }) {
       appendLine(t("spend.note"))
       // Цена с истёкшим сроком продолжает считаться — считать по старой честнее, чем не считать
       // вовсе, — но отчёт обязан сказать, что сумма построена на цене, которую пора перепроверить.
-      val providers = com.vibe.agent.providers.ProvidersService.load(e.project?.basePath) { }
       val stale = com.vibe.agent.providers.PriceValidity.notices(providers, java.time.LocalDate.now())
         .filter { it.state == com.vibe.agent.providers.PriceValidity.State.EXPIRED }
       if (stale.isNotEmpty()) {
@@ -55,6 +60,10 @@ class VibeSpendReportAction : AnAction({ t("spend.action") }) {
                      "count" to stale.size))
         // Источник цены — рядом с требованием сверить: иначе сверка означает «найди заново».
         first.note?.takeIf { it.isNotBlank() }?.let { appendLine(t("price.source", "note" to it)) }
+      }
+      if (quota.isNotEmpty()) {
+        appendLine()
+        quota.forEach { appendLine(it) }
       }
     }
     Messages.showInfoMessage(e.project, report, t("spend.title"))

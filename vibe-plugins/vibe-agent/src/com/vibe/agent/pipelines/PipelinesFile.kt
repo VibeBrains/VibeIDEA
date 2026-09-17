@@ -62,6 +62,8 @@ data class PipelineStep(
    * to a model and a step that takes its role's model has none written on it.
    */
   val offPeak: Boolean = false,
+  /** Files of the repository in the prompt of a step on its own model, see [RepoPack]; null — none. */
+  val pack: PackSpec? = null,
 )
 
 /**
@@ -249,6 +251,7 @@ object PipelinesFile {
     if (offPeak && own.second == null) {
       throw IllegalArgumentException(t("pipeline.warn.offPeakNeedsModel", "role" to role))
     }
+    val pack = packOf(so["pack"], role, model != null)
     return PipelineStep(
       role = role,
       task = so["task"]?.jsonPrimitive?.contentOrNull?.ifBlank { null }
@@ -265,7 +268,22 @@ object PipelinesFile {
       denyPaths = stringList(so["denyPaths"]),
       context = context,
       offPeak = offPeak,
+      pack = pack,
     )
+  }
+
+  /**
+   * `pack`, refused rather than warned about: on an agent's step it would be a pack nobody reads — the agent has its own
+   * tools and would be sent the repository anyway, paid for twice — and without a ceiling it is a bill without one.
+   */
+  private fun packOf(element: kotlinx.serialization.json.JsonElement?, role: String, ownModel: Boolean): PackSpec? {
+    if (element == null) return null
+    val o = element as? kotlinx.serialization.json.JsonObject
+      ?: throw IllegalArgumentException(t("pipeline.warn.packInvalid", "role" to role))
+    if (!ownModel) throw IllegalArgumentException(t("pipeline.warn.packNeedsModel", "role" to role))
+    val maxTokens = o["maxTokens"]?.jsonPrimitive?.intOrNull?.takeIf { it > 0 }
+      ?: throw IllegalArgumentException(t("pipeline.warn.packNeedsCeiling", "role" to role))
+    return PackSpec(stringList(o["paths"]), stringList(o["exclude"]), maxTokens)
   }
 
   fun load(projectBase: String?, onWarning: (String) -> Unit): List<Pipeline> {

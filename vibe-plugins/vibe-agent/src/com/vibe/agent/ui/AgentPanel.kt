@@ -901,6 +901,13 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
           }
         }
         else appendLine("\n" + t("spend.ceiling.off"))
+        // What the subscriptions have left, as the vendors say — asked now, because the person asked.
+        val quota = com.vibe.agent.budget.QuotaLines.render(
+          com.vibe.agent.providers.SubscriptionQuotaFetch.fetchAll(providers, project.basePath), System.currentTimeMillis())
+        if (quota.isNotEmpty()) {
+          appendLine()
+          quota.forEach { appendLine(it) }
+        }
       }
       SwingUtilities.invokeLater {
         val console = TerminalConsole(t("spend.title"))
@@ -4165,7 +4172,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     }
   }
 
-  private fun runModelStep(providerId: String, modelId: String, prompt: String) {
+  private fun runModelStep(providerId: String, modelId: String, stepPrompt: String, pack: com.vibe.agent.pipelines.PackSpec? = null) {
     val provider = providers.firstOrNull { it.id == providerId }
       ?: throw IllegalStateException(t("pipeline.step.noProvider", "id" to providerId))
     val model = provider.models.firstOrNull { it.id == modelId }
@@ -4175,6 +4182,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     if (resolved.apiKey == null && !resolved.isLocal) {
       throw IllegalStateException(com.vibe.agent.i18n.VibeI18n.t("chat.provider.noKey", "id" to providerId))
     }
+    val prompt = pack?.let { stepPrompt + "\n" + packRepository(it, model, stepPrompt) } ?: stepPrompt
     // Потолок токенов у шага на своей модели.
     //
     // Прямой запрос не сообщает расход по ходу — числа приходят только в конце, — поэтому здесь
@@ -4208,6 +4216,73 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     noteModelSubstitution(model.id, llmClient.lastAnsweredModel())
     lastTurnPricing = com.vibe.agent.providers.PriceValidity.effective(model, java.time.LocalDate.now())
   }
+
+  /**
+   * The repository files a step's `pack` asks for, as a prompt block — or an exception that stops the step before
+   * anything is sent: no git, nothing to pack, over the ceiling, over a spending limit. Every refusal says by how much,
+   * so the person knows what to narrow. Decision №97.
+   */
+  private fun packRepository(spec: com.vibe.agent.pipelines.PackSpec, model: ModelEntry, stepPrompt: String): String {
+    val base = project.basePath ?: throw IllegalStateException(t("pipeline.pack.noGit"))
+    val root = com.vibe.agent.context.AgentPaths.physical(java.nio.file.Path.of(base).toAbsolutePath().normalize())
+      ?: throw IllegalStateException(t("pipeline.pack.noGit"))
+    val tracked = gitTrackedFiles(root) ?: throw IllegalStateException(t("pipeline.pack.noGit"))
+    val selected = com.vibe.agent.pipelines.RepoPack.select(tracked, spec)
+    val promptTokens = com.vibe.agent.context.ContextBudget.estimateTokens(stepPrompt)
+    // What the window leaves after the task and the answer: a pack that fits its own ceiling but not the model is
+    // refused the same way, before the provider refuses it for money.
+    val windowLeft = model.contextWindow?.let { it.toLong() - promptTokens - (model.maxOutputTokens ?: 0) }
+    val limit = minOf(spec.maxTokens.toLong(), windowLeft ?: Long.MAX_VALUE).coerceAtLeast(0L)
+    val maxBytes = limit * com.vibe.agent.context.ContextBudget.CHARS_PER_TOKEN * MAX_UTF8_BYTES_PER_CHAR
+    val result = com.vibe.agent.pipelines.RepoPack.build(selected, limit) { path ->
+      val file = com.vibe.agent.context.AgentPaths.physical(root.resolve(path).normalize())
+      // A tracked symlink out of the project is not the project's source: it is not read.
+      if (file == null || !file.startsWith(root) || !java.nio.file.Files.isRegularFile(file)) return@build null
+      val size = runCatching { java.nio.file.Files.size(file) }.getOrNull() ?: return@build null
+      // A single file that cannot fit even at four bytes a character stops the pack without being read into memory.
+      if (size > maxBytes && !isBinaryFile(file)) {
+        throw IllegalStateException(t("pipeline.pack.fileTooLarge", "path" to path, "limit" to "%,d".format(limit)))
+      }
+      runCatching { java.nio.file.Files.readAllBytes(file) }.getOrNull()
+    }
+    val packed = when (result) {
+      is com.vibe.agent.pipelines.RepoPack.Result.Empty ->
+        throw IllegalStateException(t("pipeline.pack.empty", "secrets" to result.secrets.size))
+      is com.vibe.agent.pipelines.RepoPack.Result.TooLarge ->
+        throw IllegalStateException(t("pipeline.pack.tooLarge", "files" to result.files, "tokens" to "%,d".format(result.tokens),
+                                      "limit" to "%,d".format(result.limit)))
+      is com.vibe.agent.pipelines.RepoPack.Result.Packed -> result
+    }
+    packed.findings.forEach { (path, findings) -> reportContextFindings(path, findings) }
+    if (packed.secrets.isNotEmpty()) systemLine(t("pipeline.pack.secretsSkipped", "paths" to packed.secrets.joinToString()))
+    val pricing = com.vibe.agent.providers.PriceValidity.effective(model, java.time.LocalDate.now())
+    val cost = pricing?.costOf(com.vibe.agent.providers.TokenUsage(inputTokens = packed.tokens + promptTokens), java.time.Instant.now())
+    systemLine(t("pipeline.pack.ready", "files" to packed.files, "tokens" to "%,d".format(packed.tokens)) + " " +
+               (cost?.let { t("pipeline.pack.cost", "cost" to money(it), "currency" to pricing.currency) } ?: t("pipeline.pack.costUnknown")))
+    // The spending ceilings are checked against the estimate BEFORE the request: after it, a ceiling is a receipt.
+    val limits = VibeChatSettings.spendLimits()
+    if (cost != null && limits.any) {
+      val month = com.vibe.agent.budget.VibeSpendService.getInstance().entries(com.vibe.agent.budget.SpendCeiling.MONTH_MS)
+      com.vibe.agent.budget.SpendCeiling.check(month, System.currentTimeMillis(), limits).firstOrNull { it.left < cost }?.let {
+        throw IllegalStateException(t("pipeline.pack.overCeiling", "window" to windowName(it.window.id),
+                                      "left" to money(it.left), "cost" to money(cost)))
+      }
+    }
+    return t("pipeline.pack.header") + "\n" + packed.text
+  }
+
+  /** Tracked paths from `git ls-files -z`; null — not a git work tree, or git is missing. */
+  private fun gitTrackedFiles(root: java.nio.file.Path): List<String>? = runCatching {
+    val process = ProcessBuilder("git", "-c", "core.quotepath=off", "ls-files", "-z")
+      .directory(root.toFile()).redirectError(ProcessBuilder.Redirect.DISCARD).start()
+    val out = process.inputStream.readBytes()
+    if (!process.waitFor(GIT_LIST_TIMEOUT_SEC, TimeUnit.SECONDS) || process.exitValue() != 0) return@runCatching null
+    String(out, Charsets.UTF_8).split('\u0000').filter { it.isNotEmpty() }
+  }.getOrNull()
+
+  private fun isBinaryFile(file: java.nio.file.Path): Boolean = runCatching {
+    java.nio.file.Files.newInputStream(file).use { com.vibe.agent.pipelines.RepoPack.isBinary(it.readNBytes(com.vibe.agent.pipelines.RepoPack.BINARY_PROBE_BYTES)) }
+  }.getOrDefault(false)
 
   /**
    * Which pairs «asked → answered» were already reported, so a proxy that renames every answer says
@@ -4462,7 +4537,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
             // инструментов, и он ни на что не влияет, кроме собственного ответа. Разбор — в
             // [runModelStep]; загрузчик пайплайнов уже не пустил сюда пишущую роль.
             val stop = if (step.model != null && step.provider != null) {
-              runModelStep(step.provider, step.model, prompt)
+              runModelStep(step.provider, step.model, prompt, step.pack)
               null
             }
             else {
@@ -5704,6 +5779,10 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     const val DECISION_QUESTION_CHARS = 200
 
     const val CASCADE_COMMAND = "/cascade"
+
+    /** UTF-8 spends at most four bytes on a character: a file above limit × 4 × 4 bytes cannot fit the pack. */
+    const val MAX_UTF8_BYTES_PER_CHAR = 4
+    const val GIT_LIST_TIMEOUT_SEC = 30L
 
     /** Сколько строк журнала читаем на отчёт: каскад — про недавнее, а не про всю историю проекта. */
     const val CASCADE_JOURNAL_LINES = 5_000

@@ -117,6 +117,12 @@ data class AuthSpec(val type: String = "bearer", val name: String? = null)
 /** Which providers.json the entry ultimately came from (set after merge, not parsed). */
 enum class ProviderOrigin { GLOBAL, PROJECT, OVERRIDDEN }
 
+/**
+ * `quota`: where the vendor reports what the subscription has left, and in which of the shapes
+ * [SubscriptionQuota] reads. Asked only on request (`/spend`, the spending report), never polled.
+ */
+data class QuotaSpec(val url: String, val format: String)
+
 /** `models.fetch` decoded: absent entry = null on the field (defaults to enabled). */
 data class ModelsFetch(val enabled: Boolean, val url: String? = null)
 
@@ -142,6 +148,7 @@ data class ProviderEntry(
   val models: List<ModelEntry> = emptyList(),
   val note: String? = null,
   val origin: ProviderOrigin? = null,
+  val quota: QuotaSpec? = null,
 )
 
 object ProvidersFile {
@@ -306,7 +313,24 @@ object ProvidersFile {
       modelsFetch = modelsFetch,
       models = models,
       note = o["note"]?.jsonPrimitive?.contentOrNull,
+      quota = parseQuota(o["quota"] as? JsonObject, id, onWarning),
     )
+  }
+
+  /**
+   * An unknown format or a URL that is not https is dropped with a warning: the request carries the API key, and a
+   * shape we cannot read would only ever answer «no data».
+   */
+  private fun parseQuota(o: JsonObject?, providerId: String, onWarning: (String) -> Unit): QuotaSpec? {
+    if (o == null) return null
+    val url = o["url"]?.jsonPrimitive?.contentOrNull?.trim()
+    val format = o["format"]?.jsonPrimitive?.contentOrNull?.trim()
+    if (url == null || !url.startsWith("https://") || format !in SubscriptionQuota.FORMATS) {
+      onWarning(t("providers.warn.quotaInvalid", "id" to providerId,
+                  "formats" to SubscriptionQuota.FORMATS.sorted().joinToString()))
+      return null
+    }
+    return QuotaSpec(url, format!!)
   }
 
   /**
@@ -423,6 +447,7 @@ object ProvidersFile {
       modelsFetch = over.modelsFetch ?: base.modelsFetch,
       models = mergedModels.values.toList(),
       note = over.note ?: base.note,
+      quota = over.quota ?: base.quota,
     )
   }
 }
