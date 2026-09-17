@@ -244,8 +244,13 @@ class ToolCallAccumulator {
   }
 }
 
-/** One round of the tool loop as the thread keeps it: what the model said, what it called, what came back. */
-data class ToolRound(val text: String, val calls: List<ToolCall>, val results: List<ToolResult>)
+/**
+ * One round of the tool loop as the thread keeps it: what the model said, what it called, what came back — and how it
+ * reasoned before calling. The reasoning is kept because a model with `ECHO_REASONING` requires it back on EVERY
+ * assistant message with tool calls, not only on the last answer: Kimi answers 400 «reasoning_content is missing in
+ * assistant tool call message», DeepSeek with tools the same (found 17.09.2026, decision №83).
+ */
+data class ToolRound(val text: String, val calls: List<ToolCall>, val results: List<ToolResult>, val reasoning: String? = null)
 
 /**
  * Tool rounds in the thread history.
@@ -303,17 +308,22 @@ object ToolRounds {
     if (m.role != "assistant" || m.toolRounds.isEmpty()) return@flatMap listOf(m)
     val said = m.toolRounds.joinToString("") { it.text }
     val answer = (if (m.text.startsWith(said)) m.text.substring(said.length) else m.text).ifBlank { NO_ANSWER }
+    // The stored reasoning is the whole turn's, rounds first: the answer keeps what follows them, not a second copy.
+    val thought = m.toolRounds.joinToString("") { it.reasoning.orEmpty() }
+    val answerReasoning = m.reasoning?.let { if (thought.isNotEmpty() && it.startsWith(thought)) it.substring(thought.length) else it }
+      ?.ifEmpty { null }
     m.toolRounds.flatMap { round ->
       listOf(
-        ChatMessage("assistant", round.text, toolCalls = round.calls),
+        ChatMessage("assistant", round.text, reasoning = round.reasoning, toolCalls = round.calls),
         ChatMessage(ToolCalls.ROLE, "", toolResults = round.results),
       )
-    } + m.copy(text = answer, toolRounds = emptyList())
+    } + m.copy(text = answer, reasoning = answerReasoning, toolRounds = emptyList())
   }
 
   fun toJson(rounds: List<ToolRound>): JsonArray = JsonArray(rounds.map { round ->
     buildJsonObject {
       put("text", round.text)
+      round.reasoning?.let { put("reasoning", it) }
       put("calls", JsonArray(round.calls.map { buildJsonObject { put("id", it.id); put("name", it.name); put("arguments", it.arguments); it.signature?.let { s -> put("signature", s) } } }))
       put("results", JsonArray(round.results.map {
         buildJsonObject {
@@ -338,6 +348,6 @@ object ToolRounds {
       val ro = r as? JsonObject ?: return@mapNotNull null
       ToolResult(ro.s("callId") ?: return@mapNotNull null, ro.s("name").orEmpty(), ro.s("text").orEmpty(), ro.s("isError") == "true")
     }
-    if (calls.isEmpty()) null else ToolRound(o.s("text").orEmpty(), calls, results)
+    if (calls.isEmpty()) null else ToolRound(o.s("text").orEmpty(), calls, results, o.s("reasoning"))
   }
 }

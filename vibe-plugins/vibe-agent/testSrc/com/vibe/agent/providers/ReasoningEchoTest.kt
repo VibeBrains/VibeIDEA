@@ -17,11 +17,13 @@ class ReasoningEchoTest {
   private val answer = ChatMessage("assistant", "ответ", reasoning = "сперва подумаю")
 
   @Test
-  fun `kimi-k3 asks for its reasoning back, router prefix included, other models do not`() {
-    assertTrue(ModelQuirks.has("kimi-k3", ModelQuirks.Quirk.ECHO_REASONING))
-    assertTrue(ModelQuirks.has("moonshotai/kimi-k3", ModelQuirks.Quirk.ECHO_REASONING))
-    assertFalse(ModelQuirks.has("kimi-k2.6", ModelQuirks.Quirk.ECHO_REASONING))
-    assertFalse(ModelQuirks.has("deepseek-flash", ModelQuirks.Quirk.ECHO_REASONING))
+  fun `reasoning Kimi models ask for their reasoning back, router prefix included, other models do not`() {
+    for (id in listOf("kimi-k3", "moonshotai/kimi-k3", "kimi-k2.6", "kimi-k2.7-code", "kimi-k2.7-code-highspeed",
+                      "kimi-for-coding", "kimi-for-coding-highspeed", "k3", "k3-256k")) {
+      assertTrue(ModelQuirks.has(id, ModelQuirks.Quirk.ECHO_REASONING), id)
+    }
+    // Kimi's own reference names K2.6 and K2.7; an older K2 and look-alike ids stay out.
+    for (id in listOf("kimi-k2.5", "k30", "deepseek-flash")) assertFalse(ModelQuirks.has(id, ModelQuirks.Quirk.ECHO_REASONING), id)
   }
 
   @Test

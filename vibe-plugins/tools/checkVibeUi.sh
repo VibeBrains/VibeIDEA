@@ -58,6 +58,15 @@ if ! grep -q 'vibeScrollBarThickness' "$jbscrollbar" 2>/dev/null; then
   status=1
 fi
 
+# 3а. Скроллы HTML-панелей (превью Markdown и Mermaid, JCEF-просмотрщик картинок) рисует CSS
+#     JBCefScrollbarsHelper, а не JBScrollBar. Без этой правки они остаются 14px рядом с тонкими.
+jcefscroll="$root/platform/ui.jcef/jcef/JBCefScrollbarsHelper.java"
+if ! grep -q 'vibeScrollBarThickness' "$jcefscroll" 2>/dev/null; then
+  echo "ОШИБКА: в JBCefScrollbarsHelper.java нет правки [VibeIDEA] (vibeScrollBarThickness)."
+  echo "  Скроллы HTML-панелей вернутся к штатным 14px. См. FORK_CHANGES.md — восстановите правку."
+  status=1
+fi
+
 # 3б. Скролл РЕДАКТОРА тонкий не от той же правки: при включённой полосе разметки редактор ставит
 #     скроллу собственный UI (MyErrorPanel), минуя JBScrollBar.createUI, и берёт ширину бегунка из
 #     UI-свойства «Editor.scrollBarWidth». Мы кладём туда свою толщину — три точки, и потеря любой

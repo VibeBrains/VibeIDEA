@@ -3340,7 +3340,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
         }
         // A search may have loaded tools: the next round offers them.
         tools = com.vibe.agent.mcp.ToolSearch.offered(allTools, loaded, VibeAgentSettings.toolSearchThreshold)
-        turnToolRounds.add(com.vibe.agent.providers.ToolRound(roundText.toString(), calls, results))
+        turnToolRounds.add(com.vibe.agent.providers.ToolRound(roundText.toString(), calls, results, roundReasoning.toString().ifEmpty { null }))
         request = request +
           ChatMessage("assistant", roundText.toString(), reasoning = roundReasoning.toString().ifEmpty { null }, toolCalls = calls) +
           ChatMessage(com.vibe.agent.providers.ToolCalls.ROLE, "", toolResults = results)

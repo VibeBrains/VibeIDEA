@@ -76,7 +76,8 @@ class VibeAgentRegistryAction : AnAction({ t("registry.action") }) {
 
   private fun show(project: Project?, catalog: List<AgentRegistry.Entry>, configured: List<AgentServerConfig>, note: String?) {
     val fresh = AgentRegistry.newAgents(catalog, configured)
-    if (fresh.isEmpty()) {
+    val upgrades = AgentRegistry.upgrades(catalog, configured)
+    if (fresh.isEmpty() && upgrades.isEmpty()) {
       Messages.showInfoMessage(project, t("registry.nothingNew", "total" to catalog.size) + (note?.let { "\n\n" + it } ?: ""),
                                t("registry.action"))
       return
@@ -88,10 +89,37 @@ class VibeAgentRegistryAction : AnAction({ t("registry.action") }) {
     } + catalog.filter { AgentRegistry.isConfigured(it, configured) }.map { t("registry.alreadyAdded", "name" to it.name) }
     val summary = t("registry.summary", "total" to catalog.size, "fresh" to fresh.size, "url" to AgentRegistry.URL) +
                   (note?.let { "\n" + it } ?: "")
-    val dialog = AgentRegistryDialog(project, addable, notAddable, summary)
+    val dialog = AgentRegistryDialog(project, addable, notAddable, summary, upgrades)
     if (!dialog.showAndGet()) return
     val chosen = dialog.checked().mapNotNull { AgentRegistry.toAgentEntry(it) }
     if (chosen.isNotEmpty()) write(project, chosen)
+    val moving = dialog.checkedUpgrades()
+    if (moving.isNotEmpty()) upgrade(project, moving)
+  }
+
+  /** Moves the ticked pinned agents in `~/.jetbrains/acp.json`; what is not there is named with where to change it. */
+  private fun upgrade(project: Project?, upgrades: List<AgentRegistry.Upgrade>) {
+    val file = AcpConfig.configPath()
+    try {
+      val existing = if (Files.isRegularFile(file)) Files.readString(file) else null
+      when (val result = AcpConfigWriter.upgrade(existing, upgrades)) {
+        is AcpConfigWriter.Result.Written -> {
+          if (result.added.isNotEmpty()) Files.writeString(file, result.text)
+          val elsewhere = upgrades.filter { it.agentName !in result.added }
+          val text = listOfNotNull(
+            result.added.takeIf { it.isNotEmpty() }?.let { t("registry.upgraded", "file" to file, "names" to it.joinToString()) },
+            elsewhere.takeIf { it.isNotEmpty() }?.let { t("registry.upgradeElsewhere", "file" to file, "lines" to AcpConfigWriter.upgradeSnippet(it)) },
+          ).joinToString("\n\n")
+          Messages.showInfoMessage(project, text, t("registry.action"))
+        }
+        is AcpConfigWriter.Result.Refused ->
+          Messages.showInfoMessage(project, t("registry.upgradeRefused", "file" to file, "lines" to result.snippet), t("registry.action"))
+      }
+    }
+    catch (e: IOException) {
+      Messages.showErrorDialog(project, t("registry.writeFailed", "file" to file, "reason" to (e.message ?: e.javaClass.simpleName)),
+                               t("registry.action"))
+    }
   }
 
   private fun write(project: Project?, agents: List<AgentServerConfig>) {

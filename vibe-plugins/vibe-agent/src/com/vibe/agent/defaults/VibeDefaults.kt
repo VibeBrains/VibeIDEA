@@ -60,6 +60,7 @@ object VibeDefaults {
     "providers/alibaba-coding-plan.jsonc" to "providers/alibaba-coding-plan.jsonc",
     "providers/anthropic.jsonc" to "providers/anthropic.jsonc",
     "providers/arbr.jsonc" to "providers/arbr.jsonc",
+    "providers/atria.jsonc" to "providers/atria.jsonc",
     "providers/deepseek.jsonc" to "providers/deepseek.jsonc",
     "providers/google-gemini.jsonc" to "providers/google-gemini.jsonc",
     "providers/inference-net.jsonc" to "providers/inference-net.jsonc",

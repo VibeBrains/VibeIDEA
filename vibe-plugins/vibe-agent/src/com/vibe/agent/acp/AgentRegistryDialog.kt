@@ -27,13 +27,20 @@ class AgentRegistryDialog(
   private val addable: List<AgentRegistry.Entry>,
   private val notAddable: List<String>,
   private val summary: String,
+  private val upgrades: List<AgentRegistry.Upgrade> = emptyList(),
 ) : DialogWrapper(project) {
   private val list = CheckBoxList<AgentRegistry.Entry>()
+  private val upgradeList = CheckBoxList<AgentRegistry.Upgrade>()
   private val details = text("")
+
+  /** Something to act on: an agent to add or a pinned one to move. Without it the dialog is a report. */
+  private val actionable: Boolean get() = addable.isNotEmpty() || upgrades.isNotEmpty()
 
   init {
     title = t("registry.action")
-    setOKButtonText(if (addable.isEmpty()) t("registry.close") else t("registry.add"))
+    setOKButtonText(if (actionable) t("registry.apply") else t("registry.close"))
+    // Not ticked by default: moving a pinned version is the person's decision, the dialog only says there is one.
+    upgradeList.setItems(upgrades) { t("registry.upgradeLine", "name" to it.agentName, "from" to it.from, "to" to it.to) }
     list.setItems(addable) { entry ->
       listOfNotNull(entry.name, entry.version).joinToString(" ") +
         (entry.description?.let { " — " + it.take(DESCRIPTION_CHARS) } ?: "")
@@ -45,16 +52,27 @@ class AgentRegistryDialog(
   }
 
   /** With nothing to add the dialog is a report: one button that closes it. */
-  override fun createActions(): Array<Action> = if (addable.isEmpty()) arrayOf(okAction) else super.createActions()
+  override fun createActions(): Array<Action> = if (actionable) super.createActions() else arrayOf(okAction)
 
   /** The entries the person ticked. */
   fun checked(): List<AgentRegistry.Entry> = addable.filter { list.isItemSelected(it) }
+
+  /** The pinned agents the person chose to move to the registry's version. */
+  fun checkedUpgrades(): List<AgentRegistry.Upgrade> = upgrades.filter { upgradeList.isItemSelected(it) }
 
   override fun createCenterPanel(): JComponent {
     val panel = JPanel(BorderLayout(0, JBUI.scale(GAP)))
     val head = JPanel(BorderLayout(0, JBUI.scale(GAP)))
     head.add(text(summary), BorderLayout.NORTH)
-    if (addable.isNotEmpty()) head.add(text(t("registry.addable", "button" to t("registry.add"))), BorderLayout.SOUTH)
+    if (addable.isNotEmpty()) head.add(text(t("registry.addable", "button" to t("registry.apply"))), BorderLayout.SOUTH)
+    if (upgrades.isNotEmpty()) {
+      val box = JPanel(BorderLayout(0, JBUI.scale(GAP / 2)))
+      box.add(text(t("registry.upgrades", "button" to t("registry.apply"))), BorderLayout.NORTH)
+      box.add(VibeScroll.pane(upgradeList).apply {
+        preferredSize = Dimension(JBUI.scale(WIDTH), JBUI.scale(UPGRADES_HEIGHT))
+      }, BorderLayout.CENTER)
+      head.add(box, BorderLayout.CENTER)
+    }
     panel.add(head, BorderLayout.NORTH)
     if (addable.isNotEmpty()) {
       val middle = JPanel(GridLayout(1, 2, JBUI.scale(GAP), 0))
@@ -82,8 +100,9 @@ class AgentRegistryDialog(
 
   private fun describe(entry: AgentRegistry.Entry): String {
     val command = AgentRegistry.toAgentEntry(entry)?.let { (listOf(it.command) + it.args).joinToString(" ") }.orEmpty()
+    val license = listOfNotNull(entry.license, entry.licenseUrl).joinToString(" · ").ifEmpty { DASH }
     return t("registry.details",
-             "name" to entry.name, "version" to (entry.version ?: DASH), "license" to (entry.license ?: DASH),
+             "name" to entry.name, "version" to (entry.version ?: DASH), "license" to license,
              "website" to (entry.website ?: DASH), "repository" to (entry.repository ?: DASH), "command" to command) +
       (entry.description?.let { "\n\n" + it } ?: "")
   }
@@ -101,6 +120,7 @@ class AgentRegistryDialog(
     const val WIDTH = 760
     const val HEIGHT = 520
     const val TAIL_HEIGHT = 140
+    const val UPGRADES_HEIGHT = 90
     const val DASH = "—"
   }
 }

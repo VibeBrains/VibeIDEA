@@ -43,6 +43,11 @@
 **Изменено:** `isThin()` возвращает `vibeScrollBarThickness() > 0` вместо `false`; `createUI` передаёт толщину в тонкие UI; добавлен `vibeScrollBarThickness()` — чтение ключа `vibe.scrollbar.thickness` (дефолт 4, `0` возвращает штатные скроллы платформы). Ключ объявлен в `vibe-agent/plugin.xml` (EP `registryKey`), настройка — Settings → Tools → VibeIDEA → Интерфейс; `registry.properties` платформы не тронут. Комментарии-маркеры `[VibeIDEA]`.
 **При синке:** конфликт вероятен только если апстрим сам правит эти два метода — проверять `./vibe-plugins/tools/checkVibeUi.sh`.
 
+### platform/ui.jcef/jcef/JBCefScrollbarsHelper.java
+**Причина:** то же решение владельца 2026-08-28 (тонкие скроллы во всём интерфейсе), подтверждённое 17.09.2026 для HTML-панелей. Скроллы превью Markdown и Mermaid и JCEF-просмотрщика картинок рисует CSS этого класса, а не `JBScrollBar`, поэтому правка выше до них не доходила: дорожка 14 px. Точка расширения `browserPreviewExtensionProvider` есть только у Markdown; у Mermaid и просмотрщика картинок её нет, а размеры — приватные статические методы, общие для всех трёх, так что покрыть все панели можно только здесь.
+**Изменено:** `getTrackSizePx`, `getThumbPaddingPx`, `getThumbRadiusPx` при `JBScrollBar.vibeScrollBarThickness() > 0` возвращают толщину из настройки, нулевой отступ и половину толщины; при `0` — штатные 14 / 3 / 7. Комментарии-маркеры `[VibeIDEA]`.
+**При синке:** конфликт вероятен только если апстрим сам правит эти три метода — проверять `./vibe-plugins/tools/checkVibeUi.sh`.
+
 ### Добавлено для Фазы 2 (языки)
 - `vibe-plugins/vibe-lsp/` — плагин `com.vibe.lsp`: vtsls (TS) + Phpactor (PHP) через LSP4IJ (optional depends). **Причина:** плагины PhpStorm/WebStorm закрыты; LSP — лицензионно чистый путь.
 - `vibe-plugins/deps/` — пиненная загрузка LSP4IJ 0.20.2 с GitHub releases (sha256), раскладывается в `plugins/lsp4ij/` на сборке.

@@ -131,12 +131,16 @@ object ModelQuirks {
       "gpt-5: the model sets its own sampling, and the answer limit is named differently",
     ),
     Rule(
-      // Kimi K3: in a multi-turn conversation the assistant's reply goes back whole,
-      // `reasoning_content` included. Source: platform.kimi.ai/docs/guide/use-reasoning-effort
-      // (checked 2026-09-11). Not verified with a live key — decision №83.
-      Regex("^kimi-k3"),
+      // Kimi models that reason: in a multi-turn conversation the assistant's reply goes back whole,
+      // `reasoning_content` included, on every message with tool calls too.
+      // K3 — platform.kimi.ai/docs/guide/use-reasoning-effort (checked 2026-09-11); K2.6 and K2.7 Code —
+      // platform.kimi.ai/docs/guide/use-kimi-k2-thinking-model (K2.7 Code keeps it always); Kimi Code's
+      // `kimi-for-coding` (K2.8 Preview) and `k3` — the error «reasoning_content is missing in assistant tool call
+      // message» in kimi.com/code/docs/en/kimi-code/error-reference.html (checked 2026-09-17).
+      // Not verified with a live key — decision №83.
+      Regex("^(kimi-k3|kimi-k2\\.[67]|kimi-for-coding|k3(-|$))"),
       setOf(Quirk.ECHO_REASONING),
-      "kimi-k3: the assistant's reasoning_content goes back with its answer in the history",
+      "kimi: the assistant's reasoning_content goes back with its answer and its tool calls in the history",
     ),
   )
 

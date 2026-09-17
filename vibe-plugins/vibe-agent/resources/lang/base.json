@@ -1061,7 +1061,6 @@
   "registry.nothingNew": "В каталоге {total} агентов, новых для вас нет",
   "registry.summary": "В каталоге {total} агентов, из них новых для вас {fresh}.\nИсточник: {url}",
   "registry.addable": "Отмеченные агенты допишутся в ~/.jetbrains/acp.json кнопкой «{button}». Ничего не устанавливается и не запускается: команда запуска — в описании агента, до того как её кто-то выполнит.",
-  "registry.add": "Добавить",
   "registry.close": "Закрыть",
   "registry.details": "{name} {version}\nЛицензия: {license}\nСайт: {website}\nРепозиторий: {repository}\nКоманда запуска: {command}",
   "registry.notAddable": "Отсюда не добавить:",
@@ -2041,5 +2040,11 @@
   "pipeline.pack.cost": "(оценка запроса ~{cost} {currency})",
   "pipeline.pack.costUnknown": "(цены модели нет — оценить запрос нечем)",
   "pipeline.pack.overCeiling": "pack: оценка запроса ~{cost} больше остатка потолка «{window}» ({left}) — шаг не отправлен",
-  "pipeline.pack.header": "Файлы репозитория (только отслеживаемые git), каждый в блоке <file path=\"…\">:"
+  "pipeline.pack.header": "Файлы репозитория (только отслеживаемые git), каждый в блоке <file path=\"…\">:",
+  "registry.apply": "Применить",
+  "registry.upgrades": "Есть новее — отметьте, кого перевести на версию каталога, и нажмите «{button}». Меняется только версия в записи:",
+  "registry.upgradeLine": "{name}: {from} → {to}",
+  "registry.upgraded": "Версия обновлена в {file}: {names}. Новая версия запустится при следующем старте агента.",
+  "registry.upgradeElsewhere": "Этих агентов нет в {file} — они заданы в .vibe/agents.json проекта или по умолчанию; поменяйте версию там:\n{lines}",
+  "registry.upgradeRefused": "{file} не переписан: это не чистый JSON (комментарии, висячие запятые или ошибка). Поменяйте версию руками:\n{lines}"
 }

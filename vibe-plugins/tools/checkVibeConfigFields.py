@@ -109,6 +109,24 @@ FREE_FORM = {'env', 'headers', 'query', 'extraBody'}
 # Файлы, свободные целиком: имя окружения и имя переменной в нём выбирает человек.
 FREE_FORM_FILES = {'http-client.env.json'}
 
+SEED_ROOT = 'vibe-plugins/vibe-agent/resources/vibeDefaults/'
+PRODUCTS_FILE = SEED_ROOT + 'products.json'
+
+
+def seeded_to_nobody():
+    """Пути набора, которые products.json адресует пустому списку продуктов: не засеваются никому.
+
+    Это данные набора, а не настройки — сейчас общие тестовые векторы (testVectors/, 17.09.2026).
+    Человек их не копирует, и ключи в них читает тест, а не парсер конфига: проверять их как поля
+    сида — ложная тревога. Граница взята из того же файла, по которому решает сеялка, а не списком
+    здесь: иначе новый файл тестовых данных снова красил бы гейт.
+    """
+    try:
+        data = json.loads(strip_jsonc(io.open(PRODUCTS_FILE, encoding='utf-8').read()))
+    except (IOError, ValueError):
+        return set()
+    return {f.get('path') for f in data.get('files', []) if isinstance(f, dict) and f.get('products') == []}
+
 
 def strip_jsonc(text):
     """JSONC → JSON: убрать комментарии вне строк и висячие запятые."""
@@ -177,9 +195,10 @@ def check_seeds():
     orphans = {}
     seen = set()
     free_form_hit = set()
+    nobody = seeded_to_nobody()
     for path in SEEDS:
         name = path.split('/')[-1]
-        if name in SERVICE_FILES:
+        if name in SERVICE_FILES or path[len(SEED_ROOT):] in nobody:
             continue
         if name in FREE_FORM_FILES:
             free_form_hit.add(name)

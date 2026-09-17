@@ -1061,7 +1061,6 @@
   "registry.nothingNew": "The registry lists {total} agents, none of them new to you",
   "registry.summary": "The registry lists {total} agents, {fresh} of them new to you.\nSource: {url}",
   "registry.addable": "Ticked agents are written into ~/.jetbrains/acp.json with \"{button}\". Nothing is installed or started: the launch command is in the agent's description, before anyone runs it.",
-  "registry.add": "Add",
   "registry.close": "Close",
   "registry.details": "{name} {version}\nLicense: {license}\nWebsite: {website}\nRepository: {repository}\nLaunch command: {command}",
   "registry.notAddable": "Cannot be added from here:",
@@ -2041,5 +2040,11 @@
   "pipeline.pack.cost": "(request estimate ~{cost} {currency})",
   "pipeline.pack.costUnknown": "(the model has no price — the request cannot be estimated)",
   "pipeline.pack.overCeiling": "pack: the request estimate ~{cost} is above what is left of the “{window}” ceiling ({left}) — the step was not sent",
-  "pipeline.pack.header": "Repository files (tracked by git only), each in a <file path=\"…\"> block:"
+  "pipeline.pack.header": "Repository files (tracked by git only), each in a <file path=\"…\"> block:",
+  "registry.apply": "Apply",
+  "registry.upgrades": "Newer versions available — tick the agents to move to the catalog version and press “{button}”. Only the version in the entry changes:",
+  "registry.upgradeLine": "{name}: {from} → {to}",
+  "registry.upgraded": "Version updated in {file}: {names}. The new version starts with the agent’s next start.",
+  "registry.upgradeElsewhere": "These agents are not in {file} — they come from the project’s .vibe/agents.json or the defaults; change the version there:\n{lines}",
+  "registry.upgradeRefused": "{file} was not rewritten: it is not plain JSON (comments, trailing commas or an error). Change the version by hand:\n{lines}"
 }

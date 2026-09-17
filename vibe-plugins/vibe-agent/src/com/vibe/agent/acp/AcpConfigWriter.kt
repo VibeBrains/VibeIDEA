@@ -52,6 +52,34 @@ object AcpConfigWriter {
     return Result.Written(pretty.encodeToString(JsonElement.serializer(), updated) + "\n", added, kept.map { it.name })
   }
 
+  /**
+   * Moves pinned agents to the registry's newer version: in each named entry the package operand [AgentRegistry.Upgrade.fromSpec]
+   * becomes [AgentRegistry.Upgrade.toSpec], and nothing else in the file changes. [Result.Written.added] lists the agents
+   * moved; one that is not in this file (it comes from the project's `.vibe/agents.json` or from the defaults) is absent
+   * from it and left for the person. A file with comments is not rewritten, as in [add].
+   */
+  fun upgrade(existing: String?, upgrades: List<AgentRegistry.Upgrade>): Result {
+    val root = existing?.takeIf { it.isNotBlank() }?.let { runCatching { strict.parseToJsonElement(it) as? JsonObject }.getOrNull() }
+      ?: return Result.Refused(upgradeSnippet(upgrades))
+    val servers = root[SERVERS] as? JsonObject ?: return Result.Refused(upgradeSnippet(upgrades))
+    val changed = LinkedHashMap(servers)
+    val done = ArrayList<String>()
+    for (u in upgrades) {
+      val agent = changed[u.agentName] as? JsonObject ?: continue
+      val args = agent["args"] as? JsonArray ?: continue
+      if (args.none { (it as? JsonPrimitive)?.content == u.fromSpec }) continue
+      val moved = JsonArray(args.map { if ((it as? JsonPrimitive)?.content == u.fromSpec) JsonPrimitive(u.toSpec) else it })
+      changed[u.agentName] = JsonObject(LinkedHashMap(agent).apply { put("args", moved) })
+      done += u.agentName
+    }
+    val updated = JsonObject(LinkedHashMap(root).apply { put(SERVERS, JsonObject(changed)) })
+    return Result.Written(pretty.encodeToString(JsonElement.serializer(), updated) + "\n", done, emptyList())
+  }
+
+  /** What to change by hand, one line per agent: the file is the person's, the edit is theirs to make. */
+  fun upgradeSnippet(upgrades: List<AgentRegistry.Upgrade>): String =
+    upgrades.joinToString("\n") { "\"${it.agentName}\": \"${it.fromSpec}\" → \"${it.toSpec}\"" }
+
   /** The `agent_servers` fragment for these agents, ready to paste. */
   fun snippet(agents: List<AgentServerConfig>): String =
     pretty.encodeToString(JsonElement.serializer(), JsonObject(mapOf(SERVERS to JsonObject(agents.associate { it.name to entry(it) }))))

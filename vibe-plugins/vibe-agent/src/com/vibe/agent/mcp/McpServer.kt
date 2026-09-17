@@ -115,9 +115,13 @@ object McpServer {
     if (!isRequest) return Answer(null, HTTP_ACCEPTED)
 
     return when (method) {
+      // Caching hints are a MUST here as on `tools/list` (2026-07-28, server/utilities/caching: «Servers MUST include
+      // caching hints on results … returned by … server/discover»); missed until 17.09.2026.
       "server/discover" -> Answer(resultBody(id, serverVersion) {
         putJsonArray("supportedVersions") { McpProtocol.SUPPORTED.forEach { add(JsonPrimitive(it)) } }
         putJsonObject("capabilities") { putJsonObject("tools") {} }
+        put("ttlMs", McpProtocol.LIST_TTL_MS)
+        put("cacheScope", "private")
       })
 
       // The handshake of the older revision. A supported version is echoed; any other gets ours

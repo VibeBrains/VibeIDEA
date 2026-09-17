@@ -192,6 +192,10 @@ class McpServerTest {
     assertEquals(McpProtocol.TOOLS.map { it.name }, names)
     assertEquals(McpProtocol.LIST_TTL_MS, listed["ttlMs"]!!.jsonPrimitive.content.toLong())
     assertEquals("private", listed["cacheScope"]!!.jsonPrimitive.content)
+    // server/discover is cacheable too, and the hints are a MUST there as well.
+    val discovered = result(ask(modern("server/discover"), headers = mirrored("server/discover")).body)
+    assertEquals(McpProtocol.LIST_TTL_MS, discovered["ttlMs"]!!.jsonPrimitive.content.toLong())
+    assertEquals("private", discovered["cacheScope"]!!.jsonPrimitive.content)
   }
 
   @Test

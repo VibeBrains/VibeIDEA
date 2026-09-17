@@ -27,6 +27,25 @@ class ToolRoundsTest {
   }
 
   @Test
+  fun `a later turn sends each round's reasoning with its calls, and the answer only its own`() {
+    val thinking = round.copy(reasoning = "which file? ")
+    val stored = ChatMessage("assistant", "Looking. It is roles.json.", reasoning = "which file? found it", toolRounds = listOf(thinking))
+    val wire = ToolRounds.expand(listOf(ChatMessage("user", "where?"), stored, ChatMessage("user", "and?")))
+    assertEquals("which file? ", wire[1].reasoning, "the tool call message carries its reasoning")
+    assertEquals("found it", wire[3].reasoning, "the answer does not repeat the round's reasoning")
+    // What goes out for a model that echoes: reasoning_content on the tool call message of the earlier turn.
+    assertEquals("which file? ", (LlmMessages.openAi(wire[1], echoReasoning = true)["reasoning_content"] as kotlinx.serialization.json.JsonPrimitive).content)
+  }
+
+  @Test
+  fun `the round's reasoning survives the thread codec`() {
+    val thinking = round.copy(reasoning = "which file?")
+    val record = ChatMessageRecord(Role.ASSISTANT, "Looking. ", at = "2026-09-17T00:00:00Z", toolRounds = listOf(thinking))
+    val thread = ChatThread("t1", "2026-09-17T00:00:00Z", "2026-09-17T00:00:00Z", null, null, listOf(record))
+    assertEquals(listOf(thinking), ChatTranscriptCodec.fromJson(ChatTranscriptCodec.toJson(thread))!!.messages.single().toolRounds)
+  }
+
+  @Test
   fun `a turn that ended on calls still has an assistant answer`() {
     val wire = ToolRounds.expand(listOf(ChatMessage("assistant", "Looking. ", toolRounds = listOf(round))))
     assertEquals(ToolRounds.NO_ANSWER, wire.last().text)

@@ -259,16 +259,22 @@ public final class JBCefScrollbarsHelper {
       ;
   }
 
+  // [VibeIDEA] Browser panels (Markdown and Mermaid previews, the JCEF image viewer) draw their scrollbars with this CSS,
+  // not with JBScrollBar, so the thin-scrollbar setting did not reach them: a 14px track stood beside 4px ones everywhere
+  // else. The same key JBScrollBar reads decides here; 0 keeps the platform sizes. See FORK_CHANGES.md.
   private static int getTrackSizePx() {
-    return JBCefApp.normalizeScaledSize(14);
+    int thickness = com.intellij.ui.components.JBScrollBar.vibeScrollBarThickness();
+    return JBCefApp.normalizeScaledSize(thickness > 0 ? thickness : 14);
   }
 
   private static int getThumbPaddingPx() {
-    return JBCefApp.normalizeScaledSize(3);
+    // [VibeIDEA] A thin track has no room for padding: the thumb fills it, as in the thin Swing scrollbar.
+    return JBCefApp.normalizeScaledSize(com.intellij.ui.components.JBScrollBar.vibeScrollBarThickness() > 0 ? 0 : 3);
   }
 
   private static int getThumbRadiusPx() {
-    return JBCefApp.normalizeScaledSize(7);
+    int thickness = com.intellij.ui.components.JBScrollBar.vibeScrollBarThickness();
+    return JBCefApp.normalizeScaledSize(thickness > 0 ? Math.max(1, thickness / 2) : 7);
   }
 
 

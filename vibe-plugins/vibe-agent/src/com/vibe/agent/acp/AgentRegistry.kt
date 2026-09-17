@@ -42,7 +42,18 @@ object AgentRegistry {
     val binary: Binary? = null,
     /** Where the source lives — the one address worth checking before running someone else's program. */
     val repository: String? = null,
+    /** The license text itself; required by the registry format since 08.09.2026. */
+    val licenseUrl: String? = null,
   )
+
+  /**
+   * An agent configured with a pinned package whose registry version is newer: [from] is what the entry runs, [to] what
+   * the registry offers. Pinned stays pinned — the person decides to move, but is told there is somewhere to move to.
+   */
+  data class Upgrade(val agentName: String, val entry: Entry, val fromSpec: String, val from: String, val to: String) {
+    /** The package spec the entry will run after the upgrade. */
+    val toSpec: String get() = fromSpec.substring(0, fromSpec.length - from.length) + to
+  }
 
   /**
    * Готовая сборка под конкретную ОС и архитектуру: где взять, чем проверить, чем запускать.
@@ -96,6 +107,7 @@ object AgentRegistry {
         args = args,
         binary = binaryOf(distribution, target),
         repository = agent.string("repository"),
+        licenseUrl = agent.string("license_url"),
       )
     }
   }
@@ -186,6 +198,53 @@ object AgentRegistry {
       .removeSuffix(".cmd").removeSuffix(".exe")
     if (runner !in RUNNERS) return null
     return config.args.firstOrNull { !it.startsWith("-") }?.let { withoutVersion(it) }
+  }
+
+  /**
+   * Configured agents whose pinned package the registry has a newer version of. An entry without a version already
+   * takes a fresh one at every start and is not offered anything; a version newer than the registry's — pinned ahead on
+   * purpose — is not offered a downgrade.
+   */
+  fun upgrades(catalog: List<Entry>, configured: List<AgentServerConfig>): List<Upgrade> = configured.mapNotNull { config ->
+    val spec = packageSpecOf(config) ?: return@mapNotNull null
+    val from = versionOf(spec) ?: return@mapNotNull null
+    val name = withoutVersion(spec)
+    val entry = catalog.firstOrNull { it.pkg != null && withoutVersion(it.pkg) == name } ?: return@mapNotNull null
+    val to = entry.pkg?.let { versionOf(it) } ?: entry.version ?: return@mapNotNull null
+    if (!isNewer(to, from)) return@mapNotNull null
+    Upgrade(config.name, entry, spec, from, to)
+  }
+
+  /** The package operand of an npx/uvx-style entry, version included; null for anything else. */
+  fun packageSpecOf(config: AgentServerConfig): String? {
+    val runner = config.command.substringAfterLast('/').substringAfterLast('\\').lowercase()
+      .removeSuffix(".cmd").removeSuffix(".exe")
+    if (runner !in RUNNERS) return null
+    return config.args.firstOrNull { !it.startsWith("-") }
+  }
+
+  /** `@scope/name@1.2.3` → `1.2.3`, `name==1.2` → `1.2`, no version → null. */
+  fun versionOf(spec: String): String? {
+    if ("==" in spec) return spec.substringAfter("==").trim().ifEmpty { null }
+    val at = spec.lastIndexOf('@')
+    return if (at > 0) spec.substring(at + 1).trim().ifEmpty { null } else null
+  }
+
+  /**
+   * Whether [candidate] is a later release than [current], by the numeric parts of the release (a pre-release suffix
+   * aside). Equal releases or anything not comparable say «no»: a false «newer» would nag about a version that is not.
+   */
+  fun isNewer(candidate: String, current: String): Boolean {
+    fun parts(v: String) = v.substringBefore('-').substringBefore('+').split('.').map { it.toIntOrNull() }
+    val a = parts(candidate)
+    val b = parts(current)
+    if (a.any { it == null } || b.any { it == null }) return false
+    for (i in 0 until maxOf(a.size, b.size)) {
+      val x = a.getOrNull(i) ?: 0
+      val y = b.getOrNull(i) ?: 0
+      if (x != y) return x > y
+    }
+    return false
   }
 
   /** `@scope/name@1.2.3` → `@scope/name`, `name==1.2` → `name`, `name@1.2` → `name`; case-folded. */
