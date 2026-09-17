@@ -1150,7 +1150,7 @@
   "council.notConfigured": "The model council is not configured: at least {min} DIFFERENT models are required in the «Advisers» field (Settings → Tools → VibeIDEA → Agent), as provider/model separated by commas. The same model asked twice agrees with itself — that is not a second opinion.",
   "council.badEntries": "these adviser entries could not be parsed: {entries}",
   "council.asking": "🧑‍⚖️ asking the council: {advisers}",
-  "council.opinion": "opinion {index}",
+  "council.opinion": "opinion {index} · {adviser}",
   "council.adviser": "Answer the question briefly and to the point. On a separate final line, name what you are NOT sure about and what should be checked.",
   "council.adviserFailed": "adviser {adviser} did not answer: {reason}",
   "council.tooFewAnswers": "fewer than two answers ({count}) — nothing to reconcile",
@@ -2046,5 +2046,6 @@
   "registry.upgradeLine": "{name}: {from} → {to}",
   "registry.upgraded": "Version updated in {file}: {names}. The new version starts with the agent’s next start.",
   "registry.upgradeElsewhere": "These agents are not in {file} — they come from the project’s .vibe/agents.json or the defaults; change the version there:\n{lines}",
-  "registry.upgradeRefused": "{file} was not rewritten: it is not plain JSON (comments, trailing commas or an error). Change the version by hand:\n{lines}"
+  "registry.upgradeRefused": "{file} was not rewritten: it is not plain JSON (comments, trailing commas or an error). Change the version by hand:\n{lines}",
+  "council.floating": "(floating alias)"
 }

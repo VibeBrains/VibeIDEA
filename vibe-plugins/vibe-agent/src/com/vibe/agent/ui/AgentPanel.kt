@@ -1691,8 +1691,12 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
         return@executeOnPooledThread
       }
       SwingUtilities.invokeLater {
-        collected.forEachIndexed { index, answer ->
-          val console = TerminalConsole(t("council.opinion", "index" to (index + 1)))
+        answers.toSortedMap().entries.forEachIndexed { shown, (asked, answer) ->
+          val adviser = plan.advisers[asked]
+          // An adviser on a floating id may be a different model next time: the opinion says so where it is read,
+          // because the answer itself carries the same name either way (VibeIDE's semantics, 15.09.2026).
+          val label = adviser.toString() + if (isFloating(adviser)) " " + t("council.floating") else ""
+          val console = TerminalConsole(t("council.opinion", "index" to (shown + 1), "adviser" to label))
           console.append(answer)
           messages.add(console)
         }
@@ -1707,6 +1711,10 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     }
     return true
   }
+
+  /** Whether the adviser's model is declared a floating alias — by the registry, catalog included. */
+  private fun isFloating(adviser: com.vibe.agent.council.CouncilPlan.Adviser): Boolean =
+    providers.firstOrNull { it.id == adviser.providerId }?.models?.firstOrNull { it.id == adviser.modelId }?.floating == true
 
   /** One adviser, one blocking call; failures are reported and do not take the council down. */
   private fun askAdviser(adviser: com.vibe.agent.council.CouncilPlan.Adviser, question: String): String? {

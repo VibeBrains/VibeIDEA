@@ -60,6 +60,13 @@ data class ModelEntry(
   val fim: Boolean = false,
   /** Accepts images: null = unknown (attachments allowed), false = composer blocks image sends. */
   val vision: Boolean? = null,
+  /**
+   * The id is a floating alias: the vendor re-points it at a new snapshot without notice, and the answer carries the
+   * same name, so [ModelEcho] cannot see the swap. Declared by hand where the catalog cannot say it; filled in from the
+   * catalog where it can (OpenRouter's `alias_target`). Null — nothing is known, which is not «fixed».
+   * VibeIDE's field and semantics (15.09.2026).
+   */
+  val floating: Boolean? = null,
   val note: String? = null,
   /**
    * The day access to this model ends, ISO (`2026-11-12`).
@@ -287,6 +294,7 @@ object ProvidersFile {
         pricing = parsePricing((mo["cost"] ?: mo["pricing"]) as? JsonObject, "$id/$mid", onWarning),
         fim = mo["fim"]?.jsonPrimitive?.booleanOrNull ?: false,
         vision = mo["vision"]?.jsonPrimitive?.booleanOrNull,
+        floating = mo["floating"]?.jsonPrimitive?.booleanOrNull,
         note = mo["note"]?.jsonPrimitive?.contentOrNull,
         sunsetDate = mo["sunsetDate"]?.jsonPrimitive?.contentOrNull,
         priceValidUntil = text(mo, "costValidUntil", "priceValidUntil"),
@@ -410,6 +418,7 @@ object ProvidersFile {
   private fun overlayModel(base: ModelEntry?, over: ModelEntry): ModelEntry =
     if (base == null) over else over.copy(
       vision = over.vision ?: base.vision,
+      floating = over.floating ?: base.floating,
       // Same rule as the rest: a layer that said nothing about the price does not erase it.
       pricing = over.pricing ?: base.pricing,
       priceValidUntil = over.priceValidUntil ?: base.priceValidUntil,

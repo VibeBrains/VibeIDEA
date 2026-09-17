@@ -37,12 +37,14 @@ object ModelCatalogCache {
    * One provider's catalog as it was last fetched.
    *
    * @property vision what the catalog said about images, for the models it said it about ([CatalogModel]).
+   * @property floating ids the catalog called aliases of other models ([CatalogModel.floatingOf]).
    */
   data class Entry(
     val fingerprint: String,
     val modelIds: List<String>,
     val fetchedAtMs: Long,
     val vision: Map<String, Boolean> = emptyMap(),
+    val floating: Set<String> = emptySet(),
   )
 
   private val json = Json { ignoreUnknownKeys = true; prettyPrint = true }
@@ -59,7 +61,9 @@ object ModelCatalogCache {
 
   /** What a successful fetch leaves in the cache: the ids, and the image flag where the catalog gave one. */
   fun entryOf(provider: ProviderEntry, models: List<CatalogModel>, fetchedAtMs: Long): Entry =
-    Entry(fingerprint(provider), models.map { it.id }, fetchedAtMs, models.mapNotNull { m -> m.vision?.let { m.id to it } }.toMap())
+    Entry(fingerprint(provider), models.map { it.id }, fetchedAtMs,
+          models.mapNotNull { m -> m.vision?.let { m.id to it } }.toMap(),
+          models.filter { it.floating == true }.map { it.id }.toSet())
 
   /**
    * Adds cached model ids as [ModelEntry] to providers that do not declare them, leaving
@@ -73,8 +77,12 @@ object ModelCatalogCache {
       if (entry.fingerprint != fingerprint(p)) return@map p
       val known = p.models.map { it.id }.toSet()
       // What a person wrote wins; «not stated» is exactly what the catalog's word is for.
-      val declared = p.models.map { m -> if (m.vision == null) entry.vision[m.id]?.let { m.copy(vision = it) } ?: m else m }
-      val extra = entry.modelIds.filter { it !in known }.map { ModelEntry(id = it, vision = entry.vision[it]) }
+      val declared = p.models.map { m ->
+        val withVision = if (m.vision == null) entry.vision[m.id]?.let { m.copy(vision = it) } ?: m else m
+        if (withVision.floating == null && m.id in entry.floating) withVision.copy(floating = true) else withVision
+      }
+      val extra = entry.modelIds.filter { it !in known }
+        .map { ModelEntry(id = it, vision = entry.vision[it], floating = true.takeIf { _ -> it in entry.floating }) }
       if (extra.isEmpty() && declared == p.models) p else p.copy(models = declared + extra)
     }
 
@@ -143,7 +151,8 @@ object ModelCatalogCache {
       // Absent in a cache written before the flags existed: it reads as «the catalog said nothing».
       val vision = (o["vision"] as? JsonObject).orEmpty()
         .mapNotNull { (model, flag) -> (flag as? JsonPrimitive)?.booleanOrNull?.let { model to it } }.toMap()
-      id to Entry(fingerprint, ids, at, vision)
+      val floating = (o["floating"] as? JsonArray).orEmpty().mapNotNull { (it as? JsonPrimitive)?.contentOrNull }.toSet()
+      id to Entry(fingerprint, ids, at, vision, floating)
     }.toMap()
   }
 
@@ -157,6 +166,7 @@ object ModelCatalogCache {
           put("fetchedAt", e.fetchedAtMs)
           put("models", JsonArray(e.modelIds.map { JsonPrimitive(it) }))
           if (e.vision.isNotEmpty()) put("vision", JsonObject(e.vision.mapValues { JsonPrimitive(it.value) }))
+          if (e.floating.isNotEmpty()) put("floating", JsonArray(e.floating.sorted().map { JsonPrimitive(it) }))
         }
       }))
     },

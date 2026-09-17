@@ -15,9 +15,12 @@ import kotlinx.serialization.json.contentOrNull
  * marks `supports_image_in`, OpenRouter lists `architecture.input_modalities`. The rest say nothing,
  * and nothing is assumed: unknown stays unknown and images pass, as before.
  *
+ * The catalog also says, where it can, that an id is a floating alias — OpenRouter's `alias_target`. Every other
+ * catalog stays silent, and there the flag is written by hand in `providers.json`.
+ *
  * Pure: the catalog's JSON in, models out.
  */
-data class CatalogModel(val id: String, val vision: Boolean? = null) {
+data class CatalogModel(val id: String, val vision: Boolean? = null, val floating: Boolean? = null) {
   companion object {
     private const val IMAGE = "image"
 
@@ -29,8 +32,21 @@ data class CatalogModel(val id: String, val vision: Boolean? = null) {
         val id = (model["id"] as? JsonPrimitive)?.contentOrNull
           ?: (model["name"] as? JsonPrimitive)?.contentOrNull?.removePrefix("models/")
           ?: return@mapNotNull null
-        CatalogModel(id, visionOf(model))
+        CatalogModel(id, visionOf(model), floatingOf(model, id))
       }
+    }
+
+    /**
+     * Whether the catalog says the id is an alias of another model; null when it does not say.
+     *
+     * Only OpenRouter's explicit `alias_target` counts (16 entries of 310 on 12.09.2026, VibeIDE's measurement). A
+     * `canonical_slug` differing from the id means a dated snapshot behind a plain name — visible, but not the same
+     * promise, and calling it floating would mark almost every model of the catalog.
+     */
+    fun floatingOf(model: JsonObject, id: String): Boolean? {
+      val alias = (model["alias_target"] as? JsonObject)?.get("slug") as? JsonPrimitive ?: return null
+      val slug = alias.contentOrNull?.takeIf { it.isNotBlank() } ?: return null
+      return if (slug != id) true else null
     }
 
     /** Whether the catalog says the model takes images; null when it does not say. */

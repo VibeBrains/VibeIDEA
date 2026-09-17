@@ -1150,7 +1150,7 @@
   "council.notConfigured": "Совет моделей не настроен: нужно минимум {min} РАЗНЫХ модели в поле «Советники» (Settings → Tools → VibeIDEA → Агент), в формате провайдер/модель через запятую. Одна и та же модель, спрошенная дважды, соглашается сама с собой — это не второе мнение.",
   "council.badEntries": "в списке советников не разобраны записи: {entries}",
   "council.asking": "🧑‍⚖️ спрашиваю совет: {advisers}",
-  "council.opinion": "мнение {index}",
+  "council.opinion": "мнение {index} · {adviser}",
   "council.adviser": "Ответь на вопрос по существу и коротко. В конце отдельной строкой назови, в чём ты НЕ уверен и что стоит проверить.",
   "council.adviserFailed": "советник {adviser} не ответил: {reason}",
   "council.tooFewAnswers": "ответов меньше двух ({count}) — сводить нечего",
@@ -2046,5 +2046,6 @@
   "registry.upgradeLine": "{name}: {from} → {to}",
   "registry.upgraded": "Версия обновлена в {file}: {names}. Новая версия запустится при следующем старте агента.",
   "registry.upgradeElsewhere": "Этих агентов нет в {file} — они заданы в .vibe/agents.json проекта или по умолчанию; поменяйте версию там:\n{lines}",
-  "registry.upgradeRefused": "{file} не переписан: это не чистый JSON (комментарии, висячие запятые или ошибка). Поменяйте версию руками:\n{lines}"
+  "registry.upgradeRefused": "{file} не переписан: это не чистый JSON (комментарии, висячие запятые или ошибка). Поменяйте версию руками:\n{lines}",
+  "council.floating": "(плавающий алиас)"
 }
