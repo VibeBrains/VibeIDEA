@@ -64,6 +64,14 @@ data class PipelineStep(
   val offPeak: Boolean = false,
   /** Files of the repository in the prompt of a step on its own model, see [RepoPack]; null — none. */
   val pack: PackSpec? = null,
+  /**
+   * Судить по БРИФУ прогона, а не по работе предыдущих шагов.
+   *
+   * Шаг получает записанный дословно бриф (`.vibe/local/runs/<прогон>/brief.md`) и НЕ получает ни
+   * путей, ни резюме, ни диффа: иначе он сверяет результат с пересказом агента, а пересказ уже
+   * согласован сам с собой. Разрешено только ролям, которые ничего не пишут.
+   */
+  val againstBrief: Boolean = false,
 )
 
 /**
@@ -252,6 +260,9 @@ object PipelinesFile {
       throw IllegalArgumentException(t("pipeline.warn.offPeakNeedsModel", "role" to role))
     }
     val pack = packOf(so["pack"], role, model != null)
+    val againstBrief = so["againstBrief"]?.jsonPrimitive?.booleanOrNull ?: false
+    // Пишущая роль, сверяющая с брифом, дописала бы результат под приёмку — это не приёмка.
+    if (againstBrief && !readOnly(role)) throw IllegalArgumentException(t("pipeline.warn.againstBriefWritingRole", "role" to role))
     return PipelineStep(
       role = role,
       task = so["task"]?.jsonPrimitive?.contentOrNull?.ifBlank { null }
@@ -269,6 +280,7 @@ object PipelinesFile {
       context = context,
       offPeak = offPeak,
       pack = pack,
+      againstBrief = againstBrief,
     )
   }
 
@@ -328,6 +340,39 @@ object PipelinesFile {
   }
 
   /** Role preamble; read-only roles get an explicit no-edit instruction (ACP cannot enforce tools per role — honest deviation from VibeIDE, permissions still gate writes). */
+  /**
+   * Чем шаг обязан закончить ответ — чтобы следующий шаг и гейт читали поля, а не прозу.
+   *
+   * Уходит В ПРОМПТ вместе с преамбулой роли, поэтому язык здесь — часть контракта пайплайна.
+   * Разбор — [StepReport]; шаг, который контракт проигнорировал, по-прежнему передаёт хвост ответа.
+   */
+  val RETURN_CONTRACT: String = """
+    Закончи ответ отчётом по шагу — ровно этими полями, каждое с новой строки, без кода и диффов:
+    STATUS: DONE | DONE_WITH_CONCERNS | BLOCKED
+    FILES: изменённые файлы через запятую (нет — «нет»)
+    TESTS: что прогнал и что вышло, было → стало (не прогонял — так и скажи)
+    INTERFACES: новые или изменённые швы между модулями: имя и сигнатура
+    REQUIREMENTS: какие требования задачи закрыты
+    CONCERNS: что осталось сомнительным, но не мешает принять
+    BLOCKERS: что помешало доделать (пусто при DONE)
+  """.trimIndent()
+
+  /**
+   * Что просят у шага, упёршегося в потолок, — вместо обрыва посреди правки.
+   *
+   * Уходит В ПРОМПТ, поэтому язык — часть контракта пайплайна. Три поля из пяти (решения, тупики,
+   * что дальше) не выводятся из кода на диске: без них следующий шаг их угадывает.
+   */
+  val HANDOFF_PROMPT: String = """
+    Потолок шага исчерпан. Новых задач не начинай.
+    Доведи начатое до состояния, в котором проект собирается и тесты зелёные, и закончи передачей:
+    СДЕЛАНО: что уже готово
+    РЕШЕНИЯ: что ты решил по ходу и почему — этого нет в коде
+    ТУПИКИ: что пробовал и почему не сработало
+    ДАЛЬШЕ: с чего продолжить следующему шагу
+    ФАЙЛЫ: где ты остановился
+  """.trimIndent()
+
   fun rolePreamble(role: String): String = when (role) {
     "explore" -> "Ты — разведчик. Изучи кодовую базу по задаче. НЕ изменяй файлы — только чтение и анализ."
     "planner" -> "Ты — планировщик. Составь план работ. НЕ изменяй код, кроме файла плана, если он прямо указан в задаче."

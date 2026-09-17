@@ -108,6 +108,8 @@ object VibeDefaults {
     "skills/review-pr/SKILL.md" to "skills/review-pr/SKILL.md",
     "skills/roadmap-autopilot/SKILL.md" to "skills/roadmap-autopilot/SKILL.md",
     "skills/screenshot-review/SKILL.md" to "skills/screenshot-review/SKILL.md",
+    "skills/self-excuses/SKILL.md" to "skills/self-excuses/SKILL.md",
+    "skills/self-excuses/evals/evals.json" to "skills/self-excuses/evals/evals.json",
     "skills/spec-driven-implementation/SKILL.md" to "skills/spec-driven-implementation/SKILL.md",
     "skills/teach/SKILL.md" to "skills/teach/SKILL.md",
     "skills/triage-failing-test/SKILL.md" to "skills/triage-failing-test/SKILL.md",

@@ -95,6 +95,17 @@ data class AuditEvent(
     const val MODEL_SUBSTITUTED = "model_substituted"
 
     /**
+     * A key was found in what the person typed and replaced before the turn went anywhere.
+     *
+     * Recorded because the key is compromised the moment it is pasted: the answer to «when did this token last leave
+     * the machine» is this line. In `meta` — `kinds`, the shapes matched; never the value.
+     */
+    const val SECRET_REDACTED = "secret_redacted"
+
+    /** A step hit its ceiling and handed over instead of being cut off; in `meta` — the role and the step number. */
+    const val STEP_HANDOFF = "step_handoff"
+
+    /**
      * A person withdrew every approval of the project in one step — skills and commands.
      *
      * Granting was always one click, withdrawing was «edit the text and wait for the next question».

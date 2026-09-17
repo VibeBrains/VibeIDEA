@@ -2047,5 +2047,13 @@
   "registry.upgraded": "Version updated in {file}: {names}. The new version starts with the agent’s next start.",
   "registry.upgradeElsewhere": "These agents are not in {file} — they come from the project’s .vibe/agents.json or the defaults; change the version there:\n{lines}",
   "registry.upgradeRefused": "{file} was not rewritten: it is not plain JSON (comments, trailing commas or an error). Change the version by hand:\n{lines}",
-  "council.floating": "(floating alias)"
+  "council.floating": "(floating alias)",
+  "chat.secretRedacted": "🔐 a key was found in the message ({kinds}) — replaced, it never reached the model. Treat that key as compromised and revoke it with the vendor",
+  "pipeline.step.report": "{header} step report: {status}, {blockers} blockers, {concerns} concerns",
+  "pipeline.handoff.asking": "{header} ceiling reached — asking to finish green and write a handoff",
+  "pipeline.handoff.written": "{header} handoff written: {file}",
+  "pipeline.handoff.failed": "{header} no handoff came back ({reason}) — the step counts as failed",
+  "pipeline.step.brief": "The run's task, word for word as the person set it. Judge against it, not against what the earlier steps said; name every difference:\n{brief}",
+  "pipeline.warn.againstBriefWritingRole": "step “{role}”: againstBrief belongs only to a role that writes nothing — otherwise acceptance edits what it accepts",
+  "pipeline.step.seams": "Seams between modules named by the earlier steps of this run — do not invent them again:\n{seams}"
 }

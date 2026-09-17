@@ -81,6 +81,7 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonNull
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.jsonArray
@@ -271,6 +272,9 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
 
   /** Шаг прекращён своим потолком: отличает его от остановки человеком и от отказа агента. */
   @Volatile private var stepLimitHit: com.vibe.agent.pipelines.StepLimits.Verdict? = null
+
+  /** The last step's own report, parsed from its answer; null when it wrote none ([com.vibe.agent.pipelines.StepReport]). */
+  @Volatile private var stepReport: com.vibe.agent.pipelines.StepReport? = null
 
   /**
    * Threads whose agent session was opened new rather than resumed: the first turn in each carries
@@ -2310,12 +2314,32 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
   }
 
   /** Validates, shows the user bubble and starts the turn; false keeps the draft in the composer. */
+  /**
+   * A key pasted into the input box, replaced before it goes anywhere — the model, the wire, the transcript.
+   *
+   * Masking used to cover only attached files, and only when the person had turned it on ([ContextSerializer.load]):
+   * a token typed or pasted into the message travelled as it was. It is the likeliest place for one to appear — a
+   * person shows the agent the line that fails — and the least recoverable: the answer, the provider's logs and the
+   * thread file all keep it. So this one is not a setting: the shape is replaced, the kind is named, and the feed says
+   * the key is already compromised and must be revoked (Autopilot's rule, 17.09.2026).
+   */
+  private fun redactSecretsInInput(message: ComposedMessage): ComposedMessage {
+    val labels = com.vibe.agent.security.SecretPatterns.labels(message.text)
+    if (labels.isEmpty()) return message
+    systemLine(t("chat.secretRedacted", "kinds" to labels.joinToString()))
+    audit?.append(AuditEvent(System.currentTimeMillis(), AuditEvent.Action.SECRET_REDACTED, ok = false,
+                             actor = com.vibe.agent.audit.AuditActor.HUMAN,
+                             meta = mapOf("kinds" to labels.joinToString())))
+    return message.copy(text = com.vibe.agent.security.SecretPatterns.redact(message.text))
+  }
+
   private fun startTurn(
     message: ComposedMessage,
     threadId: String = currentThreadId,
     actor: com.vibe.agent.audit.AuditActor = com.vibe.agent.audit.AuditActor.HUMAN,
   ): Boolean {
     if (disposed) return false
+    val message = redactSecretsInInput(message)
     turnActor = actor
     turnEndedBadly = false
     // Cleared at the START, not only filled on load: a turn without attachments would otherwise
@@ -4083,6 +4107,41 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
   }
 
   /**
+   * The step hit its ceiling: ask it to hand over instead of cutting it off mid-edit.
+   *
+   * A ceiling used to end the step with `session/cancel`, and the next step inherited a half-made change with no idea
+   * what had been decided or tried — `recover-or-skip` guessed. One extra request costs far less than that guess: the
+   * step brings the work to a green state and writes five fields, of which three (decisions, dead ends, next) exist
+   * nowhere on disk. Written to the run folder and handed to the next step in place of the answer's tail
+   * (Autopilot's handoff, 17.09.2026).
+   *
+   * One handoff per step. The request itself is not capped by the step's ceiling — the ceiling has already fired — but
+   * it is bounded by the handshake timeout, and a failure returns null, which means the old behaviour: the step failed.
+   */
+  private fun askHandoff(step: com.vibe.agent.pipelines.PipelineStep, header: String, runId: String?, index: Int): String? {
+    val c = synchronized(clientLock) { client } ?: return null
+    if (!c.isAlive) return null
+    systemLine(t("pipeline.handoff.asking", "header" to header))
+    val buffer = StringBuilder()
+    stepBuffer = buffer
+    val asked = runCatching {
+      c.prompt(com.vibe.agent.pipelines.PipelinesFile.HANDOFF_PROMPT)
+        .get(VibeAgentSettings.handshakeTimeoutSec.toLong() * HANDOFF_TIMEOUT_FACTOR, TimeUnit.SECONDS)
+    }
+    val text = buffer.toString().trim()
+    if (asked.isFailure || text.isEmpty()) {
+      systemLine(t("pipeline.handoff.failed", "header" to header,
+                   "reason" to (asked.exceptionOrNull()?.let { (it.cause ?: it).message } ?: t("pipeline.noText"))))
+      return null
+    }
+    val file = runId?.let { com.vibe.agent.pipelines.RunFolder.write(project.basePath, it, "handoff-${index + 1}.md", text) }
+    systemLine(t("pipeline.handoff.written", "header" to header, "file" to (file?.toString() ?: "—")))
+    audit?.append(AuditEvent(System.currentTimeMillis(), AuditEvent.Action.STEP_HANDOFF, ok = true, actor = agentActor(),
+                             meta = mapOf("role" to step.role, "step" to (index + 1).toString())))
+    return text
+  }
+
+  /**
    * Гейт приёмки шага: хук `pipelineStepEnd` решает, годится ли черновик.
    *
    * Возвращает null, когда гейта нет, — и это не то же самое, что «принят»: без проверки принимать
@@ -4100,6 +4159,12 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
       put("step", index + 1)
       put("role", step.role)
       step.model?.let { put("model", it) }
+      // What the step said about itself: a gate that judges only the diff cannot tell «could not» from «did».
+      stepReport?.let { report ->
+        put("status", report.status.name)
+        if (report.blockers.isNotEmpty()) put("blockers", JsonArray(report.blockers.map { JsonPrimitive(it) }))
+        if (report.concerns.isNotEmpty()) put("concerns", JsonArray(report.concerns.map { JsonPrimitive(it) }))
+      }
       // Что ответило на самом деле: гейт судит о полученном ответе, а не о заказанном.
       if (step.model != null) llmClient.lastAnsweredModel()?.let { put("answeredModel", it) }
       // Ответ шага, обрезанный: гейту нужен вердикт по содержанию, а не весь транскрипт в stdin.
@@ -4436,6 +4501,8 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
       // он — шаги через ACP работали бы, и отказ выглядел бы как «модель не отвечает».
       llmCancel.set(false)
       val artifacts = LinkedHashSet<String>()
+      // Швы между модулями, названные прошлыми шагами: накопительный контракт прогона.
+      val seams = LinkedHashSet<String>()
       var lastSummary: String? = null
       // The snapshot before the first step: a judge on its own model gets the run's diff against it.
       var runCheckpoint: com.vibe.agent.checkpoints.Checkpoint? = null
@@ -4458,6 +4525,10 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
         pipelineId = pipeline.id,
       )
       pipelineRunId = runId
+      // Задача прогона, записанная ДО того, как её коснулся агент: приёмка сверяется с ней, а не со
+      // спекой и не с пересказом предыдущего шага (решение по разбору Autopilot, 17.09.2026).
+      val brief = com.vibe.agent.pipelines.PipelineBrief.of(pipeline)
+      runId?.let { com.vibe.agent.pipelines.RunFolder.write(project.basePath, it, com.vibe.agent.pipelines.RunFolder.BRIEF, brief) }
       try {
         pipeline.steps.forEachIndexed { i, step ->
           val header = t("pipeline.step", "index" to (i + 1), "total" to pipeline.steps.size, "role" to step.role)
@@ -4515,9 +4586,15 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
           }
           val prompt = buildString {
             appendLine(PipelinesFile.rolePreamble(step.role))
+            appendLine(PipelinesFile.RETURN_CONTRACT)
             appendLine(t("pipeline.step.task", "task" to step.task))
             step.acceptance?.let { appendLine(t("pipeline.step.acceptance", "acceptance" to it)) }
-            if (!step.ignorePreviousArtifacts) {
+            if (step.againstBrief) {
+              // Судья видит только слова задачи: артефакты и резюме — это уже рассказ исполнителя о себе.
+              appendLine(t("pipeline.step.brief", "brief" to brief))
+            }
+            else if (!step.ignorePreviousArtifacts) {
+              if (seams.isNotEmpty()) appendLine(t("pipeline.step.seams", "seams" to seams.joinToString("\n") { "- $it" }))
               if (artifacts.isNotEmpty()) appendLine(t("pipeline.step.artifacts", "files" to artifacts.joinToString()))
               lastSummary?.let { appendLine(t("pipeline.step.summary", "summary" to it)) }
               // A judge on its own model has no tools to read the files: it gets the run's diff.
@@ -4539,6 +4616,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
             stepLimits = step.takeIf { com.vibe.agent.pipelines.StepLimits.any(it) }
             stepToolCalls.set(0)
             stepLimitHit = null
+            stepReport = null
             stepTokensBase = -1L
             val startedAt = System.currentTimeMillis()
             // Шаг со своей моделью идёт прямым запросом к провайдеру, мимо агента: у него нет
@@ -4569,15 +4647,38 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
             finishAgentBubble((System.currentTimeMillis() - startedAt) / 1000.0,
                               step.model ?: t("pipeline.stepLabel", "index" to (i + 1)))
             if (stop == STOP_CANCELLED) {
-              failed = true
               // Свой потолок и рука человека дают одинаковый stopReason, а значат разное: первое —
               // сработавшее правило пайплайна, второе — чужое вмешательство в него.
+              val handoff = if (stepLimitHit != null && step.model == null) askHandoff(step, header, runId, i) else null
+              if (handoff != null) {
+                lastSummary = handoff
+                stepReport = null
+                artifacts.addAll(changedPaths)
+                runs.progress(runId, steps = i + 1, changedFiles = artifacts.size)
+                return@forEachIndexed
+              }
+              failed = true
               systemLine(if (stepLimitHit != null) t("pipeline.stepCapped", "header" to header)
                          else t("pipeline.stepStopped", "header" to header))
               return@forEachIndexed
             }
             val summaryText = stepBuffer?.toString().orEmpty()
-            lastSummary = summaryText.takeLast(2000).ifBlank { t("pipeline.noText") }
+            // The step's own report if it wrote one; the tail of the answer otherwise — a step that ignored the
+            // contract must not lose its say (see [StepReport]).
+            stepReport = com.vibe.agent.pipelines.StepReport.parse(summaryText)
+            lastSummary = stepReport?.summary() ?: summaryText.takeLast(2000).ifBlank { t("pipeline.noText") }
+            stepReport?.let { report ->
+              systemLine(t("pipeline.step.report", "header" to header, "status" to report.status.name,
+                           "blockers" to report.blockers.size, "concerns" to report.concerns.size))
+              // Швы, которые шаг назвал, копятся в одном файле прогона, и следующие шаги читают его
+              // первым делом. Ведёт его IDE, а не сами шаги: файл, который каждый дописывает сам,
+              // держится на дисциплине, которой у модели нет.
+              if (report.interfaces.isNotEmpty() && runId != null) {
+                val block = "## " + header + "\n" + report.interfaces.joinToString("\n") { "- $it" } + "\n\n"
+                com.vibe.agent.pipelines.RunFolder.append(project.basePath, runId, com.vibe.agent.pipelines.RunFolder.INTERFACES, block)
+                seams += report.interfaces
+              }
+            }
             artifacts.addAll(changedPaths)
             runs.progress(runId, steps = i + 1, changedFiles = artifacts.size)
             systemLine(t("pipeline.stepDone", "header" to header, "files" to changedPaths.size))
@@ -5787,6 +5888,9 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     const val DECISION_QUESTION_CHARS = 200
 
     const val CASCADE_COMMAND = "/cascade"
+
+    /** A handoff is a short answer, but it may finish an edit first: several handshake timeouts, not one. */
+    const val HANDOFF_TIMEOUT_FACTOR = 3L
 
     /** UTF-8 spends at most four bytes on a character: a file above limit × 4 × 4 bytes cannot fit the pack. */
     const val MAX_UTF8_BYTES_PER_CHAR = 4
