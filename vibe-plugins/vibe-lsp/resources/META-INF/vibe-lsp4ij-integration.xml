@@ -26,12 +26,34 @@
       <description>PHP language server: Phpactor or Intelephense, whichever the settings choose</description>
     </server>
     <fileNamePatternMapping patterns="*.php" serverId="vibePhp" languageId="php"/>
-    <!-- CSS/SCSS/LESS: единственный фронтовый язык, которого в Community нет вовсе.
-         HTML и JSON тем же пакетом НЕ подключаем — платформа обслуживает их сама. -->
-    <server id="vibeCss" name="CSS/SCSS/LESS" factoryClass="com.vibe.lsp.CssServerFactory">
-      <description>CSS, SCSS and LESS language server (vscode-langservers-extracted)</description>
+    <!-- CSS и LESS: фронтовые языки, которых в Community нет вовсе.
+         HTML и JSON тем же пакетом НЕ подключаем — платформа обслуживает их сама.
+         SCSS и Sass ушли к Some Sass 18.09.2026: он ходит между файлами, этот нет. -->
+    <server id="vibeCss" name="CSS/LESS" factoryClass="com.vibe.lsp.CssServerFactory">
+      <description>CSS and LESS language server (vscode-langservers-extracted)</description>
     </server>
-    <fileNamePatternMapping patterns="*.css;*.scss;*.less" serverId="vibeCss" languageId="css"/>
+    <fileNamePatternMapping patterns="*.css" serverId="vibeCss" languageId="css"/>
+    <fileNamePatternMapping patterns="*.less" serverId="vibeCss" languageId="less"/>
+
+    <!-- SCSS и Sass: переход к переменной и миксину ЧЕРЕЗ файлы, чего общий CSS-сервер не умеет.
+         `.sass` с отступами до сих пор не обслуживал никто. -->
+    <server id="vibeSomeSass" name="SCSS/Sass" factoryClass="com.vibe.lsp.SomeSassServerFactory">
+      <description>SCSS and Sass language server with cross-file navigation (Some Sass)</description>
+    </server>
+    <fileNamePatternMapping patterns="*.scss" serverId="vibeSomeSass" languageId="scss"/>
+    <fileNamePatternMapping patterns="*.sass" serverId="vibeSomeSass" languageId="sass"/>
+
+    <!-- Tailwind: подсказка классов в разметке и объяснение `@apply`. Поднимается только там, где
+         проект действительно на Tailwind, — решает фабрика через свои LSPClientFeatures. -->
+    <server id="vibeTailwind" name="Tailwind CSS" factoryClass="com.vibe.lsp.TailwindServerFactory">
+      <description>Tailwind CSS language server: class completion, colours and @apply</description>
+    </server>
+    <fileNamePatternMapping patterns="*.html" serverId="vibeTailwind" languageId="html"/>
+    <fileNamePatternMapping patterns="*.css;*.scss;*.sass" serverId="vibeTailwind" languageId="css"/>
+    <fileNamePatternMapping patterns="*.jsx" serverId="vibeTailwind" languageId="javascriptreact"/>
+    <fileNamePatternMapping patterns="*.tsx" serverId="vibeTailwind" languageId="typescriptreact"/>
+    <fileNamePatternMapping patterns="*.vue" serverId="vibeTailwind" languageId="vue"/>
+    <fileNamePatternMapping patterns="*.svelte" serverId="vibeTailwind" languageId="svelte"/>
     <server id="vibeEslint" name="ESLint" factoryClass="com.vibe.lsp.EslintServerFactory">
       <description>ESLint language server: the project's own rules in the editor</description>
     </server>

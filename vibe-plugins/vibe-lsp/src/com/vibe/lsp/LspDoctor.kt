@@ -75,6 +75,44 @@ object LspDoctor {
     extensions = setOf("html", "ts"),
   )
 
+  /**
+   * Tailwind CSS — то, чего в платформе нет вовсе и чем сегодня пишут половину фронта.
+   *
+   * Даёт то, ради чего люди ставят расширение в другом редакторе: подсказку классов прямо в
+   * атрибуте, цвет рядом с классом, объяснение, во что класс разворачивается, и понимание
+   * `@apply`. Без него имя вроде `grid-cols-[repeat(auto-fill,minmax(12rem,1fr))]` набирается
+   * вслепую и проверяется только глазами в браузере.
+   *
+   * Запускается ТОЛЬКО там, где проект действительно на Tailwind (см. [TailwindConfig]): сервер,
+   * поднятый в каждом проекте с единственным `.html`, — это сотня мегабайт памяти за ничто.
+   */
+  val TAILWIND = ServerSpec(
+    id = "vibeTailwind",
+    displayName = "Tailwind CSS",
+    binary = "tailwindcss-language-server",
+    installCommand = "npm install -g @tailwindcss/language-server",
+    extensions = setOf("html", "css", "scss", "sass", "jsx", "tsx", "vue", "svelte"),
+  )
+
+  /**
+   * SCSS и Sass — отдельным сервером, а не общим CSS.
+   *
+   * Общий `vscode-css-language-server` знает синтаксис, но НЕ ходит между файлами: переменная,
+   * миксин и функция из соседнего `@use` для него не существуют, а в любом реальном проекте на
+   * Sass именно они и составляют половину кода. Some Sass ходит по `@use`/`@import`, поэтому
+   * `.scss` и `.sass` отданы ему ЦЕЛИКОМ: два сервера на одном файле удвоили бы подсказки.
+   *
+   * `.sass` (отступами, без фигурных скобок) до сих пор не обслуживал вообще никто — в открытой
+   * платформе его нет, и наш общий CSS-сервер его тоже не берёт.
+   */
+  val SOME_SASS = ServerSpec(
+    id = "vibeSomeSass",
+    displayName = "SCSS/Sass (Some Sass)",
+    binary = "some-sass-language-server",
+    installCommand = "npm install -g some-sass-language-server",
+    extensions = setOf("scss", "sass"),
+  )
+
   val PHPACTOR = ServerSpec(
     id = "vibePhpactor",
     displayName = "PHP (Phpactor)",
@@ -114,12 +152,16 @@ object LspDoctor {
     extensions = setOf("php"),
   )
 
+  /**
+   * Обычный CSS и LESS. SCSS и Sass ушли к [SOME_SASS] 18.09.2026 — он ходит между файлами, а этот
+   * нет; два сервера на одном файле удвоили бы подсказки, и половина спорила бы со второй.
+   */
   val CSS = ServerSpec(
     id = "vibeCss",
-    displayName = "CSS/SCSS/LESS (vscode-css-language-server)",
+    displayName = "CSS/LESS (vscode-css-language-server)",
     binary = "vscode-css-language-server",
     installCommand = "npm install -g vscode-langservers-extracted",
-    extensions = setOf("css", "scss", "less"),
+    extensions = setOf("css", "less"),
   )
 
   /** ESLint: the project's own rules in the editor. Silent in a project that has no ESLint config. */
@@ -181,7 +223,7 @@ object LspDoctor {
   )
 
   /** Everything we know how to check — both PHP engines, of which only one ever runs. */
-  val ALL: List<ServerSpec> = listOf(VTSLS, ANGULAR, PHPACTOR, INTELEPHENSE, CSS, ESLINT)
+  val ALL: List<ServerSpec> = listOf(VTSLS, ANGULAR, TAILWIND, SOME_SASS, PHPACTOR, INTELEPHENSE, CSS, ESLINT)
 
   /**
    * The servers that actually serve this machine: one per language.

@@ -64,7 +64,8 @@ class LspDoctorTest {
     // PHP is the exception: two engines share ONE LSP4IJ entry (`vibePhp`), because two servers
     // mapped onto *.php would both start and double every completion. The spec ids stay separate —
     // a person can point us at their own copy of either.
-    assertEquals(setOf("vibeVtsls", "vibeAngular", "vibePhpactor", "vibeIntelephense", "vibeCss", "vibeEslint"),
+    assertEquals(setOf("vibeVtsls", "vibeAngular", "vibeTailwind", "vibeSomeSass", "vibePhpactor",
+                       "vibeIntelephense", "vibeCss", "vibeEslint"),
                  LspDoctor.ALL.map { it.id }.toSet())
   }
 
@@ -77,8 +78,19 @@ class LspDoctorTest {
     // и он добавляет то, чего у платформы нет, а не повторяет её.
     val served = LspDoctor.active(PhpEngine.PHPACTOR)
     assertFalse("json" in served.flatMap { it.extensions })
-    assertEquals(listOf(LspDoctor.ANGULAR.id), served.filter { "html" in it.extensions }.map { it.id })
+    assertEquals(listOf(LspDoctor.ANGULAR.id, LspDoctor.TAILWIND.id),
+                 served.filter { "html" in it.extensions }.map { it.id })
     assertTrue("css" in served.flatMap { it.extensions }, "CSS в Community нет вовсе — вот его и закрываем")
+  }
+
+  @Test
+  fun `SCSS и Sass обслуживает ровно один сервер, и это не общий CSS`() {
+    // Два сервера на одном файле удваивают подсказки, и половина спорит со второй. Межфайловая
+    // навигация есть только у Some Sass, поэтому .scss и .sass отданы ему целиком (18.09.2026).
+    val served = LspDoctor.active(PhpEngine.PHPACTOR)
+    assertEquals(listOf(LspDoctor.SOME_SASS.id), served.filter { "sass" in it.extensions && it.id != LspDoctor.TAILWIND.id }.map { it.id })
+    assertFalse("scss" in LspDoctor.CSS.extensions, "SCSS ушёл к Some Sass — у общего CSS его быть не должно")
+    assertTrue("less" in LspDoctor.CSS.extensions, "LESS остаётся у общего CSS: межфайловый сервер для него не нужен")
   }
 
   @Test

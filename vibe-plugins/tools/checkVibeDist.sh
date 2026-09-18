@@ -149,7 +149,9 @@ for entry in \
   "node/node_modules/@vtsls/language-server/bin/vtsls.js" \
   "node/node_modules/vscode-langservers-extracted/bin/vscode-css-language-server" \
   "node/node_modules/vscode-langservers-extracted/bin/vscode-eslint-language-server" \
-  "node/node_modules/@angular/language-server/bin/ngserver"; do
+  "node/node_modules/@angular/language-server/bin/ngserver" \
+  "node/node_modules/@tailwindcss/language-server/bin/tailwindcss-language-server" \
+  "node/node_modules/some-sass-language-server/bin/some-sass-language-server"; do
   [ -f "$SERVERS/$entry" ] || { say "✖ нет встроенного сервера: $entry"; fail=1; }
 done
 
@@ -286,7 +288,8 @@ else
     PIN=$(grep -m1 "^$var=" vibe-plugins/deps/pins.env | cut -d= -f2)
     grep -q "\"$PIN\"" "$REPORT" || { say "✖ версия отладчика ($var=$PIN) в отчёте о лицензиях не совпадает"; fail=1; }
   done
-  for pkg in "@vtsls/language-server" "vscode-langservers-extracted" "@angular/language-server"; do
+  for pkg in "@vtsls/language-server" "vscode-langservers-extracted" "@angular/language-server" \
+             "@tailwindcss/language-server" "some-sass-language-server"; do
     PIN=$("$PYTHON" -c "import json;print(json.load(open('vibe-plugins/deps/servers-npm/package.json'))['dependencies']['$pkg'])")
     grep -q "\"$PIN\"" "$REPORT" || { say "✖ версия $pkg в отчёте о лицензиях не совпадает с закреплённой ($PIN)"; fail=1; }
   done

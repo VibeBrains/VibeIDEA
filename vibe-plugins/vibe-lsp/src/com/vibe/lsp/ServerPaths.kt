@@ -24,6 +24,8 @@ object ServerPaths {
   val OVERRIDABLE: List<String> = listOf(
     LspDoctor.VTSLS.id,
     LspDoctor.ANGULAR.id,
+    LspDoctor.TAILWIND.id,
+    LspDoctor.SOME_SASS.id,
     LspDoctor.PHPACTOR.id,
     LspDoctor.INTELEPHENSE.id,
     LspDoctor.CSS.id,

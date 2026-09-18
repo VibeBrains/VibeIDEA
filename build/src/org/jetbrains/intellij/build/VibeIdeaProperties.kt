@@ -67,6 +67,15 @@ open class VibeIdeaProperties(communityHomeDir: Path) : IdeaCommunityProperties(
       LibraryLicense(name = "@angular/language-server", version = "22.1.7", attachedTo = "intellij.vibe.lsp",
                      url = "https://github.com/angular/angular")
         .mit("https://github.com/angular/angular/blob/main/LICENSE"),
+      // Tailwind: подсказка классов, которой в платформе нет вовсе; сервер тот же, что стоит за
+      // расширением Tailwind CSS IntelliSense в VS Code.
+      LibraryLicense(name = "@tailwindcss/language-server", version = "0.16.0", attachedTo = "intellij.vibe.lsp",
+                     url = "https://github.com/tailwindlabs/tailwindcss-intellisense")
+        .mit("https://github.com/tailwindlabs/tailwindcss-intellisense/blob/master/LICENSE"),
+      // Some Sass: переходы по переменным и миксинам ЧЕРЕЗ файлы, чего общий CSS-сервер не умеет.
+      LibraryLicense(name = "some-sass-language-server", version = "2.3.8", attachedTo = "intellij.vibe.lsp",
+                     url = "https://github.com/wkillerud/some-sass")
+        .mit("https://github.com/wkillerud/some-sass/blob/main/LICENSE"),
       LibraryLicense(name = "vscode-langservers-extracted", version = "4.10.0", attachedTo = "intellij.vibe.lsp",
                      url = "https://github.com/hrsh7th/vscode-langservers-extracted")
         .mit("https://github.com/hrsh7th/vscode-langservers-extracted/blob/master/LICENSE"),

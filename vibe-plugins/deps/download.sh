@@ -34,7 +34,7 @@ cp "phpactorLaunch.php" extracted/servers/phpactorLaunch.php
 printf 'Phpactor %s (MIT), bundled from the project release; see phpactor-LICENSE.\n' "$PHPACTOR_V" \
   > extracted/servers/README.txt
 
-# --- Языковые серверы на Node: vtsls (TS/JS), Angular, CSS и ESLint ---
+# --- Языковые серверы на Node: vtsls (TS/JS), Angular, Tailwind, SCSS/Sass, CSS и ESLint ---
 #
 # `npm ci` по закреплённому package-lock.json, а не `npm install`: lock несёт integrity-хеши
 # каждого пакета, то есть тот же уровень доверия, что sha256 у phar. Node в дистрибутив НЕ кладём —

@@ -142,6 +142,8 @@ internal object ServerBinaries {
     "vscode-css-language-server" to arrayOf("node", "node_modules", "vscode-langservers-extracted", "bin", "vscode-css-language-server"),
     "vscode-eslint-language-server" to arrayOf("node", "node_modules", "vscode-langservers-extracted", "bin", "vscode-eslint-language-server"),
     "ngserver" to arrayOf("node", "node_modules", "@angular", "language-server", "bin", "ngserver"),
+    "tailwindcss-language-server" to arrayOf("node", "node_modules", "@tailwindcss", "language-server", "bin", "tailwindcss-language-server"),
+    "some-sass-language-server" to arrayOf("node", "node_modules", "some-sass-language-server", "bin", "some-sass-language-server"),
   )
 
   /**
@@ -237,6 +239,14 @@ internal object ServerBinaries {
     val joined = probes.joinToString(",")
     return listOf("--tsProbeLocations", joined, "--ngProbeLocations", joined)
   }
+
+  fun tailwindCommand(): List<String> =
+    overrideCommand(LspDoctor.TAILWIND.id, "--stdio")
+    ?: nodeServerCommand("tailwindcss-language-server", "--stdio")
+
+  fun someSassCommand(): List<String> =
+    overrideCommand(LspDoctor.SOME_SASS.id, "--stdio")
+    ?: nodeServerCommand("some-sass-language-server", "--stdio")
 
   fun eslintCommand(): List<String> =
     overrideCommand(LspDoctor.ESLINT.id, "--stdio")
