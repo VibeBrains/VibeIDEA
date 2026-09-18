@@ -62,6 +62,15 @@ class AcpClient(
 
     /** The shared memory server for this agent, or null — see [com.vibe.agent.mcp.MemoryServerOffer]. */
     fun memoryServer(): Map<String, Any>? = null
+
+    /**
+     * Свои MCP-серверы человека из `.vibe/mcp.json` — те же, что видит прямой чат.
+     *
+     * Агент запускает их сам, поэтому получает команду, аргументы и окружение. Два набора
+     * инструментов у двух проводов одной IDE означали бы, что совет агента зависит от того, каким
+     * путём его спросили.
+     */
+    fun configuredServers(): List<Map<String, Any>> = emptyList()
     /** Called on the reader thread; must return the permission outcome (closed dialog = refusal). */
     fun onRequestPermission(params: JsonObject): JsonElement
 
@@ -290,7 +299,8 @@ class AcpClient(
       // Решение о том, можно ли, принимает [IdeToolsOffer]; здесь только форма запроса.
       sessionParams = buildJsonObject {
         put("cwd", workingDir ?: System.getProperty("user.home"))
-        put("mcpServers", JsonArray(listOfNotNull(ideTools, handler.memoryServer()).map { toJson(it) }))
+        put("mcpServers", JsonArray((listOfNotNull(ideTools, handler.memoryServer()) + handler.configuredServers())
+                                      .map { toJson(it) }))
       }
       openSession(previousSessionId)
     }

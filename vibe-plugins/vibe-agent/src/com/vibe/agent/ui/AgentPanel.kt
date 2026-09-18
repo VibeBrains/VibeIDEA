@@ -193,6 +193,13 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
       },
       clientVersion = com.intellij.openapi.application.ApplicationInfo.getInstance().fullVersion,
     ),
+    // Свои серверы человека идут ПОСЛЕДНИМИ: имя инструмента, совпавшее с нашим, достаётся нам —
+    // иначе чужой сервер молча подменил бы `vibe_read_file`, и понять это было бы не по чему.
+    com.vibe.agent.mcp.ConfiguredServersSource(
+      servers = { com.vibe.agent.mcp.McpServersFile.load(project.basePath).servers },
+      workingDir = project.basePath?.let { java.nio.file.Path.of(it) },
+      clientVersion = com.intellij.openapi.application.ApplicationInfo.getInstance().fullVersion,
+    ),
   ))
 
   /** Why the direct chat goes without tools is said once per panel: a line on every turn stops being read. */
@@ -250,14 +257,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
   /** Анимированная строка «сейчас работаю» в конце ленты; живёт ровно ход. */
   private var workingLine: WorkingLine? = null
 
-  /**
-   * Файлы, которые агент изменил в этом разговоре, — для полоски над вводом.
-   *
-   * По разговору, а не по ходу: человек смотрит «что тут наделали» после нескольких ходов, и
-   * счётчик, обнуляемый каждым ходом, отвечал бы на вопрос, которого никто не задаёт. Множество
-   * с порядком: когда появятся кнопки «принять/отклонить», список пойдёт сверху вниз как менялось.
-   */
-  private val changedFiles = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
+
   private val verifyRunner: VerifyGateRunner? = project.basePath?.let { VerifyGateRunner(it) }
   private val breakers = VibeBreakerService.getInstance(project)
   private val status = VibeAgentStatusService.getInstance(project)
@@ -725,12 +725,6 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     systemLine(t("chat.strip.copied"))
   }
 
-  /** Отметить файл изменённым агентом: полоска над вводом считает их по разговору. */
-  private fun noteChangedFile(path: String) {
-    changedFiles.add(path)
-    refreshChangedFiles()
-  }
-
   private fun journal() = com.vibe.agent.mcp.AgentEditJournal.getInstance(project)
 
   private fun refreshChangedFiles() {
@@ -982,6 +976,32 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
       com.vibe.agent.mcp.IdeToolsOffer.Reason.NO_TOKEN -> t("mcp.offer.noToken")
     })
     return offer
+  }
+
+  /**
+   * Свои серверы человека — ACP-агенту, тем же списком, что и прямому чату.
+   *
+   * Жалобы разбора называются один раз за сессию: конфиг с опечаткой молча дающий на два сервера
+   * меньше — это часы поисков «почему инструмент пропал».
+   */
+  override fun configuredServers(): List<Map<String, Any>> {
+    val parsed = com.vibe.agent.mcp.McpServersFile.load(project.basePath)
+    parsed.problems.forEach { systemLine(t("mcp.servers.problem", "text" to describe(it))) }
+    val live = parsed.servers.filterNot { it.disabled }
+    if (live.isNotEmpty()) systemLine(t("mcp.servers.offered", "names" to live.joinToString { it.name }))
+    return live.map { com.vibe.agent.mcp.McpServersFile.acpEntry(it) }
+  }
+
+  /** Жалоба разбора `mcp.json` — человеческой фразой из каталога, по коду и имени записи. */
+  private fun describe(complaint: com.vibe.agent.mcp.McpServersFile.Complaint): String {
+    val name = complaint.name.orEmpty()
+    return when (complaint.problem) {
+      com.vibe.agent.mcp.McpServersFile.Problem.NOT_JSON -> t("mcp.servers.notJson")
+      com.vibe.agent.mcp.McpServersFile.Problem.NO_SECTION -> t("mcp.servers.noSection")
+      com.vibe.agent.mcp.McpServersFile.Problem.NOT_AN_OBJECT -> t("mcp.servers.notAnObject", "name" to name)
+      com.vibe.agent.mcp.McpServersFile.Problem.NO_COMMAND -> t("mcp.servers.noCommand", "name" to name)
+      com.vibe.agent.mcp.McpServersFile.Problem.UNREADABLE -> t("mcp.servers.unreadable")
+    }
   }
 
   /**
@@ -3760,31 +3780,38 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     audit?.append(AuditEvent(System.currentTimeMillis(), AuditEvent.Action.TOOL_CALL_START, ok = true, actor = actor,
                              callId = call.id, model = model, meta = mapOf("tool" to call.name)))
     val started = System.currentTimeMillis()
-    val changedPath = com.vibe.agent.ui.ToolCallLabel.subjectOf(call.arguments)
-      ?.takeIf { call.name == com.vibe.agent.mcp.McpProtocol.TOOL_WRITE_FILE || call.name == com.vibe.agent.mcp.McpProtocol.TOOL_REPLACE_IN_FILE }
+    // Путь для полоски НЕ берётся из подписи вызова: она обрезает длинные пути многоточием, и
+    // список изменённого хранил бы «…/main.ts» вместо файла. Единственный источник правды —
+    // журнал правок: его пишет тот, кто реально изменил байты.
     val result = directTools.execute(call) { asked, risk ->
       val verdict = com.vibe.agent.mcp.McpAccess.verdict(
         risk, com.intellij.ide.trustedProjects.TrustedProjects.isProjectTrusted(project), allowWrite = true, allowExecute = true)
       val refusal = com.vibe.agent.mcp.McpAccess.refusal(verdict)
       val mode = com.vibe.agent.mcp.PermissionMode.of(VibeAgentSettings.permissionMode)
-      val decision = mode.decide(risk)
+      // Необратимое спрашивается ВСЕГДА, даже на автопилоте: `npm test` без вопроса — это удобство,
+      // `rm -rf ~` без вопроса — потерянный день, и различать их обязаны мы, а не человек, который
+      // научился жать «да» не читая (ревизия 18.09.2026).
+      val danger = if (risk == com.vibe.agent.mcp.McpProtocol.Risk.EXECUTE)
+        com.vibe.agent.mcp.ShellRisk.dangerOf(asked.arguments) else null
+      val decision = if (danger != null) com.vibe.agent.mcp.PermissionMode.Decision.ASK else mode.decide(risk)
       when {
         refusal != null -> false.also { systemLine(refusal) }
         decision == com.vibe.agent.mcp.PermissionMode.Decision.ALLOW -> true
         decision == com.vibe.agent.mcp.PermissionMode.Decision.DENY ->
           false.also { systemLine(t("permission.denied.plan")) }
         else -> askOnEdt {
-          Messages.showYesNoDialog(project,
-                                   t("directTools.approve", "tool" to asked.name, "args" to asked.arguments.take(DIRECT_TOOL_ARGS_PREVIEW)),
-                                   t("directTools.approveTitle"), Messages.getQuestionIcon()) == Messages.YES
+          val question = t("directTools.approve", "tool" to asked.name, "args" to asked.arguments.take(DIRECT_TOOL_ARGS_PREVIEW))
+          val full = if (danger == null) question else t("directTools.dangerous", "reason" to danger) + "\n\n" + question
+          Messages.showYesNoDialog(project, full, t("directTools.approveTitle"), Messages.getQuestionIcon()) == Messages.YES
         }.also { approved ->
           audit?.append(AuditEvent(System.currentTimeMillis(), AuditEvent.Action.PERMISSION, ok = approved,
                                    actor = com.vibe.agent.audit.AuditActor.HUMAN, callId = asked.id, meta = mapOf("tool" to asked.name)))
         }
       }
     }
-    // Отмечаем только УДАВШИЙСЯ вызов: отказ в правах или промах по куску файла не меняли.
-    if (!result.isError) changedPath?.let { noteChangedFile(it) }
+    // Полоска перечитывает журнал после каждого вызова: писать в неё отдельно значит завести
+    // второй счётчик, который однажды разойдётся с первым.
+    refreshChangedFiles()
     audit?.append(AuditEvent(System.currentTimeMillis(), AuditEvent.Action.TOOL_CALL_DONE, ok = !result.isError, actor = actor,
                              callId = call.id, model = model, latencyMs = System.currentTimeMillis() - started,
                              meta = mapOf("tool" to call.name)))
@@ -4029,10 +4056,9 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
 
   /** Switches to (and opens a tab for) the given thread; idempotent for the active one. */
   private fun activateThread(id: String, saveCurrentDraft: Boolean = true) {
-    if (id != currentThreadId) {
-      changedFiles.clear()
-      SwingUtilities.invokeLater { composer.setChangedFiles(0) }
-    }
+    // Журнал правок живёт на ПРОЕКТ, а не на тред: файл, изменённый в одном разговоре, остаётся
+    // изменённым и в другом — это состояние диска, а не переписки. Полоска просто перечитывает его.
+    if (id != currentThreadId) refreshChangedFiles()
     if (history.get(id) == null) return
     if (id == currentThreadId) {
       if (id !in openTabIds) { openTabIds.add(id); evictTabs(); updateTabsStrip(); saveTabs() }

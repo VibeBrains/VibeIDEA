@@ -148,6 +148,11 @@ internal class IdeFileOps(
     if (!WritePreview.confirm(project, path.toString(), oldText, content)) {
       throw IllegalStateException(t("write.refused", "path" to path))
     }
+    // Правка ACP-агента попадает в тот же журнал, что и правка прямого чата: полоска над вводом
+    // обязана считать ВСЁ, что изменил агент, независимо от того, каким проводом он пришёл.
+    // Разные списки для двух проводов выглядели бы как «часть правок пропала».
+    com.vibe.agent.mcp.AgentEditJournal.getInstance(project)
+      .record(path.toString(), if (exists) oldText else null, content)
     var handledInEditor = false
     ApplicationManager.getApplication().invokeAndWait {
       val vFile = LocalFileSystem.getInstance().findFileByNioFile(path) ?: return@invokeAndWait

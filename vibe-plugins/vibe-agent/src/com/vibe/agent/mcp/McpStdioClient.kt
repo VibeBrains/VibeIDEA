@@ -259,9 +259,12 @@ class McpStdioClient(private val input: InputStream, private val output: OutputS
     private const val UNKNOWN_RESULT_MESSAGE = "The MCP server returned %s with an unknown resultType \"%s\"; the result was not read."
 
     /** Starts the server process; its stderr is discarded — it is a log, not a protocol. */
-    fun start(command: String, args: List<String>, workingDir: Path?): McpStdioClient {
+    fun start(command: String, args: List<String>, workingDir: Path?, env: Map<String, String> = emptyMap()): McpStdioClient {
       val process = ProcessBuilder(listOf(command) + args)
         .apply { workingDir?.let { directory(it.toFile()) } }
+        // Переменные окружения нужны чужим серверам: почти каждый просит ключ именно так. Своё
+        // окружение процесса IDE при этом СОХРАНЯЕТСЯ — сервер без PATH не найдёт даже node.
+        .apply { if (env.isNotEmpty()) environment().putAll(env) }
         .redirectError(ProcessBuilder.Redirect.DISCARD)
         .start()
       return McpStdioClient(process.inputStream, process.outputStream) { process.destroy() }
