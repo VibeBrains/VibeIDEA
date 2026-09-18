@@ -46,6 +46,15 @@ class DocsGraphView(private val onOpen: (String) -> Unit) : JComponent() {
 
   init {
     isOpaque = false
+    // Вписывание пропускается, пока у панели нет размера, — а раскладка к этому моменту может уже
+    // успокоиться и остановить таймер. Тогда граф остаётся в левом верхнем углу до первого
+    // изменения размера окна: владелец видел именно это (18.09.2026, «встаёт по центру только
+    // после скриншота»). Поэтому первый же реальный размер сам просит вписать.
+    addComponentListener(object : java.awt.event.ComponentAdapter() {
+      override fun componentResized(e: java.awt.event.ComponentEvent) {
+        if (!fitted) fitToScreen(final = false)
+      }
+    })
     val mouse = object : MouseAdapter() {
       override fun mousePressed(e: MouseEvent) {
         pressAt = e.point
@@ -119,6 +128,9 @@ class DocsGraphView(private val onOpen: (String) -> Unit) : JComponent() {
     hovered = -1
     fitted = false
     wake()
+    // И сразу, не дожидаясь успокоения: раскладка стартовая, но центр у неё уже правильный —
+    // человек видит граф по центру с первого кадра, а не прыжок из угла через секунду.
+    com.intellij.openapi.application.ApplicationManager.getApplication().invokeLater { if (!fitted) fitToScreen(final = false) }
   }
 
   /** Будит цикл: после перетаскивания или новой раскладки картинка обязана досложиться. */
@@ -136,8 +148,18 @@ class DocsGraphView(private val onOpen: (String) -> Unit) : JComponent() {
     repaint()
   }
 
-  /** Вписать всё нарисованное в окно с полями. */
-  fun fitToScreen() {
+  /** Вписать всё нарисованное в окно с полями — кнопкой человека, то есть окончательно. */
+  fun fitToScreen() = fitToScreen(final = true)
+
+  /**
+   * Вписать сейчас.
+   *
+   * [final] отвечает на вопрос «считать ли это последним словом». Пока раскладка расходится,
+   * подгонка ПРЕДВАРИТЕЛЬНАЯ: она ставит граф по центру с первого кадра, но не отменяет итоговую,
+   * которую делает успокоившаяся симуляция. Пометить раннюю подгонку как окончательную значило бы
+   * оставить граф в стартовом масштабе, и узлы разъехались бы за края.
+   */
+  private fun fitToScreen(final: Boolean) {
     val current = layout ?: return
     if (graph.nodes.isEmpty() || width <= 0 || height <= 0) return
     var minX = Double.MAX_VALUE; var minY = Double.MAX_VALUE
@@ -151,7 +173,7 @@ class DocsGraphView(private val onOpen: (String) -> Unit) : JComponent() {
     scale = DocsGraphZoom.fit(graphWidth.toInt(), graphHeight.toInt(), width, height, JBUI.scale(DocsGraphZoom.FIT_MARGIN))
     offsetX = (width / 2 - (minX + maxX) / 2 * scale).toInt()
     offsetY = (height / 2 - (minY + maxY) / 2 * scale).toInt()
-    fitted = true
+    if (final) fitted = true
     repaint()
   }
 
