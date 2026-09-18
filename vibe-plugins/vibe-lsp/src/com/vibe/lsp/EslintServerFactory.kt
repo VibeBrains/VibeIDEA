@@ -41,7 +41,9 @@ class EslintServerFactory : LanguageServerFactory {
 }
 
 private class EslintConnectionProvider(workingDirectory: String?) :
-  ProcessStreamConnectionProvider(ServerBinaries.eslintCommand(), workingDirectory)
+  ProcessStreamConnectionProvider(ServerBinaries.eslintCommand(), workingDirectory) {
+  init { NodeEnvironment.applyTo(this, workingDirectory) }
+}
 
 /** Ответ на `workspace/configuration` — то, без чего сервер падает на первом же запросе. */
 private class EslintLanguageClient(private val project: Project) : LanguageClientImpl(project) {

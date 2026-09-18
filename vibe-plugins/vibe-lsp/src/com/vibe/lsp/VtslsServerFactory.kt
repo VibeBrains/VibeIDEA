@@ -26,4 +26,6 @@ class VtslsServerFactory : LanguageServerFactory {
  * for the whole module before a single test runs.
  */
 private class VtslsConnectionProvider(command: List<String>, workingDirectory: String?) :
-  ProcessStreamConnectionProvider(command, workingDirectory)
+  ProcessStreamConnectionProvider(command, workingDirectory) {
+  init { NodeEnvironment.applyTo(this, workingDirectory) }
+}

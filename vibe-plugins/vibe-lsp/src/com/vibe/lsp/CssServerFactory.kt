@@ -20,4 +20,6 @@ class CssServerFactory : LanguageServerFactory {
 
 /** Named, not anonymous: the vintage engine cannot name an anonymous subclass and test discovery dies. */
 private class CssConnectionProvider(workingDirectory: String?) :
-  ProcessStreamConnectionProvider(ServerBinaries.cssCommand(), workingDirectory)
+  ProcessStreamConnectionProvider(ServerBinaries.cssCommand(), workingDirectory) {
+  init { NodeEnvironment.applyTo(this, workingDirectory) }
+}

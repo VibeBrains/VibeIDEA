@@ -1,6 +1,7 @@
 // Copyright 2026 VibeBrains. Use of this source code is governed by the Apache 2.0 license.
 package com.vibe.lsp.dap
 
+import com.vibe.lsp.NodeRuntime
 import com.vibe.lsp.ServerBinaries
 import java.nio.file.Files
 import java.nio.file.Path
@@ -132,13 +133,23 @@ object DebugAdapters {
   fun command(
     spec: AdapterSpec,
     entryPoint: Path? = entryPoint(spec),
-    node: String = ServerBinaries.resolve("node"),
+    /**
+     * Интерпретатор; null — «спросить у IDE».
+     *
+     * Ищется ПОСЛЕ проверки на отсутствующий адаптер, а не значением по умолчанию: отсутствующему
+     * адаптеру интерпретатор не нужен, а вычисление по умолчанию лезло бы в настройки IDE даже там,
+     * где отвечать всё равно нечем.
+     */
+    node: String? = null,
   ): String? {
     val script = entryPoint ?: return null
+    // Тот же интерпретатор, что у языковых серверов: отладчик JS — такая же программа на ноде,
+    // и искать её вторым способом значит однажды запустить сервер и отладчик на разных нодах.
+    val interpreter = node ?: NodeRuntime.command(null).first()
     return when (spec.transport) {
       // `${port}` is LSP4IJ's placeholder: it picks a free port and substitutes it at start.
-      Transport.SOCKET -> "$node $script \${port} 127.0.0.1"
-      Transport.STDIO -> "$node $script"
+      Transport.SOCKET -> "$interpreter $script \${port} 127.0.0.1"
+      Transport.STDIO -> "$interpreter $script"
     }
   }
 

@@ -36,6 +36,15 @@ class VibeLspDoctorAction : AnAction({ t("lsp.doctor.action") }) {
           appendLine("    " + t("lsp.doctor.needsRuntime", "runtime" to runtime))
         }
       }
+      // Интерпретатор Node — до списка серверов по важности: три из четырёх серверов и отладчик JS
+      // суть программы на ноде, и «Cannot run program node» объясняется именно этой строкой.
+      appendLine()
+      appendLine(when (val node = NodeRuntime.outcome(e.project?.basePath)) {
+        is NodeInterpreter.Outcome.Found -> t("lsp.doctor.node", "path" to node.path, "source" to node.source.name.lowercase())
+        is NodeInterpreter.Outcome.BadSetting -> t("lsp.doctor.node.bad", "path" to node.path)
+        NodeInterpreter.Outcome.Missing -> t("lsp.doctor.node.missing")
+      })
+      appendLine()
       // Which TypeScript server this project actually starts — and why a hand-picked tsc did not.
       val base = e.project?.basePath?.let { java.nio.file.Path.of(it) }
       val windows = com.vibe.agent.util.ExecutableNames.isWindows()

@@ -142,7 +142,10 @@ internal object ServerBinaries {
    */
   private fun nodeServerCommand(binary: String, vararg args: String): List<String> {
     find(binary)?.let { return listOf(it) + args }
-    bundledNode(binary)?.let { entry -> return listOf(resolve("node"), entry) + args }
+    // Интерпретатор ищет NodeRuntime, а не PATH процесса IDE: GUI-приложение шеллового PATH не
+    // наследует, и нода, поставленная nvm/fnm/volta/asdf, для `find` не существует вовсе —
+    // наружу это выходило как `Cannot run program "node"` (владелец, 18.09.2026).
+    bundledNode(binary)?.let { entry -> return NodeRuntime.command(null, entry, *args) }
     return listOf(binary) + args
   }
 

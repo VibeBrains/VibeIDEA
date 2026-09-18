@@ -23,6 +23,9 @@ class VibeLspConfigurable : Configurable {
   private val fields = LinkedHashMap<String, TextFieldWithBrowseButton>()
   private val phpEngine = com.intellij.openapi.ui.ComboBox(PhpEngine.entries.toTypedArray())
   private val tsEngine = com.intellij.openapi.ui.ComboBox(TsEngine.entries.toTypedArray())
+  /** Пусто — «автоматически»: путь, названный руками, сильнее любого поиска. */
+  private val nodePath = TextFieldWithBrowseButton()
+  private val nodeStatus = JBLabel()
 
   override fun getDisplayName(): String = t("settings.lsp.title")
 
@@ -55,6 +58,26 @@ class VibeLspConfigurable : Configurable {
     builder.addComponent(JBLabel("<html>" + t("settings.lsp.ts.hint") + "</html>").apply {
       foreground = com.intellij.ui.JBColor.GRAY
     })
+    // Интерпретатор Node — выше списка серверов: три из четырёх серверов и отладчик JS суть
+    // программы на ноде, и без неё ни одна строка ниже не имеет значения.
+    nodePath.text = NodeInterpreter.stored()
+    nodePath.addBrowseFolderListener(
+      null,
+      FileChooserDescriptorFactory.createSingleFileDescriptor().withTitle(t("settings.lsp.node.choose")),
+    )
+    val nodeRow = javax.swing.JPanel(java.awt.BorderLayout(com.intellij.util.ui.JBUI.scale(6), 0)).apply {
+      add(nodePath, java.awt.BorderLayout.CENTER)
+      add(javax.swing.JButton(t("settings.lsp.node.check")).apply {
+        addActionListener { nodeStatus.text = "<html>" + checkNode() + "</html>" }
+      }, java.awt.BorderLayout.EAST)
+    }
+    builder.addLabeledComponent(t("settings.lsp.node.path"), nodeRow)
+    nodeStatus.text = "<html>" + nodeSummary() + "</html>"
+    nodeStatus.foreground = com.intellij.ui.JBColor.GRAY
+    builder.addComponent(nodeStatus)
+    builder.addComponent(JBLabel("<html>" + t("settings.lsp.node.hint") + "</html>").apply {
+      foreground = com.intellij.ui.JBColor.GRAY
+    })
     for (spec in LspDoctor.ALL) {
       if (spec.id !in ServerPaths.OVERRIDABLE) continue
       val field = TextFieldWithBrowseButton().apply {
@@ -74,20 +97,65 @@ class VibeLspConfigurable : Configurable {
     return VibeScroll.pane(TracksViewportWidthPanel(builder.panel))
   }
 
+  /** Что за интерпретатор сейчас в деле и откуда он взят — строка, а не молчание. */
+  private fun nodeSummary(): String = when (val outcome = NodeRuntime.outcome(null)) {
+    is NodeInterpreter.Outcome.Found -> t("settings.lsp.node.found", "path" to outcome.path,
+                                          "source" to sourceName(outcome.source))
+    is NodeInterpreter.Outcome.BadSetting -> t("settings.lsp.node.bad", "path" to outcome.path)
+    NodeInterpreter.Outcome.Missing -> t("settings.lsp.node.missing")
+  }
+
+  /**
+   * «Проверить»: запускает интерпретатор и печатает, что он ответил.
+   *
+   * Спрашиваем сам интерпретатор, а не файловую систему: исполняемый файл не той архитектуры и
+   * оборванный симлинк выглядят на диске совершенно здоровыми.
+   */
+  private fun checkNode(): String {
+    val typed = nodePath.text.trim()
+    val path = typed.ifEmpty { NodeRuntime.path(null) } ?: return t("settings.lsp.node.missing")
+    return runCatching {
+      val process = ProcessBuilder(path, "--version").redirectErrorStream(true).start()
+      val finished = process.waitFor(CHECK_SECONDS, java.util.concurrent.TimeUnit.SECONDS)
+      if (!finished) { process.destroyForcibly(); return t("settings.lsp.node.noAnswer", "path" to path) }
+      val answer = process.inputStream.readBytes().decodeToString().trim().lineSequence().firstOrNull().orEmpty()
+      if (process.exitValue() == 0) t("settings.lsp.node.works", "path" to path, "version" to answer)
+      else t("settings.lsp.node.failed", "path" to path, "reason" to answer)
+    }.getOrElse { t("settings.lsp.node.failed", "path" to path, "reason" to (it.message ?: "")) }
+  }
+
+  private fun sourceName(source: NodeInterpreter.Source): String = when (source) {
+    NodeInterpreter.Source.SETTING -> t("settings.lsp.node.source.setting")
+    NodeInterpreter.Source.NVMRC -> t("settings.lsp.node.source.nvmrc")
+    NodeInterpreter.Source.NVM -> t("settings.lsp.node.source.nvm")
+    NodeInterpreter.Source.FNM -> t("settings.lsp.node.source.fnm")
+    NodeInterpreter.Source.VOLTA -> t("settings.lsp.node.source.volta")
+    NodeInterpreter.Source.ASDF -> t("settings.lsp.node.source.asdf")
+    NodeInterpreter.Source.SHELL_PATH -> t("settings.lsp.node.source.shell")
+    NodeInterpreter.Source.WELL_KNOWN -> t("settings.lsp.node.source.wellKnown")
+  }
+
   override fun isModified(): Boolean =
+    nodePath.text.trim() != NodeInterpreter.stored() ||
     fields.any { (id, field) -> field.text.trim() != ServerPaths.get(id) } ||
     phpEngine.selectedItem != PhpServerChoice.stored() ||
     tsEngine.selectedItem != TsServerChoice.stored()
 
   override fun apply() {
+    NodeInterpreter.store(nodePath.text)
+    nodeStatus.text = "<html>" + nodeSummary() + "</html>"
     fields.forEach { (id, field) -> ServerPaths.set(id, field.text) }
     (phpEngine.selectedItem as? PhpEngine)?.let { PhpServerChoice.store(it) }
     (tsEngine.selectedItem as? TsEngine)?.let { TsServerChoice.store(it) }
   }
 
   override fun reset() {
+    nodePath.text = NodeInterpreter.stored()
+    nodeStatus.text = "<html>" + nodeSummary() + "</html>"
     fields.forEach { (id, field) -> field.text = ServerPaths.get(id) }
     phpEngine.selectedItem = PhpServerChoice.stored()
     tsEngine.selectedItem = TsServerChoice.stored()
   }
 }
+
+private const val CHECK_SECONDS = 5L
