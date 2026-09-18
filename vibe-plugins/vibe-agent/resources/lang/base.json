@@ -2085,5 +2085,8 @@
   "duration.hours": "{hours} ч {minutes} мин",
   "chat.turnNoAnswer": "ход закончился без единого слова ({outcome}) — что он успел сделать, видно в вызовах выше",
   "chat.turnNoAnswerUnknown": "причина не названа",
-  "chat.targetNotHere": "вкладка просит {wanted} — его ещё нет в списке моделей; пока ход уйдёт в {instead}"
+  "chat.targetNotHere": "вкладка просит {wanted} — его ещё нет в списке моделей; пока ход уйдёт в {instead}",
+  "chat.selection.copy": "Копировать выделенное",
+  "chat.selection.selectAll": "Выделить весь разговор",
+  "chat.selection.copyAll": "Копировать весь разговор"
 }

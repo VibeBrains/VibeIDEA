@@ -144,6 +144,12 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     horizontalScrollBarPolicy = javax.swing.ScrollPaneConstants.HORIZONTAL_SCROLLBAR_NEVER
   }
 
+  /**
+   * Выделение текста ЧЕРЕЗ границы сообщений: Ctrl+A на весь разговор, протяжка мышью через
+   * пузыри и блоки кода, тройной клик на сообщение целиком (правило владельца 18.09.2026).
+   */
+  private val feedSelection = FeedSelection(messages, scroll).also { it.install() }
+
   // Loaded OFF the EDT in init (config files on disk); empty until then.
   @Volatile private var agents: List<AgentServerConfig> = emptyList()
   @Volatile private var providers: List<ProviderEntry> = emptyList()
@@ -5128,10 +5134,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     val card = RoundedPanel(TOOL_CARD, radius = 4).apply {
       layout = BorderLayout()
       border = JBUI.Borders.empty(3, 8)
-      add(JLabel(title).apply {
-        font = com.intellij.util.ui.JBFont.label().deriveFont(Font.ITALIC, 11f)
-        foreground = META_FG
-      }, BorderLayout.WEST)
+      add(metaArea(title, Font.ITALIC, 11f).apply { lineWrap = false }, BorderLayout.WEST)
     }
     return ChatRow(BorderLayout()).apply {
       border = JBUI.Borders.empty(1, 4)
@@ -5314,14 +5317,28 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
 
   private fun systemLine(text: String) {
     SwingUtilities.invokeLater {
-      messages.add(JLabel(text).apply {
-        font = com.intellij.util.ui.JBFont.label().deriveFont(Font.PLAIN, 10f)
-        foreground = META_FG
+      messages.add(metaArea(text, Font.PLAIN, 10f).apply {
         alignmentX = Component.LEFT_ALIGNMENT
         border = JBUI.Borders.empty(2, 4)
       })
       revalidateScroll()
     }
+  }
+
+  /**
+   * Служебная строка ленты — текстом, а не подписью.
+   *
+   * Из `JLabel` нельзя выделить ни слова, и человек, выделивший разговор целиком, получал его с
+   * дырами на месте строк вроде «[providers] …» и имён вызванных инструментов.
+   */
+  private fun metaArea(text: String, style: Int, size: Float): JTextArea = JTextArea(text).apply {
+    isEditable = false
+    isOpaque = false
+    lineWrap = true
+    wrapStyleWord = true
+    font = com.intellij.util.ui.JBFont.label().deriveFont(style, size)
+    foreground = META_FG
+    border = JBUI.Borders.empty()
   }
 
   private fun revalidateScroll() {

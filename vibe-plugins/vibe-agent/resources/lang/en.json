@@ -2085,5 +2085,8 @@
   "duration.hours": "{hours} h {minutes} min",
   "chat.turnNoAnswer": "the turn ended without a single word ({outcome}) — what it did manage is in the calls above",
   "chat.turnNoAnswerUnknown": "no reason given",
-  "chat.targetNotHere": "this tab asks for {wanted} — it is not in the model list yet; until it is, the turn goes to {instead}"
+  "chat.targetNotHere": "this tab asks for {wanted} — it is not in the model list yet; until it is, the turn goes to {instead}",
+  "chat.selection.copy": "Copy selection",
+  "chat.selection.selectAll": "Select the whole conversation",
+  "chat.selection.copyAll": "Copy the whole conversation"
 }
