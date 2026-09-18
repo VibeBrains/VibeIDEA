@@ -22,6 +22,13 @@ class ConfiguredServersSource(
   private val servers: () -> List<McpServersFile.Entry>,
   private val workingDir: java.nio.file.Path?,
   private val clientVersion: String,
+  /**
+   * Куда сказать о серверах, которые не поднялись, — по одному имени с причиной.
+   *
+   * Отдельным каналом, а не исключением: исключение забрало бы с собой инструменты всех остальных
+   * серверов, и человек увидел бы «инструментов нет» вместо «один сервер не запустился».
+   */
+  private val onFailure: (List<String>) -> Unit = {},
   private val timeoutMs: Long = DirectChatTools.CALL_TIMEOUT_MS,
 ) : DirectChatTools.Source {
   private class Running(
@@ -65,7 +72,10 @@ class ConfiguredServersSource(
         specs += alive.specs
       }
     }
-    if (failures.isNotEmpty()) throw McpStdioClient.McpException(failures.joinToString("; "))
+    // Жалоба НЕ отменяет остальных: источник, бросивший исключение, отдаёт панели пустой список —
+    // то есть один сервер с опечаткой в команде забирал с собой инструменты всех соседей. Поэтому
+    // о неудачах докладываем отдельно, а собранное отдаём (перечитка 18.09.2026).
+    if (failures.isNotEmpty()) onFailure(failures)
     return specs
   }
 

@@ -22,7 +22,7 @@ import com.vibe.agent.terminal.AgentTerminalService
  * молча — и виноватым выглядит компьютер.
  */
 @Service(Service.Level.PROJECT)
-class AgentCommands(private val project: Project) {
+class AgentCommands(private val project: Project) : com.intellij.openapi.Disposable {
   private val terminals = AgentTerminalService(project.basePath)
   private val started = java.util.concurrent.ConcurrentHashMap<String, String>()
 
@@ -30,6 +30,9 @@ class AgentCommands(private val project: Project) {
 
   /** Имя запущенной команды, или отказ словами. */
   fun start(command: String, env: Map<String, String>): Result<String> {
+    // Кончившиеся команды мест не занимают: без этой уборки восемь ЗАВЕРШЁННЫХ прогонов тестов
+    // закрывали запуск девятого, и выглядело это как «инструмент перестал работать».
+    forgetFinished()
     if (started.size >= MAX_LIVE) {
       return Result.failure(IllegalStateException(MAX_LIVE.toString()))
     }
@@ -58,6 +61,33 @@ class AgentCommands(private val project: Project) {
 
   /** Всё, что сейчас запущено: имя и сама команда — иначе через час не вспомнить, что где. */
   fun running(): Map<String, String> = started.toMap()
+
+  /** Только живые: полоска над вводом показывает человеку то, что реально крутится на его машине. */
+  fun alive(): Map<String, String> = started.filterKeys { terminals.output(it)?.finished == false }
+
+  /**
+   * Забыть кончившиеся.
+   *
+   * Их вывод остаётся доступным, пока о нём спрашивают по имени, — но место в счётчике живых они
+   * не держат: счётчик отвечает на вопрос «сколько процессов сейчас на машине», а не «сколько
+   * команд агент запустил за сессию».
+   */
+  private fun forgetFinished() {
+    started.keys.toList().forEach { id ->
+      if (terminals.output(id)?.finished == true) started.remove(id)
+    }
+  }
+
+  /**
+   * Закрытие проекта гасит всё, что агент запустил.
+   *
+   * Иначе дев-сервер, поднятый агентом, переживает закрытие окна и держит порт: человек закрыл
+   * проект, а машина продолжает работать за него — и найти это можно только в диспетчере задач.
+   */
+  override fun dispose() {
+    terminals.disposeAll()
+    started.clear()
+  }
 
   companion object {
     /** Больше восьми живых команд — это не работа, а забытые процессы. */

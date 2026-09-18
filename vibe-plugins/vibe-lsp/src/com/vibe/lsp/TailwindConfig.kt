@@ -32,11 +32,31 @@ object TailwindConfig {
     return packageJson?.contains("\"tailwindcss\"") == true
   }
 
+  /**
+   * Ответ по проекту — с коротким кэшем.
+   *
+   * Вопрос задаётся на КАЖДОЕ открытие файла и на каждую проверку включённости сервера, а ответ на
+   * него требует листинга каталога и чтения `package.json`. Диск в таком месте — это задержка,
+   * которую человек замечает как «редактор задумался», и платить её за неизменный ответ незачем.
+   *
+   * Кэш короткий, а не вечный: Tailwind добавляют в проект посреди работы, и IDE не должна просить
+   * перезапуска ради одной строки в `package.json`. Полминуты — столько, сколько человек всё равно
+   * потратит на установку пакета.
+   */
   fun isTailwindProject(projectBase: String?): Boolean {
-    val base = projectBase?.let { File(it) }?.takeIf { it.isDirectory } ?: return false
-    val names = base.list()?.toList() ?: emptyList()
-    val packageJson = File(base, "package.json").takeIf { it.isFile }
+    val base = projectBase ?: return false
+    val now = System.currentTimeMillis()
+    cache[base]?.let { (answer, at) -> if (now - at < CACHE_MS) return answer }
+    val dir = File(base).takeIf { it.isDirectory } ?: return false
+    val names = dir.list()?.toList() ?: emptyList()
+    val packageJson = File(dir, "package.json").takeIf { it.isFile }
       ?.let { runCatching { it.readText() }.getOrNull() }
-    return isTailwindProject(names, packageJson)
+    val answer = isTailwindProject(names, packageJson)
+    cache[base] = answer to now
+    return answer
   }
+
+  private val cache = java.util.concurrent.ConcurrentHashMap<String, Pair<Boolean, Long>>()
+
+  private const val CACHE_MS = 30_000L
 }

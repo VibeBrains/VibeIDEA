@@ -134,6 +134,22 @@ class ComposerPanel(
       override fun mouseClicked(e: java.awt.event.MouseEvent) { onShowChanges?.invoke() }
     })
   }
+  /**
+   * Сколько процессов агент держит запущенными.
+   *
+   * Это МАШИНА ЧЕЛОВЕКА: дев-сервер, поднятый агентом, занимает порт и ест память, и узнавать о
+   * нём из диспетчера задач — неправильный порядок. Подпись появляется только когда есть что
+   * показывать, и по клику открывает список с остановкой.
+   */
+  private val commandsLabel = javax.swing.JLabel().apply {
+    font = com.intellij.util.ui.JBFont.label().deriveFont(java.awt.Font.PLAIN, 11f)
+    foreground = USAGE_FG
+    isVisible = false
+    cursor = java.awt.Cursor.getPredefinedCursor(java.awt.Cursor.HAND_CURSOR)
+    addMouseListener(object : java.awt.event.MouseAdapter() {
+      override fun mouseClicked(e: java.awt.event.MouseEvent) { onShowCommands?.invoke() }
+    })
+  }
   private val acceptAllButton = PillButton(icon = com.intellij.icons.AllIcons.Actions.Commit) { onAcceptAll?.invoke() }
     .apply { toolTipText = t("chat.strip.acceptAll"); isVisible = false }
   private val rejectAllButton = PillButton(icon = com.intellij.icons.AllIcons.Actions.Cancel) { onRejectAll?.invoke() }
@@ -154,6 +170,9 @@ class ComposerPanel(
 
   /** Показать список изменённых файлов: по клику на подпись. */
   var onShowChanges: (() -> Unit)? = null
+
+  /** Показать, что агент запустил в фоне: по клику на счётчик процессов. */
+  var onShowCommands: (() -> Unit)? = null
 
   /** Скопировать разговор в Markdown — кнопкой полоски. */
   var onCopyChat: (() -> Unit)? = null
@@ -192,6 +211,7 @@ class ComposerPanel(
     val left = JPanel(FlowLayout(FlowLayout.LEFT, JBUI.scale(PILL_GAP), 0)).apply {
       isOpaque = false
       add(changedFilesLabel)
+      add(commandsLabel)
       add(acceptAllButton)
       add(rejectAllButton)
       add(copyChatButton)
@@ -223,6 +243,17 @@ class ComposerPanel(
     acceptAllButton.isVisible = count > 0
     rejectAllButton.isVisible = count > 0
     changedFilesLabel.revalidate()
+    revalidate()
+    repaint()
+  }
+
+  /** Сколько фоновых команд агента сейчас живо; ноль прячет подпись. */
+  fun setRunningCommands(count: Int) {
+    commandsLabel.isVisible = count > 0
+    if (count > 0) {
+      commandsLabel.text = t("chat.strip.commands", "count" to count)
+      commandsLabel.toolTipText = t("chat.strip.commandsTooltip")
+    }
     revalidate()
     repaint()
   }

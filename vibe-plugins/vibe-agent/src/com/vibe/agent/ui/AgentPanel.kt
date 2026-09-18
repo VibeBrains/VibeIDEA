@@ -199,6 +199,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
       servers = { com.vibe.agent.mcp.McpServersFile.load(project.basePath).servers },
       workingDir = project.basePath?.let { java.nio.file.Path.of(it) },
       clientVersion = com.intellij.openapi.application.ApplicationInfo.getInstance().fullVersion,
+      onFailure = { failures -> failures.forEach { systemLine(t("mcp.servers.problem", "text" to it)) } },
     ),
   ))
 
@@ -253,6 +254,15 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
   private val terminalConsoles = java.util.concurrent.ConcurrentHashMap<String, TerminalConsole>()
   /** The current turn's collapsible reasoning block (ACP agent_thought_chunk), created on first thought. */
   @Volatile private var thoughtsBlock: ThoughtsBlock? = null
+
+  /**
+   * Часы, перечитывающие список живых процессов агента.
+   *
+   * Полем, а не анонимным таймером в init: живой `javax.swing.Timer` держит панель в памяти после
+   * закрытия вкладки, и это ровно тот класс утечки, который сегодня чинился в двух других местах.
+   */
+  private val commandsTimer = javax.swing.Timer(COMMANDS_POLL_MS) { refreshRunningCommands() }
+    .apply { isRepeats = true }
 
   /** Анимированная строка «сейчас работаю» в конце ленты; живёт ровно ход. */
   private var workingLine: WorkingLine? = null
@@ -484,6 +494,9 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     composer.onAcceptAll = { acceptAllEdits() }
     composer.onRejectAll = { rejectAllEdits() }
     composer.onShowChanges = { showChangedFiles() }
+    composer.onShowCommands = { showRunningCommands() }
+    // Раз в несколько секунд: процессы кончаются сами, и подпись обязана это замечать без хода.
+    commandsTimer.start()
     composer.onUsageClick = { showContextPopup() }
     // Кольцо контекста — последним в ряду пилюль, как у VibeIDE: после модели, режима и микрофона.
     composer.addContextRing()
@@ -561,6 +574,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
   override fun dispose() {
     disposed = true
     silenceTimer.stop()
+    commandsTimer.stop()
     com.vibe.agent.http.VibeAgentGateway.getInstance().unregister(this)
     externalWaiters.values.forEach { it.countDown() }
     externalWaiters.clear()
@@ -726,6 +740,53 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
   }
 
   private fun journal() = com.vibe.agent.mcp.AgentEditJournal.getInstance(project)
+
+  private fun commands() = com.vibe.agent.mcp.AgentCommands.getInstance(project)
+
+  private fun refreshRunningCommands() {
+    if (disposed) return
+    composer.setRunningCommands(commands().alive().size)
+  }
+
+  /**
+   * Что агент запустил и не остановил — списком, с кнопкой остановки на каждую.
+   *
+   * Это машина человека: решать судьбу процессов должен он, а не только агент, который их поднял.
+   */
+  private fun showRunningCommands() {
+    val alive = commands().alive()
+    if (alive.isEmpty()) {
+      systemLine(t("chat.commands.none"))
+      return
+    }
+    val panel = JPanel()
+    panel.layout = javax.swing.BoxLayout(panel, javax.swing.BoxLayout.Y_AXIS)
+    panel.border = JBUI.Borders.empty(8, 10)
+    panel.isOpaque = false
+    val title = JLabel(t("chat.commands.title"))
+    title.font = com.intellij.util.ui.JBFont.label().deriveFont(Font.BOLD, 12f)
+    title.alignmentX = Component.LEFT_ALIGNMENT
+    panel.add(title)
+    alive.forEach { (id, command) ->
+      val row = JPanel(java.awt.FlowLayout(java.awt.FlowLayout.LEFT, JBUI.scale(6), JBUI.scale(2)))
+      row.isOpaque = false
+      row.alignmentX = Component.LEFT_ALIGNMENT
+      row.add(JLabel(command.take(COMMAND_LABEL_CHARS)).apply {
+        font = com.intellij.util.ui.JBFont.label().deriveFont(Font.PLAIN, 12f)
+        toolTipText = command
+      })
+      row.add(com.vibe.agent.ui.composer.PillButton(icon = AllIcons.Actions.Suspend) {
+        if (commands().stop(id)) systemLine(t("chat.commands.stopped", "id" to id))
+        refreshRunningCommands()
+      }.apply { toolTipText = t("chat.commands.stop") })
+      panel.add(row)
+    }
+    JBPopupFactory.getInstance()
+      .createComponentPopupBuilder(panel, null)
+      .setRequestFocus(true)
+      .createPopup()
+      .showUnderneathOf(composer)
+  }
 
   private fun refreshChangedFiles() {
     SwingUtilities.invokeLater { composer.setChangedFiles(journal().size()) }
@@ -6395,6 +6456,12 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
 
     /** One manual is pages long; two of them plus the question still fit a modest window. */
     /** Сколько разделов набора уходит в ход /help: больше — и вопрос человека тонет в цитатах. */
+    /** Как часто полоска перечитывает список живых процессов агента. */
+    const val COMMANDS_POLL_MS = 3_000
+
+    /** Команда в списке обрезается: полное имя живёт в подсказке. */
+    const val COMMAND_LABEL_CHARS = 70
+
     const val HELP_SECTIONS = 5
     const val HELP_DOC_CHARS = 20_000
     const val COUNCIL_TIMEOUT_MS = 180_000L
