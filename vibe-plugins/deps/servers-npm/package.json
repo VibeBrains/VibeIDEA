@@ -12,6 +12,7 @@
     "some-sass-language-server": "2.3.8",
     "stylus-lsp": "0.6.0",
     "svelte-language-server": "0.18.4",
+    "typescript-styled-plugin": "0.18.3",
     "vscode-langservers-extracted": "4.10.0"
   }
 }

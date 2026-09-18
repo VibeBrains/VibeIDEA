@@ -26,10 +26,20 @@ class VtslsServerFactory : LanguageServerFactory {
   override fun createLanguageClient(project: Project): LanguageClientImpl = VtslsLanguageClient(project)
 }
 
-/** Отвечает на `workspace/configuration` — иначе плагины tsserver до него не доедут. */
-private class VtslsLanguageClient(project: Project) : LanguageClientImpl(project) {
-  override fun createSettings(): Any = vtslsSettings()
+/**
+ * Отвечает на `workspace/configuration` — иначе плагины tsserver до него не доедут.
+ *
+ * Вопрос «есть ли в проекте styled-components» задаётся ЗДЕСЬ, а не внутри настроек: настройки
+ * остаются чистой функцией от того, что решено, и проверяются тестом без проекта на диске.
+ */
+private class VtslsLanguageClient(private val project: Project) : LanguageClientImpl(project) {
+  override fun createSettings(): Any = vtslsSettings(
+    styledPlugin = ServerBinaries.bundledPluginRoot(STYLED_PLUGIN)
+      ?.takeIf { StyledConfig.isStyledProject(project.basePath) },
+  )
 }
+
+private const val STYLED_PLUGIN = "typescript-styled-plugin"
 
 /**
  * Настройки vtsls: плагины tsserver для языков, которых TypeScript не знает сам.
@@ -46,25 +56,50 @@ private class VtslsLanguageClient(project: Project) : LanguageClientImpl(project
  *
  * Плагин, которого нет на диске, в список не попадает: tsserver на несуществующий `location`
  * отвечает отказом запуска, то есть ломается ВЕСЬ TypeScript, а не один язык.
+ *
+ * Стили в шаблонных строках (`typescript-styled-plugin`) стоят особняком, и потому приходят
+ * отдельным параметром: у Vue и Astro объявлен свой язык, и в обычный `.ts` они не заглядывают, а
+ * этот оборачивает языковую службу для КАЖДОГО `.ts` и `.tsx`. Включать его проекту, который о
+ * styled-components не слышал, — брать налог за неиспользуемое, поэтому решение принимает
+ * вызывающий ([StyledConfig]), а сюда приходит уже готовый ответ.
  */
 internal fun vtslsSettings(
   vuePlugin: String? = ServerBinaries.bundledPluginRoot("@vue/typescript-plugin"),
   astroPlugin: String? = ServerBinaries.bundledPluginRoot("@astrojs/ts-plugin"),
+  styledPlugin: String? = null,
 ): JsonObject {
   val plugins = JsonArray()
-  vuePlugin?.let { plugins.add(tsserverPlugin("@vue/typescript-plugin", it, listOf("vue"))) }
-  astroPlugin?.let { plugins.add(tsserverPlugin("@astrojs/ts-plugin", it, listOf("astro"))) }
+  vuePlugin?.let { plugins.add(tsserverPlugin("@vue/typescript-plugin", it, listOf("vue"), "typescript")) }
+  astroPlugin?.let { plugins.add(tsserverPlugin("@astrojs/ts-plugin", it, listOf("astro"), "typescript")) }
+  // Ни языков, ни пространства настроек — и то и другое осознанно.
+  //
+  // Языки: плагин работает на `.ts` и `.tsx`, которые tsserver обслуживает сам; перечислить их
+  // значило бы объявить своим языком то, что языком сервера и является.
+  //
+  // Пространство настроек: своих настроек мы плагину не шлём (умолчания тегов покрывают и
+  // styled-components, и emotion), а объявленное пространство заставило бы tsserver переслать ему
+  // весь раздел `typescript` как его собственную конфигурацию. Именно в этой форме — имя и путь,
+  // без лишних полей — связка и проверена стендом; отгружать форму, отличную от проверенной,
+  // значит проверять одно, а отдавать другое.
+  styledPlugin?.let { plugins.add(tsserverPlugin(STYLED_PLUGIN, it, emptyList(), configNamespace = null)) }
   val tsserver = JsonObject().apply { add("globalPlugins", plugins) }
   return JsonObject().apply { add("vtsls", JsonObject().apply { add("tsserver", tsserver) }) }
 }
 
-private fun tsserverPlugin(name: String, location: String, languages: List<String>): JsonObject =
+private fun tsserverPlugin(
+  name: String,
+  location: String,
+  languages: List<String>,
+  configNamespace: String?,
+): JsonObject =
   JsonObject().apply {
     add("name", JsonPrimitive(name))
     add("location", JsonPrimitive(location))
-    add("languages", JsonArray().apply { languages.forEach { add(JsonPrimitive(it)) } })
+    if (languages.isNotEmpty()) {
+      add("languages", JsonArray().apply { languages.forEach { add(JsonPrimitive(it)) } })
+    }
     add("enableForWorkspaceTypeScriptVersions", JsonPrimitive(true))
-    add("configNamespace", JsonPrimitive("typescript"))
+    configNamespace?.let { add("configNamespace", JsonPrimitive(it)) }
   }
 
 /**

@@ -99,6 +99,11 @@ open class VibeIdeaProperties(communityHomeDir: Path) : IdeaCommunityProperties(
       LibraryLicense(name = "@astrojs/ts-plugin", version = "1.10.12", attachedTo = "intellij.vibe.lsp",
                      url = "https://github.com/withastro/language-tools")
         .mit("https://github.com/withastro/language-tools/blob/main/LICENSE"),
+      // Стили в шаблонных строках: подсказки CSS внутри `styled.div` и `css` у styled-components
+      // и emotion. Плагин к tsserver, а не сервер: разбирать надо ВНУТРИ TypeScript-файла.
+      LibraryLicense(name = "typescript-styled-plugin", version = "0.18.3", attachedTo = "intellij.vibe.lsp",
+                     url = "https://github.com/Microsoft/typescript-styled-plugin")
+        .mit("https://github.com/Microsoft/typescript-styled-plugin/blob/main/LICENSE"),
       // TextMate-грамматики Vue, Svelte, Astro, Sass и Stylus. Сам сборник под MIT, но грамматики
       // в нём чужие: происхождение и лицензия каждой — в его NOTICE, который едет рядом с ними.
       // Проверено у источника 18.09.2026: грамматика Sass помечена в NOTICE как NOASSERTION, а её

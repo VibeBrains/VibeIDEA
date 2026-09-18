@@ -45,7 +45,7 @@ done
 
 for pkg in "@vtsls/language-server" "vscode-langservers-extracted" \
            "@vue/language-server" "@vue/typescript-plugin" "svelte-language-server" \
-           "@astrojs/language-server" "@astrojs/ts-plugin"; do
+           "@astrojs/language-server" "@astrojs/ts-plugin" "typescript-styled-plugin"; do
   PIN=$("$PYTHON" -c "import json;print(json.load(open('vibe-plugins/deps/servers-npm/package.json'))['dependencies']['$pkg'])")
   grep -q "\"$PIN\"" build/src/org/jetbrains/intellij/build/VibeIdeaProperties.kt \
     || { say "✖ версия $pkg в лицензиях разошлась с закреплённой ($PIN)"; fail=1; }
@@ -55,6 +55,30 @@ done
 # --- 3. Закрепление не потеряно ---
 grep -q '"@vtsls/language-server": "[0-9]' vibe-plugins/deps/servers-npm/package.json \
   || { say "✖ версия vtsls перестала быть точной — диапазон означает «у всех разное»"; fail=1; }
+
+# --- 4. Закреплённое доехало до ОТГРУЖАЕМОГО набора ---
+#
+# `servers-npm/node_modules` — рабочее дерево, а в дистрибутив едет `extracted/servers/node`,
+# который собирает download.sh. Добавить пакет в package.json и забыть перезапустить скрипт —
+# ошибка на одну строку, и ловил её до сих пор только гейт дистрибутива, то есть ПОСЛЕ сборки:
+# двадцать минут на выяснение того, что видно за две секунды (поймано на себе 19.09.2026,
+# `typescript-styled-plugin`).
+SHIPPED=vibe-plugins/deps/extracted/servers/node/node_modules
+if [ ! -d "$SHIPPED" ]; then
+  say "  отгружаемый набор не собран (нет $SHIPPED) — сверка пропущена, запустите vibe-plugins/deps/download.sh"
+else
+  missing=""
+  for pkg in $("$PYTHON" -c "import json;print(' '.join(json.load(open('vibe-plugins/deps/servers-npm/package.json'))['dependencies']))"); do
+    [ -d "$SHIPPED/$pkg" ] || missing="$missing $pkg"
+  done
+  if [ -n "$missing" ]; then
+    say "✖ закреплено в package.json, но НЕ доехало в отгружаемый набор:$missing"
+    say "  лечится перезапуском vibe-plugins/deps/download.sh — иначе пакет не попадёт в дистрибутив"
+    fail=1
+  else
+    say "  отгружаемый набор: все закреплённые пакеты на месте"
+  fi
+fi
 
 if [ "$fail" -ne 0 ]; then
   say "Аудит поставляемого: ПРОВАЛЕН"

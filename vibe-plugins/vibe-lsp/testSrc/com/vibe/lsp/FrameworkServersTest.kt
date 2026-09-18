@@ -115,6 +115,33 @@ class FrameworkServersTest {
     }
   }
 
+  /**
+   * Плагин стилей объявляется БЕЗ списка языков и только когда его об этом просят.
+   *
+   * Разница с Vue и Astro существенная: у тех объявлен свой язык, и в обычный `.ts` они не
+   * заглядывают. Этот оборачивает языковую службу для каждого `.ts` и `.tsx`, поэтому пустой
+   * `languages` здесь — не забытое поле, а условие правильной работы: перечисленный язык сузил бы
+   * плагин до него одного.
+   */
+  @Test
+  fun `плагин стилей приходит без языков и только по просьбе`() {
+    val off = vtslsSettings(vuePlugin = null, astroPlugin = null)
+    assertEquals(0, off.getAsJsonObject("vtsls").getAsJsonObject("tsserver").getAsJsonArray("globalPlugins").size(),
+                 "проект без styled-components не должен платить за плагин")
+
+    val on = vtslsSettings(vuePlugin = null, astroPlugin = null, styledPlugin = "/opt/vibe/styled")
+    val plugins = on.getAsJsonObject("vtsls").getAsJsonObject("tsserver").getAsJsonArray("globalPlugins")
+    assertEquals(1, plugins.size())
+    val styled = plugins[0].asJsonObject
+    assertEquals("typescript-styled-plugin", styled.get("name").asString)
+    assertEquals("/opt/vibe/styled", styled.get("location").asString)
+    assertTrue(!styled.has("languages"), "список языков сузил бы плагин до перечисленного")
+    // Форма отгружаемой записи обязана совпадать с проверенной стендом: там были только имя и
+    // путь, и объявленное пространство настроек переслало бы плагину чужой раздел как его
+    // собственную конфигурацию.
+    assertTrue(!styled.has("configNamespace"), "своих настроек мы этому плагину не шлём")
+  }
+
   /** Имена бандлов подсветки — те же пять, что собирает скрипт зависимостей. */
   @Test
   fun `бандлы подсветки объявлены для всех пяти языков`() {

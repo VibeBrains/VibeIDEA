@@ -163,7 +163,8 @@ done
 # выглядит как красный импорт в половине проекта — то есть как «Vue не поддерживается».
 for entry in \
   "node/node_modules/@vue/typescript-plugin/package.json" \
-  "node/node_modules/@astrojs/ts-plugin/package.json"; do
+  "node/node_modules/@astrojs/ts-plugin/package.json" \
+  "node/node_modules/typescript-styled-plugin/lib/index.js"; do
   [ -f "$SERVERS/$entry" ] || { say "✖ нет плагина tsserver: $entry"; fail=1; }
 done
 
@@ -348,7 +349,7 @@ else
   for pkg in "@vtsls/language-server" "vscode-langservers-extracted" "@angular/language-server" \
              "@tailwindcss/language-server" "some-sass-language-server" "stylus-lsp" \
              "@vue/language-server" "@vue/typescript-plugin" "svelte-language-server" \
-             "@astrojs/language-server" "@astrojs/ts-plugin"; do
+             "@astrojs/language-server" "@astrojs/ts-plugin" "typescript-styled-plugin"; do
     PIN=$("$PYTHON" -c "import json;print(json.load(open('vibe-plugins/deps/servers-npm/package.json'))['dependencies']['$pkg'])")
     grep -q "\"$PIN\"" "$REPORT" || { say "✖ версия $pkg в отчёте о лицензиях не совпадает с закреплённой ($PIN)"; fail=1; }
   done
