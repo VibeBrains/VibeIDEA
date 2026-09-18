@@ -58,6 +58,7 @@ class VibeMcpTools(private val projectProvider: () -> Project? = { ProjectManage
       McpProtocol.TOOL_READ_FILE -> readFile(project, arguments)
       McpProtocol.TOOL_IDE_INFO -> ideInfo(project)
       McpProtocol.TOOL_PROBLEMS -> problems(project, arguments)
+      McpProtocol.TOOL_TRACE -> traceSymbol(project, arguments)
       McpProtocol.TOOL_DOCS_SEARCH -> docsSearch(arguments)
       McpProtocol.TOOL_WRITE_FILE -> writeFile(project, arguments)
       McpProtocol.TOOL_REPLACE_IN_FILE -> replaceInFile(project, arguments)
@@ -343,6 +344,63 @@ class VibeMcpTools(private val projectProvider: () -> Project? = { ProjectManage
     return McpServer.Tools.Result(IdeWorkTools.run(project, command))
   }
 
+  /**
+   * Откуда пришло имя — цепочкой по файлам.
+   *
+   * Шаг «импорт» ведёт к следующему файлу: путь модуля разрешается относительно текущего файла, а
+   * если так не нашлось — по графу импортов проекта, который знает, куда на самом деле ведёт
+   * короткое имя. Цепочка обрывается на потолке шагов и говорит об этом: молча оборванная выглядит
+   * как законченная.
+   */
+  private fun traceSymbol(project: Project, arguments: JsonObject): McpServer.Tools.Result {
+    val name = string(arguments, "name") ?: return McpServer.Tools.Result("нужен аргумент name", isError = true)
+    val startRaw = string(arguments, "path")
+    val start = if (startRaw != null) IdeWorkTools.resolve(project, startRaw) else IdeEditorFacts.selected(project)?.path
+      ?: return McpServer.Tools.Result("в редакторе ничего не открыто — назовите путь файла", isError = true)
+    val hops = (arguments["hops"]?.jsonPrimitive?.contentOrNull?.toIntOrNull() ?: DEFAULT_TRACE_HOPS).coerceIn(1, MAX_TRACE_HOPS)
+    val roots = ProjectContextService.getInstance(project).roots()
+    val lines = ArrayList<String>()
+    var current: String? = start
+    val seen = HashSet<String>()
+    var hop = 0
+    while (current != null && hop < hops) {
+      if (!seen.add(current) || !readable(current, roots)) break
+      val text = runCatching { java.io.File(current!!).readText() }.getOrNull() ?: break
+      val steps = com.vibe.agent.graph.SymbolTrace.stepsIn(text, name)
+      if (steps.isEmpty()) {
+        lines += current + ": имя не встречается в объявлениях этого файла"
+        break
+      }
+      steps.forEach { step -> lines += current + ":" + step.line + " [" + step.kind.name + "] " + step.text }
+      val next = steps.lastOrNull { it.kind == com.vibe.agent.graph.SymbolTrace.Kind.IMPORT }?.from
+      current = next?.let { resolveModule(project, current!!, it) }
+      hop++
+    }
+    if (lines.isEmpty()) return McpServer.Tools.Result("не нашлось, откуда приходит " + name)
+    if (current != null && hop >= hops) lines += "… цепочка оборвана по потолку в " + hops + " файлов"
+    return McpServer.Tools.Result(lines.joinToString("\n"))
+  }
+
+  /** Путь модуля → файл: сперва относительно текущего, потом по графу импортов. */
+  private fun resolveModule(project: Project, from: String, module: String): String? {
+    val base = java.io.File(from).parentFile ?: return null
+    if (module.startsWith(".")) {
+      for (suffix in MODULE_SUFFIXES) {
+        val candidate = java.io.File(base, module + suffix)
+        if (candidate.isFile) return candidate.canonicalPath
+      }
+      return null
+    }
+    // Не относительный путь: чужой пакет или алиас проекта. Граф импортов знает, куда он ведёт,
+    // если такой файл в проекте есть; иначе цепочка честно кончается.
+    val graph = graph(project) ?: return null
+    val tail = module.substringAfterLast('/')
+    return graph.nodes.map { it.path }.firstOrNull { path ->
+      val fileName = path.substringAfterLast('/')
+      MODULE_SUFFIXES.any { fileName == tail + it }
+    }?.let { path -> project.basePath?.let { java.io.File(it, path).path } ?: path }
+  }
+
   /** Поиск по документации, вшитой в сборку: формат файла и порядок работы — оттуда, а не из догадок. */
   private fun docsSearch(arguments: JsonObject): McpServer.Tools.Result {
     val query = string(arguments, "query") ?: return McpServer.Tools.Result("нужен аргумент query", isError = true)
@@ -405,6 +463,13 @@ class VibeMcpTools(private val projectProvider: () -> Project? = { ProjectManage
     private const val LINE_CHARS = 200
 
     private const val DEFAULT_DOCS_LIMIT = 5
+
+    /** Сколько файлов проходит цепочка «откуда пришло»: дальше четвёртого ответ перестаёт читаться. */
+    private const val DEFAULT_TRACE_HOPS = 4
+    private const val MAX_TRACE_HOPS = 10
+
+    /** Чем достраивается путь модуля без расширения — в порядке, в котором их пробует сборщик. */
+    private val MODULE_SUFFIXES = listOf(".ts", ".tsx", ".js", ".jsx", ".mts", ".php", "/index.ts", "/index.js", "")
 
     /** Сколько текста файла отдаём по умолчанию: длинный файл вытесняет из хода всё остальное. */
     private const val DEFAULT_FILE_CHARS = 60_000

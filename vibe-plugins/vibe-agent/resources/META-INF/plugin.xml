@@ -88,6 +88,12 @@
       <keyboard-shortcut keymap="$default" first-keystroke="control K"/>
       <add-to-group group-id="EditorPopupMenu" anchor="first"/>
     </action>
+    <!-- «Починить ошибки в файле»: IDE уже посчитала разметку, агент уже умеет править — не
+         хватало одного движения, соединяющего их без пересказа. -->
+    <action id="Vibe.FixProblems" class="com.vibe.agent.mcp.VibeFixProblemsAction" text="VibeIDEA: починить ошибки в файле">
+      <add-to-group group-id="EditorPopupMenu" anchor="last"/>
+      <add-to-group group-id="ProjectViewPopupMenu" anchor="last"/>
+    </action>
     <action id="com.vibe.agent.exportCodeGraph" class="com.vibe.agent.graph.ExportCodeGraphAction" text="Vibe: экспорт графа проекта">
       <add-to-group group-id="ToolsMenu" anchor="last"/>
     </action>

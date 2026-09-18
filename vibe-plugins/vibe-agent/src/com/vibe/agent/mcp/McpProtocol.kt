@@ -98,6 +98,7 @@ object McpProtocol {
   const val TOOL_READ_FILE = "vibe_read_file"
   const val TOOL_IDE_INFO = "vibe_ide_info"
   const val TOOL_PROBLEMS = "vibe_problems"
+  const val TOOL_TRACE = "vibe_trace_symbol"
   const val TOOL_DOCS_SEARCH = "vibe_docs_search"
   const val TOOL_WRITE_FILE = "vibe_write_file"
   const val TOOL_REPLACE_IN_FILE = "vibe_replace_in_file"
@@ -132,6 +133,7 @@ object McpProtocol {
     TOOL_READ_FILE to Risk.READ,
     TOOL_IDE_INFO to Risk.READ,
     TOOL_PROBLEMS to Risk.READ,
+    TOOL_TRACE to Risk.READ,
     TOOL_DOCS_SEARCH to Risk.READ,
     TOOL_DECISIONS_SEARCH to Risk.READ,
     TOOL_DECISIONS_RECORD to Risk.WRITE,
@@ -275,6 +277,24 @@ object McpProtocol {
         putJsonObject("properties") {
           putJsonObject("path") { put("type", "string"); put("description", "Путь файла; без него — открытый в редакторе") }
         }
+      },
+    ),
+    Tool(
+      name = TOOL_TRACE,
+      title = "Откуда пришло значение",
+      description = "Цепочка «откуда взялось имя»: объявление в этом файле, импорт с указанием откуда, внедрение в " +
+                    "конструктор, параметр — и дальше по файлам, хоп за хопом. Отвечает на вопрос, который иначе " +
+                    "модель ДОДУМЫВАЕТ: файл показывает, ЧТО написано, и молчит о том, откуда это пришло.\n" +
+                    "Разбор текстовый и честно назван таковым: каждый шаг помечен тем, чем найден. Для точного " +
+                    "разрешения символа есть переход по определению в самой IDE.",
+      schema = buildJsonObject {
+        put("type", "object")
+        putJsonObject("properties") {
+          putJsonObject("name") { put("type", "string"); put("description", "Имя, происхождение которого нужно") }
+          putJsonObject("path") { put("type", "string"); put("description", "Файл, где оно встретилось; без него — открытый в редакторе") }
+          putJsonObject("hops") { put("type", "integer"); put("description", "Сколько файлов пройти по цепочке, по умолчанию 4") }
+        }
+        putJsonArray("required") { add(kotlinx.serialization.json.JsonPrimitive("name")) }
       },
     ),
     Tool(
