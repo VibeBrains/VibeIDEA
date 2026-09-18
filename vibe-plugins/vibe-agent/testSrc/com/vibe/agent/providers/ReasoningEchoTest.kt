@@ -23,7 +23,14 @@ class ReasoningEchoTest {
       assertTrue(ModelQuirks.has(id, ModelQuirks.Quirk.ECHO_REASONING), id)
     }
     // Kimi's own reference names K2.6 and K2.7; an older K2 and look-alike ids stay out.
-    for (id in listOf("kimi-k2.5", "k30", "deepseek-flash")) assertFalse(ModelQuirks.has(id, ModelQuirks.Quirk.ECHO_REASONING), id)
+    for (id in listOf("kimi-k2.5", "k30", "gpt-6-astra")) assertFalse(ModelQuirks.has(id, ModelQuirks.Quirk.ECHO_REASONING), id)
+    // DeepSeek puts the same requirement and ties it to tools just as Kimi does: «with `tools`, the
+    // `reasoning_content` of all previous turns should be passed back»
+    // (api-docs.deepseek.com/guides/thinking_mode, checked 18.09.2026). It used to sit in the list
+    // above as a stand-in for «some other model», which was a stand-in and not a decision.
+    for (id in listOf("deepseek-flash", "deepseek-v4-pro", "deepseek-anthropic")) {
+      assertTrue(ModelQuirks.has(id, ModelQuirks.Quirk.ECHO_REASONING), id)
+    }
   }
 
   @Test

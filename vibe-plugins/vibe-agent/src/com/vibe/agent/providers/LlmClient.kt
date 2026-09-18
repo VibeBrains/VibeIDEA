@@ -548,8 +548,11 @@ class LlmClient(
     // что модель объявила принимать. Ничего не объявила — идёт как есть.
     val asked = ReasoningMode.levelOf(com.vibe.agent.settings.VibeAgentSettings.reasoningLevel)
     val level = ReasoningMode.clamp(asked, model.reasoning)
+    // Какое написание мышления принимает эта модель — свойство модели, а не наше умолчание:
+    // оба написания отвергаются с 400 на «не своих» моделях (ModelQuirks.ADAPTIVE_THINKING).
+    val adaptive = ModelQuirks.has(quirkIdOf(model), ModelQuirks.Quirk.ADAPTIVE_THINKING, quirks())
     val fields = ReasoningMode.bodyFields(protocol, level, model.maxOutputTokens ?: DEFAULT_MAX_OUTPUT_TOKENS,
-                                             model.reasoning)
+                                             model.reasoning, adaptive)
     return if (fields.isEmpty()) body else JsonObject(body + fields)
   }
 

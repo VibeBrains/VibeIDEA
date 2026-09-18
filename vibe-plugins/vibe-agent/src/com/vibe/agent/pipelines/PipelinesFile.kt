@@ -160,7 +160,7 @@ object PipelinesFile {
       ?: return Plan.Refused(t("pipeline.plan.noJson"))
     val array = root["steps"] as? kotlinx.serialization.json.JsonArray ?: return Plan.Refused(t("pipeline.plan.noJson"))
     return try {
-      val steps = array.map { parseStep(it.jsonObject, emptyMap(), onWarning) }
+      val steps = array.map { parseStep(it.jsonObject, emptyMap(), onWarning = onWarning) }
       when {
         steps.isEmpty() -> Plan.Refused(t("pipeline.plan.invalid", "reason" to t("pipeline.warn.noSteps", "id" to "plan")))
         steps.size > MAX_STEPS -> Plan.Refused(t("pipeline.plan.invalid", "reason" to t("pipeline.warn.tooManySteps", "id" to "plan", "max" to MAX_STEPS)))
@@ -205,7 +205,12 @@ object PipelinesFile {
    * One step, validated — the same code for a step written in the file and a step drafted by an
    * orchestrator: a plan that passed a looser check than the file would be the easiest way around it.
    */
-  internal fun parseStep(so: kotlinx.serialization.json.JsonObject, roleModels: Map<String, Pair<String?, String?>>, onWarning: (String) -> Unit): PipelineStep {
+  internal fun parseStep(
+    so: kotlinx.serialization.json.JsonObject,
+    roleModels: Map<String, Pair<String?, String?>>,
+    routes: Map<String, String?> = emptyMap(),
+    onWarning: (String) -> Unit,
+  ): PipelineStep {
     val role = so["role"]?.jsonPrimitive?.contentOrNull
       ?: throw IllegalArgumentException(t("pipeline.warn.stepNoRole"))
     if (role !in ROLES) throw IllegalArgumentException(t("pipeline.warn.unknownRole", "role" to role, "roles" to ROLES.joinToString()))
@@ -216,6 +221,7 @@ object PipelinesFile {
     val own = StepModelRef.resolve(
       so["provider"]?.jsonPrimitive?.contentOrNull,
       so["model"]?.jsonPrimitive?.contentOrNull,
+      routes,
     )
     // The step's own model wins; a step without one takes its role's model from `roles`.
     val (provider, model) = if (own.first == null && own.second == null) roleModels[role] ?: own else own
@@ -304,6 +310,9 @@ object PipelinesFile {
     if (!Files.isRegularFile(file)) return emptyList()
     val result = ArrayList<Pipeline>()
     val seen = HashSet<String>()
+    // Логические имена читаются провайдерами и живут в реестре этого проекта: шаг вправе назвать
+    // `@fast` вместо адреса, и разрешается он тем же слоем, что виден чату и правилам.
+    val routes = com.vibe.agent.providers.ModelRoutesRegistry.of(projectBase)
     try {
       val root = json.parseToJsonElement(com.vibe.agent.util.VibeJsonc.strip(Files.readString(file))).jsonObject
       for (el in root["pipelines"]?.jsonArray ?: return emptyList()) {
@@ -313,7 +322,7 @@ object PipelinesFile {
           if (id.isNullOrBlank()) { onWarning(t("pipeline.warn.noId")); continue }
           if (!seen.add(id)) { onWarning(t("pipeline.warn.duplicateId", "id" to id)); continue }
           val roleModels = roleModelsOf(o["roles"])
-          val steps = o["steps"]?.jsonArray?.map { s -> parseStep(s.jsonObject, roleModels, onWarning) } ?: emptyList()
+          val steps = o["steps"]?.jsonArray?.map { s -> parseStep(s.jsonObject, roleModels, routes, onWarning) } ?: emptyList()
           if (steps.isEmpty()) { onWarning(t("pipeline.warn.noSteps", "id" to id)); continue }
           val dynamic = o["dynamic"]?.jsonPrimitive?.booleanOrNull ?: false
           if (dynamic && (steps.size != 1 || steps.single().role != ORCHESTRATOR)) {

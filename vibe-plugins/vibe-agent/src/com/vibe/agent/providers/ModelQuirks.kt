@@ -51,6 +51,22 @@ object ModelQuirks {
     /** `max_tokens` is called `max_completion_tokens` here. */
     MAX_COMPLETION_TOKENS,
 
+    /**
+     * Мышление задаётся адаптивным режимом и уровнем усилия, а не бюджетом токенов.
+     *
+     * Вендор развёл два несовместимых написания по моделям, и ошибаются ОБА направления:
+     * `thinking: {"type": "enabled", "budget_tokens": N}` возвращает 400 на Opus 4.7, 4.8 и всей
+     * линейке 5 (Opus 5, Sonnet 5, Fable 5/5.1, Mythos 5/5.1), а `{"type": "adaptive"}` возвращает
+     * 400 на Sonnet 4.5, Opus 4.5, Haiku 4.5 и более ранних. Поэтому это не умолчание клиента, а
+     * свойство модели: правило по имени, которое можно переопределить своим `modelQuirks.json`.
+     *
+     * Новое написание: `thinking: {"type": "adaptive"}` плюс `output_config: {"effort": …}` со
+     * значениями `low`, `medium`, `high`, `xhigh`, `max` (умолчание вендора — `high`; `adaptive`
+     * уровнем усилия не бывает). Источники: platform.claude.com/docs/en/build-with-claude/extended-thinking
+     * и /effort, сверено 18.09.2026.
+     */
+    ADAPTIVE_THINKING,
+
     /** The system role is not accepted; the instruction has to travel as the first user message. */
     NO_SYSTEM_ROLE,
 
@@ -116,6 +132,20 @@ object ModelQuirks {
       "minimax: top_k and stop_sequences are ignored by the Anthropic-compatible endpoint",
     ),
     Rule(
+      // Линейка 5 и Opus 4.7/4.8: бюджет токенов отвергается с 400, нужен адаптивный режим с
+      // уровнем усилия. Регулярка покрывает fable-5, fable-5-1, mythos-5, mythos-5-1, opus-5,
+      // sonnet-5 — и НЕ покрывает 4.5/4.6, где адаптивного режима нет вовсе.
+      // platform.claude.com/docs/en/build-with-claude/extended-thinking, сверено 18.09.2026.
+      Regex("^claude-(opus|sonnet|fable|mythos)-5"),
+      setOf(Quirk.ADAPTIVE_THINKING),
+      "claude 5: thinking is adaptive plus output_config.effort; a token budget is rejected",
+    ),
+    Rule(
+      Regex("^claude-opus-4-(7|8)"),
+      setOf(Quirk.ADAPTIVE_THINKING),
+      "claude opus 4.7/4.8: thinking is adaptive plus output_config.effort; a token budget is rejected",
+    ),
+    Rule(
       // GPT-6 Astra, documented by the vendor on the day it shipped: `temperature`, `top_p` and
       // `logprobs` must be dropped, and the answer limit is named `max_completion_tokens` on
       // chat/completions. Tool calling on this model lives only in the Responses API, which this
@@ -141,6 +171,16 @@ object ModelQuirks {
       Regex("^(kimi-k3|kimi-k2\\.[67]|kimi-for-coding|k3(-|$))"),
       setOf(Quirk.ECHO_REASONING),
       "kimi: the assistant's reasoning_content goes back with its answer and its tool calls in the history",
+    ),
+    Rule(
+      // DeepSeek ставит то же условие и ровно так же обусловливает его инструментами: «with `tools`,
+      // the `reasoning_content` of all previous turns should be passed back», без инструментов
+      // возвращать не нужно и присланное будет проигнорировано
+      // (api-docs.deepseek.com/guides/thinking_mode, сверено 18.09.2026). Ход с вызовом инструмента
+      // без возврата рассуждения вендор отвергает — а это ровно наш прямой чат с инструментами.
+      Regex("^deepseek"),
+      setOf(Quirk.ECHO_REASONING),
+      "deepseek: the reasoning_content of previous turns goes back with the tool calls",
     ),
   )
 

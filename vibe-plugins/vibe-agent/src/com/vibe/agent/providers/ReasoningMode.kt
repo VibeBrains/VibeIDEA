@@ -135,10 +135,30 @@ object ReasoningMode {
    * Off sends the model's declared [Support.off] fragment and nothing otherwise: inventing a switch
    * for a vendor that did not declare one would be guessing at its wire format.
    */
-  fun bodyFields(protocol: String, level: Level, maxOutputTokens: Int?, support: Support? = null): JsonObject {
+  fun bodyFields(
+    protocol: String,
+    level: Level,
+    maxOutputTokens: Int?,
+    support: Support? = null,
+    /**
+     * Мышление задаётся адаптивным режимом и усилием, а не бюджетом токенов.
+     *
+     * Решает МОДЕЛЬ, а не мы: бюджет отвергается с 400 на Opus 4.7/4.8 и линейке 5, адаптивный
+     * режим — с 400 на 4.5 и старше. Признак приходит квирком `ADAPTIVE_THINKING`, поэтому
+     * умолчание оставляет прежнее поведение тем, у кого всё работало.
+     */
+    adaptive: Boolean = false,
+  ): JsonObject {
     if (level == Level.OFF) return support?.off ?: JsonObject(emptyMap())
     return when (protocol.lowercase()) {
       "anthropic" -> buildJsonObject {
+        if (adaptive) {
+          put("thinking", buildJsonObject { put("type", "adaptive") })
+          // Уровень усилия словом вендора: `adaptive` уровнем усилия не бывает, а умолчание API —
+          // `high`, поэтому отправляем ровно то, что просил человек.
+          put("output_config", buildJsonObject { put("effort", effortWord(level, support)!!) })
+          return@buildJsonObject
+        }
         // The budget must leave room for the answer itself; a budget at or above max_tokens is
         // rejected by the API, and «модель молчит» is how that shows up.
         val budget = budgetTokens(level)!!.coerceAtMost(((maxOutputTokens ?: 0) - MIN_ANSWER_TOKENS).coerceAtLeast(1_024))

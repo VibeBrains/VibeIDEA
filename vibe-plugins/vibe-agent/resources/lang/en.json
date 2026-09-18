@@ -2111,5 +2111,9 @@
   "lsp.doctor.node.bad": "Node interpreter: the path you named cannot be run — {path}",
   "lsp.doctor.node.missing": "Node interpreter NOT FOUND — TypeScript, ESLint, CSS and the JavaScript debugger will not start: Settings → Tools → VibeIDEA → Language servers",
   "doctor.lsp.interpreterInField": "this server's field names an INTERPRETER ({path}) rather than a server — the path was ignored; Node belongs in the «Node interpreter» field",
-  "settings.lsp.interpreterInField": "⚠ this names an interpreter <code>{path}</code>, not a server: the path becomes the whole start command, and the server would start as <code>node --stdio</code>, without the script itself. Clear the field — Node belongs in «Node interpreter» above."
+  "settings.lsp.interpreterInField": "⚠ this names an interpreter <code>{path}</code>, not a server: the path becomes the whole start command, and the server would start as <code>node --stdio</code>, without the script itself. Clear the field — Node belongs in «Node interpreter» above.",
+  "routes.disabled": "the logical model name {name} is declared and closed (value null) — remove the value or name the model by address",
+  "routes.unknown": "there is no logical model name {name}; declared: {known}. Names live in the routes block of .vibe/providers/",
+  "routes.malformed": "the logical model name {name} points at «{value}» — a provider/model address is expected",
+  "providers.warn.routeNotText": "{source}: the logical model name «{name}» is neither a string nor null — skipped"
 }

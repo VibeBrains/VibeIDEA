@@ -93,7 +93,7 @@ class McpStdioClient(private val input: InputStream, private val output: OutputS
     }
   }
 
-  private fun request(method: String, params: JsonObject, timeoutMs: Long): JsonObject {
+  private fun request(method: String, params: JsonObject, timeoutMs: Long, meta: JsonObject? = null): JsonObject {
     if (closed) throw McpException("server is not running")
     val id = nextId.getAndIncrement()
     val waiter = CompletableFuture<JsonObject>()
@@ -103,7 +103,7 @@ class McpStdioClient(private val input: InputStream, private val output: OutputS
         put("jsonrpc", "2.0")
         put("id", id)
         put("method", method)
-        put("params", params)
+        put("params", if (meta == null) params else JsonObject(params + ("_meta" to meta)))
       })
       return waiter.get(timeoutMs, TimeUnit.MILLISECONDS)
     }
@@ -118,8 +118,20 @@ class McpStdioClient(private val input: InputStream, private val output: OutputS
     }
   }
 
-  /** The handshake. Returns the server's `instructions`, if it gave any. */
+  /**
+   * Знакомство с сервером. Возвращает его `instructions`, если он их дал.
+   *
+   * Сперва `server/discover` ревизии 2026-07-28, и только на отказ — прежний `initialize`.
+   * Порядок задан спекой ИМЕННО для stdio: по HTTP клиент откатывается по статусу ответа, а
+   * здесь статуса нет, поэтому «двухэровый клиент SHOULD отправить `server/discover` первым»
+   * (modelcontextprotocol.io/specification/2026-07-28/basic/transports/stdio, сверено 18.09.2026).
+   *
+   * Наоборот не работает: в ревизии 2026-07-28 `initialize` удалён совсем, а матрица совместимости
+   * помечает пару «клиент прежней эры против сервера новой» как отказ. То есть без этой пробы
+   * первый же сервер новой эры просто исчезает вместе со своими инструментами, ничего не сказав.
+   */
   fun initialize(clientVersion: String, timeoutMs: Long): String? {
+    discover(clientVersion, timeoutMs)?.let { return it }
     val result = request("initialize", buildJsonObject {
       put("protocolVersion", McpProtocol.VERSION_2025)
       put("capabilities", JsonObject(emptyMap()))
@@ -127,6 +139,46 @@ class McpStdioClient(private val input: InputStream, private val output: OutputS
     }, timeoutMs)
     send(buildJsonObject { put("jsonrpc", "2.0"); put("method", "notifications/initialized") })
     return result["instructions"]?.jsonPrimitive?.contentOrNull
+  }
+
+  /** Эра сервера, с которой мы договорились: пусто, пока знакомство не состоялось. */
+  @Volatile var revision: String? = null
+    private set
+
+  /**
+   * Проба новой ревизии: `server/discover` без параметров.
+   *
+   * Сервер прежней эры отвечает «метод не найден» (-32601) — это не ошибка, а ответ, и на него мы
+   * молча идём знакомиться по-старому. Ответ новой эры приносит `instructions` и список версий;
+   * инструкции возвращаются пустой строкой, если сервер их не дал, — иначе вызывающий не отличит
+   * «сервер новой эры промолчал» от «пробы не было».
+   */
+  private fun discover(clientVersion: String, timeoutMs: Long): String? {
+    // Потолок пробы СВОЙ и короткий. Сервер прежней эры обязан ответить «метод не найден», но
+    // обязан не значит отвечает: сервер, который молча глотает незнакомый метод, иначе добавлял бы
+    // полный таймаут к каждому подключению — и это была бы наша плата за его молчание.
+    val probeMs = minOf(timeoutMs, PROBE_MS)
+    val result = runCatching {
+      request("server/discover", buildJsonObject {}, probeMs, meta = requestMeta(clientVersion))
+    }.getOrElse { return null }
+    revision = McpProtocol.VERSION_2026
+    return result["instructions"]?.jsonPrimitive?.contentOrNull.orEmpty()
+  }
+
+  /**
+   * `_meta` каждого запроса новой ревизии.
+   *
+   * Два поля обязательны — версия протокола и возможности клиента; возможностей у нас нет, и пустой
+   * объект здесь означает именно это: сервер по спеке не вправе просить у нас того, чего мы не
+   * объявили (modelcontextprotocol.io/specification/2026-07-28/basic/index).
+   */
+  private fun requestMeta(clientVersion: String): JsonObject = buildJsonObject {
+    put(McpProtocol.Meta.PROTOCOL_VERSION, McpProtocol.VERSION_2026)
+    put(McpProtocol.Meta.CLIENT_CAPABILITIES, JsonObject(emptyMap()))
+    put(McpProtocol.Meta.CLIENT_INFO, buildJsonObject {
+      put("name", McpProtocol.SERVER_NAME)
+      put("version", clientVersion)
+    })
   }
 
   /** Every tool, following `nextCursor` until the server has no more pages. */
@@ -193,6 +245,9 @@ class McpStdioClient(private val input: InputStream, private val output: OutputS
   companion object {
     /** A piped stream notices its close within a second; waiting a little longer covers a slow machine. */
     private const val READER_JOIN_MS = 2_000L
+
+    /** Сколько ждать ответа на пробу новой ревизии, прежде чем знакомиться по-старому. */
+    private const val PROBE_MS = 1_500L
 
     const val RESULT_COMPLETE = "complete"
     const val RESULT_INPUT_REQUIRED = "input_required"

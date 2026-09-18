@@ -258,6 +258,29 @@ object ProvidersFile {
     return result
   }
 
+  /**
+   * Таблица логических имён моделей этого файла (блок `routes`), или пустая карта.
+   *
+   * Объявленный `null` попадает в карту КАК null: это запрет имени, а не отсутствие ключа
+   * (см. [ModelRoutes]). Значение не-строка пропускается с предупреждением — молча взять «что-то»
+   * из чужого файла значит однажды отправить ход не туда.
+   */
+  fun parseRoutes(text: String, source: String = "providers.json", onWarning: (String) -> Unit): Map<String, String?> {
+    val root = runCatching { json.parseToJsonElement(com.vibe.agent.util.VibeJsonc.strip(text)).jsonObject }.getOrNull()
+      ?: return emptyMap()
+    val routes = root["routes"] as? JsonObject ?: return emptyMap()
+    val result = LinkedHashMap<String, String?>()
+    for ((name, value) in routes) {
+      when {
+        value is kotlinx.serialization.json.JsonNull -> result[name.trim()] = null
+        value is kotlinx.serialization.json.JsonPrimitive && value.isString ->
+          result[name.trim()] = value.content.trim()
+        else -> onWarning(t("providers.warn.routeNotText", "source" to source, "name" to name))
+      }
+    }
+    return result
+  }
+
   private fun parseProvider(id: String, o: JsonObject, onWarning: (String) -> Unit): ProviderEntry {
     val auth = when (val a = o["auth"]) {
       null -> AuthSpec()

@@ -84,6 +84,8 @@ object VibeDefaults {
     "rules/pipeline.mdc" to "rules/pipeline.mdc",
     "rules/providers-json.mdc" to "rules/providers-json.mdc",
     "rules/release.mdc" to "rules/release.mdc",
+    "rules/review-php.mdc" to "rules/review-php.mdc",
+    "rules/review-typescript.mdc" to "rules/review-typescript.mdc",
     "rules/roadmap-autopilot.mdc" to "rules/roadmap-autopilot.mdc",
     "rules/roadmap.mdc" to "rules/roadmap.mdc",
     "rules/script-save.mdc" to "rules/script-save.mdc",

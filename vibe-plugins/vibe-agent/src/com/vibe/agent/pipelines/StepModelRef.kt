@@ -12,9 +12,33 @@ package com.vibe.agent.pipelines
  * Pure: raw field values in, the provider and model out (both null — the step has no model of its own).
  */
 object StepModelRef {
-  fun resolve(providerField: String?, modelField: String?): Pair<String?, String?> {
+  /**
+   * Адрес модели шага; `@имя` разрешается по таблице логических имён.
+   *
+   * [routes] пуст — ссылок в файле просто нет, и поведение прежнее. Неизвестное или закрытое имя
+   * не «пропускается тихо»: оно выбрасывается вызывающему, потому что шаг, молча ушедший к модели
+   * роли вместо названной, выглядит как работающий и стоит других денег.
+   */
+  fun resolve(
+    providerField: String?,
+    modelField: String?,
+    routes: Map<String, String?> = emptyMap(),
+  ): Pair<String?, String?> {
     val provider = providerField?.trim()?.ifEmpty { null }
     val model = modelField?.trim()?.ifEmpty { null }
+    if (provider == null && com.vibe.agent.providers.ModelRoutes.isReference(model)) {
+      return when (val resolution = com.vibe.agent.providers.ModelRoutes.resolve(model!!, routes)) {
+        is com.vibe.agent.providers.ModelRoutes.Resolution.Found -> resolution.provider to resolution.model
+        is com.vibe.agent.providers.ModelRoutes.Resolution.Disabled ->
+          throw IllegalArgumentException(com.vibe.agent.i18n.VibeI18n.t("routes.disabled", "name" to model))
+        is com.vibe.agent.providers.ModelRoutes.Resolution.Malformed ->
+          throw IllegalArgumentException(com.vibe.agent.i18n.VibeI18n.t(
+            "routes.malformed", "name" to model, "value" to resolution.value))
+        is com.vibe.agent.providers.ModelRoutes.Resolution.Unknown ->
+          throw IllegalArgumentException(com.vibe.agent.i18n.VibeI18n.t(
+            "routes.unknown", "name" to model, "known" to resolution.known.joinToString().ifEmpty { "—" }))
+      }
+    }
     // A slash in `model` with no separate provider is the canonical one-string form.
     if (provider == null && model != null) {
       val slash = model.indexOf('/')

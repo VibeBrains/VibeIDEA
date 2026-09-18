@@ -34,6 +34,9 @@ object ProvidersService {
     // Read together with the registry: both answer the same question — how a request to this model
     // must be built — and loading them apart is how the two drift into disagreeing.
     ModelQuirksRegistry.install(projectBase, loadQuirks(globalVibeDir, projectVibeDir, onWarning))
+    // Логические имена читаются из тех же файлов и в том же порядке слоёв: проектное имя
+    // перекрывает глобальное, объявленный null закрывает имя совсем (ModelRoutes).
+    ModelRoutesRegistry.install(projectBase, loadRoutes(globalVibeDir, projectVibeDir, onWarning))
     return loadFrom(globalVibeDir, projectVibeDir, onWarning)
   }
 
@@ -88,6 +91,23 @@ object ProvidersService {
       return emptyList()
     }
     return ModelQuirksFile.parse(text, file.toString(), onWarning)
+  }
+
+  /** Таблицы `routes` всех файлов обоих слоёв, сложенные в порядке чтения. */
+  internal fun loadRoutes(globalVibeDir: Path, projectVibeDir: Path?, onWarning: (String) -> Unit): Map<String, String?> {
+    val layers = ArrayList<Map<String, String?>>()
+    for (dir in listOfNotNull(globalVibeDir, projectVibeDir)) {
+      for (file in catalogFiles(dir.resolve("providers"), onWarning)) {
+        layers += routesOf(file, "providers/${file.fileName}", onWarning)
+      }
+      layers += routesOf(dir.resolve("providers.json"), "providers.json", onWarning)
+    }
+    return ModelRoutes.merge(layers)
+  }
+
+  private fun routesOf(path: Path, source: String, onWarning: (String) -> Unit): Map<String, String?> {
+    if (!Files.isRegularFile(path)) return emptyMap()
+    return runCatching { ProvidersFile.parseRoutes(Files.readString(path), source, onWarning) }.getOrDefault(emptyMap())
   }
 
   private fun loadCatalog(vibeDir: Path, onWarning: (String) -> Unit): List<ProviderEntry> {

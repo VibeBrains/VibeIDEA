@@ -66,6 +66,60 @@ class McpStdioClientTest {
     }
   }
 
+  /** Сервер новой эры: `initialize` у него удалён, знакомство идёт через `server/discover`. */
+  private val modernServer = FakeServer { method, _ ->
+    when (method) {
+      "server/discover" ->
+        """"result":{"supportedVersions":["2026-07-28"],"capabilities":{},"instructions":"project VibeIDEA","ttlMs":60000}"""
+      "initialize" -> """"error":{"code":-32601,"message":"initialize was removed in 2026-07-28"}"""
+      else -> null
+    }
+  }
+
+  /** Сервер прежней эры, отвечающий на незнакомый метод как положено — «метод не найден». */
+  private val legacyServer = FakeServer { method, _ ->
+    when (method) {
+      "server/discover" -> """"error":{"code":-32601,"message":"Method not found"}"""
+      "initialize" -> """"result":{"protocolVersion":"2025-06-18","instructions":"project VibeIDEA"}"""
+      else -> null
+    }
+  }
+
+  /** Ждёт, пока фейковый сервер увидит метод: он читает свой конец трубы в своём потоке. */
+  private fun awaitSeen(server: FakeServer, method: String, timeoutMs: Long = 2_000): Boolean {
+    val deadline = System.currentTimeMillis() + timeoutMs
+    while (System.currentTimeMillis() < deadline) {
+      if (method in server.seen) return true
+      Thread.sleep(10)
+    }
+    return false
+  }
+
+  @Test
+  fun `a modern server is met through server discover, and initialize is never sent`() {
+    // Без этой пробы сервер новой эры отвечал бы на initialize отказом, и его инструменты просто
+    // исчезали бы вместе с ним — молча. Спека требует пробу ИМЕННО на stdio: статуса, по которому
+    // можно откатиться, здесь нет.
+    val client = modernServer.client()
+    assertEquals("project VibeIDEA", client.initialize("test", 2_000))
+    assertEquals("2026-07-28", client.revision)
+    assertTrue("server/discover" in modernServer.seen)
+    assertFalse("initialize" in modernServer.seen)
+    client.close()
+  }
+
+  @Test
+  fun `a legacy server answers method not found, and the client quietly falls back`() {
+    val client = legacyServer.client()
+    assertEquals("project VibeIDEA", client.initialize("test", 2_000))
+    // Порядок — вот что проверяется: проба, потом прежнее знакомство. Уведомление о готовности
+    // уходит следом и считается сервером асинхронно, поэтому его ждём, а не ловим мгновением.
+    assertEquals(listOf("server/discover", "initialize"), legacyServer.seen.take(2))
+    assertTrue(awaitSeen(legacyServer, "notifications/initialized"), legacyServer.seen.toString())
+    assertEquals(null, client.revision)
+    client.close()
+  }
+
   @Test
   fun `handshake, paged tool list and a call`() {
     val client = memoryServer.client()
