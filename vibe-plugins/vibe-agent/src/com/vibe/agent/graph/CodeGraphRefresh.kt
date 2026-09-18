@@ -24,6 +24,25 @@ object CodeGraphRefresh {
    * files, and whether this is the first run. The caller with a progress bar says it out loud —
    * a refresh that takes minutes in silence reads as a hang.
    */
+  /**
+   * Граф, УЖЕ построенный и лежащий в `.vibe/codeGraph.json`, без единого обращения к индексам проекта.
+   *
+   * Зачем отдельно от [refresh]: обновление сканирует весь проект и разбирает устаревшие файлы — на монорепозитории
+   * это минуты. Внутри хода чата такой вызов выглядит как зависший ход: инструмент позвали, ответа нет, и человек
+   * видит только значок вызова (поймано у владельца 18.09.2026 на `vibe_project_info`). Инструменты чата читают
+   * готовый файл; строит его явное действие «Экспорт графа кода», у которого есть прогресс и отмена.
+   *
+   * Null — файла нет или он от другой ревизии формата: это «графа ещё нет», а не «в проекте нет связей».
+   */
+  fun cached(project: Project): CodeGraphIndex.Graph? {
+    val base = project.basePath ?: return null
+    val file = Path.of(base, ".vibe", "codeGraph.json")
+    if (!Files.exists(file)) return null
+    val stored = runCatching { CodeGraphStore.decode(Files.readString(file)) }.getOrNull().orEmpty()
+    if (stored.isEmpty()) return null
+    return CodeGraphIndex.build(stored.map { it.node })
+  }
+
   fun refresh(project: Project, onProgress: (stale: Int, total: Int, firstRun: Boolean) -> Unit = { _, _, _ -> }): Result? {
     val base = project.basePath ?: return null
     val out = Path.of(base, ".vibe", "codeGraph.json")

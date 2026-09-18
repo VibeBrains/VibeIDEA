@@ -160,4 +160,28 @@ class McpStdioClientTest {
     assertTrue(tools.execute(ToolCall("3", McpProtocol.TOOL_RUN, "{}"), allow).isError, "not offered")
     assertEquals(listOf(McpProtocol.TOOL_SYMBOL_USAGES), calls)
   }
+
+  @Test
+  fun `инструмент, ушедший в долгую работу, не вешает ход`() {
+    // Так вставал ход у пользователя 18.09.2026: vibe_project_info строил граф всего монорепозитория,
+    // потолок был только у сервера памяти, и человек видел значок вызова и больше ничего.
+    val started = java.util.concurrent.CountDownLatch(1)
+    val release = java.util.concurrent.CountDownLatch(1)
+    val slow = object : DirectChatTools.Source {
+      override fun specs() = listOf(com.vibe.agent.providers.ToolSpec("slow_tool", "долгий", JsonObject(emptyMap())))
+      override fun riskOf(tool: String) = McpProtocol.Risk.READ
+      override fun call(tool: String, arguments: JsonObject): McpStdioClient.CallResult {
+        started.countDown()
+        release.await(30, java.util.concurrent.TimeUnit.SECONDS)
+        return McpStdioClient.CallResult("поздно", false)
+      }
+    }
+    val tools = DirectChatTools(listOf(slow), callTimeoutMs = 300)
+    tools.specs { throw it }
+    val result = tools.execute(ToolCall("1", "slow_tool", "{}")) { _, _ -> true }
+    assertTrue(started.await(5, java.util.concurrent.TimeUnit.SECONDS), "инструмент даже не начали звать")
+    assertTrue(result.isError, "ход обязан получить ответ, а не ждать молча")
+    assertTrue("slow_tool" in result.text, result.text)
+    release.countDown()
+  }
 }

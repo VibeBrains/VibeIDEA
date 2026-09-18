@@ -186,7 +186,31 @@ class VibeMcpTools(private val projectProvider: () -> Project? = { ProjectManage
   private fun string(arguments: JsonObject, key: String): String? =
     arguments[key]?.jsonPrimitive?.contentOrNull?.trim()?.takeIf { it.isNotEmpty() }
 
-  private fun graph(project: Project): CodeGraphIndex.Graph? = CodeGraphRefresh.refresh(project)?.graph
+  /**
+   * Граф импортов — ТОЛЬКО готовый, из `.vibe/codeGraph.json`.
+   *
+   * Раньше здесь стоял `refresh`, который сканирует весь проект и разбирает устаревшие файлы. На монорепозитории это
+   * минуты, а вызов идёт внутри хода: человек видел значок вызова инструмента и больше ничего — ход выглядел
+   * зависшим (поймано у владельца 18.09.2026 на `vibe_project_info`, на всех проводах одинаково).
+   *
+   * Нет готового графа — отвечаем об этом словами и запускаем построение в ФОНЕ, один раз: следующий вопрос
+   * получит ответ, а этот ход не будет ждать минуты молча.
+   */
+  private fun graph(project: Project): CodeGraphIndex.Graph? {
+    CodeGraphRefresh.cached(project)?.let { return it }
+    startBackgroundRefresh(project)
+    return null
+  }
+
+  /** Построение графа в фоне: один прогон на весь процесс, чтобы десять вопросов не запустили десять сканирований. */
+  private fun startBackgroundRefresh(project: Project) {
+    if (!refreshing.compareAndSet(false, true)) return
+    com.intellij.openapi.application.ApplicationManager.getApplication().executeOnPooledThread {
+      try { CodeGraphRefresh.refresh(project) }
+      catch (e: Exception) { com.intellij.openapi.diagnostic.Logger.getInstance(VibeMcpTools::class.java).warn(e) }
+      finally { refreshing.set(false) }
+    }
+  }
 
   /**
    * Provenance is carried into the answer, not flattened away: an import matched against a declared
@@ -195,7 +219,7 @@ class VibeMcpTools(private val projectProvider: () -> Project? = { ProjectManage
    */
   private fun edges(project: Project, arguments: JsonObject, importers: Boolean): McpServer.Tools.Result {
     val path = string(arguments, "path") ?: return McpServer.Tools.Result("нужен аргумент path", isError = true)
-    val graph = graph(project) ?: return McpServer.Tools.Result("не удалось построить граф проекта", isError = true)
+    val graph = graph(project) ?: return McpServer.Tools.Result(GRAPH_BUILDING, isError = true)
     val found = if (importers) graph.importersOf(path) else graph.importsOf(path)
     if (found.isEmpty()) {
       val known = graph.nodes.any { it.path == path }
@@ -217,7 +241,7 @@ class VibeMcpTools(private val projectProvider: () -> Project? = { ProjectManage
   private fun path(project: Project, arguments: JsonObject): McpServer.Tools.Result {
     val from = string(arguments, "from") ?: return McpServer.Tools.Result("нужен аргумент from", isError = true)
     val to = string(arguments, "to") ?: return McpServer.Tools.Result("нужен аргумент to", isError = true)
-    val graph = graph(project) ?: return McpServer.Tools.Result("не удалось построить граф проекта", isError = true)
+    val graph = graph(project) ?: return McpServer.Tools.Result(GRAPH_BUILDING, isError = true)
     val chain = graph.path(from, to)
     // No path is an answer, not a failure: «they are not connected» is what was asked.
     return McpServer.Tools.Result(if (chain.isEmpty()) "Пути между файлами нет" else chain.joinToString("\n → "))
@@ -230,7 +254,8 @@ class VibeMcpTools(private val projectProvider: () -> Project? = { ProjectManage
       buildString {
         appendLine("Проект: ${project.name}")
         appendLine("Корень: ${project.basePath.orEmpty()}")
-        if (graph == null) append("Граф импортов: построить не удалось")
+        // Имя и корень — это ответ сам по себе: инструмент не молчит из-за того, что графа ещё нет.
+        if (graph == null) append(GRAPH_BUILDING)
         else append("Граф импортов: ${graph.nodes.size} файлов, ${graph.edges.size} рёбер (${facts} фактов)")
       }
     )
@@ -248,6 +273,13 @@ class VibeMcpTools(private val projectProvider: () -> Project? = { ProjectManage
   }
 
   internal companion object {
+    /** Строится ли граф прямо сейчас: иначе каждый вопрос без графа запускал бы своё сканирование. */
+    private val refreshing = java.util.concurrent.atomic.AtomicBoolean(false)
+
+    internal const val GRAPH_BUILDING =
+      "Граф импортов ещё не построен — я запустил построение в фоне. Спросите снова через минуту, " +
+      "или постройте его сразу действием «Экспорт графа кода»."
+
     private const val DEFAULT_USAGE_LIMIT = 50
 
     /** Потолок: ответ инструмента уходит в контекст модели, и «все совпадения» там не нужны никому. */

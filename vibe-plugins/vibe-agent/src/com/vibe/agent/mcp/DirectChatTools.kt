@@ -16,7 +16,11 @@ import kotlinx.serialization.json.JsonObject
  *
  * Free of IDE types: how to start a server, how to run an IDE tool and how to ask the person are handed in.
  */
-class DirectChatTools(private val sources: List<Source>) : AutoCloseable {
+class DirectChatTools(
+  private val sources: List<Source>,
+  /** Потолок одного вызова; свой в тестах, чтобы не ждать полминуты ради проверки самого потолка. */
+  private val callTimeoutMs: Long = CALL_TIMEOUT_MS,
+) : AutoCloseable {
   /** One place tools come from. */
   interface Source : AutoCloseable {
     /** The tools this source offers now. Throws when it should offer tools and cannot. */
@@ -67,8 +71,14 @@ class DirectChatTools(private val sources: List<Source>) : AutoCloseable {
       return ToolResult(call.id, call.name, t("directTools.refused", "tool" to call.name), isError = true)
     }
     return try {
-      val result = source.call(call.name, call.argumentsObject())
+      // Потолок на КАЖДЫЙ вызов, не только на сервер памяти: инструмент IDE, ушедший в долгую работу,
+      // останавливал ход молча — человек видел значок вызова и больше ничего (18.09.2026).
+      val result = withCeiling(call) { source.call(call.name, call.argumentsObject()) }
       ToolResult(call.id, call.name, result.text, result.isError)
+    }
+    catch (e: java.util.concurrent.TimeoutException) {
+      ToolResult(call.id, call.name,
+                 t("directTools.timedOut", "tool" to call.name, "seconds" to callTimeoutMs / 1000), isError = true)
     }
     catch (e: Exception) {
       ToolResult(call.id, call.name, t("directTools.failed", "tool" to call.name, "reason" to (e.message ?: "")), isError = true)
@@ -79,6 +89,24 @@ class DirectChatTools(private val sources: List<Source>) : AutoCloseable {
   override fun close() {
     sources.forEach { runCatching { it.close() } }
     owners = emptyMap()
+  }
+
+  /**
+   * Runs one tool call with a ceiling, on a thread of its own.
+   *
+   * The work is not killed — a tool half-way through a write must not be torn in two — but the TURN is freed: the model
+   * gets «инструмент не ответил за N с» and can say so or try something else. A turn that waits forever looks broken
+   * and cannot even be stopped by the person, because nothing is streaming.
+   */
+  private fun <T> withCeiling(call: ToolCall, body: () -> T): T {
+    val task = java.util.concurrent.FutureTask(body)
+    Thread(task, "vibe-direct-tool-" + call.name).apply { isDaemon = true }.start()
+    return try {
+      task.get(callTimeoutMs, java.util.concurrent.TimeUnit.MILLISECONDS)
+    }
+    catch (e: java.util.concurrent.ExecutionException) {
+      throw (e.cause ?: e)
+    }
   }
 
   companion object {

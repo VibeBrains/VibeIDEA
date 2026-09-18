@@ -2072,5 +2072,6 @@
   "design.status.interactDone": "Interaction checked: {count} found",
   "design.status.interactClean": "Interaction checked: the controls do what they declare",
   "design.action.interact": "Interaction",
-  "design.action.interactTip": "Click controls with a declared state (aria-sort, aria-expanded…) and check they do what they declare. This changes the page — it is not a passive measurement."
+  "design.action.interactTip": "Click controls with a declared state (aria-sort, aria-expanded…) and check they do what they declare. This changes the page — it is not a passive measurement.",
+  "directTools.timedOut": "the tool {tool} did not answer within {seconds} s — the turn goes on without it"
 }
