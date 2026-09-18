@@ -103,6 +103,8 @@ object McpProtocol {
   const val TOOL_WRITE_FILE = "vibe_write_file"
   const val TOOL_REPLACE_IN_FILE = "vibe_replace_in_file"
   const val TOOL_RUN_COMMAND = "vibe_run_command"
+  const val TOOL_COMMAND_OUTPUT = "vibe_command_output"
+  const val TOOL_COMMAND_STOP = "vibe_command_stop"
 
   /**
    * Что инструмент делает с машиной человека.
@@ -140,6 +142,8 @@ object McpProtocol {
     TOOL_WRITE_FILE to Risk.WRITE,
     TOOL_REPLACE_IN_FILE to Risk.WRITE,
     TOOL_RUN_COMMAND to Risk.EXECUTE,
+    TOOL_COMMAND_OUTPUT to Risk.READ,
+    TOOL_COMMAND_STOP to Risk.EXECUTE,
     TOOL_RUN to Risk.EXECUTE,
   )
 
@@ -347,10 +351,41 @@ object McpProtocol {
     Tool(
       name = TOOL_RUN_COMMAND,
       title = "Выполнить команду",
-      description = "Выполнить команду оболочки в корне проекта и вернуть её вывод с кодом выхода. Для сборки, " +
-                    "тестов, git и всего, что проверяет сделанное. Долгая команда останавливается по потолку " +
-                    "времени, и об этом говорится прямо, а не молчанием.",
-      schema = stringArg("command", "Команда как в терминале, например npm test"),
+      description = "Выполнить команду оболочки в корне проекта. По умолчанию ЖДЁТ и возвращает вывод с кодом " +
+                    "выхода — так и надо для тестов, сборки и git. Окружение берётся у логин-оболочки, поэтому " +
+                    "работают те же команды, что в терминале человека.\n" +
+                    "`background: true` — для того, что не кончается само: дев-сервер, наблюдатель за файлами, " +
+                    "долгий прогон. Такая команда возвращает ИМЯ, вывод и код выхода спрашиваются потом через " +
+                    "vibe_command_output, а остановить её — vibe_command_stop. Запускать дев-сервер без " +
+                    "background бессмысленно: он не завершится, и ход упрётся в потолок времени.",
+      schema = buildJsonObject {
+        put("type", "object")
+        putJsonObject("properties") {
+          putJsonObject("command") { put("type", "string"); put("description", "Команда как в терминале, например npm test") }
+          putJsonObject("background") { put("type", "boolean"); put("description", "Не ждать завершения: вернуть имя команды") }
+          putJsonObject("timeoutSeconds") { put("type", "integer"); put("description", "Сколько ждать, если не в фоне; по умолчанию 300") }
+        }
+        putJsonArray("required") { add(kotlinx.serialization.json.JsonPrimitive("command")) }
+      },
+    ),
+    Tool(
+      name = TOOL_COMMAND_OUTPUT,
+      title = "Вывод фоновой команды",
+      description = "Что успела написать фоновая команда и кончилась ли она. Без имени — список всего, что сейчас " +
+                    "запущено: через час работы иначе не вспомнить, что где крутится.",
+      schema = buildJsonObject {
+        put("type", "object")
+        putJsonObject("properties") {
+          putJsonObject("id") { put("type", "string"); put("description", "Имя команды, выданное при запуске") }
+        }
+      },
+    ),
+    Tool(
+      name = TOOL_COMMAND_STOP,
+      title = "Остановить фоновую команду",
+      description = "Останавливает фоновую команду вместе с её потомками: оболочка без них оставила бы сервер жить " +
+                    "на порту, и следующий запуск упал бы на «адрес занят».",
+      schema = stringArg("id", "Имя команды, выданное при запуске"),
     ),
     Tool(
       name = TOOL_RUN,

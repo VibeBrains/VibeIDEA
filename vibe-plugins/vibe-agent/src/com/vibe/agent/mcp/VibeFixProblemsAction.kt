@@ -36,10 +36,12 @@ class VibeFixProblemsAction : DumbAwareAction() {
     val path = e.getData(CommonDataKeys.VIRTUAL_FILE)?.path ?: return
     // Разметку читаем в фоне: ход агента всё равно уходит в пул, а EDT не место для ожиданий.
     ApplicationManager.getApplication().executeOnPooledThread {
-      val problems = IdeProblems.of(project, path)
+      val outcome = IdeProblems.of(project, path)
+      val problems = (outcome as? IdeProblems.Result.Found)?.problems
       when {
-        problems == null -> notify(project, t("fix.notOpen"))
-        problems.isEmpty() -> notify(project, t("fix.nothing"))
+        outcome is IdeProblems.Result.NotOpen -> notify(project, t("fix.notOpen"))
+        outcome is IdeProblems.Result.NotReady -> notify(project, t("fix.notReady"))
+        problems.isNullOrEmpty() -> notify(project, t("fix.nothing"))
         else -> {
           val task = buildString {
             appendLine(t("fix.task", "path" to path))

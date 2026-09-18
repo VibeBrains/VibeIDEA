@@ -2172,6 +2172,7 @@
   "chat.strip.changes": "Files changed: {count}",
   "fix.task": "Fix the errors and warnings in {path}. Below is what the IDE highlights right now: line, severity, message and the line itself.",
   "fix.rules": "Fix only these places. Read the file first and edit by fragments (vibe_replace_in_file) rather than rewriting it whole. If the cause lives in another file, say so instead of silencing the symptom.",
+  "fix.notReady": "The analysis is still catching up with your edits — try again in a moment",
   "fix.nothing": "The IDE finds no errors or warnings in this file",
   "fix.notOpen": "The file is not open in the editor, so it has no highlighting. Open it and try again",
   "fix.noPanel": "The agent panel is not open — there is nobody to hand the task to",

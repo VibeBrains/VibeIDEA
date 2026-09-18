@@ -66,7 +66,7 @@ class McpAccessTest {
     // оболочки и задача агенту). Число здесь — не арифметика, а список, который надо перечитать.
     val dangerous = setOf(
       McpProtocol.TOOL_DECISIONS_RECORD, McpProtocol.TOOL_WRITE_FILE, McpProtocol.TOOL_REPLACE_IN_FILE,
-      McpProtocol.TOOL_RUN_COMMAND, McpProtocol.TOOL_RUN,
+      McpProtocol.TOOL_RUN_COMMAND, McpProtocol.TOOL_COMMAND_STOP, McpProtocol.TOOL_RUN,
     )
     assertEquals(names.size - dangerous.size, names.count { McpProtocol.riskOf(it) == Risk.READ })
     assertTrue(dangerous.none { McpProtocol.riskOf(it) == Risk.READ })

@@ -24,7 +24,13 @@ class ConfiguredServersSource(
   private val clientVersion: String,
   private val timeoutMs: Long = DirectChatTools.CALL_TIMEOUT_MS,
 ) : DirectChatTools.Source {
-  private class Running(val entry: McpServersFile.Entry, val client: McpStdioClient, val tools: List<String>)
+  private class Running(
+    val entry: McpServersFile.Entry,
+    val client: McpStdioClient,
+    val tools: List<String>,
+    /** Схемы запоминаются вместе с именами: список инструментов сервера меняется его перезапуском. */
+    val specs: List<ToolSpec>,
+  )
 
   private val running = LinkedHashMap<String, Running>()
 
@@ -44,8 +50,9 @@ class ConfiguredServersSource(
           val client = McpStdioClient.start(entry.command, entry.args, workingDir, entry.env)
           client.initialize(clientVersion, timeoutMs)
           val tools = client.listTools(timeoutMs)
-          running[entry.name] = Running(entry, client, tools.map { it.name })
-          tools.map { ToolSpec(it.name, it.description, it.inputSchema) }
+          val specs = tools.map { ToolSpec(it.name, it.description, it.inputSchema) }
+          running[entry.name] = Running(entry, client, tools.map { it.name }, specs)
+          specs
         }.getOrElse { error ->
           failures += entry.name + ": " + (error.message ?: error.javaClass.simpleName)
           emptyList()
@@ -53,7 +60,9 @@ class ConfiguredServersSource(
         specs += started
       }
       else {
-        specs += alive.client.listTools(timeoutMs).map { ToolSpec(it.name, it.description, it.inputSchema) }
+        // Список инструментов живого сервера НЕ перезапрашивается: он меняется только вместе с
+        // самим сервером, а лишний круг по stdio — это задержка в начале каждого хода.
+        specs += alive.specs
       }
     }
     if (failures.isNotEmpty()) throw McpStdioClient.McpException(failures.joinToString("; "))

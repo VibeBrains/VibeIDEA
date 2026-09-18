@@ -73,12 +73,12 @@ class DirectChatTools(
     return try {
       // Потолок на КАЖДЫЙ вызов, не только на сервер памяти: инструмент IDE, ушедший в долгую работу,
       // останавливал ход молча — человек видел значок вызова и больше ничего (18.09.2026).
-      val result = withCeiling(call) { source.call(call.name, call.argumentsObject()) }
+      val result = withCeiling(call, ceilingFor(call.name)) { source.call(call.name, call.argumentsObject()) }
       ToolResult(call.id, call.name, result.text, result.isError)
     }
     catch (e: java.util.concurrent.TimeoutException) {
       ToolResult(call.id, call.name,
-                 t("directTools.timedOut", "tool" to call.name, "seconds" to callTimeoutMs / 1000), isError = true)
+                 t("directTools.timedOut", "tool" to call.name, "seconds" to ceilingFor(call.name) / 1000), isError = true)
     }
     catch (e: Exception) {
       ToolResult(call.id, call.name, t("directTools.failed", "tool" to call.name, "reason" to (e.message ?: "")), isError = true)
@@ -98,11 +98,22 @@ class DirectChatTools(
    * gets «инструмент не ответил за N с» and can say so or try something else. A turn that waits forever looks broken
    * and cannot even be stopped by the person, because nothing is streaming.
    */
-  private fun <T> withCeiling(call: ToolCall, body: () -> T): T {
+  /**
+   * Потолок КОНКРЕТНОГО инструмента, а не один на всех.
+   *
+   * Полминуты хватает поиску по индексу и чтению файла, но не хватает ничему из того, ради чего
+   * агенту дали команды: `npm test`, сборка и `git clone` живут минутами. С общим потолком агент
+   * не мог прогнать собственную проверку — то есть руки ему дали, а работу ими сделать нельзя
+   * (найдено перечиткой 18.09.2026, в тот же день, что руки и появились).
+   */
+  private fun ceilingFor(tool: String): Long =
+    if (tool == McpProtocol.TOOL_RUN_COMMAND) COMMAND_TIMEOUT_MS else callTimeoutMs
+
+  private fun <T> withCeiling(call: ToolCall, ceilingMs: Long, body: () -> T): T {
     val task = java.util.concurrent.FutureTask(body)
     Thread(task, "vibe-direct-tool-" + call.name).apply { isDaemon = true }.start()
     return try {
-      task.get(callTimeoutMs, java.util.concurrent.TimeUnit.MILLISECONDS)
+      task.get(ceilingMs, java.util.concurrent.TimeUnit.MILLISECONDS)
     }
     catch (e: java.util.concurrent.ExecutionException) {
       throw (e.cause ?: e)
@@ -112,6 +123,13 @@ class DirectChatTools(
   companion object {
     /** A search over the history corpus may read many files; half a minute before it counts as silence. */
     const val CALL_TIMEOUT_MS = 30_000L
+
+    /**
+     * Команда оболочки — другой разговор: тесты и сборка идут минутами, и полминуты означали бы
+     * «агенту нельзя прогонять проверки». Десять минут — больше любой разумной проверки и меньше
+     * бесконечности; сама команда останавливается раньше своим потолком и говорит об этом.
+     */
+    const val COMMAND_TIMEOUT_MS = 600_000L
   }
 }
 

@@ -63,6 +63,8 @@ class VibeMcpTools(private val projectProvider: () -> Project? = { ProjectManage
       McpProtocol.TOOL_WRITE_FILE -> writeFile(project, arguments)
       McpProtocol.TOOL_REPLACE_IN_FILE -> replaceInFile(project, arguments)
       McpProtocol.TOOL_RUN_COMMAND -> runCommand(project, arguments)
+      McpProtocol.TOOL_COMMAND_OUTPUT -> commandOutput(project, arguments)
+      McpProtocol.TOOL_COMMAND_STOP -> commandStop(project, arguments)
       else -> McpServer.Tools.Result("неизвестный инструмент: $name", isError = true)
     }
   }
@@ -341,7 +343,45 @@ class VibeMcpTools(private val projectProvider: () -> Project? = { ProjectManage
 
   private fun runCommand(project: Project, arguments: JsonObject): McpServer.Tools.Result {
     val command = string(arguments, "command") ?: return McpServer.Tools.Result("нужен аргумент command", isError = true)
-    return McpServer.Tools.Result(IdeWorkTools.run(project, command))
+    val background = arguments["background"]?.jsonPrimitive?.contentOrNull == "true"
+    if (!background) {
+      val seconds = arguments["timeoutSeconds"]?.jsonPrimitive?.contentOrNull?.toIntOrNull()
+      return McpServer.Tools.Result(
+        if (seconds != null) IdeWorkTools.run(project, command, seconds) else IdeWorkTools.run(project, command))
+    }
+    val commands = AgentCommands.getInstance(project)
+    return commands.start(command, IdeWorkTools.loginEnvironment()).fold(
+      onSuccess = { id ->
+        McpServer.Tools.Result("запущено в фоне под именем " + id + ": " + command +
+                               "\nвывод — vibe_command_output, остановить — vibe_command_stop")
+      },
+      onFailure = {
+        McpServer.Tools.Result("уже запущено " + AgentCommands.MAX_LIVE + " фоновых команд — остановите лишние " +
+                               "(vibe_command_stop), прежде чем запускать новые", isError = true)
+      })
+  }
+
+  /** Вывод фоновой команды, или список всего запущенного, если имя не названо. */
+  private fun commandOutput(project: Project, arguments: JsonObject): McpServer.Tools.Result {
+    val commands = AgentCommands.getInstance(project)
+    val id = string(arguments, "id")
+      ?: return McpServer.Tools.Result(commands.running().entries
+        .joinToString("\n") { (name, command) -> name + ": " + command }
+        .ifEmpty { "фоновых команд сейчас нет" })
+    val snapshot = commands.snapshot(id)
+      ?: return McpServer.Tools.Result("нет фоновой команды с именем " + id, isError = true)
+    val state = if (snapshot.finished) "кончилась, код выхода " + (snapshot.exitCode ?: "неизвестен")
+                else "ещё идёт"
+    val tail = if (snapshot.truncated) "\n… начало вывода обрезано по потолку" else ""
+    return McpServer.Tools.Result(id + " (" + commands.commandOf(id).orEmpty() + ") — " + state + ":\n" +
+                                  snapshot.output.ifBlank { "(вывода нет)" } + tail)
+  }
+
+  private fun commandStop(project: Project, arguments: JsonObject): McpServer.Tools.Result {
+    val id = string(arguments, "id") ?: return McpServer.Tools.Result("нужен аргумент id", isError = true)
+    val stopped = AgentCommands.getInstance(project).stop(id)
+    return McpServer.Tools.Result(
+      if (stopped) "остановлено: " + id else "не нашлось живой команды с именем " + id, isError = !stopped)
   }
 
   /**
@@ -421,14 +461,19 @@ class VibeMcpTools(private val projectProvider: () -> Project? = { ProjectManage
     if (!readable(path, ProjectContextService.getInstance(project).roots())) {
       return McpServer.Tools.Result("читать нельзя: " + path, isError = true)
     }
-    val found = IdeProblems.of(project, path)
-      ?: return McpServer.Tools.Result(
+    return when (val outcome = IdeProblems.of(project, path)) {
+      is IdeProblems.Result.NotOpen -> McpServer.Tools.Result(
         "файл не открыт в редакторе, поэтому разметки у него нет: откройте " + path +
         " и спросите снова. Это не значит, что ошибок нет.")
-    if (found.isEmpty()) return McpServer.Tools.Result("IDE не нашла в " + path + " ни ошибок, ни предупреждений")
-    return McpServer.Tools.Result(found.joinToString("\n") { p ->
-      p.line.toString() + ": [" + p.severity + "] " + p.message + "  |  " + p.text
-    })
+      is IdeProblems.Result.NotReady -> McpServer.Tools.Result(
+        "анализ ещё считает " + path + " после последних правок: спросите снова через мгновение. " +
+        "Это НЕ значит, что ошибок нет.")
+      is IdeProblems.Result.Found ->
+        if (outcome.problems.isEmpty()) McpServer.Tools.Result("IDE не нашла в " + path + " ни ошибок, ни предупреждений")
+        else McpServer.Tools.Result(outcome.problems.joinToString("\n") { p ->
+          p.line.toString() + ": [" + p.severity + "] " + p.message + "  |  " + p.text
+        })
+    }
   }
 
   /** Состояние самой IDE: наша часть и всё, что рассказали о себе соседние плагины. */

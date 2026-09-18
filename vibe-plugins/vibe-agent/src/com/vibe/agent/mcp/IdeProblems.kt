@@ -34,6 +34,21 @@ import java.io.File
 object IdeProblems {
   data class Problem(val line: Int, val severity: String, val message: String, val text: String)
 
+  /**
+   * Ответ на вопрос «что не так с файлом» — тремя РАЗНЫМИ состояниями.
+   *
+   * Раньше их было два, и это была ложь: пока анализ не догнал последние правки, мы возвращали
+   * пустой список, то есть говорили «ошибок нет» там, где правильный ответ «ещё считаю». Агент на
+   * этом закрывал задачу, ничего не сделав (перечитка 18.09.2026).
+   */
+  sealed interface Result {
+    data class Found(val problems: List<Problem>) : Result
+    /** Файла нет в редакторе, поэтому разметки не существует. */
+    data object NotOpen : Result
+    /** Документ изменён, анализ ещё не пересчитал: спрашивать надо через мгновение. */
+    data object NotReady : Result
+  }
+
   /** Файлы, по которым можно спросить без открытия: те, что уже открыты в редакторе. */
   fun openPaths(project: Project): List<String> {
     var paths: List<String> = emptyList()
@@ -44,30 +59,32 @@ object IdeProblems {
   }
 
   /**
-   * Проблемы файла, или null — если его разметки нет (файл не открыт).
+   * Проблемы файла одним из трёх состояний [Result].
    *
-   * Список пустой означает ровно то, что означает: IDE посчитала и ничего не нашла.
+   * Пустой список внутри [Result.Found] означает ровно то, что означает: IDE посчитала и ничего не
+   * нашла. Для остальных двух случаев есть свои ответы — и в этом вся разница.
    */
-  fun of(project: Project, path: String, minSeverity: HighlightSeverity = HighlightSeverity.WEAK_WARNING): List<Problem>? {
-    var result: List<Problem>? = null
+  fun of(project: Project, path: String, minSeverity: HighlightSeverity = HighlightSeverity.WEAK_WARNING): Result {
+    var result: Result = Result.NotOpen
     ApplicationManager.getApplication().invokeAndWait {
-      result = ReadAction.compute<List<Problem>?, RuntimeException> { read(project, path, minSeverity) }
+      result = ReadAction.compute<Result, RuntimeException> { read(project, path, minSeverity) }
     }
     return result
   }
 
-  private fun read(project: Project, path: String, minSeverity: HighlightSeverity): List<Problem>? {
-    val file = LocalFileSystem.getInstance().findFileByIoFile(File(path)) ?: return null
-    val document = FileDocumentManager.getInstance().getCachedDocument(file) ?: return null
+  private fun read(project: Project, path: String, minSeverity: HighlightSeverity): Result {
+    val file = LocalFileSystem.getInstance().findFileByIoFile(File(path)) ?: return Result.NotOpen
+    val document = FileDocumentManager.getInstance().getCachedDocument(file) ?: return Result.NotOpen
     // Незакоммиченный документ означает, что анализ ещё не видел последних правок: отвечать по
-    // старой разметке значит отправить агента чинить то, что человек уже поправил.
-    if (PsiDocumentManager.getInstance(project).isUncommited(document)) return emptyList()
+    // старой разметке значит отправить агента чинить то, что человек уже поправил, а отвечать
+    // пустым списком — сказать «ошибок нет», чего мы не знаем.
+    if (PsiDocumentManager.getInstance(project).isUncommited(document)) return Result.NotReady
     val found = ArrayList<Problem>()
     DaemonCodeAnalyzerEx.processHighlights(document, project, minSeverity, 0, document.textLength) { info ->
       describe(document, info)?.let { found += it }
       true
     }
-    return found.sortedBy { it.line }
+    return Result.Found(found.sortedBy { it.line })
   }
 
   private fun describe(document: Document, info: HighlightInfo): Problem? {

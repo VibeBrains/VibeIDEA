@@ -88,11 +88,16 @@ object IdeWorkTools {
    * уложилась за N секунд» сам, иначе ход обрывается общим сторожем и причина теряется.
    */
   fun run(project: Project, command: String, timeoutSeconds: Int = TIMEOUT_SECONDS): String {
+    val ceiling = timeoutSeconds.coerceIn(1, MAX_TIMEOUT_SECONDS)
     val base = project.basePath ?: return "у проекта нет корня — команду негде выполнять"
     val shell = if (com.vibe.agent.util.ExecutableNames.isWindows()) listOf("cmd.exe", "/c", command)
                 else listOf("/bin/sh", "-lc", command)
     val process = ProcessBuilder(shell)
       .directory(File(base))
+      // Окружение ЛОГИН-ОБОЛОЧКИ, а не процесса IDE. Та же грабля, на которой языковые серверы не
+      // находили ноду: приложение, запущенное из Dock, шеллового PATH не наследует, и `npm test`
+      // отвечает «command not found» на машине, где npm стоит и работает (18.09.2026, перечитка).
+      .apply { environment().putAll(loginEnvironment()) }
       .redirectErrorStream(true)
       .start()
     val output = StringBuilder()
@@ -103,14 +108,23 @@ object IdeWorkTools {
     }
     reader.isDaemon = true
     reader.start()
-    val finished = process.waitFor(timeoutSeconds.toLong(), TimeUnit.SECONDS)
+    val finished = process.waitFor(ceiling.toLong(), TimeUnit.SECONDS)
     if (!finished) {
       process.destroyForcibly()
-      return "команда не уложилась за $timeoutSeconds с и остановлена:\n$command\n" + snapshot(output)
+      return "команда не уложилась за $ceiling с и остановлена:\n$command\n" + snapshot(output)
     }
     reader.join(JOIN_MS)
     return "код выхода ${process.exitValue()}:\n" + snapshot(output).ifBlank { "(вывода нет)" }
   }
+
+  /**
+   * Окружение логин-оболочки, как его видит терминал человека.
+   *
+   * Платформа считает его один раз за сеанс и помнит, поэтому вызов дешёвый. Пустая карта при
+   * отказе — не беда: команда просто пойдёт с окружением IDE, то есть как было до этой правки.
+   */
+  fun loginEnvironment(): Map<String, String> =
+    runCatching { com.intellij.util.EnvironmentUtil.getEnvironmentMap() }.getOrDefault(emptyMap())
 
   private fun snapshot(output: StringBuilder): String = synchronized(output) {
     val text = output.toString().trim()
@@ -129,8 +143,17 @@ object IdeWorkTools {
     }
   }
 
-  /** Меньше потолка вызова в [DirectChatTools]: причину обязан называть инструмент, а не сторож. */
-  private const val TIMEOUT_SECONDS = 25
+  /**
+   * Меньше потолка вызова в [DirectChatTools]: причину обязан называть инструмент, а не сторож.
+   *
+   * Пять минут, а не полминуты: за полминуты не проходит ни один прогон тестов, ради которого
+   * команды и дали. Дольше пяти — просьбой в аргументах, но не бесконечно: ход, ждущий час,
+   * человек прерывает сам, и лучше бы он об этом узнал от инструмента.
+   */
+  private const val TIMEOUT_SECONDS = 300
+
+  /** Потолок, выше которого не поднимает и явная просьба: дальше начинается «висит навсегда». */
+  private const val MAX_TIMEOUT_SECONDS = 540
 
   private const val OUTPUT_CHARS = 20_000
   private const val JOIN_MS = 500L
