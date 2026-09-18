@@ -91,9 +91,13 @@ sign_dmg() {
   codesign --force --deep --timestamp=none --sign "$IDENTITY" "$app"
   codesign --verify --deep --strict "$app" >/dev/null 2>&1 || say "  ⚠ проверка подписи с --strict не прошла (для своей машины не критично)"
   hdiutil detach "$mount" -quiet
+  # Сжимать обратно ТЕМ ЖЕ способом, которым сжимала сборка: она кладёт `-format ULFO
+  # -imagekey lzfse-level=9` (platform/build-scripts/tools/mac/scripts/makedmg.sh), а наш первый
+  # вариант с UDZO раздул образ с 831 МБ до 966 — сто тридцать пять мегабайт на ровном месте,
+  # и заметить это можно было только по размеру файла.
   say "  сжимаю обратно"
   local signed="$work/signed.dmg"
-  hdiutil convert "$rw" -format UDZO -o "$signed" -quiet
+  hdiutil convert "$rw" -format ULFO -imagekey lzfse-level=9 -o "$signed" -quiet
   mv "$signed" "$dmg"
   rm -rf "$work"
   say "✓ образ подписан удостоверением «$IDENTITY»: $dmg"
