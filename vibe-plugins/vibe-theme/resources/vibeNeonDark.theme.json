@@ -105,7 +105,10 @@
         "queueBorder": "#6B5A2E",
         "queueForeground": "#F2E6C4",
         "usageForeground": "NeonCyanDim",
-        "usageWarnForeground": "#E0A030"
+        "usageWarnForeground": "#E0A030",
+        "contextRingTrack": "#3A4050",
+        "contextRingFill": "NeonCyan",
+        "contextRingWarn": "#E0A030"
       },
       "Docs": {
         "nodeBorder": "#2A2D36",
@@ -156,6 +159,13 @@
       },
       "Runs": {
         "attention": "#FF6B5A"
+      },
+      "Status": {
+        "ready": "#5FAD5F",
+        "thinking": "NeonCyan",
+        "tool": "NeonPurple",
+        "waiting": "#E0A030",
+        "error": "#FF6B5A"
       }
     }
   }

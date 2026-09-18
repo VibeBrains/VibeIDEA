@@ -105,7 +105,10 @@
         "queueBorder": "#4d5f5f",
         "queueForeground": "#e7dccd",
         "usageForeground": "AccentDim",
-        "usageWarnForeground": "#7caeb6"
+        "usageWarnForeground": "#7caeb6",
+        "contextRingTrack": "#423931",
+        "contextRingFill": "Accent",
+        "contextRingWarn": "#7caeb6"
       },
       "Docs": {
         "nodeBorder": "#423931",
@@ -156,6 +159,13 @@
       },
       "Runs": {
         "attention": "#c05c50"
+      },
+      "Status": {
+        "ready": "#96c171",
+        "thinking": "Accent",
+        "tool": "Cool",
+        "waiting": "#7caeb6",
+        "error": "#c05c50"
       }
     }
   }

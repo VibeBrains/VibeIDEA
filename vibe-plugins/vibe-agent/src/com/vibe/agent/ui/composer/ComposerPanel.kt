@@ -111,17 +111,20 @@ class ComposerPanel(
     toolTipText = t("composer.stop.tooltip")
     isVisible = false
   }
-  private val spinner = AsyncProcessIcon("vibe-composer-busy").apply { isVisible = false }
-  /** Context-window usage (ACP usage_update): «⛁ 34%», hidden until the agent reports it. */
-  private val usageLabel = javax.swing.JLabel().apply {
-    font = com.intellij.util.ui.JBFont.label().deriveFont(java.awt.Font.PLAIN, 10f)
-    foreground = USAGE_FG
-    isVisible = false
-    cursor = java.awt.Cursor.getPredefinedCursor(java.awt.Cursor.HAND_CURSOR)
-    addMouseListener(object : java.awt.event.MouseAdapter() {
-      override fun mouseClicked(e: java.awt.event.MouseEvent) { onUsageClick?.invoke() }
-    })
-  }
+  /**
+   * Состояние панели словом и цветной точкой вместо крутилки.
+   *
+   * Крутилка говорила «что-то идёт» и молчала о том, что именно, — а «модель думает», «выполняю
+   * инструмент» и «жду провайдера» это три разных совета человеку (правило владельца 18.09.2026).
+   */
+  private val statusDot = StatusDot()
+  /**
+   * Заполненность контекста — кольцом в ряду пилюль, рядом с моделью и режимом прав.
+   *
+   * Слева, а не у правого края: это часть того же ряда «чем и как идёт этот ход», а у правого края
+   * живут часы истории и бегунок занятости, между которыми подпись терялась.
+   */
+  private val contextRing = ContextRing { onUsageClick?.invoke() }
   private val pillsLeft = JPanel(WrapLayout(FlowLayout.LEFT, JBUI.scale(PILL_GAP), JBUI.scale(PILL_GAP))).apply { isOpaque = false }
   private val pillsRight = JPanel(FlowLayout(FlowLayout.RIGHT, JBUI.scale(PILL_GAP), 0)).apply { isOpaque = false }
 
@@ -134,15 +137,20 @@ class ComposerPanel(
   var onUsageClick: (() -> Unit)? = null
 
   /** Show/update the context-usage chip; null hides it (e.g. a new session). EDT only. */
-  /** Компонент счётчика — якорь для всплывающей разбивки; popup показывается под ним. */
-  fun usageAnchor(): javax.swing.JComponent = usageLabel
+  /** Кольцо контекста — якорь для всплывающей разбивки; popup показывается под ним. */
+  fun usageAnchor(): javax.swing.JComponent = contextRing
 
-  fun setUsage(text: String?, tooltip: String?, warn: Boolean) {
-    usageLabel.isVisible = text != null
-    usageLabel.text = text.orEmpty()
-    usageLabel.toolTipText = tooltip
-    usageLabel.foreground = if (warn) USAGE_WARN_FG else USAGE_FG
-    pillsRight.revalidate(); pillsRight.repaint()
+  /** Что панель делает сейчас: слово и цвет точки справа. */
+  fun setStatus(state: StatusDot.State, detail: String? = null) = statusDot.setState(state, detail)
+
+  /** Останавливает анимацию индикатора: живой таймер держал бы панель после закрытия вкладки. */
+  fun disposeStatus() = statusDot.dispose()
+
+  /** Кольцо в ряд пилюль: зовётся панелью после того, как она добавила свои. */
+  fun addContextRing() = addPill(contextRing)
+
+  fun setUsage(percent: Int?, tooltip: String?, warn: Boolean) {
+    contextRing.setUsage(percent, tooltip, warn)
   }
 
   /**
@@ -183,7 +191,7 @@ class ComposerPanel(
       sendButton.isVisible = !value
       stopButton.isVisible = value
       continueButton.isVisible = !value
-      spinner.isVisible = value
+      if (value) statusDot.setState(StatusDot.State.THINKING) else statusDot.setState(StatusDot.State.READY)
       updateSendEnabled()
       revalidate()
       repaint()
@@ -226,8 +234,7 @@ class ComposerPanel(
       add(inputColumn, BorderLayout.CENTER)
       add(iconColumn, BorderLayout.EAST)
     }
-    pillsRight.add(usageLabel)
-    pillsRight.add(spinner)
+    pillsRight.add(statusDot)
     val pills = JPanel(BorderLayout()).apply {
       isOpaque = false
       border = JBUI.Borders.compound(JBUI.Borders.customLineTop(SEPARATOR), JBUI.Borders.emptyTop(PILL_GAP))

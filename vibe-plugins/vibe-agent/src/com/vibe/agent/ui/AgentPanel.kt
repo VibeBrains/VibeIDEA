@@ -246,6 +246,9 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
   private val terminalConsoles = java.util.concurrent.ConcurrentHashMap<String, TerminalConsole>()
   /** The current turn's collapsible reasoning block (ACP agent_thought_chunk), created on first thought. */
   @Volatile private var thoughtsBlock: ThoughtsBlock? = null
+
+  /** Анимированная строка «сейчас работаю» в конце ленты; живёт ровно ход. */
+  private var workingLine: WorkingLine? = null
   private val verifyRunner: VerifyGateRunner? = project.basePath?.let { VerifyGateRunner(it) }
   private val breakers = VibeBreakerService.getInstance(project)
   private val status = VibeAgentStatusService.getInstance(project)
@@ -261,6 +264,9 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
 
   /** Чем был занят контекст последнего запроса; пусто до первого хода. */
   @Volatile private var lastContext = com.vibe.agent.context.ContextBreakdown.NONE
+
+  /** Окно модели, которой ушёл последний запрос; null — модель его не объявила. */
+  @Volatile private var lastContextWindow: Int? = null
 
   /** Thresholds already said out loud for this chat: a warning repeated every frame is noise. */
   private val announcedContextLevels = java.util.Collections.synchronizedSet(HashSet<String>())
@@ -463,7 +469,10 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     // The microphone appears only where recording is possible: a button that cannot work is worse
     // than no button.
     if (com.vibe.agent.voice.VoiceCapture.isSupported()) composer.addPill(voicePill)
+    feedSelection.markdown = { history.get(currentThreadId)?.let { com.vibe.agent.history.ChatExport.toMarkdown(it) } }
     composer.onUsageClick = { showContextPopup() }
+    // Кольцо контекста — последним в ряду пилюль, как у VibeIDE: после модели, режима и микрофона.
+    composer.addContextRing()
     composer.addRightPill(historyPill)
     add(tabsStrip, BorderLayout.NORTH)
     add(centerWrap, BorderLayout.CENTER)
@@ -547,6 +556,8 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     directTools.close()
     composer.queue.clear()
     turnInFlight.set(false)
+    workingLine?.stop()
+    composer.disposeStatus()
     terminals.disposeAll()
     // audit is owned by VibeAuditService (project-scoped) — do not close it here.
     synchronized(clientLock) {
@@ -2507,6 +2518,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     // The cancel flag belongs to the whole turn (Stop during context resolution must not be lost).
     llmCancel.set(false)
     composer.busy = true
+    showWorking(WorkingLine.Kind.THINKING)
     turnThreadId = threadId
     turnText.setLength(0)
     uiConsumed = 0
@@ -2594,6 +2606,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     SwingUtilities.invokeLater {
       if (disposed) return@invokeLater
       composer.busy = false
+      hideWorking()
       // Queued notes belong to the thread whose turn just ended, not to whichever tab is open now.
       val stalled = noteProgressAndWarn(endedThreadId ?: currentThreadId)
       val queued = composer.queue.drain()
@@ -3476,6 +3489,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
       // Снимок разбивки берётся ЗДЕСЬ, на собранном запросе: позже его уже не из чего сложить —
       // история сжимается, набор инструментов меняется, и «что занимало контекст» станет догадкой.
       lastContext = com.vibe.agent.context.ContextBreakdown.of(wire, tools)
+      lastContextWindow = t.model.contextWindow
       val toolNames = tools.map { it.name }
       if (com.vibe.agent.history.WirePrefix.toolSetChanged(lastToolNames, toolNames)) {
         systemLine(t("cache.toolsChanged", "before" to (lastToolNames?.size ?: 0), "after" to toolNames.size))
@@ -3620,7 +3634,10 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
    * Reading runs; writing needs a trusted project and the person's yes, asked for this very call.
    */
   private fun runDirectTool(call: com.vibe.agent.providers.ToolCall, model: String): com.vibe.agent.providers.ToolResult {
-    toolCard(t("directTools.call", "tool" to com.vibe.agent.ui.ToolCallLabel.of(call.name, call.arguments)))
+    val label = com.vibe.agent.ui.ToolCallLabel.of(call.name, call.arguments)
+    toolCard(t("directTools.call", "tool" to label))
+    showWorking(WorkingLine.Kind.TOOL, label)
+    composer.setStatus(com.vibe.agent.ui.composer.StatusDot.State.TOOL, label)
     val actor = com.vibe.agent.audit.AuditActor(com.vibe.agent.audit.AuditActor.Kind.AGENT, agent = model)
     audit?.append(AuditEvent(System.currentTimeMillis(), AuditEvent.Action.TOOL_CALL_START, ok = true, actor = actor,
                              callId = call.id, model = model, meta = mapOf("tool" to call.name)))
@@ -3767,7 +3784,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     // переподключения они иначе остаются пустыми до следующего оплаченного сообщения.
     showSessionPickers(c)
     // A fresh session starts a fresh context — drop the stale usage chip until the agent reports anew.
-    SwingUtilities.invokeLater { composer.setUsage(null, null, warn = false) }
+    SwingUtilities.invokeLater { composer.setUsage(percent = null, tooltip = null, warn = false) }
     return c
   }
 
@@ -4614,6 +4631,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     noteActivity()
     staleAnnounced.set(false)
     composer.busy = true
+    showWorking(WorkingLine.Kind.THINKING)
     turnThreadId = currentThreadId
     ApplicationManager.getApplication().executeOnPooledThread {
       var planned: List<com.vibe.agent.pipelines.PipelineStep>? = null
@@ -4682,6 +4700,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     noteActivity()
     staleAnnounced.set(false)
     composer.busy = true
+    showWorking(WorkingLine.Kind.THINKING)
     turnThreadId = currentThreadId
     turnText.setLength(0)
     uiConsumed = 0
@@ -5376,11 +5395,14 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     // прямой модели такого кадра нет вовсе — и до 18.09.2026 счётчик у неё просто не появлялся,
     // то есть нажать на него и посмотреть разбивку было не на чем.
     SwingUtilities.invokeLater {
-      val used = sessionTokens.get()
-      if (used > 0) composer.setUsage(
-        text = "⛁ " + "%,d".format(used),
+      // Доля окна МОДЕЛИ, а не потолка сессии: кольцо отвечает на «сколько осталось в этом
+      // разговоре», и окно — это то, что кончается первым и молча.
+      val window = lastContextWindow
+      val percent = if (window != null && window > 0) (lastContext.total * 100 / window).toInt() else null
+      composer.setUsage(
+        percent = percent,
         tooltip = t("context.popup.title"),
-        warn = VibeChatSettings.sessionTokenLimit.let { it > 0 && used >= it * USAGE_WARN_PCT / 100 },
+        warn = percent != null && percent >= USAGE_WARN_PCT,
       )
     }
     // currentAgentMessage is EDT-owned (appendAgentText also touches it on the EDT); read+clear it there.
@@ -5600,7 +5622,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     } ?: ""
     SwingUtilities.invokeLater {
       composer.setUsage(
-        text = "⛁ $pct%",
+        percent = pct,
         tooltip = t("chat.contextTooltip", "used" to "%,d".format(used), "size" to "%,d".format(size)) + cost,
         warn = pct >= USAGE_WARN_PCT,
       )
@@ -5708,6 +5730,36 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
       com.vibe.agent.context.ContextBudget.Verdict.BLOCK ->
         systemLine(t("context.block", "percent" to status.windowPercent))
       else -> systemLine(t("context.warn", "percent" to status.windowPercent))
+    }
+  }
+
+  /**
+   * Показать (или обновить) строку «сейчас работаю» в конце ленты.
+   *
+   * В ленте, а не в углу композера: взгляд во время хода смотрит в конец разговора, и индикатор,
+   * стоящий в другом месте экрана, отвечает на вопрос «жив ли он» тому, кто туда посмотрит.
+   */
+  private fun showWorking(kind: WorkingLine.Kind, detail: String? = null) {
+    SwingUtilities.invokeLater {
+      if (disposed || !turnInFlight.get()) return@invokeLater
+      val line = workingLine ?: WorkingLine().also {
+        workingLine = it
+        messages.add(it)
+      }
+      line.setKind(kind, detail)
+      revalidateScroll()
+    }
+  }
+
+  /** Убрать строку и остановить её таймер: живой Timer держал бы панель после конца хода. */
+  private fun hideWorking() {
+    SwingUtilities.invokeLater {
+      val line = workingLine ?: return@invokeLater
+      workingLine = null
+      line.stop()
+      messages.remove(line)
+      messages.revalidate()
+      messages.repaint()
     }
   }
 

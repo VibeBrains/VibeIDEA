@@ -35,6 +35,14 @@ import javax.swing.text.JTextComponent
  * the feed is rebuilt on every thread switch and a registry filled by hand would drift from it.
  */
 class FeedSelection(private val feed: JComponent, private val scroll: JScrollPane?) {
+  /**
+   * Разговор в Markdown — тем же текстом, что уходит в файл при экспорте.
+   *
+   * Копия «как на экране» теряет то, чего на экране нет: кто говорил, когда, что вернули
+   * инструменты. Один формат на копирование и на файл — чтобы вставленное в письмо и сохранённое
+   * рядом не оказались двумя разными разговорами.
+   */
+  var markdown: (() -> String?)? = null
   private var anchor: FeedSelectionModel.Anchor? = null
   private var dragging = false
   /**
@@ -224,7 +232,7 @@ class FeedSelection(private val feed: JComponent, private val scroll: JScrollPan
   }
 
   private fun copyWhole() {
-    val text = wholeText().ifBlank { return }
+    val text = (markdown?.invoke()?.takeIf { it.isNotBlank() } ?: wholeText()).ifBlank { return }
     CopyPasteManager.getInstance().setContents(StringSelection(text))
   }
 
@@ -235,7 +243,7 @@ class FeedSelection(private val feed: JComponent, private val scroll: JScrollPan
       addActionListener { copySelection() }
     })
     menu.add(javax.swing.JMenuItem(t("chat.selection.selectAll")).apply { addActionListener { selectAll() } })
-    menu.add(javax.swing.JMenuItem(t("chat.selection.copyAll")).apply { addActionListener { copyWhole() } })
+    menu.add(javax.swing.JMenuItem(t("chat.selection.copyAllMarkdown")).apply { addActionListener { copyWhole() } })
     menu.show(e.component, e.x, e.y)
   }
 
