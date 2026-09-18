@@ -13,6 +13,13 @@ cd "$(dirname "$0")/../.."
 
 SRC=vibeidea-customization/resources/mac/dmgBackground.svg
 OUT=vibeidea-customization/resources/mac/dmgBackground.tiff
+INFO=vibeidea-customization/resources/idea/VibeIdeaApplicationInfo.xml
+
+# Версия берётся из ЕДИНСТВЕННОГО источника правды — того же файла, который штампует сборку.
+# Аргументом её пришлось бы вспоминать при каждом выпуске, а забытый аргумент даёт образ, который
+# уверенно называет себя прошлой версией.
+VERSION=$(sed -n 's/.*full="\([^"]*\)".*/\1/p' "$INFO" | head -1)
+[ -n "$VERSION" ] || { echo "✖ не нашёл версию в $INFO"; exit 1; }
 # Размер окна установки задаёт платформа (makedmg.py, блоб fwi0): 455x296 точек. Меняется там —
 # меняется и здесь, иначе картинка перестанет совпадать с раскладкой иконок.
 WIDTH=455
@@ -23,8 +30,12 @@ command -v rsvg-convert >/dev/null || { echo "✖ нет rsvg-convert: brew inst
 TMP=$(mktemp -d)
 trap 'rm -rf "$TMP"' EXIT
 
-rsvg-convert -w "$WIDTH" -h "$HEIGHT" "$SRC" -o "$TMP/bg-1x.png"
-rsvg-convert -w $((WIDTH * 2)) -h $((HEIGHT * 2)) "$SRC" -o "$TMP/bg-2x.png"
+# Подстановка идёт во ВРЕМЕННУЮ копию: в репозитории остаётся шаблон, иначе каждый выпуск менял бы
+# исходник картинки и diff показывал бы номер версии вместо правок рисунка.
+sed "s/__VERSION__/$VERSION/" "$SRC" > "$TMP/bg.svg"
+
+rsvg-convert -w "$WIDTH" -h "$HEIGHT" "$TMP/bg.svg" -o "$TMP/bg-1x.png"
+rsvg-convert -w $((WIDTH * 2)) -h $((HEIGHT * 2)) "$TMP/bg.svg" -o "$TMP/bg-2x.png"
 tiffutil -cathidpicheck "$TMP/bg-1x.png" "$TMP/bg-2x.png" -out "$OUT" >/dev/null
 
-echo "  фон собран: $OUT ($(wc -c < "$OUT" | tr -d ' ') байт, страницы ${WIDTH}x${HEIGHT} и $((WIDTH * 2))x$((HEIGHT * 2)))"
+echo "  фон собран: $OUT, версия $VERSION ($(wc -c < "$OUT" | tr -d ' ') байт, страницы ${WIDTH}x${HEIGHT} и $((WIDTH * 2))x$((HEIGHT * 2)))"

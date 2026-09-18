@@ -64,11 +64,26 @@ sign_dmg() {
   [ -f "$dmg" ] || { say "✖ нет такого образа: $dmg"; exit 1; }
   have_identity || { say "✖ нет удостоверения «$IDENTITY» — сперва: $0 identity"; exit 1; }
 
-  local work mount rw
+  local work mount rw layout
   work="$(mktemp -d)"
   rw="$work/rw.dmg"
   mount="$work/mnt"
+  layout="$work/DS_Store"
   mkdir -p "$mount"
+
+  # Раскладка окна установки живёт в `.DS_Store` тома, и пишет его ТОЛЬКО Finder. Пока том
+  # смонтирован на запись, система успевает переписать его своими умолчаниями — и оформленный
+  # образ открывается у получателя простым списком файлов (поймано владельцем на 0.6.8: фон,
+  # стрелка и позиции иконок пропали, хотя сама картинка в образе лежала).
+  # Поэтому снимаем файл с ИСХОДНОГО образа, только для чтения, и возвращаем после подписи.
+  say "  запоминаю раскладку окна"
+  hdiutil attach "$dmg" -mountpoint "$mount" -nobrowse -readonly -quiet
+  if [ -f "$mount/.DS_Store" ]; then
+    cp "$mount/.DS_Store" "$layout"
+  else
+    say "  ⚠ в образе нет .DS_Store — оформление окна не задано, возвращать нечего"
+  fi
+  hdiutil detach "$mount" -quiet
 
   # Образ приходит сжатым и только для чтения: подписать приложение внутри можно, только сделав
   # его записываемым. Пересобирать образ с нуля нельзя — вместе с ним пропало бы оформленное окно
@@ -90,6 +105,13 @@ sign_dmg() {
   # внешней обёртки macOS не примет. --force: у части вложенного уже есть чужая подпись.
   codesign --force --deep --timestamp=none --sign "$IDENTITY" "$app"
   codesign --verify --deep --strict "$app" >/dev/null 2>&1 || say "  ⚠ проверка подписи с --strict не прошла (для своей машины не критично)"
+  # Возвращаем раскладку ПОСЛЕДНИМ действием перед размонтированием: всё, что делалось на томе до
+  # этого, могло переписать файл, и порядок здесь — не стиль, а условие работы.
+  if [ -f "$layout" ]; then
+    cp "$layout" "$mount/.DS_Store"
+    sync
+    say "  раскладка окна возвращена"
+  fi
   hdiutil detach "$mount" -quiet
   # Сжимать обратно ТЕМ ЖЕ способом, которым сжимала сборка: она кладёт `-format ULFO
   # -imagekey lzfse-level=9` (platform/build-scripts/tools/mac/scripts/makedmg.sh), а наш первый

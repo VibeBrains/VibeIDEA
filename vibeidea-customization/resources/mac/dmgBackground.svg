@@ -43,6 +43,13 @@
     <text x="34" y="27" font-family="SF Pro Text, Helvetica Neue, Arial" font-size="12" letter-spacing="0.6" fill="#c9c2da">VibeBrains IDEs</text>
   </g>
 
+  <!-- Версия. Подставляется при отрисовке из VibeIdeaApplicationInfo.xml, а не пишется руками:
+       на столе у владельца лежит по два образа разом, и «какой из них новый» должно быть видно
+       из самого окна, а не по дате файла (правило владельца 18.09.2026). Проверка навыка
+       dmg-installer тоже требует, чтобы версия на фоне совпадала со сборкой. -->
+  <text x="437" y="27" text-anchor="end" font-family="SF Pro Text, Helvetica Neue, Arial"
+        font-size="12" letter-spacing="0.4" fill="#8a819c">__VERSION__</text>
+
   <!-- The arrow: prompt chevrons growing towards Applications, then the spark of the icon. -->
   <g fill="none" stroke-linecap="round" stroke-linejoin="round">
     <path d="M186 154 L197 167 L186 180" stroke="#a78bfa" stroke-opacity="0.35" stroke-width="3"/>
