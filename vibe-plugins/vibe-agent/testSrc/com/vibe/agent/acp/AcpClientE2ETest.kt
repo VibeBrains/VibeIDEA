@@ -14,6 +14,7 @@ import java.util.concurrent.ConcurrentLinkedQueue
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import kotlin.test.assertEquals
+import kotlin.test.assertNull
 import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
@@ -114,6 +115,18 @@ class AcpClientE2ETest {
     plain.initializeAndOpenSession().get(30, TimeUnit.SECONDS)
     plain.stop()
     assertFalse(java.nio.file.Files.exists(silent), "an agent without sessionCapabilities.close gets no session/close")
+  }
+
+  @Test
+  fun `an empty result of session_resume keeps the session instead of failing`() {
+    // `{"result": null}` is a legal answer: the id is optional on resume. JsonNull is not null in Kotlin, and reading
+    // it as an object used to end the handshake with «Element class … JsonNull is not a JsonObject».
+    val c = start("resumeNull", TestHandler())
+    val resumed = c.initializeAndOpenSession("sess-from-yesterday").get(30, TimeUnit.SECONDS)
+    assertEquals("sess-from-yesterday", resumed, "возобновили ту сессию, которую просили")
+    assertEquals("sess-from-yesterday", c.sessionId)
+    assertNull(c.modes, "пустой ответ не объявляет режимов — и это не ошибка")
+    assertTrue(c.configOptions.isEmpty())
   }
 
   @Test

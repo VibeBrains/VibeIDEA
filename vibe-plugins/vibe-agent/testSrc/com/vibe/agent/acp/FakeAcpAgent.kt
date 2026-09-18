@@ -90,7 +90,9 @@ object FakeAcpAgent {
             })
             if (scenario == "auth") put("auth", buildJsonObject { put("logout", buildJsonObject { }) })
             // `session/resume` and `session/load` are independent capabilities (protocol/v1/session-setup).
-            if (scenario == "resume") put("sessionCapabilities", buildJsonObject { put("resume", buildJsonObject { }) })
+            if (scenario == "resume" || scenario == "resumeNull") {
+              put("sessionCapabilities", buildJsonObject { put("resume", buildJsonObject { }) })
+            }
             if (scenario == "loadOnly") put("loadSession", true)
             if (scenario == "close") put("sessionCapabilities", buildJsonObject { put("close", buildJsonObject { }) })
           })
@@ -148,6 +150,10 @@ object FakeAcpAgent {
         val session = (params["sessionId"] as? JsonPrimitive)?.contentOrNull ?: SESSION_ID
         Thread { runPrompt(scenario, id, session) }.start()
       }
+      // Возобновление с ПУСТЫМ результатом: спека разрешает не повторять номер сессии, а `{"result": null}`
+      // — законный ответ. У клиента на нём падал разбор (18.09.2026).
+      "session/resume" -> send(result(id, kotlinx.serialization.json.JsonNull))
+
       "session/close" -> {
         // Marked in a file the test names, one line per closed session: after stop() the client can no longer be asked.
         System.getenv("FAKE_ACP_CLOSE_MARK")?.let { java.io.File(it).appendText(params["sessionId"]?.toString().orEmpty() + "\n") }

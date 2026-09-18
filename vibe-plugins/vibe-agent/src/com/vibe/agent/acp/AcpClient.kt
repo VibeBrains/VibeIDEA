@@ -316,14 +316,17 @@ class AcpClient(
         }
     }
     return opened.thenApply { result ->
-      val obj = result.jsonObject
+      // `{"result": null}` — законный ответ: у `session/resume` идентификатор НЕОБЯЗАТЕЛЕН, а JsonNull
+      // в Kotlin не равен null, поэтому `result.jsonObject` на нём бросал «Element class … JsonNull is
+      // not a JsonObject» и ронял открытие сессии на ровном месте (поймано у пользователя 18.09.2026).
+      val obj = result as? JsonObject
       // У `session/resume` идентификатор в ответе НЕОБЯЗАТЕЛЕН: агент возобновляет ту сессию,
       // которую попросили, и повторять её номер ему незачем. Требовать поле — значит уронить
       // возобновление на агенте, который всё сделал правильно.
-      val id = obj["sessionId"]?.jsonPrimitive?.contentOrNull
+      val id = obj?.get("sessionId")?.jsonPrimitive?.contentOrNull
         ?: previousSessionId
         ?: error("agent returned no sessionId")
-      open[id] = SessionState(parseModes(obj), parseConfigOptions(obj))
+      open[id] = SessionState(obj?.let { parseModes(it) }, obj?.let { parseConfigOptions(it) }.orEmpty())
       sessionId = id
       id
     }

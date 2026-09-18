@@ -4638,7 +4638,8 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
               }
               try {
                 val result = c.prompt(prompt).get()
-                result?.jsonObject?.get("stopReason")?.jsonPrimitive?.contentOrNull
+                // Как и в обычном ходе: `{"result": null}` — не объект, и `.jsonObject` на JsonNull бросает.
+                (result as? JsonObject)?.get("stopReason")?.jsonPrimitive?.contentOrNull
               }
               finally {
                 c.turnSession = null
@@ -5261,17 +5262,17 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
   // --- AcpClient.Handler (reader thread) ---
 
   override fun onSessionUpdate(update: JsonObject) {
-    val u = update["update"]?.jsonObject ?: return
+    val u = update["update"] as? JsonObject ?: return
     // Any frame at all is a sign of life — including one we do not handle below.
     noteActivity()
     when (u["sessionUpdate"]?.jsonPrimitive?.contentOrNull) {
       "agent_message_chunk" -> {
-        val text = u["content"]?.jsonObject?.get("text")?.jsonPrimitive?.contentOrNull ?: return
+        val text = (u["content"] as? JsonObject)?.get("text")?.jsonPrimitive?.contentOrNull ?: return
         stepBuffer?.append(text)
         appendAgentText(text)
       }
       "agent_thought_chunk" -> {
-        val text = u["content"]?.jsonObject?.get("text")?.jsonPrimitive?.contentOrNull ?: return
+        val text = (u["content"] as? JsonObject)?.get("text")?.jsonPrimitive?.contentOrNull ?: return
         appendThought(text)
       }
       "usage_update" -> onUsageUpdate(u)
@@ -5317,16 +5318,16 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
 
   // --- Claude terminal stream (_meta.terminal_*) rendering ---
 
-  private fun metaObj(u: JsonObject): JsonObject? = u["_meta"]?.jsonObject
+  private fun metaObj(u: JsonObject): JsonObject? = u["_meta"] as? JsonObject
   private fun terminalInfoId(u: JsonObject): String? =
-    metaObj(u)?.get("terminal_info")?.jsonObject?.get("terminal_id")?.jsonPrimitive?.contentOrNull
+    (metaObj(u)?.get("terminal_info") as? JsonObject)?.get("terminal_id")?.jsonPrimitive?.contentOrNull
   private fun terminalOutputFrame(u: JsonObject): Pair<String, String>? {
-    val o = metaObj(u)?.get("terminal_output")?.jsonObject ?: return null
+    val o = metaObj(u)?.get("terminal_output") as? JsonObject ?: return null
     val id = o["terminal_id"]?.jsonPrimitive?.contentOrNull ?: return null
     return id to (o["data"]?.jsonPrimitive?.contentOrNull ?: "")
   }
   private fun terminalExitFrame(u: JsonObject): Triple<String, Int?, String?>? {
-    val o = metaObj(u)?.get("terminal_exit")?.jsonObject ?: return null
+    val o = metaObj(u)?.get("terminal_exit") as? JsonObject ?: return null
     val id = o["terminal_id"]?.jsonPrimitive?.contentOrNull ?: return null
     return Triple(id, o["exit_code"]?.jsonPrimitive?.intOrNull, o["signal"]?.jsonPrimitive?.contentOrNull)
   }
@@ -5635,7 +5636,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     // The most important of the three events: here a person is needed RIGHT NOW, and they left.
     com.vibe.agent.sound.VibeSoundService.getInstance()
       .play(com.vibe.agent.sound.SoundPolicy.Event.AWAITING_PERMISSION, project)
-    val toolCall = params["toolCall"]?.jsonObject
+    val toolCall = params["toolCall"] as? JsonObject
     val permissionCallId = toolCall?.get("toolCallId")?.jsonPrimitive?.contentOrNull
     val title = toolCall?.get("title")?.jsonPrimitive?.contentOrNull ?: t("chat.permission.default")
     // preToolUse hook: this is one of the two points the client controls (the other is fs/write).
