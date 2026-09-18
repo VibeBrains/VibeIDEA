@@ -1,6 +1,8 @@
 // Copyright 2026 VibeBrains. Use of this source code is governed by the Apache 2.0 license.
 package com.vibe.agent.providers
 
+import com.vibe.agent.util.obj
+import com.vibe.agent.util.arr
 import com.intellij.openapi.diagnostic.logger
 import com.vibe.agent.i18n.VibeI18n.t
 import com.vibe.agent.resilience.RetryPolicy
@@ -354,8 +356,8 @@ class LlmClient(
       .build()
     val response = http.send(request, HttpResponse.BodyHandlers.ofString())
     if (response.statusCode() !in 200..299) throw RuntimeException("HTTP " + response.statusCode() + ": " + response.body().take(300))
-    return json.parseToJsonElement(response.body()).jsonObject["choices"]?.jsonArray?.firstOrNull()
-      ?.jsonObject?.get("text")?.jsonPrimitive?.contentOrNull ?: ""
+    return json.parseToJsonElement(response.body()).jsonObject["choices"].arr()?.firstOrNull()
+      .obj()?.get("text")?.jsonPrimitive?.contentOrNull ?: ""
   }
 
   private fun geminiChat(provider: ResolvedProvider, model: ModelEntry, messages: List<ChatMessage>, onDelta: (String) -> Unit) {
@@ -385,7 +387,7 @@ class LlmClient(
     if (key != null && provider.entry.auth.type != "query") builder.header("x-goog-api-key", key)
     val request = builder.POST(HttpRequest.BodyPublishers.ofString(body.toString())).build()
     streamSse(request) { data ->
-      val event = json.parseToJsonElement(data).jsonObject
+      val event = eventObject(data) ?: return@streamSse
       ModelEcho.fromGeminiEvent(event)?.let { lastAnsweredModel = it }
       // У Gemini мысль и ответ лежат в одном массиве частей и различаются пометкой `thought`:
       // раньше бралась ПЕРВАЯ часть, то есть при включённых рассуждениях мысль уезжала в ответ.
@@ -435,14 +437,14 @@ class LlmClient(
     }
     streamSse(request) { data ->
       if (data == "[DONE]") return@streamSse
-      val chunk = json.parseToJsonElement(data).jsonObject
+      val chunk = eventObject(data) ?: return@streamSse
       TokenUsage.fromOpenAiChunk(chunk)?.let { lastUsage = lastUsage.merge(it) }
       ModelEcho.fromOpenAiChunk(chunk)?.let { lastAnsweredModel = it }
       // reasoning_content — как его называют китайские OpenAI-совместимые эндпоинты (DeepSeek, GLM).
       ReasoningStream.fromOpenAiChunk(chunk)?.let { thought(it) }
       toolCalls.openAiChunk(chunk)
-      val delta = chunk["choices"]?.jsonArray?.firstOrNull()
-        ?.jsonObject?.get("delta")?.jsonObject?.get("content")?.jsonPrimitive?.contentOrNull
+      val delta = chunk["choices"].arr()?.firstOrNull()
+        .obj()?.get("delta").obj()?.get("content")?.jsonPrimitive?.contentOrNull
       if (delta != null) onDelta(delta)
     }
   }
@@ -490,7 +492,7 @@ class LlmClient(
       .POST(HttpRequest.BodyPublishers.ofString(body.toString()))
       .build()
     streamSse(request) { data ->
-      val obj = json.parseToJsonElement(data).jsonObject
+      val obj = eventObject(data) ?: return@streamSse
       // Input, cache reads and cache writes arrive at `message_start`; the output count at
       // `message_delta`. One reader for both, because both put it under `usage`.
       TokenUsage.fromAnthropicEvent(obj)?.let { lastUsage = lastUsage.merge(it) }
@@ -500,7 +502,7 @@ class LlmClient(
       ReasoningStream.fromAnthropicEvent(obj)?.let { thought(it) }
       toolCalls.anthropicEvent(obj)
       if (obj["type"]?.jsonPrimitive?.contentOrNull == "content_block_delta") {
-        val text = obj["delta"]?.jsonObject?.get("text")?.jsonPrimitive?.contentOrNull
+        val text = obj["delta"].obj()?.get("text")?.jsonPrimitive?.contentOrNull
         if (text != null) onDelta(text)
       }
     }
@@ -566,9 +568,22 @@ class LlmClient(
     }
     val answer = json.parseToJsonElement(response.body()).jsonObject
     ModelEcho.fromOpenAiChunk(answer)?.let { lastAnsweredModel = it }
-    answer["choices"]?.jsonArray?.firstOrNull()?.jsonObject?.get("message")?.jsonObject?.let { toolCalls.openAiMessage(it) }
-    return answer["choices"]?.jsonArray?.firstOrNull()
-      ?.jsonObject?.get("message")?.jsonObject?.get("content")?.jsonPrimitive?.contentOrNull ?: ""
+    answer["choices"].arr()?.firstOrNull().obj()?.get("message").obj()?.let { toolCalls.openAiMessage(it) }
+    return answer["choices"].arr()?.firstOrNull()
+      .obj()?.get("message").obj()?.get("content")?.jsonPrimitive?.contentOrNull ?: ""
+  }
+
+  /**
+   * One SSE event as an object, or null when it is not one — and then it is skipped, not thrown on.
+   *
+   * A stream carries more than the events we read: keep-alives, `[DONE]`, a vendor's own extension, a line that is not
+   * JSON at all. Reading each of them as an object ended the whole turn with a stack trace in the feed — and a turn
+   * already paid for died on a line nobody needed (caught on MiniMax's Anthropic endpoint 18.09.2026).
+   */
+  private fun eventObject(data: String): JsonObject? {
+    if (data.isEmpty()) return null
+    val element = runCatching { json.parseToJsonElement(data) }.getOrNull() ?: return null
+    return element as? JsonObject
   }
 
   private fun streamSse(request: HttpRequest, onData: (String) -> Unit) {

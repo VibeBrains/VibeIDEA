@@ -1,6 +1,8 @@
 // Copyright 2026 VibeBrains. Use of this source code is governed by the Apache 2.0 license.
 package com.vibe.agent.providers
 
+import com.vibe.agent.util.obj
+import com.vibe.agent.util.arr
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.jsonObject
@@ -55,8 +57,8 @@ data class TokenUsage(
      * output count. Both arrive as `usage` objects, so one reader handles both.
      */
     fun fromAnthropicEvent(event: JsonObject): TokenUsage? {
-      val usage = event["usage"]?.jsonObject
-                  ?: event["message"]?.jsonObject?.get("usage")?.jsonObject
+      val usage = event["usage"].obj()
+                  ?: event["message"].obj()?.get("usage").obj()
                   ?: return null
       return TokenUsage(
         inputTokens = usage.long("input_tokens"),
@@ -75,7 +77,8 @@ data class TokenUsage(
      * Anthropic wire already reports them; otherwise the same tokens would be priced twice.
      */
     fun fromOpenAiChunk(chunk: JsonObject): TokenUsage? {
-      val usage = chunk["usage"]?.jsonObject ?: return null
+      // `"usage": null` приходит в КАЖДОМ куске потока у OpenAI-совместимых провайдеров, кроме последнего.
+      val usage = chunk["usage"].obj() ?: return null
       // DeepSeek documents `prompt_cache_hit_tokens` as required and `cached_tokens` as optional, and
       // its own prose places hit/miss both inside `prompt_tokens_details` and at the top of usage. A
       // missing `cached_tokens` would price the whole cached prompt as a miss — up to fifty times too

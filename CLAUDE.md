@@ -37,6 +37,7 @@ IC переходит на Bazel (сборка «только средствам
 - Запуск IDE из исходников: `./bazel.cmd run //build:idea_community`
 - Инсталляторы VibeIDEA: `./vibeidea-installers.cmd -Dintellij.build.target.os=current -Dintellij.build.target.arch=current` → `out/vibeidea/artifacts/` (нужен клон `android/` — `./getPlugins.sh`). **Соседний `./installers.cmd` — скрипт апстрима**: он собирает чистую IDEA CE без плагинов `vibe-*` в `out/idea-ce`; не удаляем его по правилу границы форка, но и не путаем с нашим.
 - Тесты: `./tests.cmd -Dintellij.build.test.patterns=<класс>`
+- **Любая сборка инсталлятора — с бампом хотя бы патча** (правило владельца 18.09.2026): версия в `vibeidea-customization/resources/idea/VibeIdeaApplicationInfo.xml`, атрибут `full`. Иначе у него на столе два `.dmg` с одним именем, и какой из них новый — видно только по дате файла.
 
 ## Стиль нашего UI
 

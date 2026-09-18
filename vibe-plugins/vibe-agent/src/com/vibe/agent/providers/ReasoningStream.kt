@@ -1,6 +1,8 @@
 // Copyright 2026 VibeBrains. Use of this source code is governed by the Apache 2.0 license.
 package com.vibe.agent.providers
 
+import com.vibe.agent.util.obj
+import com.vibe.agent.util.arr
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonArray
@@ -32,7 +34,7 @@ object ReasoningStream {
   /** Кусок рассуждения из события Anthropic-потока, или null. */
   fun fromAnthropicEvent(event: JsonObject): String? {
     if (event["type"]?.jsonPrimitive?.contentOrNull != "content_block_delta") return null
-    val delta = event["delta"]?.jsonObject ?: return null
+    val delta = event["delta"].obj() ?: return null
     // Тип события проверяем, но не требуем: часть совместимых эндпоинтов шлёт `thinking` без
     // собственного `type`, и отказ из-за отсутствующего поля потерял бы всё рассуждение целиком.
     val type = delta["type"]?.jsonPrimitive?.contentOrNull
@@ -43,7 +45,7 @@ object ReasoningStream {
 
   /** Кусок рассуждения из чанка OpenAI-совместимого потока, или null. */
   fun fromOpenAiChunk(chunk: JsonObject): String? {
-    val delta = chunk["choices"]?.jsonArray?.firstOrNull()?.jsonObject?.get("delta")?.jsonObject ?: return null
+    val delta = chunk["choices"].arr()?.firstOrNull().obj()?.get("delta").obj() ?: return null
     for (field in OPENAI_FIELDS) {
       delta[field]?.jsonPrimitive?.contentOrNull?.takeIf { it.isNotEmpty() }?.let { return it }
     }
@@ -52,8 +54,8 @@ object ReasoningStream {
 
   /** Кусок рассуждения из события потока Gemini: часть с пометкой `thought`. */
   fun fromGeminiEvent(event: JsonObject): String? {
-    val parts = event["candidates"]?.jsonArray?.firstOrNull()?.jsonObject
-      ?.get("content")?.jsonObject?.get("parts")?.jsonArray ?: return null
+    val parts = event["candidates"].arr()?.firstOrNull().obj()
+      ?.get("content").obj()?.get("parts").arr() ?: return null
     for (element in parts) {
       val part = element.jsonObject
       if (part["thought"]?.jsonPrimitive?.contentOrNull == "true" || part["thought"]?.toString() == "true") {
@@ -65,8 +67,8 @@ object ReasoningStream {
 
   /** Текст ответа Gemini — то же место, но БЕЗ пометки `thought`: иначе мысль уедет в ответ. */
   fun answerFromGeminiEvent(event: JsonObject): String? {
-    val parts = event["candidates"]?.jsonArray?.firstOrNull()?.jsonObject
-      ?.get("content")?.jsonObject?.get("parts")?.jsonArray ?: return null
+    val parts = event["candidates"].arr()?.firstOrNull().obj()
+      ?.get("content").obj()?.get("parts").arr() ?: return null
     for (element in parts) {
       val part = element.jsonObject
       val isThought = part["thought"]?.jsonPrimitive?.contentOrNull == "true" || part["thought"]?.toString() == "true"

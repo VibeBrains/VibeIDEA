@@ -1,6 +1,8 @@
 // Copyright 2026 VibeBrains. Use of this source code is governed by the Apache 2.0 license.
 package com.vibe.agent.providers
 
+import com.vibe.agent.util.obj
+import com.vibe.agent.util.arr
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
@@ -185,7 +187,7 @@ class ToolCallAccumulator {
   private var geminiCount = 0
 
   fun openAiChunk(chunk: JsonObject) {
-    val delta = chunk["choices"]?.jsonArray?.firstOrNull()?.jsonObject?.get("delta") as? JsonObject ?: return
+    val delta = chunk["choices"].arr()?.firstOrNull().obj()?.get("delta").obj() ?: return
     openAiCalls(delta["tool_calls"] as? JsonArray)
   }
 
@@ -223,8 +225,8 @@ class ToolCallAccumulator {
   }
 
   fun geminiEvent(event: JsonObject) {
-    val parts = event["candidates"]?.jsonArray?.firstOrNull()?.jsonObject
-      ?.get("content")?.jsonObject?.get("parts") as? JsonArray ?: return
+    val parts = event["candidates"].arr()?.firstOrNull().obj()
+      ?.get("content").obj()?.get("parts").arr() ?: return
     for (part in parts) {
       val call = (part as? JsonObject)?.get("functionCall") as? JsonObject ?: continue
       // Gemini gives no id; a stable one per answer is enough to pair the result with its call.
