@@ -59,31 +59,36 @@ create_identity() {
   fi
 }
 
+# Окружение для `.DS_Store`: библиотеки ds_store и mac_alias. Живёт в Caches — это скачанное,
+# которое не жалко потерять и можно собрать заново одной командой.
+LAYOUT_VENV="/Volumes/Storage/Caches/vibeidea-dmg/venv"
+
+layout() {
+  local mount="$1"
+  if [ ! -x "$LAYOUT_VENV/bin/python3" ]; then
+    say "  готовлю окружение для раскладки окна (один раз)"
+    mkdir -p "$(dirname "$LAYOUT_VENV")"
+    python3 -m venv "$LAYOUT_VENV" >/dev/null
+    "$LAYOUT_VENV/bin/pip3" install --quiet "setuptools<72" >/dev/null
+    "$LAYOUT_VENV/bin/pip3" install --quiet --no-build-isolation mac-alias==2.2.0 ds-store==1.3.0 >/dev/null
+  fi
+  local app
+  app="$(find "$mount" -maxdepth 1 -name '*.app' -exec basename {} .app \; | head -1)"
+  "$LAYOUT_VENV/bin/python3" vibe-plugins/tools/dmgLayout.py "$mount" "$app"
+}
+
 sign_dmg() {
   local dmg="${1:-}"
   [ -f "$dmg" ] || { say "✖ нет такого образа: $dmg"; exit 1; }
   have_identity || { say "✖ нет удостоверения «$IDENTITY» — сперва: $0 identity"; exit 1; }
 
-  local work mount rw layout
+  local work mount rw
   work="$(mktemp -d)"
   rw="$work/rw.dmg"
   mount="$work/mnt"
-  layout="$work/DS_Store"
   mkdir -p "$mount"
 
-  # Раскладка окна установки живёт в `.DS_Store` тома, и пишет его ТОЛЬКО Finder. Пока том
-  # смонтирован на запись, система успевает переписать его своими умолчаниями — и оформленный
-  # образ открывается у получателя простым списком файлов (поймано владельцем на 0.6.8: фон,
-  # стрелка и позиции иконок пропали, хотя сама картинка в образе лежала).
-  # Поэтому снимаем файл с ИСХОДНОГО образа, только для чтения, и возвращаем после подписи.
-  say "  запоминаю раскладку окна"
-  hdiutil attach "$dmg" -mountpoint "$mount" -nobrowse -readonly -quiet
-  if [ -f "$mount/.DS_Store" ]; then
-    cp "$mount/.DS_Store" "$layout"
-  else
-    say "  ⚠ в образе нет .DS_Store — оформление окна не задано, возвращать нечего"
-  fi
-  hdiutil detach "$mount" -quiet
+
 
   # Образ приходит сжатым и только для чтения: подписать приложение внутри можно, только сделав
   # его записываемым. Пересобирать образ с нуля нельзя — вместе с ним пропало бы оформленное окно
@@ -105,13 +110,12 @@ sign_dmg() {
   # внешней обёртки macOS не примет. --force: у части вложенного уже есть чужая подпись.
   codesign --force --deep --timestamp=none --sign "$IDENTITY" "$app"
   codesign --verify --deep --strict "$app" >/dev/null 2>&1 || say "  ⚠ проверка подписи с --strict не прошла (для своей машины не критично)"
-  # Возвращаем раскладку ПОСЛЕДНИМ действием перед размонтированием: всё, что делалось на томе до
-  # этого, могло переписать файл, и порядок здесь — не стиль, а условие работы.
-  if [ -f "$layout" ]; then
-    cp "$layout" "$mount/.DS_Store"
-    sync
-    say "  раскладка окна возвращена"
-  fi
+  # Раскладка окна пишется ПОСЛЕДНИМ действием — и пишется заново, а не возвращается из образа.
+  # Причина: сборка платформы записывает её в середине своей работы, а том всё это время видим
+  # Finder, и тот успевает заменить файл умолчаниями. Гонку не выиграть уговорами, поэтому ставим
+  # своё после всех, кто мог помешать (владелец, 0.6.8: окно открылось простым списком файлов).
+  layout "$mount"
+  sync
   hdiutil detach "$mount" -quiet
   # Сжимать обратно ТЕМ ЖЕ способом, которым сжимала сборка: она кладёт `-format ULFO
   # -imagekey lzfse-level=9` (platform/build-scripts/tools/mac/scripts/makedmg.sh), а наш первый
