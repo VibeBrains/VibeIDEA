@@ -130,11 +130,30 @@ class ComposerPanel(
   private val changedFilesLabel = javax.swing.JLabel().apply {
     font = com.intellij.util.ui.JBFont.label().deriveFont(java.awt.Font.PLAIN, 11f)
     foreground = USAGE_FG
+    addMouseListener(object : java.awt.event.MouseAdapter() {
+      override fun mouseClicked(e: java.awt.event.MouseEvent) { onShowChanges?.invoke() }
+    })
   }
+  private val acceptAllButton = PillButton(icon = com.intellij.icons.AllIcons.Actions.Commit) { onAcceptAll?.invoke() }
+    .apply { toolTipText = t("chat.strip.acceptAll"); isVisible = false }
+  private val rejectAllButton = PillButton(icon = com.intellij.icons.AllIcons.Actions.Cancel) { onRejectAll?.invoke() }
+    .apply { toolTipText = t("chat.strip.rejectAll"); isVisible = false }
   private val copyChatButton = PillButton(icon = com.intellij.icons.AllIcons.Actions.Copy) { onCopyChat?.invoke() }
     .apply { toolTipText = t("chat.strip.copy") }
   private val exportChatButton = PillButton(icon = com.intellij.icons.AllIcons.ToolbarDecorator.Export) { onExportChat?.invoke() }
     .apply { toolTipText = t("chat.strip.export") }
+
+  /**
+   * Принять или отклонить всё, что агент изменил, — зелёной и красной кнопкой полоски.
+   *
+   * Обе видны только когда есть что решать: кнопка, которая ничего не делает, учит не нажимать её
+   * и тогда, когда она нужна.
+   */
+  var onAcceptAll: (() -> Unit)? = null
+  var onRejectAll: (() -> Unit)? = null
+
+  /** Показать список изменённых файлов: по клику на подпись. */
+  var onShowChanges: (() -> Unit)? = null
 
   /** Скопировать разговор в Markdown — кнопкой полоски. */
   var onCopyChat: (() -> Unit)? = null
@@ -173,6 +192,8 @@ class ComposerPanel(
     val left = JPanel(FlowLayout(FlowLayout.LEFT, JBUI.scale(PILL_GAP), 0)).apply {
       isOpaque = false
       add(changedFilesLabel)
+      add(acceptAllButton)
+      add(rejectAllButton)
       add(copyChatButton)
       add(exportChatButton)
     }
@@ -196,7 +217,14 @@ class ComposerPanel(
    */
   fun setChangedFiles(count: Int) {
     changedFilesLabel.text = if (count == 0) t("chat.strip.noChanges") else t("chat.strip.changes", "count" to count)
+    changedFilesLabel.cursor = java.awt.Cursor.getPredefinedCursor(
+      if (count == 0) java.awt.Cursor.DEFAULT_CURSOR else java.awt.Cursor.HAND_CURSOR)
+    changedFilesLabel.toolTipText = if (count == 0) null else t("chat.strip.showChanges")
+    acceptAllButton.isVisible = count > 0
+    rejectAllButton.isVisible = count > 0
     changedFilesLabel.revalidate()
+    revalidate()
+    repaint()
   }
 
   /** Что панель делает сейчас: слово и цвет точки справа. */

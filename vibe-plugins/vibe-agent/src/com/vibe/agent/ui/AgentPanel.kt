@@ -481,6 +481,9 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     feedSelection.markdown = { history.get(currentThreadId)?.let { com.vibe.agent.history.ChatExport.toMarkdown(it) } }
     composer.onCopyChat = { copyConversation() }
     composer.onExportChat = { exportConversation() }
+    composer.onAcceptAll = { acceptAllEdits() }
+    composer.onRejectAll = { rejectAllEdits() }
+    composer.onShowChanges = { showChangedFiles() }
     composer.onUsageClick = { showContextPopup() }
     // Кольцо контекста — последним в ряду пилюль, как у VibeIDE: после модели, режима и микрофона.
     composer.addContextRing()
@@ -725,7 +728,97 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
   /** Отметить файл изменённым агентом: полоска над вводом считает их по разговору. */
   private fun noteChangedFile(path: String) {
     changedFiles.add(path)
-    SwingUtilities.invokeLater { composer.setChangedFiles(changedFiles.size) }
+    refreshChangedFiles()
+  }
+
+  private fun journal() = com.vibe.agent.mcp.AgentEditJournal.getInstance(project)
+
+  private fun refreshChangedFiles() {
+    SwingUtilities.invokeLater { composer.setChangedFiles(journal().size()) }
+  }
+
+  /**
+   * Принять всё: правки остаются, список пустеет.
+   *
+   * Принятие ничего не пишет на диск — файлы уже такие. Оно снимает вопрос, и в этом вся разница
+   * с откатом: одно решение стоит ноль действий, другое возвращает байты.
+   */
+  private fun acceptAllEdits() {
+    val count = journal().size()
+    if (count == 0) return
+    journal().acceptAll()
+    refreshChangedFiles()
+    systemLine(t("chat.changes.accepted", "count" to count))
+  }
+
+  /** Отклонить всё: каждый файл возвращается к состоянию до работы агента, и каждый отказ назван. */
+  private fun rejectAllEdits() {
+    journal().all().forEach { entry -> rejectEdit(entry.path) }
+    refreshChangedFiles()
+  }
+
+  private fun rejectEdit(path: String) {
+    when (val result = journal().reject(path)) {
+      is com.vibe.agent.mcp.AgentEditJournal.Revert.Done -> systemLine(t("chat.changes.rejected", "path" to path))
+      is com.vibe.agent.mcp.AgentEditJournal.Revert.Drifted -> systemLine(t("chat.changes.drifted", "path" to path))
+      is com.vibe.agent.mcp.AgentEditJournal.Revert.Failed ->
+        systemLine(t("chat.changes.failed", "path" to path, "reason" to result.reason))
+    }
+    refreshChangedFiles()
+  }
+
+  /**
+   * Список правок агента: по файлу на строку, с кнопками решения и показом самих изменений.
+   *
+   * Показать изменения — не украшение: решать «принять или отклонить», не видя диффа, значит
+   * решать наугад, а именно это и было до сих пор (просьба владельца 18.09.2026).
+   */
+  private fun showChangedFiles() {
+    val entries = journal().all()
+    if (entries.isEmpty()) return
+    val panel = JPanel()
+    panel.layout = javax.swing.BoxLayout(panel, javax.swing.BoxLayout.Y_AXIS)
+    panel.border = JBUI.Borders.empty(8, 10)
+    panel.isOpaque = false
+    val title = JLabel(t("chat.changes.title"))
+    title.font = com.intellij.util.ui.JBFont.label().deriveFont(Font.BOLD, 12f)
+    title.alignmentX = Component.LEFT_ALIGNMENT
+    panel.add(title)
+    val base = project.basePath
+    entries.forEach { entry ->
+      val row = JPanel(java.awt.FlowLayout(java.awt.FlowLayout.LEFT, JBUI.scale(6), JBUI.scale(2)))
+      row.isOpaque = false
+      row.alignmentX = Component.LEFT_ALIGNMENT
+      val shown = base?.let { entry.path.removePrefix(it).removePrefix("/") } ?: entry.path
+      val name = JLabel(shown + (if (entry.before == null) "  (" + t("chat.changes.created") + ")" else ""))
+      name.font = com.intellij.util.ui.JBFont.label().deriveFont(Font.PLAIN, 12f)
+      row.add(name)
+      row.add(com.vibe.agent.ui.composer.PillButton(icon = AllIcons.Actions.Diff) { showEditDiff(entry) }
+                .apply { toolTipText = t("chat.changes.diff") })
+      row.add(com.vibe.agent.ui.composer.PillButton(icon = AllIcons.Actions.Commit) {
+        journal().accept(entry.path); refreshChangedFiles()
+      }.apply { toolTipText = t("chat.changes.accept") })
+      row.add(com.vibe.agent.ui.composer.PillButton(icon = AllIcons.Actions.Cancel) {
+        rejectEdit(entry.path)
+      }.apply { toolTipText = t("chat.changes.reject") })
+      panel.add(row)
+    }
+    JBPopupFactory.getInstance()
+      .createComponentPopupBuilder(panel, null)
+      .setRequestFocus(true)
+      .createPopup()
+      .showUnderneathOf(composer)
+  }
+
+  /** Сами изменения — платформенным окном сравнения: своё было бы хуже и жило бы отдельно. */
+  private fun showEditDiff(entry: com.vibe.agent.mcp.AgentEditJournal.Entry) {
+    val factory = com.intellij.diff.DiffContentFactory.getInstance()
+    val before = factory.create(project, entry.before.orEmpty())
+    val after = factory.create(project, runCatching { java.io.File(entry.path).readText() }.getOrDefault(entry.after))
+    com.intellij.diff.DiffManager.getInstance().showDiff(
+      project,
+      com.intellij.diff.requests.SimpleDiffRequest(entry.path, before, after,
+                                                   t("chat.changes.title"), t("chat.changes.diff")))
   }
 
   /**

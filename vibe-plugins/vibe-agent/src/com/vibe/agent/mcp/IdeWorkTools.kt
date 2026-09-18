@@ -47,7 +47,11 @@ object IdeWorkTools {
     val file = File(path)
     file.parentFile?.mkdirs()
     val existed = file.exists()
+    // Снимок «до» берётся ДО записи и только здесь: без него кнопка «отклонить» не имеет смысла,
+    // а решение о правке агента человек принимает вслепую.
+    val before = if (existed) runCatching { file.readText() }.getOrNull() else null
     file.writeText(content)
+    AgentEditJournal.getInstance(project).record(path, before, content)
     LocalFileSystem.getInstance().refreshAndFindFileByIoFile(file)
     return (if (existed) "переписан" else "создан") + ": " + raw + " (" + content.length + " символов)"
   }
@@ -68,7 +72,9 @@ object IdeWorkTools {
     val count = countOf(text, old)
     if (count == 0) return "в $raw не найдено то, что просили заменить"
     if (count > 1) return "в $raw это встречается $count раз — уточните кусок так, чтобы он был единственным"
-    file.writeText(text.replaceFirst(old, new))
+    val updated = text.replaceFirst(old, new)
+    file.writeText(updated)
+    AgentEditJournal.getInstance(project).record(path, text, updated)
     LocalFileSystem.getInstance().refreshAndFindFileByIoFile(file)
     return "правка внесена: $raw"
   }
