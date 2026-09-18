@@ -1,0 +1,162 @@
+{
+  "name": "Vibe Espresso",
+  "dark": true,
+  "author": "VibeBrains",
+  "parentTheme": "Dark",
+  "editorScheme": "/vibeEspressoScheme.xml",
+  "colors": {
+    "Accent": "#d9a06c",
+    "AccentDim": "#88562d",
+    "Warm": "#c96f5f",
+    "Cool": "#c98dab",
+    "DeepBg": "#171310",
+    "PanelBg": "#211a15",
+    "SelBg": "#3d3125"
+  },
+  "ui": {
+    "*": {
+      "focusColor": "Accent",
+      "underlineColor": "Accent",
+      "inactiveUnderlineColor": "AccentDim",
+      "selectionBackground": "SelBg"
+    },
+    "Component": {
+      "focusedBorderColor": "Accent",
+      "arc": 8
+    },
+    "Button": {
+      "default": {
+        "startBackground": "#4f3b2a",
+        "endBackground": "#4f3b2a",
+        "startBorderColor": "Accent",
+        "endBorderColor": "Accent",
+        "foreground": "#e9ddcf"
+      }
+    },
+    "Link": {
+      "activeForeground": "Accent",
+      "hoverForeground": "Accent",
+      "pressedForeground": "Warm",
+      "visitedForeground": "Cool"
+    },
+    "EditorTabs": {
+      "underlineHeight": 3,
+      "underlineArc": 3
+    },
+    "ProgressBar": {
+      "progressColor": "Accent",
+      "indeterminateStartColor": "Accent",
+      "indeterminateEndColor": "Warm"
+    },
+    "SearchMatch": {
+      "startBackground": "#58422f",
+      "endBackground": "#58422f"
+    },
+    "ToolWindow": {
+      "Button": {
+        "selectedBackground": "#4f3b2a"
+      }
+    },
+    "TabbedPane": {
+      "focusColor": "Accent",
+      "hoverColor": "#372a1f"
+    },
+    "StatusBar": {
+      "Widget": {
+        "hoverBackground": "#372a1f"
+      }
+    },
+    "Counter": {
+      "background": "Warm"
+    },
+    "Vibe": {
+      "Feed": {
+        "endButtonBackground": "PanelBg",
+        "endButtonHoverBackground": "SelBg",
+        "endButtonBorder": "#3a2f26"
+      },
+      "Chat": {
+        "background": "DeepBg",
+        "userBubbleBackground": "SelBg",
+        "toolCardBackground": "PanelBg",
+        "metaForeground": "AccentDim",
+        "terminalBackground": "#110e0c",
+        "terminalForeground": "#e9ddcf",
+        "terminalBorder": "#3a2f26",
+        "terminalOk": "#9cc478",
+        "terminalError": "#c96f5f"
+      },
+      "Composer": {
+        "background": "PanelBg",
+        "border": "#3a2f26",
+        "focusBorder": "AccentDim",
+        "separator": "#3a2f26",
+        "chipBackground": "SelBg",
+        "chipForeground": "#e9ddcf",
+        "pillForeground": "#e9ddcf",
+        "pillHoverBackground": "#372a1f",
+        "accent": "Accent",
+        "accentHover": "#e2b790",
+        "accentForeground": "DeepBg",
+        "accentDisabled": "#49413a",
+        "pillBorder": "#3a2f26",
+        "pillBorderHover": "Accent",
+        "queueBackground": "#39403e",
+        "queueBorder": "#4c5e5f",
+        "queueForeground": "#e9ddcf",
+        "usageForeground": "AccentDim",
+        "usageWarnForeground": "#82b3ba"
+      },
+      "Docs": {
+        "nodeBorder": "#3a2f26",
+        "problemForeground": "#c96f5f",
+        "category1": "#c98dab",
+        "category2": "#cbb071",
+        "category3": "#9cc478",
+        "category4": "#D6AE58",
+        "category5": "#3FB6C4",
+        "category6": "#D673A8",
+        "orphanNode": "#D6AE58",
+        "brokenNode": "#c96f5f",
+        "hoverRing": "Accent",
+        "hintForeground": "#8A90A6",
+        "edge": "AccentDim",
+        "nodeForeground": "#e9ddcf"
+      },
+      "Mention": {
+        "headerForeground": "#e9ddcf",
+        "hintForeground": "AccentDim"
+      },
+      "Tabs": {
+        "activeForeground": "#e9ddcf",
+        "inactiveForeground": "AccentDim",
+        "activeBackground": "#372a1f",
+        "hoverBackground": "#20242E",
+        "underline": "Accent"
+      },
+      "History": {
+        "rowHoverBackground": "#372a1f",
+        "activeStripe": "Warm",
+        "badgeBackground": "SelBg",
+        "quoteForeground": "AccentDim",
+        "groupForeground": "AccentDim",
+        "revealBackground": "SelBg"
+      },
+      "Http": {
+        "success": "#9cc478",
+        "redirect": "#82b3ba",
+        "error": "#c96f5f"
+      },
+      "Db": {
+        "error": "#c96f5f",
+        "editedCell": "#4A4327"
+      },
+      "Design": {
+        "floor": "#c96f5f"
+      },
+      "Runs": {
+        "attention": "#c96f5f"
+      }
+    }
+  }
+}

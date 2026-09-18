@@ -139,6 +139,14 @@ object McpProtocol {
     TOOL_RUN to Risk.EXECUTE,
   )
 
+  /**
+   * Человеческое имя инструмента, объявленное в каталоге, или null для чужого.
+   *
+   * Лента показывала техническое имя (`vibe_decisions_search`), и разговор выглядел машинным логом.
+   * Заголовок уже написан здесь — для внешнего агента; брать его второй раз в UI не нужно.
+   */
+  fun titleOf(name: String): String? = TOOLS.firstOrNull { it.name == name }?.title
+
   /** Класс опасности инструмента; неизвестное имя — [Risk.EXECUTE], то есть самое строгое. */
   fun riskOf(name: String): Risk = RISK[name] ?: Risk.EXECUTE
 

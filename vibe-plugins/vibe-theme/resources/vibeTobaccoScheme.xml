@@ -1,0 +1,58 @@
+<scheme name="Vibe Tobacco" version="142" parent_scheme="Darcula">
+  <metaInfo>
+    <property name="ide">idea</property>
+  </metaInfo>
+  <colors>
+    <option name="CARET_COLOR" value="bd9f70"/>
+    <option name="CARET_ROW_COLOR" value="211e1b"/>
+    <option name="CONSOLE_BACKGROUND_KEY" value="16130f"/>
+    <option name="GUTTER_BACKGROUND" value="16130f"/>
+    <option name="LINE_NUMBERS_COLOR" value="645e55"/>
+    <option name="SELECTION_BACKGROUND" value="363026"/>
+    <option name="INDENT_GUIDE" value="39342e"/>
+    <option name="SELECTED_INDENT_GUIDE" value="6c5839"/>
+  </colors>
+  <attributes>
+    <option name="TEXT">
+      <value>
+        <option name="FOREGROUND" value="d9cfc0"/>
+        <option name="BACKGROUND" value="16130f"/>
+      </value>
+    </option>
+    <option name="DEFAULT_KEYWORD">
+      <value>
+        <option name="FOREGROUND" value="ad6a5c"/>
+      </value>
+    </option>
+    <option name="DEFAULT_STRING">
+      <value>
+        <option name="FOREGROUND" value="97bd75"/>
+      </value>
+    </option>
+    <option name="DEFAULT_NUMBER">
+      <value>
+        <option name="FOREGROUND" value="c388a5"/>
+      </value>
+    </option>
+    <option name="DEFAULT_LINE_COMMENT">
+      <value>
+        <option name="FOREGROUND" value="948671"/>
+      </value>
+    </option>
+    <option name="DEFAULT_BLOCK_COMMENT">
+      <value>
+        <option name="FOREGROUND" value="948671"/>
+      </value>
+    </option>
+    <option name="DEFAULT_FUNCTION_DECLARATION">
+      <value>
+        <option name="FOREGROUND" value="c4aa6e"/>
+      </value>
+    </option>
+    <option name="DEFAULT_CLASS_NAME">
+      <value>
+        <option name="FOREGROUND" value="7eacb4"/>
+      </value>
+    </option>
+  </attributes>
+</scheme>

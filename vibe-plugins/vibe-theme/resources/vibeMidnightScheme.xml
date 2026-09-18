@@ -1,0 +1,58 @@
+<scheme name="Vibe Midnight" version="142" parent_scheme="Darcula">
+  <metaInfo>
+    <property name="ide">idea</property>
+  </metaInfo>
+  <colors>
+    <option name="CARET_COLOR" value="7aa2f7"/>
+    <option name="CARET_ROW_COLOR" value="22242e"/>
+    <option name="CONSOLE_BACKGROUND_KEY" value="171923"/>
+    <option name="GUTTER_BACKGROUND" value="171923"/>
+    <option name="LINE_NUMBERS_COLOR" value="5c606f"/>
+    <option name="SELECTION_BACKGROUND" value="272c3d"/>
+    <option name="INDENT_GUIDE" value="363945"/>
+    <option name="SELECTED_INDENT_GUIDE" value="4a6fb5"/>
+  </colors>
+  <attributes>
+    <option name="TEXT">
+      <value>
+        <option name="FOREGROUND" value="c4cbe3"/>
+        <option name="BACKGROUND" value="171923"/>
+      </value>
+    </option>
+    <option name="DEFAULT_KEYWORD">
+      <value>
+        <option name="FOREGROUND" value="e0af68"/>
+      </value>
+    </option>
+    <option name="DEFAULT_STRING">
+      <value>
+        <option name="FOREGROUND" value="9ece6a"/>
+      </value>
+    </option>
+    <option name="DEFAULT_NUMBER">
+      <value>
+        <option name="FOREGROUND" value="ff9e64"/>
+      </value>
+    </option>
+    <option name="DEFAULT_LINE_COMMENT">
+      <value>
+        <option name="FOREGROUND" value="565f89"/>
+      </value>
+    </option>
+    <option name="DEFAULT_BLOCK_COMMENT">
+      <value>
+        <option name="FOREGROUND" value="565f89"/>
+      </value>
+    </option>
+    <option name="DEFAULT_FUNCTION_DECLARATION">
+      <value>
+        <option name="FOREGROUND" value="7aa2f7"/>
+      </value>
+    </option>
+    <option name="DEFAULT_CLASS_NAME">
+      <value>
+        <option name="FOREGROUND" value="2ac3de"/>
+      </value>
+    </option>
+  </attributes>
+</scheme>

@@ -10,6 +10,7 @@ import com.intellij.openapi.fileEditor.FileEditorManagerEvent
 import com.intellij.openapi.fileEditor.FileEditorManagerListener
 import com.intellij.openapi.options.ShowSettingsUtil
 import com.intellij.openapi.project.Project
+import com.intellij.openapi.ui.popup.JBPopupFactory
 import com.intellij.openapi.ui.Messages
 import com.intellij.ui.JBColor
 import com.intellij.util.ui.JBUI
@@ -258,6 +259,9 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
   /** Rough running total of this chat's tokens; the session ceiling is checked against it. */
   private val sessionTokens = java.util.concurrent.atomic.AtomicLong(0)
 
+  /** Чем был занят контекст последнего запроса; пусто до первого хода. */
+  @Volatile private var lastContext = com.vibe.agent.context.ContextBreakdown.NONE
+
   /** Thresholds already said out loud for this chat: a warning repeated every frame is noise. */
   private val announcedContextLevels = java.util.Collections.synchronizedSet(HashSet<String>())
   /** Set when a turn ran an edit/command tool: its writes may be invisible to the client (agent-internal Bash). */
@@ -459,6 +463,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     // The microphone appears only where recording is possible: a button that cannot work is worse
     // than no button.
     if (com.vibe.agent.voice.VoiceCapture.isSupported()) composer.addPill(voicePill)
+    composer.onUsageClick = { showContextPopup() }
     composer.addRightPill(historyPill)
     add(tabsStrip, BorderLayout.NORTH)
     add(centerWrap, BorderLayout.CENTER)
@@ -685,6 +690,97 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
       history.updateState(currentThreadId, ThreadState(t?.id))
     }
     updateLanding()
+  }
+
+  /**
+   * Сохранить текущий разговор файлом: markdown для чтения, json для возврата.
+   *
+   * Формат спрашивается расширением в диалоге сохранения, а не отдельным вопросом: человек и так
+   * пишет имя файла, и второй диалог ради выбора из двух — лишний шаг.
+   */
+  fun exportConversation() {
+    val thread = history.get(currentThreadId) ?: run { systemLine(t("export.failed", "reason" to t("chat.noThread"))); return }
+    val descriptor = com.intellij.openapi.fileChooser.FileSaverDescriptor(
+      t("export.title"), t("export.format.markdown") + " / " + t("export.format.json"), "md", "json")
+    val chosen = com.intellij.openapi.fileChooser.FileChooserFactory.getInstance()
+      .createSaveFileDialog(descriptor, project)
+      .save(null as com.intellij.openapi.vfs.VirtualFile?, com.vibe.agent.history.ChatExport.fileName(thread, "md"))
+      ?: return
+    val file = chosen.file
+    val text = if (file.name.endsWith(".json")) com.vibe.agent.history.ChatExport.toJson(thread)
+               else com.vibe.agent.history.ChatExport.toMarkdown(thread)
+    try {
+      file.writeText(text)
+      systemLine(t("export.done", "path" to file.path))
+    }
+    catch (e: Exception) {
+      systemLine(t("export.failed", "reason" to (e.message ?: e.javaClass.simpleName)))
+    }
+  }
+
+  /**
+   * Загрузить разговор из json — НОВЫМ тредом, а не поверх существующего.
+   *
+   * Иначе файл, выгруженный из этой же IDE, вернулся бы с тем же идентификатором и затёр то, что
+   * человек продолжал писать после выгрузки.
+   */
+  fun importConversation() {
+    val descriptor = com.intellij.openapi.fileChooser.FileChooserDescriptorFactory
+      .createSingleFileDescriptor("json").withTitle(t("import.title"))
+    val file = com.intellij.openapi.fileChooser.FileChooser.chooseFile(descriptor, project, null) ?: return
+    val source = com.vibe.agent.history.ChatExport.fromJson(String(file.contentsToByteArray(), Charsets.UTF_8))
+    if (source == null) {
+      systemLine(t("import.failed"))
+      return
+    }
+    val fresh = history.create(project.basePath, project.name)
+    source.messages.forEach { history.append(fresh.id, it) }
+    activateThread(fresh.id)
+    systemLine(t("import.done", "title" to source.title.ifBlank { t("export.untitled") }))
+  }
+
+  /**
+   * Контекст и токены: сколько потрачено за сессию и чем занят запрос.
+   *
+   * Всплывашкой по клику на счётчик, а не строкой в ленте: это справка, которую спрашивают в
+   * момент вопроса, и в переписке она была бы шумом на каждый ход.
+   */
+  private fun showContextPopup() {
+    val panel = JPanel()
+    panel.layout = javax.swing.BoxLayout(panel, javax.swing.BoxLayout.Y_AXIS)
+    panel.border = JBUI.Borders.empty(10, 12)
+    panel.isOpaque = false
+    fun line(text: String, bold: Boolean = false, dim: Boolean = false) {
+      val label = JLabel(text)
+      label.font = com.intellij.util.ui.JBFont.label().deriveFont(if (bold) Font.BOLD else Font.PLAIN, 12f)
+      if (dim) label.foreground = META_FG
+      label.alignmentX = Component.LEFT_ALIGNMENT
+      panel.add(label)
+    }
+    line(t("context.popup.title"), bold = true)
+    val limit = VibeChatSettings.sessionTokenLimit.takeIf { it > 0 }
+    val used = sessionTokens.get()
+    line(if (limit == null) t("context.popup.session", "used" to "%,d".format(used))
+         else t("context.popup.sessionOf", "used" to "%,d".format(used), "limit" to "%,d".format(limit),
+                "percent" to (used * 100 / limit.coerceAtLeast(1))))
+    panel.add(javax.swing.Box.createVerticalStrut(JBUI.scale(8)))
+    val snapshot = lastContext
+    if (snapshot.isEmpty) {
+      line(t("context.popup.noData"), dim = true)
+    }
+    else {
+      line(t("context.popup.parts"), bold = true)
+      snapshot.parts.forEach { part ->
+        line(part.title + "   " + (if (part.tokens > 0) "%,d".format(part.tokens) else ""), dim = true)
+      }
+      line(t("context.popup.total", "tokens" to "%,d".format(snapshot.total)), dim = true)
+      line(t("context.popup.estimate"), dim = true)
+    }
+    JBPopupFactory.getInstance()
+      .createComponentPopupBuilder(panel, null)
+      .setRequestFocus(false)
+      .createPopup()
+      .showUnderneathOf(composer.usageAnchor())
   }
 
   private fun openSettings() {
@@ -3377,6 +3473,9 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
                      "total" to lastWireLines.size))
       }
       lastWireLines = lines
+      // Снимок разбивки берётся ЗДЕСЬ, на собранном запросе: позже его уже не из чего сложить —
+      // история сжимается, набор инструментов меняется, и «что занимало контекст» станет догадкой.
+      lastContext = com.vibe.agent.context.ContextBreakdown.of(wire, tools)
       val toolNames = tools.map { it.name }
       if (com.vibe.agent.history.WirePrefix.toolSetChanged(lastToolNames, toolNames)) {
         systemLine(t("cache.toolsChanged", "before" to (lastToolNames?.size ?: 0), "after" to toolNames.size))
@@ -3521,7 +3620,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
    * Reading runs; writing needs a trusted project and the person's yes, asked for this very call.
    */
   private fun runDirectTool(call: com.vibe.agent.providers.ToolCall, model: String): com.vibe.agent.providers.ToolResult {
-    systemLine(t("directTools.call", "tool" to call.name))
+    toolCard(t("directTools.call", "tool" to com.vibe.agent.ui.ToolCallLabel.of(call.name, call.arguments)))
     val actor = com.vibe.agent.audit.AuditActor(com.vibe.agent.audit.AuditActor.Kind.AGENT, agent = model)
     audit?.append(AuditEvent(System.currentTimeMillis(), AuditEvent.Action.TOOL_CALL_START, ok = true, actor = actor,
                              callId = call.id, model = model, meta = mapOf("tool" to call.name)))
@@ -5273,11 +5372,24 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
         com.vibe.agent.budget.FileSpend.attribute(counted, turnAttachments), threadId)
       stretchTokens.addAndGet(counted)
     }
+    // Счётчик прямого провода: у ACP-агента окно считает он сам и присылает `usage_update`, а у
+    // прямой модели такого кадра нет вовсе — и до 18.09.2026 счётчик у неё просто не появлялся,
+    // то есть нажать на него и посмотреть разбивку было не на чем.
+    SwingUtilities.invokeLater {
+      val used = sessionTokens.get()
+      if (used > 0) composer.setUsage(
+        text = "⛁ " + "%,d".format(used),
+        tooltip = t("context.popup.title"),
+        warn = VibeChatSettings.sessionTokenLimit.let { it > 0 && used >= it * USAGE_WARN_PCT / 100 },
+      )
+    }
     // currentAgentMessage is EDT-owned (appendAgentText also touches it on the EDT); read+clear it there.
     SwingUtilities.invokeLater {
       val m = currentAgentMessage
       currentAgentMessage = null
       // Each response (turn or gate sub-turn) gets its own reasoning block; reset on the EDT.
+      // Заголовок блока досказывается ДО сброса ссылки: иначе он навсегда остаётся на «думает…».
+      thoughtsBlock?.finish()
       thoughtsBlock = null
       if (m != null) {
         // Flush the tail the per-delta projections did not reach before the buffer was cleared.

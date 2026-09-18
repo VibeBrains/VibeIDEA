@@ -117,11 +117,26 @@ class ComposerPanel(
     font = com.intellij.util.ui.JBFont.label().deriveFont(java.awt.Font.PLAIN, 10f)
     foreground = USAGE_FG
     isVisible = false
+    cursor = java.awt.Cursor.getPredefinedCursor(java.awt.Cursor.HAND_CURSOR)
+    addMouseListener(object : java.awt.event.MouseAdapter() {
+      override fun mouseClicked(e: java.awt.event.MouseEvent) { onUsageClick?.invoke() }
+    })
   }
   private val pillsLeft = JPanel(WrapLayout(FlowLayout.LEFT, JBUI.scale(PILL_GAP), JBUI.scale(PILL_GAP))).apply { isOpaque = false }
   private val pillsRight = JPanel(FlowLayout(FlowLayout.RIGHT, JBUI.scale(PILL_GAP), 0)).apply { isOpaque = false }
 
+  /**
+   * Что делать по клику на счётчик контекста.
+   *
+   * Счётчик отвечал только на «сколько занято» и молчал о «чем именно», а это следующий вопрос
+   * человека и единственный, из которого следует действие. Клик открывает разбивку.
+   */
+  var onUsageClick: (() -> Unit)? = null
+
   /** Show/update the context-usage chip; null hides it (e.g. a new session). EDT only. */
+  /** Компонент счётчика — якорь для всплывающей разбивки; popup показывается под ним. */
+  fun usageAnchor(): javax.swing.JComponent = usageLabel
+
   fun setUsage(text: String?, tooltip: String?, warn: Boolean) {
     usageLabel.isVisible = text != null
     usageLabel.text = text.orEmpty()

@@ -22,7 +22,7 @@ class VibeAgentToolWindowFactory : ToolWindowFactory {
     content.setDisposer(panel)
     content.preferredFocusableComponent = panel.preferredFocusComponent
     toolWindow.contentManager.addContent(content)
-    installSettingsAction(project, toolWindow)
+    installTitleActions(project, toolWindow, panel)
   }
 
   /**
@@ -33,13 +33,20 @@ class VibeAgentToolWindowFactory : ToolWindowFactory {
    * 18.09.2026). Шестерёнка панели — то самое место, где их ищут по привычке из любой другой
    * панели IDE.
    */
-  private fun installSettingsAction(project: Project, toolWindow: ToolWindow) {
+  private fun installTitleActions(project: Project, toolWindow: ToolWindow, panel: AgentPanel) {
     val ex = toolWindow as? ToolWindowEx ?: return
-    ex.setTitleActions(listOf(object : DumbAwareAction(t("chat.settingsPill"), t("chat.settingsPill"), AllIcons.General.Settings) {
-      override fun getActionUpdateThread(): ActionUpdateThread = ActionUpdateThread.EDT
-      override fun actionPerformed(e: AnActionEvent) {
+    ex.setTitleActions(listOf(
+      action(t("export.title"), AllIcons.ToolbarDecorator.Export) { panel.exportConversation() },
+      action(t("import.title"), AllIcons.ToolbarDecorator.Import) { panel.importConversation() },
+      action(t("chat.settingsPill"), AllIcons.General.Settings) {
         ShowSettingsUtil.getInstance().showSettingsDialog(project, VibeProvidersConfigurable::class.java)
-      }
-    }))
+      },
+    ))
   }
+
+  private fun action(title: String, icon: javax.swing.Icon, perform: () -> Unit) =
+    object : DumbAwareAction(title, title, icon) {
+      override fun getActionUpdateThread(): ActionUpdateThread = ActionUpdateThread.EDT
+      override fun actionPerformed(e: AnActionEvent) = perform()
+    }
 }

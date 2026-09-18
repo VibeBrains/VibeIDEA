@@ -168,8 +168,15 @@ PYWIN
 "$PYTHON" - "$root" <<'PYTOKENS' || status=1
 import collections, io, json, os, re, sys
 root = sys.argv[1]
-theme = json.load(io.open(os.path.join(root, 'vibe-plugins/vibe-theme/resources/vibeNeonDark.theme.json'), encoding='utf-8'),
-                  object_pairs_hook=collections.OrderedDict)
+# Проверяются ВСЕ наши темы, а не одна: токен, объявленный только в первой, оставляет остальные
+# темы некрашеными — и это ровно тот дефект, который тема и обязана была закрыть (18.09.2026,
+# когда тем стало семь).
+themes_dir = os.path.join(root, 'vibe-plugins/vibe-theme/resources')
+themes = {}
+for theme_name in sorted(os.listdir(themes_dir)):
+    if theme_name.endswith('.theme.json'):
+        themes[theme_name] = json.load(io.open(os.path.join(themes_dir, theme_name), encoding='utf-8'),
+                                       object_pairs_hook=collections.OrderedDict)
 
 def flat(obj, prefix=''):
     out = {}
@@ -181,7 +188,8 @@ def flat(obj, prefix=''):
             out[full] = value
     return out
 
-declared = set(flat({'Vibe': theme['ui'].get('Vibe', {})}))
+declared_per_theme = {name: set(flat({'Vibe': body['ui'].get('Vibe', {})})) for name, body in themes.items()}
+declared = set.intersection(*declared_per_theme.values()) if declared_per_theme else set()
 used = set()
 for base, _, files in os.walk(os.path.join(root, 'vibe-plugins')):
     if os.sep + 'src' + os.sep not in base + os.sep:
@@ -191,6 +199,11 @@ for base, _, files in os.walk(os.path.join(root, 'vibe-plugins')):
             text = io.open(os.path.join(base, name), encoding='utf-8').read()
             used |= set(re.findall(r'namedColor\("(Vibe\.[^"]+)"', text))
 missing = sorted(used - declared)
+for theme_name, theme_tokens in sorted(declared_per_theme.items()):
+    gaps = sorted(used - theme_tokens)
+    if gaps:
+        print('ОШИБКА: тема %s не объявляет токены: %s' % (theme_name, ', '.join(gaps)))
+        sys.exit(1)
 dead = sorted(declared - used)
 if missing:
     print('ОШИБКА: токены темы, которые зовёт код, но не объявляет тема (панель не перекрасится):')

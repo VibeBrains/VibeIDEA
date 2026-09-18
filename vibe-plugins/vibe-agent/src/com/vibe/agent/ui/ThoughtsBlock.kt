@@ -7,19 +7,27 @@ import com.intellij.ui.JBColor
 import com.intellij.util.ui.JBUI
 import java.awt.BorderLayout
 import java.awt.Component
+import java.awt.Cursor
 import java.awt.Font
 import javax.swing.JLabel
 import javax.swing.JPanel
 import javax.swing.JTextArea
 
 /**
- * Collapsible "thinking" block for the agent's reasoning stream
- * (ACP `agent_thought_chunk`, previously dropped on the floor). Dim and collapsed
- * by default — reasoning is secondary to the answer, but one click reveals it.
+ * Сворачиваемый блок рассуждения агента: ACP-поток `agent_thought_chunk`, поле `reasoning_content`
+ * у OpenAI-совместимых, `thinking` у Anthropic и теги `<think>` внутри ответа ([InlineThinking]).
+ *
+ * Свёрнут по умолчанию — рассуждение вторично по отношению к ответу, но один клик его открывает.
+ *
+ * Заголовок обязан говорить, что внутри: пустая надпись «размышления» ничем не отличается от
+ * заглушки, и свёрнутый блок выглядит как неработающая кнопка. Пока ход идёт — «думает…», после —
+ * объём в знаках, чтобы решение «открывать или нет» принималось до клика (владелец сравнил с
+ * VibeIDE, 18.09.2026).
  */
 class ThoughtsBlock : JPanel(BorderLayout()) {
   private var collapsed = true
-  private val header = JLabel("▸ 💭 " + t("thoughts.title"))
+  private var streaming = true
+  private val header = JLabel()
   private val area = JTextArea().apply {
     isEditable = false
     isOpaque = false
@@ -38,22 +46,41 @@ class ThoughtsBlock : JPanel(BorderLayout()) {
     header.font = com.intellij.util.ui.JBFont.label().deriveFont(Font.PLAIN, 11f)
     header.foreground = FG
     header.border = JBUI.Borders.empty(3, 6)
-    header.cursor = java.awt.Cursor.getPredefinedCursor(java.awt.Cursor.HAND_CURSOR)
+    header.cursor = Cursor.getPredefinedCursor(Cursor.HAND_CURSOR)
     header.toolTipText = t("thoughts.tooltip")
     header.addMouseListener(object : java.awt.event.MouseAdapter() {
       override fun mouseClicked(e: java.awt.event.MouseEvent) {
         collapsed = !collapsed
         area.isVisible = !collapsed
-        header.text = (if (collapsed) "▸" else "▾") + " 💭 " + t("thoughts.title")
+        redrawHeader()
         revalidate(); repaint()
       }
     })
     add(header, BorderLayout.NORTH)
     add(area, BorderLayout.CENTER)
+    redrawHeader()
   }
 
   fun append(text: String) {
     area.text = area.text + text
+    redrawHeader()
+  }
+
+  /**
+   * Ход кончился: заголовок перестаёт обещать продолжение.
+   *
+   * Блок, навсегда застрявший на «думает…», врёт о состоянии — и именно это видно первым, когда
+   * возвращаешься к старому разговору.
+   */
+  fun finish() {
+    streaming = false
+    redrawHeader()
+  }
+
+  private fun redrawHeader() {
+    val chevron = if (collapsed) "▸" else "▾"
+    val state = if (streaming) t("thoughts.streaming") else t("thoughts.size", "chars" to area.text.length)
+    header.text = "$chevron 💭 " + t("thoughts.title") + "  ·  " + state
   }
 
   companion object {

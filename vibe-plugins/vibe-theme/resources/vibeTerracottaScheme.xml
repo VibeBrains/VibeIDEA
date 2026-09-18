@@ -1,0 +1,58 @@
+<scheme name="Vibe Terracotta" version="142" parent_scheme="Darcula">
+  <metaInfo>
+    <property name="ide">idea</property>
+  </metaInfo>
+  <colors>
+    <option name="CARET_COLOR" value="d98a68"/>
+    <option name="CARET_ROW_COLOR" value="27221f"/>
+    <option name="CONSOLE_BACKGROUND_KEY" value="1c1714"/>
+    <option name="GUTTER_BACKGROUND" value="1c1714"/>
+    <option name="LINE_NUMBERS_COLOR" value="6d655e"/>
+    <option name="SELECTION_BACKGROUND" value="403428"/>
+    <option name="INDENT_GUIDE" value="403a35"/>
+    <option name="SELECTED_INDENT_GUIDE" value="7f422a"/>
+  </colors>
+  <attributes>
+    <option name="TEXT">
+      <value>
+        <option name="FOREGROUND" value="e7dccd"/>
+        <option name="BACKGROUND" value="1c1714"/>
+      </value>
+    </option>
+    <option name="DEFAULT_KEYWORD">
+      <value>
+        <option name="FOREGROUND" value="c05c50"/>
+      </value>
+    </option>
+    <option name="DEFAULT_STRING">
+      <value>
+        <option name="FOREGROUND" value="96c171"/>
+      </value>
+    </option>
+    <option name="DEFAULT_NUMBER">
+      <value>
+        <option name="FOREGROUND" value="c585a5"/>
+      </value>
+    </option>
+    <option name="DEFAULT_LINE_COMMENT">
+      <value>
+        <option name="FOREGROUND" value="ab9d8c"/>
+      </value>
+    </option>
+    <option name="DEFAULT_BLOCK_COMMENT">
+      <value>
+        <option name="FOREGROUND" value="ab9d8c"/>
+      </value>
+    </option>
+    <option name="DEFAULT_FUNCTION_DECLARATION">
+      <value>
+        <option name="FOREGROUND" value="c8ac6a"/>
+      </value>
+    </option>
+    <option name="DEFAULT_CLASS_NAME">
+      <value>
+        <option name="FOREGROUND" value="7caeb6"/>
+      </value>
+    </option>
+  </attributes>
+</scheme>

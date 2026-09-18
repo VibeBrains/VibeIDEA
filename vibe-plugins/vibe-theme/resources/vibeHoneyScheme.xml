@@ -1,0 +1,58 @@
+<scheme name="Vibe Honey" version="142" parent_scheme="Darcula">
+  <metaInfo>
+    <property name="ide">idea</property>
+  </metaInfo>
+  <colors>
+    <option name="CARET_COLOR" value="d8ad5a"/>
+    <option name="CARET_ROW_COLOR" value="24201d"/>
+    <option name="CONSOLE_BACKGROUND_KEY" value="191512"/>
+    <option name="GUTTER_BACKGROUND" value="191512"/>
+    <option name="LINE_NUMBERS_COLOR" value="6c655d"/>
+    <option name="SELECTION_BACKGROUND" value="3e3224"/>
+    <option name="INDENT_GUIDE" value="3e3933"/>
+    <option name="SELECTED_INDENT_GUIDE" value="826226"/>
+  </colors>
+  <attributes>
+    <option name="TEXT">
+      <value>
+        <option name="FOREGROUND" value="eadfce"/>
+        <option name="BACKGROUND" value="191512"/>
+      </value>
+    </option>
+    <option name="DEFAULT_KEYWORD">
+      <value>
+        <option name="FOREGROUND" value="bf6754"/>
+      </value>
+    </option>
+    <option name="DEFAULT_STRING">
+      <value>
+        <option name="FOREGROUND" value="96c56d"/>
+      </value>
+    </option>
+    <option name="DEFAULT_NUMBER">
+      <value>
+        <option name="FOREGROUND" value="c882a5"/>
+      </value>
+    </option>
+    <option name="DEFAULT_LINE_COMMENT">
+      <value>
+        <option name="FOREGROUND" value="a49584"/>
+      </value>
+    </option>
+    <option name="DEFAULT_BLOCK_COMMENT">
+      <value>
+        <option name="FOREGROUND" value="a49584"/>
+      </value>
+    </option>
+    <option name="DEFAULT_FUNCTION_DECLARATION">
+      <value>
+        <option name="FOREGROUND" value="ccae66"/>
+      </value>
+    </option>
+    <option name="DEFAULT_CLASS_NAME">
+      <value>
+        <option name="FOREGROUND" value="79b0b9"/>
+      </value>
+    </option>
+  </attributes>
+</scheme>

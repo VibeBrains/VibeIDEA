@@ -1,11 +1,17 @@
 <idea-plugin>
   <id>com.vibe.theme</id>
-  <name>Vibe Neon Theme</name>
+  <name>Vibe Themes</name>
   <vendor>VibeBrains</vendor>
   <category>Themes</category>
-  <description>Vibe Neon Dark — the signature VibeIDEA dark theme with neon accents.</description>
+  <description>The VibeIDEA themes: Neon Dark, Midnight, Graphite, Terracotta, Espresso, Honey and Tobacco.</description>
   <depends>com.intellij.modules.platform</depends>
   <extensions defaultExtensionNs="com.intellij">
     <themeProvider id="VibeNeonDark" path="/vibeNeonDark.theme.json" targetUi="new"/>
+    <themeProvider id="VibeMidnight" path="/vibeMidnight.theme.json" targetUi="new"/>
+    <themeProvider id="VibeGraphite" path="/vibeGraphite.theme.json" targetUi="new"/>
+    <themeProvider id="VibeTerracotta" path="/vibeTerracotta.theme.json" targetUi="new"/>
+    <themeProvider id="VibeEspresso" path="/vibeEspresso.theme.json" targetUi="new"/>
+    <themeProvider id="VibeHoney" path="/vibeHoney.theme.json" targetUi="new"/>
+    <themeProvider id="VibeTobacco" path="/vibeTobacco.theme.json" targetUi="new"/>
   </extensions>
 </idea-plugin>
