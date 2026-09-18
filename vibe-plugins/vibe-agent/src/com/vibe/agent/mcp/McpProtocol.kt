@@ -97,6 +97,7 @@ object McpProtocol {
   const val TOOL_OPEN_FILE = "vibe_open_file"
   const val TOOL_READ_FILE = "vibe_read_file"
   const val TOOL_IDE_INFO = "vibe_ide_info"
+  const val TOOL_PROBLEMS = "vibe_problems"
   const val TOOL_DOCS_SEARCH = "vibe_docs_search"
   const val TOOL_WRITE_FILE = "vibe_write_file"
   const val TOOL_REPLACE_IN_FILE = "vibe_replace_in_file"
@@ -130,6 +131,7 @@ object McpProtocol {
     TOOL_OPEN_FILE to Risk.READ,
     TOOL_READ_FILE to Risk.READ,
     TOOL_IDE_INFO to Risk.READ,
+    TOOL_PROBLEMS to Risk.READ,
     TOOL_DOCS_SEARCH to Risk.READ,
     TOOL_DECISIONS_SEARCH to Risk.READ,
     TOOL_DECISIONS_RECORD to Risk.WRITE,
@@ -258,6 +260,21 @@ object McpProtocol {
           putJsonObject("limit") { put("type", "integer"); put("description", "Сколько разделов вернуть, по умолчанию 5") }
         }
         putJsonArray("required") { add(kotlinx.serialization.json.JsonPrimitive("query")) }
+      },
+    ),
+    Tool(
+      name = TOOL_PROBLEMS,
+      title = "Ошибки и предупреждения файла",
+      description = "То, что IDE подчеркнула в файле: ошибки разбора, инспекции платформы и диагностика языкового " +
+                    "сервера — ровно то, что видит человек на экране, с номером строки, важностью и самой строкой. " +
+                    "Спрашивать ПЕРЕД тем, как чинить: «почини ошибки» без этого списка означает чинить по догадке.\n" +
+                    "Важно: разметка есть только у ОТКРЫТОГО в редакторе файла. Для закрытого ответ — «откройте его», " +
+                    "и это не пустой список: пустой означал бы, что ошибок нет.",
+      schema = buildJsonObject {
+        put("type", "object")
+        putJsonObject("properties") {
+          putJsonObject("path") { put("type", "string"); put("description", "Путь файла; без него — открытый в редакторе") }
+        }
       },
     ),
     Tool(

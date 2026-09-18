@@ -18,8 +18,15 @@ class LspIdeFacts : VibeIdeFacts {
   override fun facts(project: Project): List<String> {
     val checks = LspDoctor.check(LspDoctor.active(PhpServerChoice.effective()))
     val lines = ArrayList<String>()
-    lines += "Языки подключены языковыми серверами (LSP), а не плагинами-расширениями: " +
-             "маркетплейса расширений в этой IDE нет."
+    // Формулировка важнее, чем кажется: первая версия говорила «маркетплейса расширений в этой IDE
+    // нет», и это неправда — Settings → Plugins с JetBrains Marketplace наследуется от платформы.
+    // Модель, поверив нам, спорила с человеком, который видел меню своими глазами (18.09.2026).
+    // Правда мельче и полезнее: маркетплейс есть, но языки подключены не через него.
+    lines += "Плагины ставятся из JetBrains Marketplace (Settings → Plugins), как в любой IDE на этой " +
+             "платформе. Но языки в этой сборке подключены ЯЗЫКОВЫМИ СЕРВЕРАМИ, объявленными в коде, " +
+             "а не плагинами: поставить плагин ради нового языка не выйдет. Глубокая поддержка " +
+             "TypeScript/Angular у JetBrains живёт в закрытых плагинах платных IDE и в Community " +
+             "недоступна вовсе — её заменяют серверы ниже."
     checks.forEach { check ->
       val state = when {
         !check.installed -> "не установлен, поставить: " + LspDoctor.installCommandFor(check.spec)

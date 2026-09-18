@@ -57,6 +57,7 @@ class VibeMcpTools(private val projectProvider: () -> Project? = { ProjectManage
       McpProtocol.TOOL_OPEN_FILE -> openFile(project)
       McpProtocol.TOOL_READ_FILE -> readFile(project, arguments)
       McpProtocol.TOOL_IDE_INFO -> ideInfo(project)
+      McpProtocol.TOOL_PROBLEMS -> problems(project, arguments)
       McpProtocol.TOOL_DOCS_SEARCH -> docsSearch(arguments)
       McpProtocol.TOOL_WRITE_FILE -> writeFile(project, arguments)
       McpProtocol.TOOL_REPLACE_IN_FILE -> replaceInFile(project, arguments)
@@ -347,6 +348,29 @@ class VibeMcpTools(private val projectProvider: () -> Project? = { ProjectManage
     val query = string(arguments, "query") ?: return McpServer.Tools.Result("нужен аргумент query", isError = true)
     val limit = arguments["limit"]?.jsonPrimitive?.contentOrNull?.toIntOrNull() ?: DEFAULT_DOCS_LIMIT
     return McpServer.Tools.Result(com.vibe.agent.help.HelpBundle.search(query, limit))
+  }
+
+  /**
+   * Ошибки и предупреждения файла — те же, что подчёркнуты на экране.
+   *
+   * Путь не назван — берём открытый в редакторе: «почини ошибки» почти всегда про то, что человек
+   * сейчас видит.
+   */
+  private fun problems(project: Project, arguments: JsonObject): McpServer.Tools.Result {
+    val raw = string(arguments, "path")
+    val path = if (raw != null) IdeWorkTools.resolve(project, raw) else IdeEditorFacts.selected(project)?.path
+      ?: return McpServer.Tools.Result("в редакторе ничего не открыто — назовите путь файла", isError = true)
+    if (!readable(path, ProjectContextService.getInstance(project).roots())) {
+      return McpServer.Tools.Result("читать нельзя: " + path, isError = true)
+    }
+    val found = IdeProblems.of(project, path)
+      ?: return McpServer.Tools.Result(
+        "файл не открыт в редакторе, поэтому разметки у него нет: откройте " + path +
+        " и спросите снова. Это не значит, что ошибок нет.")
+    if (found.isEmpty()) return McpServer.Tools.Result("IDE не нашла в " + path + " ни ошибок, ни предупреждений")
+    return McpServer.Tools.Result(found.joinToString("\n") { p ->
+      p.line.toString() + ": [" + p.severity + "] " + p.message + "  |  " + p.text
+    })
   }
 
   /** Состояние самой IDE: наша часть и всё, что рассказали о себе соседние плагины. */

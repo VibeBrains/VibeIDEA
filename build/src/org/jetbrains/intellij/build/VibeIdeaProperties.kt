@@ -171,7 +171,11 @@ open class VibeIdeaProperties(communityHomeDir: Path) : IdeaCommunityProperties(
   override fun getOutputDirectoryName(appInfo: ApplicationInfoProperties): String = "vibeidea"
 
   override fun createMacCustomizer(projectHome: Path): MacDistributionCustomizer = ideaCommunityMacCustomizer(projectHome) {
-    bundleIdentifier = "com.vibe.vibeidea"
+    // Обратный домен ВЛАДЕЛЬЦА марки, а не первое попавшееся `com.*`: идентификатор бандла — то,
+    // по чему macOS отличает наше приложение от чужого, и менять его потом дорого (связка ключей
+    // выдаёт доступ к секретам по нему, а LaunchServices по нему же помнит умолчания). Решение
+    // владельца 18.09.2026, принято до первой подписанной сборки — именно чтобы не менять позже.
+    bundleIdentifier = "ru.vibebrains.vibeidea"
     urlSchemes = listOf("vibeidea")
     rootDirectoryName { _, _ -> "VibeIDEA.app" }
     icnsPath = "vibeidea-customization/resources/mac/vibeidea.icns"
