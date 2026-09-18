@@ -32,7 +32,7 @@ class VibeUiConfigurable : Configurable {
 
   override fun createComponent(): JComponent {
     val spinner = JBIntSpinner(currentThickness(), MIN_THICKNESS, MAX_THICKNESS).also { thickness = it }
-    return VibeScroll.pane(TracksViewportWidthPanel(FormBuilder.createFormBuilder()
+    return SettingsUi.page(FormBuilder.createFormBuilder()
       .addLabeledComponent(t("settings.ui.scrollThickness"), spinner)
       .addComponent(hint(t("settings.ui.scrollHint")))
       .addComponent(JBCheckBox(t("settings.ui.promo"), VibePromoSettings.isEnabled()).also { promo = it })
@@ -41,12 +41,11 @@ class VibeUiConfigurable : Configurable {
       .addComponent(hint(t("settings.ui.languageHint", "dir" to VibeI18n.langDir().toString())))
       .addComponent(com.intellij.ui.components.ActionLink(t("settings.ui.createBaseFile")) { createBaseFile() })
       .addComponentFillVertically(JPanel(), 0)
-      .panel.apply { border = JBUI.Borders.empty(8) }))
+      .panel.apply { border = JBUI.Borders.empty(8) })
   }
 
-  /** Grey hint under a control: one place, so wording and colour cannot drift between pages. */
-  private fun hint(text: String) = JBLabel("<html>$text</html>").apply {
-    foreground = com.intellij.ui.JBColor.GRAY
+  /** Grey hint under a control — общая форма: перенос по ширине и нулевой минимум (SettingsUi). */
+  private fun hint(text: String) = SettingsUi.hint(text).apply {
     font = com.intellij.util.ui.JBFont.label().deriveFont(11f)
   }
 

@@ -112,7 +112,7 @@ class VibeModelsConfigurable(private val project: Project) : Configurable, Confi
         // вопрос «а где остальные модели» возникает при первом же открытии страницы.
         add(totalHint, BorderLayout.SOUTH)
       }, BorderLayout.NORTH)
-      add(com.vibe.agent.ui.VibeScroll.pane(TracksViewportWidthPanel(list)), BorderLayout.CENTER)
+      add(com.vibe.agent.settings.SettingsUi.page(list), BorderLayout.CENTER)
     }
   }
 
@@ -128,7 +128,7 @@ class VibeModelsConfigurable(private val project: Project) : Configurable, Confi
 
     val providers = ProvidersService.load(project.basePath) { }
     if (providers.isEmpty()) {
-      list.add(JBLabel("<html>" + t("settings.providers.empty") + "</html>"))
+      list.add(SettingsUi.hint(t("settings.providers.empty")))
     }
     for (p in providers) {
       val body = JPanel().apply {

@@ -10,7 +10,7 @@ import com.vibe.db.DbSettings
 import javax.swing.JComponent
 import javax.swing.JSpinner
 import javax.swing.SpinnerNumberModel
-import com.vibe.agent.settings.TracksViewportWidthPanel
+import com.vibe.agent.settings.SettingsUi
 import com.vibe.agent.ui.VibeScroll
 
 /** Настройки работы с базой: сколько строк показывать, сколько ждать, что прятать. */
@@ -28,17 +28,15 @@ class VibeDbConfigurable : Configurable {
    * Правило и способ — docs/vibe/knowledge/ui/settingsPageWidth.md.
    */
   override fun createComponent(): JComponent =
-    VibeScroll.pane(TracksViewportWidthPanel(
+    SettingsUi.page(
       FormBuilder.createFormBuilder()
           .addLabeledComponent(t("settings.db.previewRows"), previewRows)
           .addLabeledComponent(t("settings.db.queryTimeout"), queryTimeout)
           .addComponent(showSystemSchemas)
-          .addComponent(JBLabel("<html>" + t("settings.db.hint") + "</html>").apply {
-            foreground = com.intellij.ui.JBColor.GRAY
-          })
+          .addComponent(SettingsUi.hint(t("settings.db.hint")))
           .panel
           .also { reset() }
-    ))
+    )
 
   override fun isModified(): Boolean =
     previewRows.value != DbSettings.previewRows ||

@@ -280,13 +280,12 @@ class VibeAgentConfigurable : Configurable, Configurable.NoScroll {
       // simply gets cut off at the window edge (it is taller than a settings dialog).
       // TracksViewportWidthPanel keeps the html hints wrapping to the width instead of demanding
       // a horizontal scrollbar — the reason the platform wrapper was refused in the first place.
-      .let { form -> com.vibe.agent.ui.VibeScroll.pane(TracksViewportWidthPanel(form)).apply { border = JBUI.Borders.empty() } }
+      .let { form -> com.vibe.agent.settings.SettingsUi.page(form).apply { border = JBUI.Borders.empty() } }
   }
 
-  private fun section(text: String): JBLabel = JBLabel("<html><b>$text</b></html>").apply { border = JBUI.Borders.emptyTop(8) }
+  private fun section(text: String): javax.swing.JComponent = SettingsUi.section(text)
 
-  private fun hint(html: String): JBLabel = JBLabel("<html>$html</html>").apply {
-    foreground = com.intellij.ui.JBColor.GRAY
+  private fun hint(html: String): javax.swing.JComponent = SettingsUi.hint(html).apply {
     font = com.intellij.util.ui.JBFont.label().deriveFont(11f)
   }
 

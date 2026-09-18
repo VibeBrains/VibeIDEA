@@ -8,7 +8,7 @@ import com.intellij.ui.components.JBLabel
 import com.intellij.util.ui.FormBuilder
 import com.vibe.agent.i18n.VibeI18n.t
 import javax.swing.JComponent
-import com.vibe.agent.settings.TracksViewportWidthPanel
+import com.vibe.agent.settings.SettingsUi
 import com.vibe.agent.ui.VibeScroll
 
 /**
@@ -43,9 +43,7 @@ class VibeLspConfigurable : Configurable {
     }
     phpEngine.selectedItem = PhpServerChoice.stored()
     builder.addLabeledComponent(t("settings.lsp.php.engine"), phpEngine)
-    builder.addComponent(JBLabel("<html>" + t("settings.lsp.php.hint") + "</html>").apply {
-      foreground = com.intellij.ui.JBColor.GRAY
-    })
+    builder.addComponent(SettingsUi.hint(t("settings.lsp.php.hint")))
     tsEngine.renderer = com.intellij.ui.SimpleListCellRenderer.create("") {
       when (it) {
         TsEngine.AUTO -> t("settings.lsp.ts.auto")
@@ -55,9 +53,7 @@ class VibeLspConfigurable : Configurable {
     }
     tsEngine.selectedItem = TsServerChoice.stored()
     builder.addLabeledComponent(t("settings.lsp.ts.engine"), tsEngine)
-    builder.addComponent(JBLabel("<html>" + t("settings.lsp.ts.hint") + "</html>").apply {
-      foreground = com.intellij.ui.JBColor.GRAY
-    })
+    builder.addComponent(SettingsUi.hint(t("settings.lsp.ts.hint")))
     // Интерпретатор Node — выше списка серверов: три из четырёх серверов и отладчик JS суть
     // программы на ноде, и без неё ни одна строка ниже не имеет значения.
     nodePath.text = NodeInterpreter.stored()
@@ -75,9 +71,7 @@ class VibeLspConfigurable : Configurable {
     nodeStatus.text = "<html>" + nodeSummary() + "</html>"
     nodeStatus.foreground = com.intellij.ui.JBColor.GRAY
     builder.addComponent(nodeStatus)
-    builder.addComponent(JBLabel("<html>" + t("settings.lsp.node.hint") + "</html>").apply {
-      foreground = com.intellij.ui.JBColor.GRAY
-    })
+    builder.addComponent(SettingsUi.hint(t("settings.lsp.node.hint")))
     for (spec in LspDoctor.ALL) {
       if (spec.id !in ServerPaths.OVERRIDABLE) continue
       val field = TextFieldWithBrowseButton().apply {
@@ -91,10 +85,8 @@ class VibeLspConfigurable : Configurable {
       fields[spec.id] = field
       builder.addLabeledComponent(spec.displayName, field)
     }
-    builder.addComponent(JBLabel("<html>" + t("settings.lsp.hint") + "</html>").apply {
-      foreground = com.intellij.ui.JBColor.GRAY
-    })
-    return VibeScroll.pane(TracksViewportWidthPanel(builder.panel))
+    builder.addComponent(SettingsUi.hint(t("settings.lsp.hint")))
+    return SettingsUi.page(builder.panel)
   }
 
   /** Что за интерпретатор сейчас в деле и откуда он взят — строка, а не молчание. */

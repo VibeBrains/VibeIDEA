@@ -18,12 +18,12 @@ class VibeSettingsRoot : Configurable {
    * Прокрутка только вертикальная: страница настроек, которая едет вбок, — дефект, а не мелочь.
    * Правило и способ — docs/vibe/knowledge/ui/settingsPageWidth.md.
    */
-  override fun createComponent(): JComponent = VibeScroll.pane(TracksViewportWidthPanel(
+  override fun createComponent(): JComponent = SettingsUi.page(
     FormBuilder.createFormBuilder()
       .addComponent(JBLabel(t("settings.root.html")))
       .addComponentFillVertically(JPanel(), 0)
       .panel.apply { border = JBUI.Borders.empty(8) }
-  ))
+  )
   override fun isModified(): Boolean = false
   override fun apply() {}
 }

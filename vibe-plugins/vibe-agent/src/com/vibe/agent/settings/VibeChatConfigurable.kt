@@ -36,7 +36,7 @@ class VibeChatConfigurable : Configurable {
   private var spendWeekSpinner: JBIntSpinner? = null
   private var spendMonthSpinner: JBIntSpinner? = null
 
-  private fun hint(text: String) = JBLabel("<html>$text</html>").apply { foreground = com.intellij.ui.JBColor.GRAY }
+  private fun hint(text: String) = SettingsUi.hint(text)
 
   /** The whisper.cpp model file: the chooser shows `.bin` files, the field also takes a typed path. */
   private fun voiceModelField() = com.intellij.openapi.ui.TextFieldWithBrowseButton().apply {
@@ -60,7 +60,7 @@ class VibeChatConfigurable : Configurable {
     val spend5h = JBIntSpinner(VibeChatSettings.spendLimitFiveHours.toInt(), 0, MAX_SPEND).also { spend5hSpinner = it }
     val spendWeek = JBIntSpinner(VibeChatSettings.spendLimitWeek.toInt(), 0, MAX_SPEND).also { spendWeekSpinner = it }
     val spendMonth = JBIntSpinner(VibeChatSettings.spendLimitMonth.toInt(), 0, MAX_SPEND).also { spendMonthSpinner = it }
-    return VibeScroll.pane(TracksViewportWidthPanel(FormBuilder.createFormBuilder()
+    return SettingsUi.page(FormBuilder.createFormBuilder()
       .addLabeledComponent(t("settings.chat.continueText"), field)
       .addComponent(hint(t("settings.chat.continueHint", "default" to VibeChatSettings.DEFAULT_CONTINUE_TEXT)))
       .addLabeledComponent(t("settings.chat.maxTabs"), tabs)
@@ -89,7 +89,7 @@ class VibeChatConfigurable : Configurable {
       .addLabeledComponent(t("settings.voice.language"), JBTextField(VibeAgentSettings.telegramVoiceLanguage, 8).also { voiceLanguage = it })
       .addComponent(hint(t("settings.voice.languageHint")))
       .addComponentFillVertically(JPanel(), 0)
-      .panel.apply { border = JBUI.Borders.empty(8) }))
+      .panel.apply { border = JBUI.Borders.empty(8) })
   }
 
   /**

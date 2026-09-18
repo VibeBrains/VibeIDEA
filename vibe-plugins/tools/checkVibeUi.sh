@@ -204,18 +204,27 @@ sys.exit(1 if (missing or dead) else 0)
 PYTOKENS
 
 # 8. Страницы настроек: вертикальная прокрутка и ширина по окну.
-#    Длинная подсказка без переноса растягивает страницу, и настройки едут вбок — это повторялось
-#    трижды (провайдеры, модели, и снова корень + языковые серверы + БД + HTTP на живой 0.4.0).
-#    Способ один: VibeScroll.pane(TracksViewportWidthPanel(...)) вокруг содержимого страницы.
+#    Дефект «страница едет вбок» возвращался ЧЕТЫРЕЖДЫ (провайдеры, модели, корень + БД + HTTP на
+#    живой 0.4.0 и языковые серверы на 0.6.3), и каждый раз чинился наполовину, потому что причин
+#    у него две:
+#      — обёртка страницы: вид следует ширине окна, минимум нулевой, горизонтальной полосы нет;
+#      — подсказка: JBLabel("<html>…") сообщает ширину В ОДНУ СТРОКУ и растягивает страницу сам.
+#    Обе формы живут в SettingsUi: страница — SettingsUi.page(...), подсказка — SettingsUi.hint(...).
 while IFS= read -r page; do
   # Ищем ВЫЗОВ, а не имя: неиспользованный импорт остаётся в файле после правки и делал бы
   # проверку зелёной на странице, которая уже не обёрнута (поймано на себе же).
-  grep -q 'pane(TracksViewportWidthPanel(' "$page" || {
-    echo "ОШИБКА: страница настроек без TracksViewportWidthPanel — она поедет вбок на длинной подсказке:"
+  grep -q 'SettingsUi.page(' "$page" || {
+    echo "ОШИБКА: страница настроек не обёрнута SettingsUi.page(...) — она поедет вбок:"
     echo "  ${page#"$root"/}"
-    echo "  Оберните содержимое: VibeScroll.pane(TracksViewportWidthPanel(...)); см. knowledge/ui/settingsPageWidth.md"
+    echo "  Оберните содержимое: SettingsUi.page(...); см. knowledge/ui/settingsPageWidth.md"
     status=1
   }
+  if grep -q 'JBLabel("<html>' "$page"; then
+    echo "ОШИБКА: сырой html-JBLabel на странице настроек — он просит ширину всей фразы в одну строку:"
+    echo "  ${page#"$root"/}"
+    echo "  Замените на SettingsUi.hint(...) или SettingsUi.section(...); см. knowledge/ui/settingsPageWidth.md"
+    status=1
+  fi
 done < <(grep -rl 'com.intellij.openapi.options.Configurable\|: Configurable' "$root"/vibe-plugins/*/src --include='*.kt')
 
 # 9. Идентификаторы панелей: только ASCII и только из VibeToolWindows.

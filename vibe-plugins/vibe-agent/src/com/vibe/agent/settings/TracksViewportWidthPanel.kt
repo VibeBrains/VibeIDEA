@@ -18,6 +18,16 @@ class TracksViewportWidthPanel(content: JComponent) : JPanel(BorderLayout()), Sc
     add(content, BorderLayout.NORTH)
   }
 
+  /**
+   * Нулевая ширина минимума — половина правила «страница не ездит вбок».
+   *
+   * `getScrollableTracksViewportWidth` заставляет вид следовать ширине окна только ДО минимальной
+   * ширины содержимого: ниже минимума `JViewport` не сжимает, и одна длинная подсказка внутри
+   * формы возвращала горизонтальную полосу при живой обёртке (владелец, 18.09.2026, страница
+   * языковых серверов). Высота остаётся своей — по ней считается вертикальная прокрутка.
+   */
+  override fun getMinimumSize(): Dimension = Dimension(0, super.getMinimumSize().height)
+
   override fun getPreferredScrollableViewportSize(): Dimension = preferredSize
   override fun getScrollableUnitIncrement(visible: Rectangle, orientation: Int, direction: Int): Int = JBUI.scale(UNIT_INCREMENT)
   override fun getScrollableBlockIncrement(visible: Rectangle, orientation: Int, direction: Int): Int = visible.height

@@ -10,7 +10,7 @@ import com.vibe.http.HttpSettings
 import javax.swing.JComponent
 import javax.swing.JSpinner
 import javax.swing.SpinnerNumberModel
-import com.vibe.agent.settings.TracksViewportWidthPanel
+import com.vibe.agent.settings.SettingsUi
 import com.vibe.agent.ui.VibeScroll
 
 /** Настройки клиента запросов: таймауты и поведение по умолчанию. */
@@ -29,18 +29,16 @@ class VibeHttpConfigurable : Configurable {
    * Правило и способ — docs/vibe/knowledge/ui/settingsPageWidth.md.
    */
   override fun createComponent(): JComponent =
-    VibeScroll.pane(TracksViewportWidthPanel(
+    SettingsUi.page(
       FormBuilder.createFormBuilder()
           .addLabeledComponent(t("settings.http.requestTimeout"), requestTimeout)
           .addLabeledComponent(t("settings.http.connectTimeout"), connectTimeout)
           .addComponent(followRedirects)
           .addComponent(keepCookies)
-          .addComponent(JBLabel("<html>" + t("settings.http.hint") + "</html>").apply {
-            foreground = com.intellij.ui.JBColor.GRAY
-          })
+          .addComponent(SettingsUi.hint(t("settings.http.hint")))
           .panel
           .also { reset() }
-    ))
+    )
 
   override fun isModified(): Boolean =
     requestTimeout.value != HttpSettings.requestTimeoutSeconds ||

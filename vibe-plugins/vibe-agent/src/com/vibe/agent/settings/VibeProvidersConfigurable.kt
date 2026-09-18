@@ -47,7 +47,7 @@ class VibeProvidersConfigurable(private val project: Project) : Configurable, Co
     val list = JPanel().apply { layout = BoxLayout(this, BoxLayout.Y_AXIS) }
     val providers = ProvidersService.load(project.basePath) { }
     if (providers.isEmpty()) {
-      list.add(JBLabel("<html>" + t("settings.providers.empty") + "</html>"))
+      list.add(SettingsUi.hint(t("settings.providers.empty")))
     }
     for (p in providers) {
       val field = JBPasswordField()
@@ -92,7 +92,7 @@ class VibeProvidersConfigurable(private val project: Project) : Configurable, Co
     loadKeyStatesInBackground()
     return JPanel(BorderLayout()).apply {
       border = JBUI.Borders.empty(8)
-      add(com.vibe.agent.ui.VibeScroll.pane(TracksViewportWidthPanel(list)), BorderLayout.CENTER)
+      add(com.vibe.agent.settings.SettingsUi.page(list), BorderLayout.CENTER)
     }
   }
 
