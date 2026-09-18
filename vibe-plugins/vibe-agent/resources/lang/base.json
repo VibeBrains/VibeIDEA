@@ -2055,5 +2055,22 @@
   "pipeline.handoff.failed": "{header} передачу получить не удалось ({reason}) — шаг считается проваленным",
   "pipeline.step.brief": "Задача прогона, слово в слово, как её поставил человек. Суди по ней, а не по тому, что рассказали предыдущие шаги; каждое расхождение назови отдельно:\n{brief}",
   "pipeline.warn.againstBriefWritingRole": "шаг «{role}»: againstBrief бывает только у роли, которая ничего не пишет — иначе приёмка правит то, что принимает",
-  "pipeline.step.seams": "Швы между модулями, названные прошлыми шагами прогона, — не изобретай их заново:\n{seams}"
+  "pipeline.step.seams": "Швы между модулями, названные прошлыми шагами прогона, — не изобретай их заново:\n{seams}",
+  "design.rule.contrastState.message": "Контраст {ratio}:1 в состоянии {state} при норме {required}:1",
+  "design.rule.contrastState.why": "В покое элемент читается, а под курсором или в фокусе — нет: человек теряет текст ровно там, где на него смотрит.",
+  "design.rule.contrastState.evidence": "состояние {state}, {ratio}:1",
+  "design.rule.reducedMotionHides.message": "Контент невидим до анимации, а при «уменьшить движение» анимация выключена",
+  "design.rule.reducedMotionHides.why": "Человек, попросивший убрать движение, получает не спокойную страницу, а пустую: элемент так и остаётся прозрачным.",
+  "design.rule.reducedMotionHides.evidence": "непрозрачность {opacity} и анимация, погашенная блоком reduce",
+  "design.rule.deadStateContract.message": "Контрол объявил {contract}, но клик ничего не меняет",
+  "design.rule.deadStateContract.why": "Объявленное состояние — обещание: программа чтения с экрана говорит «сортировка по возрастанию», а сортировки нет.",
+  "design.rule.deadStateContract.evidence": "{contract} у «{name}»: после клика не изменились ни атрибут, ни вид, ни содержимое",
+  "design.rule.invisibleState.message": "Состояние {contract} меняется, а на экране ничего не происходит",
+  "design.rule.invisibleState.why": "Зрячий человек изменения не увидит: он нажал и не понял, сработало ли.",
+  "design.rule.invisibleState.evidence": "было {before}, стало {after}, вид и содержимое прежние",
+  "design.status.interacting": "Проверяю интерактив: кликаю контролы с объявленным состоянием…",
+  "design.status.interactDone": "Интерактив проверен: найдено {count}",
+  "design.status.interactClean": "Интерактив проверен: контролы делают то, что объявили",
+  "design.action.interact": "Интерактив",
+  "design.action.interactTip": "Кликнуть контролы с объявленным состоянием (aria-sort, aria-expanded…) и проверить, что они делают объявленное. Страница при этом меняется — это не пассивный замер."
 }

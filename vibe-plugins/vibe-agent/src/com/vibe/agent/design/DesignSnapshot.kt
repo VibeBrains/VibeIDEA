@@ -95,6 +95,25 @@ data class ElementSnapshot(
   val outlineWidthPx: Double = 0.0,
   val hasFocusRule: Boolean = false,
   val hasHoverRule: Boolean = false,
+  /**
+   * Цвета в состояниях наведения и фокуса, снятые зондом (см. `collect.js`); null — правила состояния нет
+   * или зонд не сработал. Контраст в покое ничего не говорит о состоянии: кнопка может перехватить на
+   * наведении чужую заливку и дать 2:1 (разбор 18.09.2026).
+   */
+  val hoverColor: Rgb? = null,
+  val hoverBackgroundColor: Rgb? = null,
+  val focusColor: Rgb? = null,
+  val focusBackgroundColor: Rgb? = null,
+  /** `display` элемента: строчный контрол внутри предложения — исключение WCAG для зоны нажатия. */
+  val display: String = "block",
+  val visibility: String = "visible",
+  /** У родителя есть собственный текст рядом: ссылка стоит внутри предложения. */
+  val insideTextLine: Boolean = false,
+  /** Размер вместе с кликаемой подписью `<label>`: по WCAG 2.2 она входит в зону нажатия. */
+  val labelUnionWidthPx: Double = 0.0,
+  val labelUnionHeightPx: Double = 0.0,
+  /** «Уменьшить движение» гасит анимацию именно этого элемента. */
+  val reduceSilencesAnimation: Boolean = false,
   val disabled: Boolean = false,
   /**
    * Some stylesheets could not be read (cross-origin). Then "no rule" means "could not look", and

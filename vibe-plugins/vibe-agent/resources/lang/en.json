@@ -2055,5 +2055,22 @@
   "pipeline.handoff.failed": "{header} no handoff came back ({reason}) — the step counts as failed",
   "pipeline.step.brief": "The run's task, word for word as the person set it. Judge against it, not against what the earlier steps said; name every difference:\n{brief}",
   "pipeline.warn.againstBriefWritingRole": "step “{role}”: againstBrief belongs only to a role that writes nothing — otherwise acceptance edits what it accepts",
-  "pipeline.step.seams": "Seams between modules named by the earlier steps of this run — do not invent them again:\n{seams}"
+  "pipeline.step.seams": "Seams between modules named by the earlier steps of this run — do not invent them again:\n{seams}",
+  "design.rule.contrastState.message": "Contrast {ratio}:1 in the {state} state against {required}:1",
+  "design.rule.contrastState.why": "At rest the element reads, under the cursor or in focus it does not: the text is lost exactly where the person is looking.",
+  "design.rule.contrastState.evidence": "{state} state, {ratio}:1",
+  "design.rule.reducedMotionHides.message": "The content is invisible before its animation, and reduced motion turns that animation off",
+  "design.rule.reducedMotionHides.why": "Someone who asked for less motion gets not a calmer page but an empty one: the element stays transparent.",
+  "design.rule.reducedMotionHides.evidence": "opacity {opacity} with the animation silenced by the reduce block",
+  "design.rule.deadStateContract.message": "The control declares {contract}, but a click changes nothing",
+  "design.rule.deadStateContract.why": "A declared state is a promise: a screen reader says «sorted ascending» while nothing is sorted.",
+  "design.rule.deadStateContract.evidence": "{contract} on “{name}”: after the click neither the attribute, the look nor the content changed",
+  "design.rule.invisibleState.message": "The {contract} state changes while the screen stays the same",
+  "design.rule.invisibleState.why": "A sighted person sees nothing: they pressed it and cannot tell whether it worked.",
+  "design.rule.invisibleState.evidence": "was {before}, became {after}, look and content unchanged",
+  "design.status.interacting": "Checking interaction: clicking controls with a declared state…",
+  "design.status.interactDone": "Interaction checked: {count} found",
+  "design.status.interactClean": "Interaction checked: the controls do what they declare",
+  "design.action.interact": "Interaction",
+  "design.action.interactTip": "Click controls with a declared state (aria-sort, aria-expanded…) and check they do what they declare. This changes the page — it is not a passive measurement."
 }

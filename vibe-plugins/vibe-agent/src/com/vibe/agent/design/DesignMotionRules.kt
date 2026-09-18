@@ -20,8 +20,11 @@ object DesignMotionRules {
   /** Below this the change is a flicker: the eye registers that something happened, not what. */
   const val FAST_MS = 80.0
 
+  /** Ниже этого элемента на экране нет: доли процента непрозрачности — то же самое, что ноль. */
+  const val HIDDEN_OPACITY = 0.01
+
   fun all(doc: DocumentSnapshot): List<Finding> =
-    slow(doc) + tooFast(doc) + infinite(doc) + reducedMotion(doc) + transitionAll(doc) +
+    slow(doc) + tooFast(doc) + infinite(doc) + reducedMotion(doc) + reducedMotionHides(doc) + transitionAll(doc) +
     hoverWithoutTransition(doc) + linearEasing(doc) + noPressFeedback(doc) + slowTransition(doc)
 
   // --- duration ---
@@ -79,6 +82,26 @@ object DesignMotionRules {
    * is nausea, not decoration, and the system setting is them having already asked. Silent when the
    * stylesheets could not be read — «нет правила» would then mean «не посмотрели».
    */
+  /**
+   * Контент, который стартует невидимым и открывается анимацией, а «уменьшить движение» эту анимацию гасит.
+   *
+   * Самый опасный случай из всех, что даёт этот режим: блок `@media` объявлен — правило [reducedMotion] молчит, —
+   * но элемент начинает с `opacity: 0`, и без анимации он таким и остаётся. Человек с вестибулярным расстройством
+   * получает не «спокойную страницу», а пустую (18.09.2026).
+   */
+  fun reducedMotionHides(doc: DocumentSnapshot): List<Finding> = doc.elements.mapNotNull { element ->
+    if (!element.reduceSilencesAnimation) return@mapNotNull null
+    val invisible = element.opacity <= HIDDEN_OPACITY || element.visibility == "hidden"
+    if (!invisible) return@mapNotNull null
+    if (element.animationDurationMs <= 0 && element.transitionDurationMs <= 0) return@mapNotNull null
+    DesignFloorRules.finding(
+      DesignRuleCatalog.REDUCED_MOTION_HIDES, Severity.ERROR, element, doc,
+      message = t("design.rule.reducedMotionHides.message"),
+      why = t("design.rule.reducedMotionHides.why"),
+      evidence = t("design.rule.reducedMotionHides.evidence", "opacity" to element.opacity.toString()),
+    )
+  }
+
   fun reducedMotion(doc: DocumentSnapshot): List<Finding> {
     if (doc.hasReducedMotionRule) return emptyList()
     if (doc.elements.any { it.styleRulesUnreadable }) return emptyList()

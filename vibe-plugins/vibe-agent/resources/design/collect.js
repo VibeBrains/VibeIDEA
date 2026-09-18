@@ -5,6 +5,13 @@
  * class juggling: a measurement that alters what it measures is worthless. And it must say when it
  * could not look: a stylesheet blocked by CORS makes "no :focus rule" mean "did not see", which the
  * rules treat differently from "there is none".
+ *
+ * ONE deliberate exception, added 18.09.2026: the colours of :hover and :focus cannot be computed
+ * without a browser that resolves var() and inheritance, and the page must not be hovered. So a
+ * hidden PROBE — a shallow clone of the element, in its own parent, with the state's declarations
+ * inline — is appended, measured and removed synchronously, never touching the element itself. It is
+ * aria-hidden and off-screen. Без этого контраст мерился только в покое, и кнопка, перехватывающая
+ * на наведении чужую заливку, проходила как чистая.
  */
 (function () {
   var MAX_ELEMENTS = 1200;
@@ -48,6 +55,11 @@
   var focusSelectors = [];
   var hoverSelectors = [];
   var activeSelectors = [];
+  // The rules themselves, not only their selectors: the state's colours live in their declarations.
+  var focusRules = [];
+  var hoverRules = [];
+  // Selectors that `prefers-reduced-motion: reduce` silences (animation/transition turned off).
+  var reduceSilenced = [];
   // Whether ANY stylesheet answers prefers-reduced-motion. Read once for the page: motion the
   // system asked to stop is not a per-element property.
   var reducedMotionRule = false;
@@ -60,16 +72,123 @@
       for (var j = 0; j < rules.length; j++) {
         var text = rules[j].selectorText;
         if (!text) continue;
-        if (text.indexOf(':focus') >= 0) focusSelectors.push(text);
-        if (text.indexOf(':hover') >= 0) hoverSelectors.push(text);
+        if (text.indexOf(':focus') >= 0) { focusSelectors.push(text); focusRules.push(rules[j]); }
+        if (text.indexOf(':hover') >= 0) { hoverSelectors.push(text); hoverRules.push(rules[j]); }
         if (text.indexOf(':active') >= 0) activeSelectors.push(text);
       }
       for (var k = 0; k < rules.length; k++) {
         var media = rules[k].media && rules[k].media.mediaText;
-        if (media && media.indexOf('prefers-reduced-motion') >= 0) reducedMotionRule = true;
+        if (!media || media.indexOf('prefers-reduced-motion') < 0) continue;
+        reducedMotionRule = true;
+        if (media.indexOf('reduce') < 0) continue;
+        var inner = rules[k].cssRules || [];
+        for (var m = 0; m < inner.length; m++) {
+          var innerText = inner[m].selectorText;
+          if (!innerText || !inner[m].style) continue;
+          var stopsAnimation = silencedValue(inner[m].style.getPropertyValue('animation')) ||
+                               silencedValue(inner[m].style.getPropertyValue('animation-duration')) ||
+                               silencedValue(inner[m].style.getPropertyValue('animation-name')) ||
+                               silencedValue(inner[m].style.getPropertyValue('transition')) ||
+                               silencedValue(inner[m].style.getPropertyValue('transition-duration'));
+          if (stopsAnimation) reduceSilenced.push(innerText);
+        }
       }
     }
   })();
+
+  /** «Движение выключено» пишут по-разному: none, 0s, 0.01ms — всё это значит «не анимировать». */
+  function silencedValue(value) {
+    if (!value) return false;
+    var v = String(value).trim().toLowerCase();
+    if (!v) return false;
+    if (v.indexOf('none') >= 0) return true;
+    return /(^|\s)0(\.0+)?m?s(\s|$|,)/.test(v) || /(^|\s)0\.01ms(\s|$|,)/.test(v);
+  }
+
+  /** Selectors of a rule, with the pseudo-class stripped: what the element must match to be in that state. */
+  function bareSelectors(text, pseudo) {
+    return String(text || '').split(',').map(function (s) { return s.replace(pseudo, '').trim(); }).filter(Boolean);
+  }
+
+  /**
+   * The colours the element takes in a state, measured on a hidden probe.
+   *
+   * Declarations of matching state rules are applied to a shallow clone placed in the same parent, so var(),
+   * inheritance and the effective background resolve exactly as they would on the element. The probe is removed
+   * synchronously; the element itself is never touched.
+   */
+  function stateColors(el, ruleList, pseudo) {
+    var declarations = [];
+    for (var i = 0; i < ruleList.length; i++) {
+      var rule = ruleList[i];
+      if (!rule.style) continue;
+      var selectors = bareSelectors(rule.selectorText, pseudo);
+      var hit = false;
+      for (var j = 0; j < selectors.length; j++) {
+        try { if (el.matches(selectors[j])) { hit = true; break; } } catch (e) { /* invalid selector */ }
+      }
+      if (!hit) continue;
+      ['color', 'background-color', 'opacity', 'background'].forEach(function (name) {
+        var value = rule.style.getPropertyValue(name);
+        if (value) declarations.push([name, value]);
+      });
+    }
+    if (!declarations.length) return null;
+    var parent = el.parentElement || document.body;
+    if (!parent) return null;
+    var probe;
+    try {
+      probe = el.cloneNode(false);
+      probe.setAttribute('aria-hidden', 'true');
+      if (!(probe.textContent || '').trim()) probe.textContent = 'Xg';
+      probe.style.setProperty('position', 'absolute', 'important');
+      probe.style.setProperty('left', '-99999px', 'important');
+      probe.style.setProperty('top', '0', 'important');
+      probe.style.setProperty('pointer-events', 'none', 'important');
+      declarations.forEach(function (pair) { probe.style.setProperty(pair[0], pair[1], 'important'); });
+      parent.appendChild(probe);
+      var computed = getComputedStyle(probe);
+      var result = {
+        color: rgb(computed.color).c,
+        background: rgb(computed.backgroundColor).a > 0.95 ? rgb(computed.backgroundColor).c : effectiveBackground(probe)
+      };
+      return result;
+    }
+    catch (e) {
+      return null;
+    }
+    finally {
+      if (probe && probe.parentElement) probe.parentElement.removeChild(probe);
+    }
+  }
+
+  /** Есть ли у родителя собственный текст рядом с этим элементом — признак ссылки внутри предложения. */
+  function hasSiblingText(el) {
+    var parent = el.parentElement;
+    if (!parent) return false;
+    for (var i = 0; i < parent.childNodes.length; i++) {
+      var node = parent.childNodes[i];
+      if (node.nodeType === 3 && (node.nodeValue || '').trim().length > 1) return true;
+    }
+    return false;
+  }
+
+  /** Размер контрола ВМЕСТЕ с его подписью: по WCAG 2.2 кликаемая подпись входит в зону нажатия. */
+  function unionWithLabel(el, rect) {
+    var label = null;
+    try {
+      if (el.id) label = document.querySelector('label[for="' + cssEscape(el.id) + '"]');
+      if (!label && el.closest) label = el.closest('label');
+    }
+    catch (e) { label = null; }
+    if (!label) return { width: rect.width, height: rect.height };
+    var box = label.getBoundingClientRect();
+    var left = Math.min(rect.left, box.left);
+    var top = Math.min(rect.top, box.top);
+    var right = Math.max(rect.right, box.right);
+    var bottom = Math.max(rect.bottom, box.bottom);
+    return { width: right - left, height: bottom - top };
+  }
 
   /** Escapes an id for use inside a selector — CSS.escape is absent in older engines. */
   function cssEscape(value) {
@@ -206,6 +325,15 @@
     }
     directText = directText.trim().replace(/\s+/g, ' ').slice(0, MAX_TEXT);
 
+    var hasFocus = matchesAny(el, focusSelectors, /:focus(-visible)?/g);
+    var hasHover = matchesAny(el, hoverSelectors, /:hover/g);
+    var worthState = interactive || !!directText;
+    var hoverState = (hasHover && worthState) ? stateColors(el, hoverRules, /:hover/g) : null;
+    var focusState = (hasFocus && worthState) ? stateColors(el, focusRules, /:focus(-visible)?/g) : null;
+    // Строчный элемент внутри предложения: у соседних узлов родителя есть свой текст.
+    var inlineInText = (style.display === 'inline' || style.display === 'inline-block') && hasSiblingText(el);
+    var labelUnion = unionWithLabel(el, rect);
+
     var metrics = { lines: 0, shortEnds: 0, lastWords: 0 };
     if (directText) {
       metrics = lineMetrics(el, lineBudget);
@@ -260,8 +388,18 @@
       interactive: !!interactive,
       outlineStyle: style.outlineStyle,
       outlineWidthPx: parseFloat(style.outlineWidth) || 0,
-      hasFocusRule: matchesAny(el, focusSelectors, /:focus(-visible)?/g),
-      hasHoverRule: matchesAny(el, hoverSelectors, /:hover/g),
+      hasFocusRule: hasFocus,
+      hasHoverRule: hasHover,
+      hoverColor: hoverState ? hoverState.color : null,
+      hoverBackgroundColor: hoverState ? hoverState.background : null,
+      focusColor: focusState ? focusState.color : null,
+      focusBackgroundColor: focusState ? focusState.background : null,
+      display: style.display,
+      visibility: style.visibility,
+      insideTextLine: inlineInText,
+      labelUnionWidthPx: labelUnion.width,
+      labelUnionHeightPx: labelUnion.height,
+      reduceSilencesAnimation: matchesAny(el, reduceSilenced, /:hover|:focus(-visible)?/g),
       disabled: !!el.disabled || el.getAttribute('aria-disabled') === 'true',
       styleRulesUnreadable: stylesUnreadable,
       accessibleName: accessibleName(el),

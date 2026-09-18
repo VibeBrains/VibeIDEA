@@ -88,6 +88,8 @@ class DesignPreviewPanel(private val project: Project) : JPanel(BorderLayout()),
       add(com.vibe.agent.ui.composer.PillButton(t("design.action.reload"), outlined = true) { browser?.cefBrowser?.reload() })
       add(com.vibe.agent.ui.composer.PillButton(t("design.action.measure"), outlined = true) { measure() })
       add(com.vibe.agent.ui.composer.PillButton(t("design.action.overlay"), outlined = true) { toggleOverlay() })
+      add(com.vibe.agent.ui.composer.PillButton(t("design.action.interact"), outlined = true) { checkInteraction() }
+            .apply { toolTipText = t("design.action.interactTip") })
       // Размеры экрана кнопками, а не выпадашкой: три нужных — по одному нажатию, а меню
       // спрятало бы их за списком, который не открывают дважды.
       add(com.vibe.agent.ui.composer.PillButton(t("design.action.phone"), outlined = true) { setViewportWidth(PHONE_WIDTH) })
@@ -383,6 +385,33 @@ class DesignPreviewPanel(private val project: Project) : JPanel(BorderLayout()),
     override fun fixed(count: Int): String = t("design.diff.fixed", "count" to count)
   }
 
+  /**
+   * Правда интерактива: клик по контролам, объявившим состояние.
+   *
+   * Отдельным действием, а не частью замера: этот проход МЕНЯЕТ страницу — он её кликает. Пассивный замер обязан
+   * оставлять страницу в покое, и смешивать одно с другим нельзя. Разбор — [DesignInteractionRules].
+   */
+  private fun checkInteraction() {
+    val browser = browser ?: return
+    val script = INTERACT ?: run {
+      SwingUtilities.invokeLater { status.text = t("design.status.collectorMissing") }
+      return
+    }
+    status.text = t("design.status.interacting")
+    DesignBridge.evaluate(browser, script) { text ->
+      val findings = text?.let { DesignInteractionRules.parse(it) }.orEmpty()
+      SwingUtilities.invokeLater {
+        status.text = if (findings.isEmpty()) t("design.status.interactClean")
+                      else t("design.status.interactDone", "count" to findings.size)
+        results.removeAll()
+        if (findings.isEmpty()) results.add(hint(t("design.noFindings")))
+        else findings.forEach { results.add(row(it)) }
+        results.revalidate(); results.repaint()
+        lastFindings = findings
+      }
+    }
+  }
+
   private fun report(snapshots: List<DocumentSnapshot>) {
     if (snapshots.isEmpty()) {
       SwingUtilities.invokeLater { status.text = t("design.status.noAnswer") }
@@ -553,6 +582,7 @@ class DesignPreviewPanel(private val project: Project) : JPanel(BorderLayout()),
     const val RELAYOUT_PAUSE_MS = 400L
 
     val COLLECTOR: String? by lazy { resource("/design/collect.js") }
+    val INTERACT: String? by lazy { resource("/design/interact.js") }
     val OVERLAY: String? by lazy { resource("/design/overlay.js") }
 
     private fun resource(path: String): String? =

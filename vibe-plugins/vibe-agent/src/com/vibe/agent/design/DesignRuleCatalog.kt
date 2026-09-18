@@ -13,6 +13,18 @@ package com.vibe.agent.design
 object DesignRuleCatalog {
   // --- floor: defects at any taste ---
   const val CONTRAST_TEXT = "contrast-text"
+
+  /** Контраст падает ниже нормы В СОСТОЯНИИ наведения или фокуса — в покое элемент читается. */
+  const val CONTRAST_STATE = "contrast-state"
+
+  /** Контент стартует невидимым и открывается анимацией, а «уменьшить движение» её гасит. */
+  const val REDUCED_MOTION_HIDES = "reduced-motion-hides"
+
+  /** Контрол объявил состояние (`aria-sort`, `aria-expanded`…), но клик не меняет ничего. */
+  const val DEAD_STATE_CONTRACT = "dead-state-contract"
+
+  /** Атрибут состояния щёлкнул, а на экране всё то же: зрячий человек изменения не увидит. */
+  const val INVISIBLE_STATE = "invisible-state"
   const val TEXT_TOO_SMALL = "text-too-small"
   const val TAP_TARGET_TOO_SMALL = "tap-target-too-small"
   const val CONTENT_CLIPPED = "content-clipped"
@@ -120,6 +132,9 @@ object DesignRuleCatalog {
     FIELD_WITHOUT_LABEL, ERROR_WITHOUT_EXPLANATION, REQUIRED_AND_DISABLED, INPUT_TYPE_GENERIC,
     // Motion the system asked to stop is nausea for a person with vestibular disorder, not taste.
     NO_REDUCED_MOTION,
+    // Состояние — не украшение: нечитаемый текст под курсором и контент, исчезающий при выключенном
+    // движении, ломают работу так же, как нечитаемый текст в покое.
+    CONTRAST_STATE, REDUCED_MOTION_HIDES, DEAD_STATE_CONTRACT, INVISIBLE_STATE,
     // Colour as the ONLY signal, and an icon at decoration contrast: these are about people who
     // cannot see the colour at all, which is the opposite of a matter of taste.
     LINK_BY_COLOR_ONLY, LINK_SAME_COLOR_AS_TEXT, ICON_LOW_CONTRAST, FOCUS_RING_LOW_CONTRAST,
@@ -131,10 +146,10 @@ object DesignRuleCatalog {
 
   /** Every id the engine can produce — the settings page and the acceptance file check against it. */
   val ALL: List<String> = listOf(
-    CONTRAST_TEXT, TEXT_TOO_SMALL, TAP_TARGET_TOO_SMALL, CONTENT_CLIPPED, ELEMENT_OCCLUDED,
+    CONTRAST_TEXT, CONTRAST_STATE, TEXT_TOO_SMALL, TAP_TARGET_TOO_SMALL, CONTENT_CLIPPED, ELEMENT_OCCLUDED,
     PAGE_WIDER_THAN_VIEWPORT, BROKEN_IMAGE, FOCUS_RING_REMOVED, DISABLED_LOOKS_ENABLED,
     ICON_BUTTON_WITHOUT_NAME, PLACEHOLDER_AS_LABEL, IMAGE_WITHOUT_ALT, ERROR_NOT_LINKED_TO_FIELD,
-    REQUIRED_ONLY_VISUAL, HEADING_LEVEL_SKIPPED,
+    REQUIRED_ONLY_VISUAL, HEADING_LEVEL_SKIPPED, REDUCED_MOTION_HIDES, DEAD_STATE_CONTRACT, INVISIBLE_STATE,
     NO_HOVER_RESPONSE, GRADIENT_TEXT, GLOW_INSTEAD_OF_SHADOW, GLASSMORPHISM, PURPLE_PALETTE,
     EYEBROW_CHIP, CLONED_CARDS, RADIUS_SCALE_DRIFT, EXTREME_RADIUS, ANIMATED_LAYOUT_PROPERTY,
     OVERSHOOT_ANIMATION, HANGING_PREPOSITION, ORPHAN_WORD, MARKETING_PROMISE,

@@ -27,7 +27,7 @@ object DesignFloorRules {
   private const val OVERFLOW_TOLERANCE_PX = 2.0
 
   fun all(doc: DocumentSnapshot): List<Finding> =
-    contrast(doc) + tinyText(doc) + tapTargets(doc) + clipped(doc) + occluded(doc) +
+    contrast(doc) + contrastInStates(doc) + tinyText(doc) + tapTargets(doc) + clipped(doc) + occluded(doc) +
     pageOverflow(doc) + brokenImages(doc) + focusRing(doc) + disabledLook(doc) + headings(doc)
 
   // --- readability ---
@@ -60,11 +60,57 @@ object DesignFloorRules {
 
   // --- reachability ---
 
+  /**
+   * Контраст в состояниях наведения и фокуса.
+   *
+   * Покой ничего не говорит о состоянии: вторичная кнопка может на наведении перехватить заливку первичной и дать
+   * 2:1 — в замере покоя она зелёная. Цвета состояний снимает зонд (`collect.js`); null означает «правила состояния
+   * нет или снять не удалось», и тогда правило молчит, а не выдумывает (18.09.2026).
+   */
+  fun contrastInStates(doc: DocumentSnapshot): List<Finding> = doc.elements.flatMap { element ->
+    if (element.text.isBlank() || element.fontSizePx <= 0) return@flatMap emptyList()
+    val large = DesignColor.isLargeText(element.fontSizePx, element.fontWeight)
+    val required = if (large) CONTRAST_AA_LARGE else CONTRAST_AA_SMALL
+    listOfNotNull(
+      stateFinding(doc, element, element.hoverColor, element.hoverBackgroundColor, required, "hover"),
+      stateFinding(doc, element, element.focusColor, element.focusBackgroundColor, required, "focus"),
+    )
+  }
+
+  private fun stateFinding(
+    doc: DocumentSnapshot, element: ElementSnapshot, color: Rgb?, background: Rgb?, required: Double, state: String,
+  ): Finding? {
+    if (color == null && background == null) return null
+    val ratio = DesignColor.contrast(color ?: element.color, background ?: element.backgroundColor)
+    if (ratio >= required) return null
+    return finding(
+      DesignRuleCatalog.CONTRAST_STATE, Severity.ERROR, element, doc,
+      message = t("design.rule.contrastState.message", "state" to state, "ratio" to format(ratio), "required" to format(required)),
+      why = t("design.rule.contrastState.why"),
+      evidence = t("design.rule.contrastState.evidence", "state" to state, "ratio" to format(ratio)),
+    )
+  }
+
+  /**
+   * Зона нажатия — с двумя исключениями WCAG 2.2 (2.5.8), иначе правило обвиняет по догадке:
+   * строчная ссылка внутри предложения (её размер задаёт текст) и контрол вместе со своей кликаемой
+   * подписью (18.09.2026).
+   *
+   * Третье исключение спеки — «цель разнесена от соседей» — НЕ взято намеренно. Оно снимает обвинение
+   * и с одинокой кнопки 16×16, в которую на телефоне всё равно не попасть: наш пол отвечает на вопрос
+   * «можно ли попасть», а не «можно ли промахнуться по соседу».
+   */
   fun tapTargets(doc: DocumentSnapshot): List<Finding> = doc.elements.mapNotNull { element ->
     if (!element.interactive || element.disabled) return@mapNotNull null
     // A zero box is an element that is not laid out (hidden, detached) — not a small target.
     if (element.widthPx <= 0 || element.heightPx <= 0) return@mapNotNull null
     if (element.widthPx >= MIN_TAP_TARGET_PX && element.heightPx >= MIN_TAP_TARGET_PX) return@mapNotNull null
+    // Исключение «inline»: ссылка в строке текста, её размер задаёт сам текст.
+    if (element.insideTextLine && (element.display == "inline" || element.tag == "a")) return@mapNotNull null
+    // Исключение «подпись»: вместе с кликаемым <label> цель достаточна.
+    if (element.labelUnionWidthPx >= MIN_TAP_TARGET_PX && element.labelUnionHeightPx >= MIN_TAP_TARGET_PX) {
+      return@mapNotNull null
+    }
     finding(
       DesignRuleCatalog.TAP_TARGET_TOO_SMALL, Severity.ERROR, element, doc,
       message = t("design.rule.tapTarget.message", "width" to format(element.widthPx), "height" to format(element.heightPx)),
