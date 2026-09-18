@@ -47,8 +47,22 @@ internal object ServerBinaries {
   // Falls back to the bare name: the failure to start then names exactly what is missing.
   internal fun resolve(binary: String): String = find(binary) ?: binary
 
+  /**
+   * Команда из пути, названного человеком.
+   *
+   * Скрипт на JavaScript исполняемым не бывает: `.js` запускается НОДОЙ, а не сам по себе. Человек,
+   * указавший `…/vtsls.js`, имел в виду ровно сервер — и прежде получал бы «Cannot run program».
+   */
+  internal fun overrideCommand(serverId: String, vararg args: String): List<String>? =
+    ServerPaths.overrideFor(serverId)?.let { path ->
+      if (NODE_SCRIPTS.any { path.endsWith(it, ignoreCase = true) }) NodeRuntime.command(null, path, *args)
+      else listOf(path) + args
+    }
+
+  private val NODE_SCRIPTS = listOf(".js", ".cjs", ".mjs")
+
   fun vtslsCommand(): List<String> =
-    ServerPaths.overrideFor(LspDoctor.VTSLS.id)?.let { listOf(it, "--stdio") }
+    overrideCommand(LspDoctor.VTSLS.id, "--stdio")
     ?: nodeServerCommand("vtsls", "--stdio")
 
   /**
@@ -162,7 +176,7 @@ internal object ServerBinaries {
   fun phpactorCommand(): List<String> {
     // A path the person set themselves outranks even their own PATH: they set it precisely because
     // the copy that matters is not the one PATH would find.
-    ServerPaths.overrideFor(LspDoctor.PHPACTOR.id)?.let { return listOf(it, "language-server") }
+    overrideCommand(LspDoctor.PHPACTOR.id, "language-server")?.let { return it }
     find("phpactor")?.let { return listOf(it, "language-server") }
     bundledPhpactor()?.let { phar ->
       val script = phpactorScript(com.vibe.agent.util.ExecutableNames.isWindows(), bundledPhpactorLauncher(), phar)
@@ -178,7 +192,7 @@ internal object ServerBinaries {
    * which looks exactly like a server that failed to start.
    */
   fun intelephenseCommand(): List<String> =
-    ServerPaths.overrideFor(LspDoctor.INTELEPHENSE.id)?.let { listOf(it, "--stdio") }
+    overrideCommand(LspDoctor.INTELEPHENSE.id, "--stdio")
     ?: nodeServerCommand("intelephense", "--stdio")
 
   /** The PHP server the settings chose — the only spelling the factory needs to know. */
@@ -186,10 +200,10 @@ internal object ServerBinaries {
     if (PhpServerChoice.effective() == PhpEngine.INTELEPHENSE) intelephenseCommand() else phpactorCommand()
 
   fun cssCommand(): List<String> =
-    ServerPaths.overrideFor(LspDoctor.CSS.id)?.let { listOf(it, "--stdio") }
+    overrideCommand(LspDoctor.CSS.id, "--stdio")
     ?: nodeServerCommand("vscode-css-language-server", "--stdio")
 
   fun eslintCommand(): List<String> =
-    ServerPaths.overrideFor(LspDoctor.ESLINT.id)?.let { listOf(it, "--stdio") }
+    overrideCommand(LspDoctor.ESLINT.id, "--stdio")
     ?: nodeServerCommand("vscode-eslint-language-server", "--stdio")
 }

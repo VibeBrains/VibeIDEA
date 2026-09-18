@@ -917,7 +917,7 @@
   "settings.chat.spendHint": "0 turns it off. Subscriptions are sold in money over three windows (e.g. $12 per 5 hours, $30 per week, $60 per month), which a token ceiling cannot express. Only what the provider itself reported as a price is counted.",
   "settings.lsp.title": "Language servers",
   "settings.lsp.choose": "Path to {server}",
-  "settings.lsp.hint": "Empty means the usual resolution: your own server from PATH, then the bundled copy. Fill this in when the server you need is not on PATH — vendor/bin, a shared container folder, a checkout built from source. A path that stopped working is reported by the doctor: silently ignoring the setting would be worse than not having it.",
+  "settings.lsp.hint": "The path to the SERVER'S OWN executable — not to node and not to php: whatever is written here becomes the whole start command. Empty means the usual resolution: your server from PATH, then the bundled one. Fill it in when the server lives outside PATH: vendor/bin, a shared container folder, a build from source. A <code>.js</code> script is started by the interpreter from the field above. A path that stopped working is named by the doctor.",
   "settings.lsp.php.engine": "PHP server",
   "settings.lsp.php.auto": "Automatic (bundled Phpactor)",
   "settings.lsp.php.phpactor": "Phpactor (bundled)",
@@ -2109,5 +2109,7 @@
   "settings.lsp.node.source.wellKnown": "a usual install location",
   "lsp.doctor.node": "Node interpreter: {path} (source: {source})",
   "lsp.doctor.node.bad": "Node interpreter: the path you named cannot be run — {path}",
-  "lsp.doctor.node.missing": "Node interpreter NOT FOUND — TypeScript, ESLint, CSS and the JavaScript debugger will not start: Settings → Tools → VibeIDEA → Language servers"
+  "lsp.doctor.node.missing": "Node interpreter NOT FOUND — TypeScript, ESLint, CSS and the JavaScript debugger will not start: Settings → Tools → VibeIDEA → Language servers",
+  "doctor.lsp.interpreterInField": "this server's field names an INTERPRETER ({path}) rather than a server — the path was ignored; Node belongs in the «Node interpreter» field",
+  "settings.lsp.interpreterInField": "⚠ this names an interpreter <code>{path}</code>, not a server: the path becomes the whole start command, and the server would start as <code>node --stdio</code>, without the script itself. Clear the field — Node belongs in «Node interpreter» above."
 }

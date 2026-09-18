@@ -29,6 +29,11 @@ class VibeLspDoctorAction : AnAction({ t("lsp.doctor.action") }) {
         // A setting that stopped applying without a word is worse than one that never applied:
         // the person keeps debugging the server instead of the path they typed months ago.
         ServerPaths.broken(check.spec.id)?.let { appendLine("    " + t("doctor.lsp.brokenPath", "path" to it)) }
+        // Путь к ноде в поле сервера — не «сломанный путь»: файл на месте и исполняется,
+        // просто это не сервер. Молча его игнорировать нельзя — человек уверен, что настроил.
+        ServerPaths.interpreterInstead(check.spec.id)?.let {
+          appendLine("    " + t("doctor.lsp.interpreterInField", "path" to it))
+        }
         // A bundled phar without an interpreter is a server that cannot start, and saying
         // «встроен» while it silently fails would be the same silence we exist to remove.
         val runtime = LspDoctor.runtimeFor(check.spec)

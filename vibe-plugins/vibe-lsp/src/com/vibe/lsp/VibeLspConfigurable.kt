@@ -84,6 +84,10 @@ class VibeLspConfigurable : Configurable {
       }
       fields[spec.id] = field
       builder.addLabeledComponent(spec.displayName, field)
+      // Ровно та ошибка, которую человек делает первой: в поле сервера кладут путь к ноде.
+      ServerPaths.interpreterInstead(spec.id)?.let {
+        builder.addComponent(SettingsUi.hint(t("settings.lsp.interpreterInField", "path" to it)))
+      }
     }
     builder.addComponent(SettingsUi.hint(t("settings.lsp.hint")))
     return SettingsUi.page(builder.panel)

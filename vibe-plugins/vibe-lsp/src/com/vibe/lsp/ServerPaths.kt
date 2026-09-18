@@ -42,6 +42,8 @@ object ServerPaths {
    * something executable that exists. A path that no longer works is NOT silently ignored — the
    * caller reports it, because a setting that stopped applying without a word is worse than one
    * that never applied: the person keeps debugging the server instead of the setting.
+   *
+   * An interpreter named here is not an override either — see [isInterpreter].
    */
   fun overrideFor(
     serverId: String,
@@ -49,8 +51,24 @@ object ServerPaths {
     usable: (String) -> Boolean = { Files.isExecutable(Path.of(it)) },
   ): String? {
     val text = stored.trim()
-    if (text.isEmpty()) return null
+    if (text.isEmpty() || isInterpreter(text)) return null
     return text.takeIf(usable)
+  }
+
+  /**
+   * Путь к ИНТЕРПРЕТАТОРУ, положенный в поле сервера.
+   *
+   * Поля ищут глазами, а не читают: человек, которому нужно указать ноду, находит первое поле с
+   * путём и пишет её туда. Дальше этот путь становится ВСЕЙ командой, и сервер запускается как
+   * `node --stdio` — без скрипта, который node должна была выполнить. Именно это владелец и увидел
+   * 18.09.2026: «Unable to start language server: commands=[…/node, --stdio]».
+   *
+   * Молча игнорировать такую строку нельзя — человек уверен, что настроил. Поэтому она не
+   * становится командой, а называется отдельной ошибкой: интерпретатор задаётся своим полем.
+   */
+  fun isInterpreter(path: String): Boolean {
+    val name = path.trim().trimEnd('/').substringAfterLast('/').substringAfterLast('\\').lowercase()
+    return name in INTERPRETERS
   }
 
   /** A stored path that is set but no longer usable — the one state worth complaining about. */
@@ -60,7 +78,13 @@ object ServerPaths {
     usable: (String) -> Boolean = { Files.isExecutable(Path.of(it)) },
   ): String? {
     val text = stored.trim()
-    if (text.isEmpty()) return null
+    if (text.isEmpty() || isInterpreter(text)) return null
     return text.takeIf { !usable(it) }
   }
+
+  /** A stored path that names an interpreter rather than a server. */
+  fun interpreterInstead(serverId: String, stored: String = get(serverId)): String? =
+    stored.trim().takeIf { it.isNotEmpty() && isInterpreter(it) }
+
+  private val INTERPRETERS = setOf("node", "node.exe", "nodejs", "php", "php.exe", "python", "python3")
 }
