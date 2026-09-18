@@ -113,6 +113,22 @@ object LspDoctor {
     extensions = setOf("scss", "sass"),
   )
 
+  /**
+   * Stylus — третий диалект CSS рядом с Sass и LESS.
+   *
+   * Берём не потому, что он популярен (он не популярен и продолжает уходить), а потому, что стоит
+   * он ровно ничего: полтора мегабайта и сервер, который запускается ТОЛЬКО на `.styl`. Проект без
+   * Stylus не платит за него ни памятью, ни временем, а проект с ним получает подсказки вместо
+   * пустого редактора — в открытой платформе Stylus нет вовсе.
+   */
+  val STYLUS = ServerSpec(
+    id = "vibeStylus",
+    displayName = "Stylus",
+    binary = "stylus-language-server",
+    installCommand = "npm install -g stylus-lsp",
+    extensions = setOf("styl"),
+  )
+
   val PHPACTOR = ServerSpec(
     id = "vibePhpactor",
     displayName = "PHP (Phpactor)",
@@ -161,7 +177,7 @@ object LspDoctor {
     displayName = "CSS/LESS (vscode-css-language-server)",
     binary = "vscode-css-language-server",
     installCommand = "npm install -g vscode-langservers-extracted",
-    extensions = setOf("css", "less"),
+    extensions = setOf("css", "less", "pcss", "postcss", "sss"),
   )
 
   /** ESLint: the project's own rules in the editor. Silent in a project that has no ESLint config. */
@@ -223,7 +239,7 @@ object LspDoctor {
   )
 
   /** Everything we know how to check — both PHP engines, of which only one ever runs. */
-  val ALL: List<ServerSpec> = listOf(VTSLS, ANGULAR, TAILWIND, SOME_SASS, PHPACTOR, INTELEPHENSE, CSS, ESLINT)
+  val ALL: List<ServerSpec> = listOf(VTSLS, ANGULAR, TAILWIND, SOME_SASS, STYLUS, PHPACTOR, INTELEPHENSE, CSS, ESLINT)
 
   /**
    * The servers that actually serve this machine: one per language.

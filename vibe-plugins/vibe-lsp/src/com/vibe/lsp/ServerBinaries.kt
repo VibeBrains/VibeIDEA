@@ -144,6 +144,7 @@ internal object ServerBinaries {
     "ngserver" to arrayOf("node", "node_modules", "@angular", "language-server", "bin", "ngserver"),
     "tailwindcss-language-server" to arrayOf("node", "node_modules", "@tailwindcss", "language-server", "bin", "tailwindcss-language-server"),
     "some-sass-language-server" to arrayOf("node", "node_modules", "some-sass-language-server", "bin", "some-sass-language-server"),
+    "stylus-language-server" to arrayOf("node", "node_modules", "stylus-lsp", "dist", "server.js"),
   )
 
   /**
@@ -247,6 +248,10 @@ internal object ServerBinaries {
   fun someSassCommand(): List<String> =
     overrideCommand(LspDoctor.SOME_SASS.id, "--stdio")
     ?: nodeServerCommand("some-sass-language-server", "--stdio")
+
+  fun stylusCommand(): List<String> =
+    overrideCommand(LspDoctor.STYLUS.id, "--stdio")
+    ?: nodeServerCommand("stylus-language-server", "--stdio")
 
   fun eslintCommand(): List<String> =
     overrideCommand(LspDoctor.ESLINT.id, "--stdio")

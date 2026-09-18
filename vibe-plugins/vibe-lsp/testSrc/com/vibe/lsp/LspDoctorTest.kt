@@ -64,8 +64,8 @@ class LspDoctorTest {
     // PHP is the exception: two engines share ONE LSP4IJ entry (`vibePhp`), because two servers
     // mapped onto *.php would both start and double every completion. The spec ids stay separate —
     // a person can point us at their own copy of either.
-    assertEquals(setOf("vibeVtsls", "vibeAngular", "vibeTailwind", "vibeSomeSass", "vibePhpactor",
-                       "vibeIntelephense", "vibeCss", "vibeEslint"),
+    assertEquals(setOf("vibeVtsls", "vibeAngular", "vibeTailwind", "vibeSomeSass", "vibeStylus",
+                       "vibePhpactor", "vibeIntelephense", "vibeCss", "vibeEslint"),
                  LspDoctor.ALL.map { it.id }.toSet())
   }
 
@@ -91,6 +91,10 @@ class LspDoctorTest {
     assertEquals(listOf(LspDoctor.SOME_SASS.id), served.filter { "sass" in it.extensions && it.id != LspDoctor.TAILWIND.id }.map { it.id })
     assertFalse("scss" in LspDoctor.CSS.extensions, "SCSS ушёл к Some Sass — у общего CSS его быть не должно")
     assertTrue("less" in LspDoctor.CSS.extensions, "LESS остаётся у общего CSS: межфайловый сервер для него не нужен")
+    // Диалекты PostCSS — тот же CSS с плагинами; своего сервера у них нет, и без этого их файлы
+    // не обслуживал никто.
+    assertTrue(LspDoctor.CSS.extensions.containsAll(listOf("pcss", "postcss", "sss")))
+    assertEquals(setOf("styl"), LspDoctor.STYLUS.extensions)
   }
 
   @Test

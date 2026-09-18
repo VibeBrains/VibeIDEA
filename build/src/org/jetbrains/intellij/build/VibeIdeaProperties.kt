@@ -76,6 +76,10 @@ open class VibeIdeaProperties(communityHomeDir: Path) : IdeaCommunityProperties(
       LibraryLicense(name = "some-sass-language-server", version = "2.3.8", attachedTo = "intellij.vibe.lsp",
                      url = "https://github.com/wkillerud/some-sass")
         .mit("https://github.com/wkillerud/some-sass/blob/main/LICENSE"),
+      // Stylus: третий диалект CSS, которого в открытой платформе нет вовсе.
+      LibraryLicense(name = "stylus-lsp", version = "0.6.0", attachedTo = "intellij.vibe.lsp",
+                     url = "https://github.com/WMikhail/stylus-tooling")
+        .mit("https://github.com/WMikhail/stylus-tooling/blob/main/LICENSE"),
       LibraryLicense(name = "vscode-langservers-extracted", version = "4.10.0", attachedTo = "intellij.vibe.lsp",
                      url = "https://github.com/hrsh7th/vscode-langservers-extracted")
         .mit("https://github.com/hrsh7th/vscode-langservers-extracted/blob/master/LICENSE"),

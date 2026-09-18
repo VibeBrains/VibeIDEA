@@ -2,10 +2,11 @@
   "name": "vibeidea-language-servers",
   "private": true,
   "dependencies": {
-    "@vtsls/language-server": "0.3.0",
-    "vscode-langservers-extracted": "4.10.0",
     "@angular/language-server": "22.1.7",
     "@tailwindcss/language-server": "0.16.0",
-    "some-sass-language-server": "2.3.8"
+    "@vtsls/language-server": "0.3.0",
+    "some-sass-language-server": "2.3.8",
+    "stylus-lsp": "^0.6.0",
+    "vscode-langservers-extracted": "4.10.0"
   }
 }

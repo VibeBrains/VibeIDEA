@@ -34,6 +34,15 @@
     </server>
     <fileNamePatternMapping patterns="*.css" serverId="vibeCss" languageId="css"/>
     <fileNamePatternMapping patterns="*.less" serverId="vibeCss" languageId="less"/>
+    <!-- Диалекты PostCSS: это тот же CSS, только с плагинами, — отдельного сервера у них нет, а
+         без сопоставления файл не обслуживал никто. -->
+    <fileNamePatternMapping patterns="*.pcss;*.postcss;*.sss" serverId="vibeCss" languageId="css"/>
+
+    <!-- Stylus: третий диалект CSS. Стартует только на .styl, поэтому условий включения не нужно. -->
+    <server id="vibeStylus" name="Stylus" factoryClass="com.vibe.lsp.StylusServerFactory">
+      <description>Stylus language server (tree-sitter based)</description>
+    </server>
+    <fileNamePatternMapping patterns="*.styl" serverId="vibeStylus" languageId="stylus"/>
 
     <!-- SCSS и Sass: переход к переменной и миксину ЧЕРЕЗ файлы, чего общий CSS-сервер не умеет.
          `.sass` с отступами до сих пор не обслуживал никто. -->

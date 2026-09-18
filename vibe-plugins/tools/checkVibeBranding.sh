@@ -23,7 +23,12 @@ ROOTS=(vibe-plugins vibeidea-customization)
 PATTERN='IntelliJ IDEA|JetBrains'
 fail=0
 
-hits=$(grep -rInE "$PATTERN" "${ROOTS[@]}" 2>/dev/null | grep -v '/vibeDefaults/' | grep -v '/resources/help/' | grep -v '/tools/brandingAllowlist.txt' | grep -v '/tools/checkVibeBranding.sh' || true)
+# node_modules — ЧУЖОЙ код, скачанный npm, а не наши файлы: его README упоминают кого угодно, и
+# объяснять чужие тексты в нашем списке исключений значит превратить список в свалку. Папка к тому
+# же не в git (vibe-plugins/deps/.gitignore), то есть у гейта её вообще может не быть — и тогда он
+# зелёный не потому, что всё хорошо, а потому, что зависимости не скачаны (поймано 18.09.2026,
+# когда в набор приехал postcss).
+hits=$(grep -rInE "$PATTERN" "${ROOTS[@]}" 2>/dev/null | grep -v '/node_modules/' | grep -v '/vibeDefaults/' | grep -v '/resources/help/' | grep -v '/tools/brandingAllowlist.txt' | grep -v '/tools/checkVibeBranding.sh' || true)
 
 "$PYTHON" - "$ALLOWLIST" <<PY || fail=1
 import sys, io
