@@ -2129,6 +2129,8 @@
   "context.part.tools": "Схемы инструментов",
   "context.part.dialogue": "История разговора",
   "context.part.images": "Изображения: {count}",
+  "lsp.symbol": "символ языкового сервера",
+  "lsp.symbolOf": "символ {language}",
   "chat.feed.toEnd": "Прокрутить в конец",
   "chat.selection.copy": "Копировать выделенное",
   "chat.selection.selectAll": "Выделить весь разговор",

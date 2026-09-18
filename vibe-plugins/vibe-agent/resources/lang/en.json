@@ -2129,6 +2129,8 @@
   "context.part.tools": "Tool schemas",
   "context.part.dialogue": "Conversation history",
   "context.part.images": "Images: {count}",
+  "lsp.symbol": "language server symbol",
+  "lsp.symbolOf": "{language} symbol",
   "chat.feed.toEnd": "Scroll to the end",
   "chat.selection.copy": "Copy selection",
   "chat.selection.selectAll": "Select the whole conversation",

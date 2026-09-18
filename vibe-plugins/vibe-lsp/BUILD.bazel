@@ -40,6 +40,8 @@ jvm_library(
         "//libraries/lsp4j",
         # Индекс объявлений Ext JS и обработчик перехода.
         "//platform/indexing-api:indexing",
+        # Подпись символа под курсором: UsageView*Location, по которым платформа спрашивает описание.
+        "//platform/usageView",
         "//platform/lang-api:lang",
     ],
 )

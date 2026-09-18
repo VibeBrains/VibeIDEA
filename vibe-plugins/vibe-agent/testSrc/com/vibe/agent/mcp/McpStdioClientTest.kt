@@ -85,8 +85,15 @@ class McpStdioClientTest {
     }
   }
 
-  /** Ждёт, пока фейковый сервер увидит метод: он читает свой конец трубы в своём потоке. */
-  private fun awaitSeen(server: FakeServer, method: String, timeoutMs: Long = 2_000): Boolean {
+  /**
+   * Ждёт, пока фейковый сервер увидит метод: он читает свой конец трубы в своём потоке.
+   *
+   * Срок щедрый намеренно. Тест проверяет ПОРЯДОК знакомства, а не скорость, и тесная планка
+   * превращает загруженную машину в «дефект протокола»: под параллельным прогоном двух наборов
+   * `PipedInputStream` отдаёт строку не сразу, и знакомство в два круга не укладывалось в две
+   * секунды (поймано 18.09.2026, тест падал через раз).
+   */
+  private fun awaitSeen(server: FakeServer, method: String, timeoutMs: Long = 15_000): Boolean {
     val deadline = System.currentTimeMillis() + timeoutMs
     while (System.currentTimeMillis() < deadline) {
       if (method in server.seen) return true
@@ -111,11 +118,17 @@ class McpStdioClientTest {
   @Test
   fun `a legacy server answers method not found, and the client quietly falls back`() {
     val client = legacyServer.client()
-    assertEquals("project VibeIDEA", client.initialize("test", 2_000))
-    // Порядок — вот что проверяется: проба, потом прежнее знакомство. Уведомление о готовности
-    // уходит следом и считается сервером асинхронно, поэтому его ждём, а не ловим мгновением.
-    assertEquals(listOf("server/discover", "initialize"), legacyServer.seen.take(2))
+    // Два круга (проба и прежнее знакомство) по щедрому сроку: см. awaitSeen о том, почему.
+    assertEquals("project VibeIDEA", client.initialize("test", 15_000))
+    // Уведомление о готовности ждём ПЕРВЫМ: оно уходит следом за знакомством и считается сервером
+    // асинхронно, поэтому список методов до него ещё растёт. Прежняя проверка брала `seen.take(2)`
+    // и падала через раз под параллельным прогоном двух наборов — на ровном месте: `take(n)` у
+    // Kotlin, увидев `n >= size`, отдаёт КОПИЮ ВСЕЙ коллекции, и список, выросший между проверкой
+    // размера и копированием, приезжал в сравнение третьим элементом (18.09.2026).
     assertTrue(awaitSeen(legacyServer, "notifications/initialized"), legacyServer.seen.toString())
+    // Порядок — вот что проверяется: проба, потом прежнее знакомство.
+    assertEquals(listOf("server/discover", "initialize", "notifications/initialized"),
+                 legacyServer.seen.toList(), legacyServer.seen.toString())
     assertEquals(null, client.revision)
     client.close()
   }
