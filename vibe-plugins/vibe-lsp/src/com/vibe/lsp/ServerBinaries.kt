@@ -141,7 +141,21 @@ internal object ServerBinaries {
     "vtsls" to arrayOf("node", "node_modules", "@vtsls", "language-server", "bin", "vtsls.js"),
     "vscode-css-language-server" to arrayOf("node", "node_modules", "vscode-langservers-extracted", "bin", "vscode-css-language-server"),
     "vscode-eslint-language-server" to arrayOf("node", "node_modules", "vscode-langservers-extracted", "bin", "vscode-eslint-language-server"),
+    "ngserver" to arrayOf("node", "node_modules", "@angular", "language-server", "bin", "ngserver"),
   )
+
+  /**
+   * Папка, внутри которой лежит наш `node_modules` с серверами, — она же «probe location».
+   *
+   * Сервер Angular ищет TypeScript и `@angular/language-service` не по PATH, а по указанным
+   * путям, и без них падает на старте. Наш набор несёт оба, поэтому первым в списке стоит он, а
+   * следом — проект человека: его версии должны побеждать наши, как и у остальных серверов.
+   */
+  private fun bundledServersRoot(): String? {
+    val root = pluginDir() ?: return null
+    val node = root.resolve("servers").resolve("node")
+    return node.takeIf { Files.isDirectory(it.resolve("node_modules")) }?.toString()
+  }
 
   fun bundledNode(binary: String): String? = BUNDLED_NODE_ENTRY[binary]?.let { bundled(*it) }
 
@@ -202,6 +216,27 @@ internal object ServerBinaries {
   fun cssCommand(): List<String> =
     overrideCommand(LspDoctor.CSS.id, "--stdio")
     ?: nodeServerCommand("vscode-css-language-server", "--stdio")
+
+  /**
+   * Команда сервера Angular: probe-пути обязательны, иначе он не стартует вовсе.
+   *
+   * Порядок путей — сперва проект, потом наш набор: проект, закрепивший свою версию Angular,
+   * должен обслуживаться своей, а наша копия — это запасной вариант, стареющий вместе с IDE.
+   */
+  fun angularCommand(projectBase: String?): List<String> {
+    val probes = listOfNotNull(projectBase, bundledServersRoot())
+    overrideCommand(LspDoctor.ANGULAR.id, "--stdio")?.let { return it + probeArgs(probes) }
+    val own = find("ngserver")
+    if (own != null) return listOf(own, "--stdio") + probeArgs(probes)
+    val bundled = bundledNode("ngserver") ?: return listOf("ngserver", "--stdio") + probeArgs(probes)
+    return NodeRuntime.command(projectBase, bundled, "--stdio", *probeArgs(probes).toTypedArray())
+  }
+
+  private fun probeArgs(probes: List<String>): List<String> {
+    if (probes.isEmpty()) return emptyList()
+    val joined = probes.joinToString(",")
+    return listOf("--tsProbeLocations", joined, "--ngProbeLocations", joined)
+  }
 
   fun eslintCommand(): List<String> =
     overrideCommand(LspDoctor.ESLINT.id, "--stdio")

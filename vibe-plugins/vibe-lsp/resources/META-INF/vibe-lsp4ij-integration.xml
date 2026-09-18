@@ -10,6 +10,16 @@
     <fileNamePatternMapping patterns="*.tsx" serverId="vibeVtsls" languageId="typescriptreact"/>
     <fileNamePatternMapping patterns="*.js;*.mjs;*.cjs" serverId="vibeVtsls" languageId="javascript"/>
     <fileNamePatternMapping patterns="*.jsx" serverId="vibeVtsls" languageId="javascriptreact"/>
+    <!-- Angular: официальный сервер самого Angular (MIT). Работает рядом с vtsls на .ts — он
+         отвечает про шаблоны и Angular-сущности, vtsls про язык; так же устроен VS Code.
+         На .html он единственный, кто вообще понимает Angular-шаблон: платформенный HTML знает
+         теги браузера и про компоненты не слышал. -->
+    <server id="vibeAngular" name="Angular" factoryClass="com.vibe.lsp.AngularServerFactory">
+      <description>Angular language server: templates, components, directives and pipes</description>
+    </server>
+    <fileNamePatternMapping patterns="*.html" serverId="vibeAngular" languageId="html"/>
+    <fileNamePatternMapping patterns="*.ts" serverId="vibeAngular" languageId="typescript"/>
+
     <!-- Один вход на *.php: движок (Phpactor или Intelephense) выбирается в настройках, а два
          зарегистрированных сервера на одном шаблоне запустились бы оба и удвоили подсказки. -->
     <server id="vibePhp" name="PHP" factoryClass="com.vibe.lsp.PhpServerFactory">

@@ -249,6 +249,15 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
 
   /** Анимированная строка «сейчас работаю» в конце ленты; живёт ровно ход. */
   private var workingLine: WorkingLine? = null
+
+  /**
+   * Файлы, которые агент изменил в этом разговоре, — для полоски над вводом.
+   *
+   * По разговору, а не по ходу: человек смотрит «что тут наделали» после нескольких ходов, и
+   * счётчик, обнуляемый каждым ходом, отвечал бы на вопрос, которого никто не задаёт. Множество
+   * с порядком: когда появятся кнопки «принять/отклонить», список пойдёт сверху вниз как менялось.
+   */
+  private val changedFiles = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
   private val verifyRunner: VerifyGateRunner? = project.basePath?.let { VerifyGateRunner(it) }
   private val breakers = VibeBreakerService.getInstance(project)
   private val status = VibeAgentStatusService.getInstance(project)
@@ -470,6 +479,8 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     // than no button.
     if (com.vibe.agent.voice.VoiceCapture.isSupported()) composer.addPill(voicePill)
     feedSelection.markdown = { history.get(currentThreadId)?.let { com.vibe.agent.history.ChatExport.toMarkdown(it) } }
+    composer.onCopyChat = { copyConversation() }
+    composer.onExportChat = { exportConversation() }
     composer.onUsageClick = { showContextPopup() }
     // Кольцо контекста — последним в ряду пилюль, как у VibeIDE: после модели, режима и микрофона.
     composer.addContextRing()
@@ -701,6 +712,20 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
       history.updateState(currentThreadId, ThreadState(t?.id))
     }
     updateLanding()
+  }
+
+  /** Разговор в буфер обмена — тем же markdown, что уходит в файл. */
+  private fun copyConversation() {
+    val thread = history.get(currentThreadId) ?: run { systemLine(t("chat.noThread")); return }
+    com.intellij.openapi.ide.CopyPasteManager.getInstance()
+      .setContents(java.awt.datatransfer.StringSelection(com.vibe.agent.history.ChatExport.toMarkdown(thread)))
+    systemLine(t("chat.strip.copied"))
+  }
+
+  /** Отметить файл изменённым агентом: полоска над вводом считает их по разговору. */
+  private fun noteChangedFile(path: String) {
+    changedFiles.add(path)
+    SwingUtilities.invokeLater { composer.setChangedFiles(changedFiles.size) }
   }
 
   /**
@@ -3642,6 +3667,8 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     audit?.append(AuditEvent(System.currentTimeMillis(), AuditEvent.Action.TOOL_CALL_START, ok = true, actor = actor,
                              callId = call.id, model = model, meta = mapOf("tool" to call.name)))
     val started = System.currentTimeMillis()
+    val changedPath = com.vibe.agent.ui.ToolCallLabel.subjectOf(call.arguments)
+      ?.takeIf { call.name == com.vibe.agent.mcp.McpProtocol.TOOL_WRITE_FILE || call.name == com.vibe.agent.mcp.McpProtocol.TOOL_REPLACE_IN_FILE }
     val result = directTools.execute(call) { asked, risk ->
       val verdict = com.vibe.agent.mcp.McpAccess.verdict(
         risk, com.intellij.ide.trustedProjects.TrustedProjects.isProjectTrusted(project), allowWrite = true, allowExecute = true)
@@ -3663,6 +3690,8 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
         }
       }
     }
+    // Отмечаем только УДАВШИЙСЯ вызов: отказ в правах или промах по куску файла не меняли.
+    if (!result.isError) changedPath?.let { noteChangedFile(it) }
     audit?.append(AuditEvent(System.currentTimeMillis(), AuditEvent.Action.TOOL_CALL_DONE, ok = !result.isError, actor = actor,
                              callId = call.id, model = model, latencyMs = System.currentTimeMillis() - started,
                              meta = mapOf("tool" to call.name)))
@@ -3907,6 +3936,10 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
 
   /** Switches to (and opens a tab for) the given thread; idempotent for the active one. */
   private fun activateThread(id: String, saveCurrentDraft: Boolean = true) {
+    if (id != currentThreadId) {
+      changedFiles.clear()
+      SwingUtilities.invokeLater { composer.setChangedFiles(0) }
+    }
     if (history.get(id) == null) return
     if (id == currentThreadId) {
       if (id !in openTabIds) { openTabIds.add(id); evictTabs(); updateTabsStrip(); saveTabs() }

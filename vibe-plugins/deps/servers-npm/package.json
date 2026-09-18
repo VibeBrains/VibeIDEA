@@ -3,6 +3,7 @@
   "private": true,
   "dependencies": {
     "@vtsls/language-server": "0.3.0",
-    "vscode-langservers-extracted": "4.10.0"
+    "vscode-langservers-extracted": "4.10.0",
+    "@angular/language-server": "22.1.7"
   }
 }

@@ -61,6 +61,12 @@ open class VibeIdeaProperties(communityHomeDir: Path) : IdeaCommunityProperties(
       LibraryLicense(name = "vtsls", version = "0.3.0", attachedTo = "intellij.vibe.lsp",
                      url = "https://github.com/yioneko/vtsls")
         .mit("https://github.com/yioneko/vtsls/blob/main/LICENSE"),
+      // Официальный сервер самого Angular: тот же, что стоит за расширением Angular Language
+      // Service в VS Code. Взят вместо форка чужого плагина с площадки — у того нет ни исходников,
+      // ни лицензии (разбор 18.09.2026), а здесь MIT и репозиторий angular/angular.
+      LibraryLicense(name = "@angular/language-server", version = "22.1.7", attachedTo = "intellij.vibe.lsp",
+                     url = "https://github.com/angular/angular")
+        .mit("https://github.com/angular/angular/blob/main/LICENSE"),
       LibraryLicense(name = "vscode-langservers-extracted", version = "4.10.0", attachedTo = "intellij.vibe.lsp",
                      url = "https://github.com/hrsh7th/vscode-langservers-extracted")
         .mit("https://github.com/hrsh7th/vscode-langservers-extracted/blob/master/LICENSE"),

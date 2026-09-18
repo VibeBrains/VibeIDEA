@@ -53,6 +53,28 @@ object LspDoctor {
     extensions = setOf("ts", "tsx", "mts", "cts", "js", "jsx", "mjs", "cjs"),
   )
 
+  /**
+   * Angular — официальным сервером самого Angular, а не чужим плагином.
+   *
+   * Почему так, а не форком плагина с площадки: у того, что предлагали взять, нет ни исходников,
+   * ни лицензии, зато есть собственный пакет лицензирования, — вшить его в свой дистрибутив
+   * нельзя (разбор 18.09.2026). А `@angular/language-server` — это MIT и репозиторий `angular/
+   * angular`, тот же сервер, что стоит за расширением Angular Language Service в VS Code.
+   *
+   * Он ОБЯЗАН найти TypeScript и `@angular/language-service`, и ищет их не по PATH, а по
+   * «probe locations»: без них падает на старте словами «Failed to resolve typescript ... from []».
+   * Поэтому команда собирается с путями на наш же набор серверов и на проект человека.
+   */
+  val ANGULAR = ServerSpec(
+    id = "vibeAngular",
+    displayName = "Angular (@angular/language-server)",
+    binary = "ngserver",
+    installCommand = "npm install -g @angular/language-server",
+    // Шаблоны и компоненты: переход из `<my-tag>` в компонент требует обоих, потому что шаблон
+    // бывает и отдельным файлом, и строкой внутри `@Component`.
+    extensions = setOf("html", "ts"),
+  )
+
   val PHPACTOR = ServerSpec(
     id = "vibePhpactor",
     displayName = "PHP (Phpactor)",
@@ -159,7 +181,7 @@ object LspDoctor {
   )
 
   /** Everything we know how to check — both PHP engines, of which only one ever runs. */
-  val ALL: List<ServerSpec> = listOf(VTSLS, PHPACTOR, INTELEPHENSE, CSS, ESLINT)
+  val ALL: List<ServerSpec> = listOf(VTSLS, ANGULAR, PHPACTOR, INTELEPHENSE, CSS, ESLINT)
 
   /**
    * The servers that actually serve this machine: one per language.

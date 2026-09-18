@@ -64,18 +64,21 @@ class LspDoctorTest {
     // PHP is the exception: two engines share ONE LSP4IJ entry (`vibePhp`), because two servers
     // mapped onto *.php would both start and double every completion. The spec ids stay separate —
     // a person can point us at their own copy of either.
-    assertEquals(setOf("vibeVtsls", "vibePhpactor", "vibeIntelephense", "vibeCss", "vibeEslint"),
+    assertEquals(setOf("vibeVtsls", "vibeAngular", "vibePhpactor", "vibeIntelephense", "vibeCss", "vibeEslint"),
                  LspDoctor.ALL.map { it.id }.toSet())
   }
 
   @Test
-  fun `HTML и JSON отданы платформе, а не серверу`() {
-    // Тот же npm-пакет несёт серверы html и json, и подключать их нельзя: в Community они уже есть,
-    // а два движка на одном файле дают два набора подсказок, половина которых спорит с другой.
-    val served = LspDoctor.active(PhpEngine.PHPACTOR).flatMap { it.extensions }.toSet()
-    assertFalse("html" in served)
-    assertFalse("json" in served)
-    assertTrue("css" in served, "CSS в Community нет вовсе — вот его и закрываем")
+  fun `JSON отдан платформе, а HTML обслуживает только Angular`() {
+    // Тот же npm-пакет несёт серверы html и json, и ОБЩИЕ подключать нельзя: в Community они уже
+    // есть, а два движка на одном файле дают два набора подсказок, половина которых спорит с
+    // другой. С Angular случай иной и решён осознанно (18.09.2026): платформенный HTML знает теги
+    // браузера и ничего не знает о компонентах, поэтому на .html стоит ровно один сервер — Angular,
+    // и он добавляет то, чего у платформы нет, а не повторяет её.
+    val served = LspDoctor.active(PhpEngine.PHPACTOR)
+    assertFalse("json" in served.flatMap { it.extensions })
+    assertEquals(listOf(LspDoctor.ANGULAR.id), served.filter { "html" in it.extensions }.map { it.id })
+    assertTrue("css" in served.flatMap { it.extensions }, "CSS в Community нет вовсе — вот его и закрываем")
   }
 
   @Test

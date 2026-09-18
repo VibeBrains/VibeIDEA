@@ -118,6 +118,29 @@ class ComposerPanel(
    * инструмент» и «жду провайдера» это три разных совета человеку (правило владельца 18.09.2026).
    */
   private val statusDot = StatusDot()
+
+  /**
+   * Командная полоска НАД вводом: что агент изменил, кнопки работы с разговором и состояние.
+   *
+   * Так у VibeIDE, и причина у места простая: ряд пилюль под вводом — это «чем и как идёт ход»
+   * (модель, права, микрофон), а «что уже сделано и как это забрать» — другая мысль, и мешать их
+   * в одну строку значит получить строку, которая переносится на вторую (владелец поймал перенос
+   * «Готово» на скриншоте 0.6.7).
+   */
+  private val changedFilesLabel = javax.swing.JLabel().apply {
+    font = com.intellij.util.ui.JBFont.label().deriveFont(java.awt.Font.PLAIN, 11f)
+    foreground = USAGE_FG
+  }
+  private val copyChatButton = PillButton(icon = com.intellij.icons.AllIcons.Actions.Copy) { onCopyChat?.invoke() }
+    .apply { toolTipText = t("chat.strip.copy") }
+  private val exportChatButton = PillButton(icon = com.intellij.icons.AllIcons.ToolbarDecorator.Export) { onExportChat?.invoke() }
+    .apply { toolTipText = t("chat.strip.export") }
+
+  /** Скопировать разговор в Markdown — кнопкой полоски. */
+  var onCopyChat: (() -> Unit)? = null
+
+  /** Сохранить разговор файлом — кнопкой полоски. */
+  var onExportChat: (() -> Unit)? = null
   /**
    * Заполненность контекста — кольцом в ряду пилюль, рядом с моделью и режимом прав.
    *
@@ -139,6 +162,42 @@ class ComposerPanel(
   /** Show/update the context-usage chip; null hides it (e.g. a new session). EDT only. */
   /** Кольцо контекста — якорь для всплывающей разбивки; popup показывается под ним. */
   fun usageAnchor(): javax.swing.JComponent = contextRing
+
+  /**
+   * Полоска над вводом: слева — что изменено и кнопки разговора, справа — состояние.
+   *
+   * Собственной строкой, а не частью ряда пилюль: у ряда пилюль перенос по ширине, и состояние
+   * уезжало на вторую строку, отрываясь от всего остального.
+   */
+  private fun commandStrip(): JPanel {
+    val left = JPanel(FlowLayout(FlowLayout.LEFT, JBUI.scale(PILL_GAP), 0)).apply {
+      isOpaque = false
+      add(changedFilesLabel)
+      add(copyChatButton)
+      add(exportChatButton)
+    }
+    val right = JPanel(FlowLayout(FlowLayout.RIGHT, JBUI.scale(PILL_GAP), 0)).apply {
+      isOpaque = false
+      add(statusDot)
+    }
+    setChangedFiles(0)
+    return JPanel(BorderLayout()).apply {
+      isOpaque = false
+      border = JBUI.Borders.emptyBottom(PILL_GAP)
+      add(left, BorderLayout.WEST)
+      add(right, BorderLayout.EAST)
+    }
+  }
+
+  /**
+   * Сколько файлов агент изменил за этот разговор.
+   *
+   * Число, а не список: список живёт по клику, а в полоске важно только «есть ли что смотреть».
+   */
+  fun setChangedFiles(count: Int) {
+    changedFilesLabel.text = if (count == 0) t("chat.strip.noChanges") else t("chat.strip.changes", "count" to count)
+    changedFilesLabel.revalidate()
+  }
 
   /** Что панель делает сейчас: слово и цвет точки справа. */
   fun setStatus(state: StatusDot.State, detail: String? = null) = statusDot.setState(state, detail)
@@ -211,6 +270,7 @@ class ComposerPanel(
       add(queueBanner.apply { alignmentX = LEFT_ALIGNMENT })
       add(attachmentsStrip.apply { alignmentX = LEFT_ALIGNMENT })
       add(contextStrip.apply { alignmentX = LEFT_ALIGNMENT })
+      add(commandStrip().apply { alignmentX = LEFT_ALIGNMENT })
     }
     val icons = JPanel(FlowLayout(FlowLayout.RIGHT, JBUI.scale(ICON_GAP), 0)).apply {
       isOpaque = false
@@ -234,7 +294,7 @@ class ComposerPanel(
       add(inputColumn, BorderLayout.CENTER)
       add(iconColumn, BorderLayout.EAST)
     }
-    pillsRight.add(statusDot)
+
     val pills = JPanel(BorderLayout()).apply {
       isOpaque = false
       border = JBUI.Borders.compound(JBUI.Borders.customLineTop(SEPARATOR), JBUI.Borders.emptyTop(PILL_GAP))

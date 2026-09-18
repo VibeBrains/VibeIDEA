@@ -23,6 +23,7 @@ object ServerPaths {
   /** Servers and adapters whose location can be overridden, keyed by the id the doctor uses. */
   val OVERRIDABLE: List<String> = listOf(
     LspDoctor.VTSLS.id,
+    LspDoctor.ANGULAR.id,
     LspDoctor.PHPACTOR.id,
     LspDoctor.INTELEPHENSE.id,
     LspDoctor.CSS.id,
