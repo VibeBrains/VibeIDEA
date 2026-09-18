@@ -105,6 +105,12 @@
               description="Материалы вне проекта: агент читает, но правит только проект"/>
       <action id="Vibe.ManageReferenceFolders" class="com.vibe.agent.context.VibeManageReferenceFoldersAction"
               text="Папки-справочники" description="Показать подключённые папки и отключить лишние"/>
+      <!-- Связка ключей спрашивает пароль за КАЖДУЮ запись, сохранённую прежними сборками: её
+           список доступа помнит то приложение. Действие переписывает ключи под нынешнюю подпись —
+           один раз, когда человек сам этого захотел, а не посреди работы. -->
+      <action id="Vibe.RefreshKeyAccess" class="com.vibe.agent.providers.VibeRefreshKeyAccessAction"
+              text="Ключи провайдеров: убрать вопросы связки ключей"
+              description="Перечитывает и переписывает сохранённые ключи, чтобы macOS больше не спрашивала пароль"/>
       <action id="Vibe.DetectLocalModels" class="com.vibe.agent.providers.VibeDetectLocalModelsAction"
               text="Найти локальные модели" description="Проба привычных портов Ollama, LM Studio, llama.cpp, Jan"/>
       <action id="Vibe.PinnedCommand1" class="com.vibe.agent.commands.VibePinnedCommand1" text="Команда проекта 1">
