@@ -145,6 +145,9 @@ internal object ServerBinaries {
     "tailwindcss-language-server" to arrayOf("node", "node_modules", "@tailwindcss", "language-server", "bin", "tailwindcss-language-server"),
     "some-sass-language-server" to arrayOf("node", "node_modules", "some-sass-language-server", "bin", "some-sass-language-server"),
     "stylus-language-server" to arrayOf("node", "node_modules", "stylus-lsp", "dist", "server.js"),
+    "vue-language-server" to arrayOf("node", "node_modules", "@vue", "language-server", "bin", "vue-language-server.js"),
+    "svelteserver" to arrayOf("node", "node_modules", "svelte-language-server", "bin", "server.js"),
+    "astro-ls" to arrayOf("node", "node_modules", "@astrojs", "language-server", "bin", "nodeServer.js"),
   )
 
   /**
@@ -252,6 +255,41 @@ internal object ServerBinaries {
   fun stylusCommand(): List<String> =
     overrideCommand(LspDoctor.STYLUS.id, "--stdio")
     ?: nodeServerCommand("stylus-language-server", "--stdio")
+
+  fun vueCommand(): List<String> =
+    overrideCommand(LspDoctor.VUE.id, "--stdio")
+    ?: nodeServerCommand("vue-language-server", "--stdio")
+
+  fun svelteCommand(): List<String> =
+    overrideCommand(LspDoctor.SVELTE.id, "--stdio")
+    ?: nodeServerCommand("svelteserver", "--stdio")
+
+  fun astroCommand(): List<String> =
+    overrideCommand(LspDoctor.ASTRO.id, "--stdio")
+    ?: nodeServerCommand("astro-ls", "--stdio")
+
+  /**
+   * Каталог TextMate-бандлов рядом с плагином — тех, что даёт [VibeTextMateBundles].
+   *
+   * Рядом с серверами и по той же причине: это данные, а не код, и в jar им места нет.
+   */
+  fun textMateBundlesDir(): Path? =
+    pluginDir()?.resolve("textmate")?.takeIf { Files.isDirectory(it) }
+
+  /** `typescript/lib` нашего набора — база для [TsSdk], когда у проекта своего TypeScript нет. */
+  fun bundledTypescriptLib(): Path? =
+    bundledServersRoot()?.let { Path.of(it, "node_modules", "typescript", "lib") }
+
+  /**
+   * Каталог, из которого tsserver резолвит плагин по имени пакета.
+   *
+   * Плагины Vue и Astro лежат в нашем `node_modules` рядом с серверами, и vtsls ищет их по
+   * `location` — без него он идёт от места, где лежит сам `tsserver.js`, и в чужом проекте не
+   * находит ничего.
+   */
+  fun bundledPluginRoot(pkg: String): String? =
+    bundledServersRoot()?.let { Path.of(it, "node_modules", *pkg.split("/").toTypedArray()) }
+      ?.takeIf { Files.isDirectory(it) }?.toString()
 
   fun eslintCommand(): List<String> =
     overrideCommand(LspDoctor.ESLINT.id, "--stdio")

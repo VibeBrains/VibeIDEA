@@ -64,7 +64,8 @@ class LspDoctorTest {
     // PHP is the exception: two engines share ONE LSP4IJ entry (`vibePhp`), because two servers
     // mapped onto *.php would both start and double every completion. The spec ids stay separate —
     // a person can point us at their own copy of either.
-    assertEquals(setOf("vibeVtsls", "vibeAngular", "vibeTailwind", "vibeSomeSass", "vibeStylus",
+    assertEquals(setOf("vibeVtsls", "vibeAngular", "vibeVue", "vibeSvelte", "vibeAstro",
+                       "vibeTailwind", "vibeSomeSass", "vibeStylus",
                        "vibePhpactor", "vibeIntelephense", "vibeCss", "vibeEslint"),
                  LspDoctor.ALL.map { it.id }.toSet())
   }

@@ -57,6 +57,23 @@ cp -R servers-npm/node_modules extracted/servers/node/node_modules
 printf 'Language servers (MIT/Apache-2.0) installed from a pinned package-lock.json; licences travel inside each package.\n' \
   > extracted/servers/node/README.txt
 
+# --- TextMate-грамматики: Vue, Svelte, Astro, Sass и Stylus ---
+#
+# Сервер даёт смысл, грамматика — цвет. Без неё `.vue` открывается «неизвестным файлом»: платформа
+# просит выбрать тип вручную, и до тех пор редактор чёрно-белый. В бандлах платформы из наших
+# диалектов есть только `scss` — остальные везём сами.
+#
+# Один пакет вместо пяти репозиториев: грамматики в нём ЧУЖИЕ, но собраны и перепроверены проектом
+# shiki, а провенанс и текст лицензии каждой лежат в его NOTICE — то есть требование MIT «текст
+# едет с копией» выполняется одним файлом, а не пятью.
+[ -f "tm-grammars-$TMGRAMMARS_V.tgz" ] || curl -sL -o "tm-grammars-$TMGRAMMARS_V.tgz" \
+  "https://registry.npmjs.org/tm-grammars/-/tm-grammars-$TMGRAMMARS_V.tgz"
+echo "$TMGRAMMARS_SHA  tm-grammars-$TMGRAMMARS_V.tgz" | shasum -a 256 -c -
+rm -rf extracted/tm-grammars && mkdir -p extracted/tm-grammars
+tar -xzf "tm-grammars-$TMGRAMMARS_V.tgz" -C extracted/tm-grammars
+./textmateBundles.py extracted/tm-grammars/package extracted/textmate "$TMGRAMMARS_V"
+rm -rf extracted/tm-grammars
+
 # --- Отладочные адаптеры: vscode-js-debug (TS/JS) и vscode-php-debug (Xdebug) ---
 #
 # Везём по решению владельца 01.09.2026: 1,2 и 1,8 МБ архивов за то, чтобы точка останова

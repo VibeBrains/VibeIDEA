@@ -152,8 +152,64 @@ for entry in \
   "node/node_modules/@angular/language-server/bin/ngserver" \
   "node/node_modules/@tailwindcss/language-server/bin/tailwindcss-language-server" \
   "node/node_modules/some-sass-language-server/bin/some-sass-language-server" \
-  "node/node_modules/stylus-lsp/dist/server.js"; do
+  "node/node_modules/stylus-lsp/dist/server.js" \
+  "node/node_modules/@vue/language-server/bin/vue-language-server.js" \
+  "node/node_modules/svelte-language-server/bin/server.js" \
+  "node/node_modules/@astrojs/language-server/bin/nodeServer.js"; do
   [ -f "$SERVERS/$entry" ] || { say "✖ нет встроенного сервера: $entry"; fail=1; }
+done
+# Плагины tsserver. Без них `import X from './X.vue'` в обычном `.ts` не разрешается ничем: сервер
+# Vue тот файл не открывает, а tsserver без плагина не знает, что такое `.vue`. Снаружи это
+# выглядит как красный импорт в половине проекта — то есть как «Vue не поддерживается».
+for entry in \
+  "node/node_modules/@vue/typescript-plugin/package.json" \
+  "node/node_modules/@astrojs/ts-plugin/package.json"; do
+  [ -f "$SERVERS/$entry" ] || { say "✖ нет плагина tsserver: $entry"; fail=1; }
+done
+
+# --- 4б. Подсветка языков, которых в платформе нет вовсе ---
+#
+# Грамматика — не украшение к серверу: без неё `.vue` открывается «неизвестным файлом», платформа
+# просит выбрать тип вручную, и редактор чёрно-белый. Юнит-тест этого не видит по построению —
+# бандлы едут ФАЙЛАМИ рядом с плагином, а не ресурсами в jar.
+#
+# Список имён здесь ВТОРОЙ раз (первый — в VibeTextMateBundles.NAMES), и это осознанно: гейт обязан
+# проверять отгружаемые байты, а не повторять утверждение кода о самом себе. Расхождение ловится
+# ниже сверкой с провайдером.
+TEXTMATE="$APP_PLUGINS/vibe-lsp/textmate"
+for bundle in vue svelte astro sass stylus; do
+  if [ ! -f "$TEXTMATE/$bundle/package.json" ]; then
+    say "✖ нет грамматики подсветки: textmate/$bundle — файлы этого языка откроются без цвета"
+    fail=1
+    continue
+  fi
+  # Грамматика, объявленная в манифесте, но не доехавшая файлом, — тот же чёрно-белый редактор,
+  # только молча: платформа сообщает о ней в лог, которого никто не читает.
+  "$PYTHON" - "$TEXTMATE/$bundle" <<'PYEOF' || fail=1
+import json, pathlib, sys
+root = pathlib.Path(sys.argv[1])
+manifest = json.loads((root / "package.json").read_text(encoding="utf-8"))
+contributes = manifest.get("contributes", {})
+missing = [g["path"] for g in contributes.get("grammars", []) if not (root / g["path"]).is_file()]
+if missing:
+    print(f"✖ в бандле {root.name} объявлены грамматики без файлов: {missing}")
+    sys.exit(1)
+if not contributes.get("languages"):
+    print(f"✖ бандл {root.name} не объявляет языка — тип файла по расширению не определится")
+    sys.exit(1)
+PYEOF
+done
+[ -f "$TEXTMATE/tm-grammars-NOTICE" ] || { say "✖ нет NOTICE с лицензиями грамматик (MIT требует)"; fail=1; }
+# Имена бандлов у кода и в дистрибутиве обязаны совпадать: провайдер отдаёт платформе то, чего нет,
+# — и подсветки нет, а сообщения об этом тоже нет.
+DECLARED=$(grep -o 'listOf("vue"[^)]*)' vibe-plugins/vibe-lsp/src/com/vibe/lsp/VibeTextMateBundles.kt \
+           | grep -o '"[a-z]*"' | tr -d '"' | tr '\n' ' ')
+SHIPPED=$(ls "$TEXTMATE" 2>/dev/null | while read -r n; do [ -d "$TEXTMATE/$n" ] && printf '%s ' "$n"; done)
+for name in $DECLARED; do
+  case " $SHIPPED " in
+    *" $name "*) : ;;
+    *) say "✖ провайдер объявляет бандл «$name», которого нет в дистрибутиве"; fail=1 ;;
+  esac
 done
 
 # Висячие ссылки роняют сборку дистрибутива и бесполезны сами по себе.
@@ -285,12 +341,14 @@ else
     say "✖ версия Phpactor в отчёте о лицензиях не совпадает с закреплённой ($PHPACTOR_PIN)"
     fail=1
   }
-  for var in JS_DEBUG_V PHP_DEBUG_V; do
+  for var in JS_DEBUG_V PHP_DEBUG_V TMGRAMMARS_V; do
     PIN=$(grep -m1 "^$var=" vibe-plugins/deps/pins.env | cut -d= -f2)
-    grep -q "\"$PIN\"" "$REPORT" || { say "✖ версия отладчика ($var=$PIN) в отчёте о лицензиях не совпадает"; fail=1; }
+    grep -q "\"$PIN\"" "$REPORT" || { say "✖ версия закреплённого артефакта ($var=$PIN) в отчёте о лицензиях не совпадает"; fail=1; }
   done
   for pkg in "@vtsls/language-server" "vscode-langservers-extracted" "@angular/language-server" \
-             "@tailwindcss/language-server" "some-sass-language-server" "stylus-lsp"; do
+             "@tailwindcss/language-server" "some-sass-language-server" "stylus-lsp" \
+             "@vue/language-server" "@vue/typescript-plugin" "svelte-language-server" \
+             "@astrojs/language-server" "@astrojs/ts-plugin"; do
     PIN=$("$PYTHON" -c "import json;print(json.load(open('vibe-plugins/deps/servers-npm/package.json'))['dependencies']['$pkg'])")
     grep -q "\"$PIN\"" "$REPORT" || { say "✖ версия $pkg в отчёте о лицензиях не совпадает с закреплённой ($PIN)"; fail=1; }
   done

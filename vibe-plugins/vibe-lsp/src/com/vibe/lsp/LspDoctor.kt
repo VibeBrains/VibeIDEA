@@ -129,6 +129,55 @@ object LspDoctor {
     extensions = setOf("styl"),
   )
 
+  /**
+   * Vue — однофайловые компоненты официальным сервером самого Vue (Volar, MIT).
+   *
+   * В открытой платформе `.vue` не существует как тип файла: он открывается как «неизвестный», без
+   * подсветки и без единой подсказки. Сервер даёт разметку, скрипт и стиль одного файла разом —
+   * переход из тега в компонент, типы пропсов, подсказку директив.
+   *
+   * Он работает в ГИБРИДНОМ режиме: шаблон держит он, а типы `.vue`-импортов в обычных `.ts`
+   * разрешает tsserver плагином `@vue/typescript-plugin` — тот подключён к vtsls в
+   * [VtslsServerFactory]. Без плагина `import X from './X.vue'` в файле `.ts` остаётся красным, и
+   * это не косметика: половина проекта на Vue — обычные `.ts`.
+   */
+  val VUE = ServerSpec(
+    id = "vibeVue",
+    displayName = "Vue (@vue/language-server)",
+    binary = "vue-language-server",
+    installCommand = "npm install -g @vue/language-server",
+    extensions = setOf("vue"),
+  )
+
+  /**
+   * Svelte — официальным сервером проекта (MIT), тем же, что стоит за расширением Svelte for VS Code.
+   *
+   * Единственный из трёх, кому НЕ нужен `typescript.tsdk`: свой TypeScript он находит сам
+   * (проверено прямым запросом `initialize` 18.09.2026).
+   */
+  val SVELTE = ServerSpec(
+    id = "vibeSvelte",
+    displayName = "Svelte (svelte-language-server)",
+    binary = "svelteserver",
+    installCommand = "npm install -g svelte-language-server",
+    extensions = setOf("svelte"),
+  )
+
+  /**
+   * Astro — официальным сервером проекта (MIT).
+   *
+   * ОБЯЗАН получить `initializationOptions.typescript.tsdk`: без него `initialize` отвечает
+   * ошибкой `-32603` «The `typescript.tsdk` init option is required» и язык не работает вовсе
+   * (проверено 18.09.2026). Путь даёт [TsSdk]: сперва TypeScript проекта, потом наш.
+   */
+  val ASTRO = ServerSpec(
+    id = "vibeAstro",
+    displayName = "Astro (@astrojs/language-server)",
+    binary = "astro-ls",
+    installCommand = "npm install -g @astrojs/language-server",
+    extensions = setOf("astro"),
+  )
+
   val PHPACTOR = ServerSpec(
     id = "vibePhpactor",
     displayName = "PHP (Phpactor)",
@@ -239,7 +288,9 @@ object LspDoctor {
   )
 
   /** Everything we know how to check — both PHP engines, of which only one ever runs. */
-  val ALL: List<ServerSpec> = listOf(VTSLS, ANGULAR, TAILWIND, SOME_SASS, STYLUS, PHPACTOR, INTELEPHENSE, CSS, ESLINT)
+  val ALL: List<ServerSpec> = listOf(
+    VTSLS, ANGULAR, VUE, SVELTE, ASTRO, TAILWIND, SOME_SASS, STYLUS, PHPACTOR, INTELEPHENSE, CSS, ESLINT,
+  )
 
   /**
    * The servers that actually serve this machine: one per language.

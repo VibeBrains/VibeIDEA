@@ -7,3 +7,5 @@ phpactor-LICENSE
 servers-npm/node_modules/
 js-debug-dap-*.tar.gz
 php-debug-*.vsix
+# Сборник TextMate-грамматик: восстанавливается download.sh по версии и sha256 из pins.env.
+tm-grammars-*.tgz

@@ -1,0 +1,10 @@
+<!-- Подсветка языков, которых в платформе нет: Vue, Svelte, Astro, Sass и Stylus.
+
+     Отдельным файлом и необязательной зависимостью — ровно как интеграция с LSP4IJ: без плагина
+     TextMate остальной vibe-lsp обязан грузиться и работать. Языковой сервер даёт смысл и без
+     подсветки; подсветка без сервера тоже полезна. Связывать их судьбы незачем. -->
+<idea-plugin>
+  <extensions defaultExtensionNs="com.intellij">
+    <textmate.bundleProvider implementation="com.vibe.lsp.VibeTextMateBundles"/>
+  </extensions>
+</idea-plugin>

@@ -37,13 +37,15 @@ PHPACTOR_PIN=$(grep -m1 '^PHPACTOR_V=' vibe-plugins/deps/pins.env | cut -d= -f2)
 grep -q "\"$PHPACTOR_PIN\"" build/src/org/jetbrains/intellij/build/VibeIdeaProperties.kt \
   || { say "✖ версия Phpactor в лицензиях разошлась с закреплённой ($PHPACTOR_PIN)"; fail=1; }
 
-for var in JS_DEBUG_V PHP_DEBUG_V; do
+for var in JS_DEBUG_V PHP_DEBUG_V TMGRAMMARS_V; do
   PIN=$(grep -m1 "^$var=" vibe-plugins/deps/pins.env | cut -d= -f2)
   grep -q "\"$PIN\"" build/src/org/jetbrains/intellij/build/VibeIdeaProperties.kt \
-    || { say "✖ версия отладчика ($var=$PIN) в лицензиях разошлась с закреплённой"; fail=1; }
+    || { say "✖ версия закреплённого артефакта ($var=$PIN) в лицензиях разошлась с закреплённой"; fail=1; }
 done
 
-for pkg in "@vtsls/language-server" "vscode-langservers-extracted"; do
+for pkg in "@vtsls/language-server" "vscode-langservers-extracted" \
+           "@vue/language-server" "@vue/typescript-plugin" "svelte-language-server" \
+           "@astrojs/language-server" "@astrojs/ts-plugin"; do
   PIN=$("$PYTHON" -c "import json;print(json.load(open('vibe-plugins/deps/servers-npm/package.json'))['dependencies']['$pkg'])")
   grep -q "\"$PIN\"" build/src/org/jetbrains/intellij/build/VibeIdeaProperties.kt \
     || { say "✖ версия $pkg в лицензиях разошлась с закреплённой ($PIN)"; fail=1; }

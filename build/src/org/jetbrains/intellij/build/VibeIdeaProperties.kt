@@ -80,6 +80,32 @@ open class VibeIdeaProperties(communityHomeDir: Path) : IdeaCommunityProperties(
       LibraryLicense(name = "stylus-lsp", version = "0.6.0", attachedTo = "intellij.vibe.lsp",
                      url = "https://github.com/WMikhail/stylus-tooling")
         .mit("https://github.com/WMikhail/stylus-tooling/blob/main/LICENSE"),
+      // Vue: однофайловые компоненты; тот же Volar, что стоит за официальным расширением Vue.
+      LibraryLicense(name = "@vue/language-server", version = "3.3.11", attachedTo = "intellij.vibe.lsp",
+                     url = "https://github.com/vuejs/language-tools")
+        .mit("https://github.com/vuejs/language-tools/blob/master/LICENSE"),
+      // Плагин к tsserver — без него импорт `.vue` в обычном `.ts` не разрешается ничем.
+      LibraryLicense(name = "@vue/typescript-plugin", version = "3.3.11", attachedTo = "intellij.vibe.lsp",
+                     url = "https://github.com/vuejs/language-tools")
+        .mit("https://github.com/vuejs/language-tools/blob/master/LICENSE"),
+      // Svelte: официальный сервер проекта, тот же, что в расширении Svelte for VS Code.
+      LibraryLicense(name = "svelte-language-server", version = "0.18.4", attachedTo = "intellij.vibe.lsp",
+                     url = "https://github.com/sveltejs/language-tools")
+        .mit("https://github.com/sveltejs/language-tools/blob/master/LICENSE"),
+      // Astro: официальный сервер проекта.
+      LibraryLicense(name = "@astrojs/language-server", version = "2.17.0", attachedTo = "intellij.vibe.lsp",
+                     url = "https://github.com/withastro/language-tools")
+        .mit("https://github.com/withastro/language-tools/blob/main/LICENSE"),
+      LibraryLicense(name = "@astrojs/ts-plugin", version = "1.10.12", attachedTo = "intellij.vibe.lsp",
+                     url = "https://github.com/withastro/language-tools")
+        .mit("https://github.com/withastro/language-tools/blob/main/LICENSE"),
+      // TextMate-грамматики Vue, Svelte, Astro, Sass и Stylus. Сам сборник под MIT, но грамматики
+      // в нём чужие: происхождение и лицензия каждой — в его NOTICE, который едет рядом с ними.
+      // Проверено у источника 18.09.2026: грамматика Sass помечена в NOTICE как NOASSERTION, а её
+      // репозиторий объявляет MIT и текстом лицензии, и полем `license` — сканер не разобрал шапку.
+      LibraryLicense(name = "tm-grammars", version = "1.32.20", attachedTo = "intellij.vibe.lsp",
+                     url = "https://github.com/shikijs/textmate-grammars-themes")
+        .mit("https://github.com/shikijs/textmate-grammars-themes/blob/main/LICENSE"),
       LibraryLicense(name = "vscode-langservers-extracted", version = "4.10.0", attachedTo = "intellij.vibe.lsp",
                      url = "https://github.com/hrsh7th/vscode-langservers-extracted")
         .mit("https://github.com/hrsh7th/vscode-langservers-extracted/blob/master/LICENSE"),
@@ -152,10 +178,19 @@ open class VibeIdeaProperties(communityHomeDir: Path) : IdeaCommunityProperties(
     // падает на `.DS_Store`, которые macOS насыпает в любую папку, открытую в Finder. Артефакт к
     // этому моменту уже создан — то есть неудачу легко принять за успех, а собранное окажется
     // непроверенным. Чинить в download.sh недостаточно: Finder создаёт их в любой момент после.
-    copyDir(servers, targetDirectory.resolve("plugins/vibe-lsp/servers"), fileFilter = { path ->
+    val junk: (java.nio.file.Path) -> Boolean = { path ->
       val name = path.fileName.toString()
       name != ".DS_Store" && !name.startsWith("._") && name != "Thumbs.db"
-    })
+    }
+    copyDir(servers, targetDirectory.resolve("plugins/vibe-lsp/servers"), fileFilter = junk)
+
+    // TextMate-грамматики языков, которых в платформе нет вовсе: без них `.vue`, `.svelte`,
+    // `.astro`, `.sass` и `.styl` открываются «неизвестным файлом» — без подсветки и с просьбой
+    // выбрать тип вручную. Это ДАННЫЕ, как и серверы: точка расширения платформы принимает путь
+    // на диске, а ресурс внутри jar пути не имеет.
+    val textmate = context.paths.communityHomeDir.resolve("vibe-plugins/deps/extracted/textmate")
+    check(Files.isDirectory(textmate)) { "Bundled TextMate dir not found: $textmate — run vibe-plugins/deps/download.sh first" }
+    copyDir(textmate, targetDirectory.resolve("plugins/vibe-lsp/textmate"), fileFilter = junk)
   }
 
   /**

@@ -52,6 +52,26 @@
     <fileNamePatternMapping patterns="*.scss" serverId="vibeSomeSass" languageId="scss"/>
     <fileNamePatternMapping patterns="*.sass" serverId="vibeSomeSass" languageId="sass"/>
 
+    <!-- Vue: однофайловые компоненты. Стартует только на .vue — условий включения не нужно.
+         Импорт `.vue` из обычного `.ts` разрешает НЕ он, а плагин tsserver у vtsls. -->
+    <server id="vibeVue" name="Vue" factoryClass="com.vibe.lsp.VueServerFactory">
+      <description>Vue language server (Volar): template, script and style of one component</description>
+    </server>
+    <fileNamePatternMapping patterns="*.vue" serverId="vibeVue" languageId="vue"/>
+
+    <!-- Svelte: компонент целиком. Свой TypeScript сервер находит сам. -->
+    <server id="vibeSvelte" name="Svelte" factoryClass="com.vibe.lsp.SvelteServerFactory">
+      <description>Svelte language server: markup, script, style and reactive declarations</description>
+    </server>
+    <fileNamePatternMapping patterns="*.svelte" serverId="vibeSvelte" languageId="svelte"/>
+
+    <!-- Astro: разметка с выражениями и островки компонентов. Требует typescript.tsdk — иначе
+         `initialize` отвечает ошибкой, и язык не работает вовсе. -->
+    <server id="vibeAstro" name="Astro" factoryClass="com.vibe.lsp.AstroServerFactory">
+      <description>Astro language server: front matter, markup expressions and component islands</description>
+    </server>
+    <fileNamePatternMapping patterns="*.astro" serverId="vibeAstro" languageId="astro"/>
+
     <!-- Tailwind: подсказка классов в разметке и объяснение `@apply`. Поднимается только там, где
          проект действительно на Tailwind, — решает фабрика через свои LSPClientFeatures. -->
     <server id="vibeTailwind" name="Tailwind CSS" factoryClass="com.vibe.lsp.TailwindServerFactory">
@@ -63,6 +83,7 @@
     <fileNamePatternMapping patterns="*.tsx" serverId="vibeTailwind" languageId="typescriptreact"/>
     <fileNamePatternMapping patterns="*.vue" serverId="vibeTailwind" languageId="vue"/>
     <fileNamePatternMapping patterns="*.svelte" serverId="vibeTailwind" languageId="svelte"/>
+    <fileNamePatternMapping patterns="*.astro" serverId="vibeTailwind" languageId="astro"/>
     <server id="vibeEslint" name="ESLint" factoryClass="com.vibe.lsp.EslintServerFactory">
       <description>ESLint language server: the project's own rules in the editor</description>
     </server>
@@ -74,6 +95,7 @@
     <fileNamePatternMapping patterns="*.tsx" serverId="vibeEslint" languageId="typescriptreact"/>
     <fileNamePatternMapping patterns="*.vue" serverId="vibeEslint" languageId="vue"/>
     <fileNamePatternMapping patterns="*.svelte" serverId="vibeEslint" languageId="svelte"/>
+    <fileNamePatternMapping patterns="*.astro" serverId="vibeEslint" languageId="astro"/>
 
     <!-- Отладчики. Точка расширения помечена у LSP4IJ как экспериментальная: две тонкие фабрики —
          осознанная цена за «отладка одним действием» вместо JSON руками. -->

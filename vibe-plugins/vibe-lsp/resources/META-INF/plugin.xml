@@ -7,12 +7,14 @@
     vtsls (TypeScript, MIT), Phpactor (PHP, MIT), the VS Code CSS server and ESLint (both MIT,
     from vscode-langservers-extracted) wired into the bundled LSP4IJ client. HTML and JSON are left
     to the platform, which serves them natively.
-    Syntax highlighting comes from the bundled TextMate grammars.
+    Syntax highlighting comes from the bundled TextMate grammars — including Vue, Svelte, Astro,
+    Sass and Stylus, which the open platform does not know at all.
   ]]></description>
   <depends>com.intellij.modules.platform</depends>
   <!-- Каталог строк общий для всех наших плагинов (решение владельца 2026-08-30). -->
   <depends>com.vibe.agent</depends>
   <depends optional="true" config-file="vibe-lsp4ij-integration.xml">com.redhat.devtools.lsp4ij</depends>
+  <depends optional="true" config-file="vibe-textmate-bundles.xml">org.jetbrains.plugins.textmate</depends>
 
   <!-- Инструмент «что умеет эта IDE» спрашивает каждую область у её владельца: про серверы
        рассказываем мы, а не vibe-agent, который о них не знает. -->

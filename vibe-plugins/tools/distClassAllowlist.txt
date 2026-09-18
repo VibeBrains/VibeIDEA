@@ -19,3 +19,15 @@ com.jetbrains.jsonSchema.*
 # LSP4IJ: объявленная необязательная зависимость vibe-lsp
 # <depends optional="true" config-file="vibe-lsp4ij-integration.xml">com.redhat.devtools.lsp4ij</depends>.
 com.redhat.devtools.lsp4ij.*
+
+# TextMate: объявленная необязательная зависимость vibe-lsp
+# <depends optional="true" config-file="vibe-textmate-bundles.xml">org.jetbrains.plugins.textmate</depends>.
+#
+# Случай не такой, как у LSP4IJ, и потому проверен ЗАПУСКОМ, а не рассуждением: интерфейс лежит не
+# в главном jar чужого плагина, а в его content-модуле (lib/modules/intellij.textmate.jar). Прогон
+# собранного образа 0.6.12 (18.09.2026): «Starting textmate bundle initialization with 64 bundles»,
+# затем в логе 69 строк «Bundle from …», пять из них — `plugins/vibe-lsp/textmate/{vue,svelte,astro,
+# sass,stylus}`. То есть класс виден, точка расширения срабатывает, бандлы регистрируются.
+# Сторож на будущее: проверка бандлов в checkVibeDist.sh и та же команда с
+# `idea.log.debug.categories=#org.jetbrains.plugins.textmate`.
+org.jetbrains.plugins.textmate.api.*
