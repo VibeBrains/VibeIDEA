@@ -248,7 +248,7 @@
   "chat.design.stop": "⛔ DESIGN GATE: quality-floor findings remain after {max} attempts — the run is stopped",
   "chat.breakerDialog": "A safety fuse of the agent has tripped:\n\n{reasons}\n\nOnly your decision clears it. Clear and continue?",
   "chat.provider.noBaseUrl": "[providers] '{id}' has no baseURL — nowhere to send",
-  "chat.provider.noKey": "[providers] no key for '{id}': Settings → Tools → VibeIDEA → Providers, or .vibe/.env",
+  "chat.provider.noKey": "[providers] no key for '{id}': looked in the store under '{sources}' and in .vibe/.env; add it in Settings → Tools → VibeIDEA → Providers (this provider's row) or in .vibe/.env. A blank value is not a key",
   "chat.stopError": "[stop] {reason}",
   "chat.agentStarting": "[agent] starting: {command}",
   "chat.handshakeTimeout": "the agent did not answer initialize/session/new within {seconds} s — check the command and its ACP flag in {path}",

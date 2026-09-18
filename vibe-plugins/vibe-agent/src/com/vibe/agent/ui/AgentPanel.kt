@@ -3303,7 +3303,9 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
         return
       }
       if (resolved.apiKey == null && !resolved.isLocal) {
-        systemLine(com.vibe.agent.i18n.VibeI18n.t("chat.provider.noKey", "id" to t.provider.id))
+        systemLine(com.vibe.agent.i18n.VibeI18n.t(
+          "chat.provider.noKey", "id" to t.provider.id,
+          "sources" to com.vibe.agent.providers.ApiKeyResolver.sourceNames(t.provider)))
         return
       }
       if (resolved.isLocal) systemLine(t("chat.localModel"))
@@ -4306,7 +4308,9 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     val resolved = ProvidersService.resolve(provider, project.basePath) { systemLine("[providers] $it") }
       ?: throw IllegalStateException(com.vibe.agent.i18n.VibeI18n.t("chat.provider.noBaseUrl", "id" to providerId))
     if (resolved.apiKey == null && !resolved.isLocal) {
-      throw IllegalStateException(com.vibe.agent.i18n.VibeI18n.t("chat.provider.noKey", "id" to providerId))
+      throw IllegalStateException(com.vibe.agent.i18n.VibeI18n.t(
+        "chat.provider.noKey", "id" to providerId,
+        "sources" to com.vibe.agent.providers.ApiKeyResolver.sourceNames(provider)))
     }
     val prompt = pack?.let { stepPrompt + "\n" + packRepository(it, model, stepPrompt) } ?: stepPrompt
     // Потолок токенов у шага на своей модели.

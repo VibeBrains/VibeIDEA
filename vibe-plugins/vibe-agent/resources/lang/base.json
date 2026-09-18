@@ -248,7 +248,7 @@
   "chat.design.stop": "⛔ ДИЗАЙН-ГЕЙТ: после {max} попыток нарушения пола качества остались — прогон остановлен",
   "chat.breakerDialog": "Сработал защитный предохранитель агента:\n\n{reasons}\n\nОн снимается только вашим решением. Снять и продолжить?",
   "chat.provider.noBaseUrl": "[providers] у '{id}' нет baseURL — отправлять некуда",
-  "chat.provider.noKey": "[providers] нет ключа для '{id}': Settings → Tools → VibeIDEA → Провайдеры, либо .vibe/.env",
+  "chat.provider.noKey": "[providers] нет ключа для '{id}': искал в хранилище по имени '{sources}' и в .vibe/.env; заведите его в Settings → Tools → VibeIDEA → Провайдеры (строка этого провайдера) либо в .vibe/.env. Пустое значение ключом не считается",
   "chat.stopError": "[стоп] {reason}",
   "chat.agentStarting": "[агент] запускаю: {command}",
   "chat.handshakeTimeout": "агент не ответил на initialize/session/new за {seconds} с — проверьте команду и ACP-флаг в {path}",

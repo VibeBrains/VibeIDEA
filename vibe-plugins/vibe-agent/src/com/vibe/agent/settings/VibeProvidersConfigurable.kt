@@ -117,8 +117,9 @@ class VibeProvidersConfigurable(private val project: Project) : Configurable, Co
   private fun sourceLine(p: ProviderEntry): String {
     val stored = ApiKeyResolver.storedKey(p) != null
     val envName = p.apiKeyEnv
-    val dotenv = envName != null && ApiKeyResolver.dotEnv(project.basePath)[envName] != null
-    val osEnv = envName != null && System.getenv(envName) != null
+    // Пустая строка ключом не считается нигде, иначе строка состояния обещает ключ, которого нет.
+    val dotenv = envName != null && !ApiKeyResolver.dotEnv(project.basePath)[envName].isNullOrBlank()
+    val osEnv = envName != null && !System.getenv(envName).isNullOrBlank()
     return when {
       stored -> t("settings.providers.keyStored")
       dotenv -> t("settings.providers.keyFromEnvFile")

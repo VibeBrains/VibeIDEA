@@ -18,20 +18,32 @@ object ApiKeyResolver {
     CredentialAttributes(generateServiceName("VibeIDEA Providers", ref))
 
   fun storedKey(provider: ProviderEntry): String? =
-    PasswordSafe.instance.getPassword(attributes(provider.apiKeyRef ?: provider.id))
+    PasswordSafe.instance.getPassword(attributes(provider.apiKeyRef ?: provider.id))?.takeIf { it.isNotBlank() }
 
   fun storeKey(provider: ProviderEntry, key: String?) {
     PasswordSafe.instance.setPassword(attributes(provider.apiKeyRef ?: provider.id), key?.ifBlank { null })
   }
 
+  /**
+   * The key of this provider, or null when there is none.
+   *
+   * Blank is NOT a key, at any of the three sources. An empty `ZAI_API_KEY=` in `.vibe/.env` used to
+   * win as a value: the request then went out with an empty Bearer, the vendor answered «no API
+   * key», and the IDE — which had checked for null and found a string — reported nothing at all
+   * (brought by the owner's brother 18.09.2026, as «берёт значение, даже если оно пустое»).
+   */
   fun resolve(provider: ProviderEntry, projectBase: String?): String? {
     storedKey(provider)?.let { return it }
     provider.apiKeyEnv?.let { envName ->
-      dotEnv(projectBase)[envName]?.let { return it }
-      System.getenv(envName)?.let { return it }
+      dotEnv(projectBase)[envName]?.takeIf { it.isNotBlank() }?.let { return it }
+      System.getenv(envName)?.takeIf { it.isNotBlank() }?.let { return it }
     }
     return null
   }
+
+  /** Where the key for this provider is looked for, named for the person: slot and variable. */
+  fun sourceNames(provider: ProviderEntry): String =
+    listOfNotNull(provider.apiKeyRef ?: provider.id, provider.apiKeyEnv).joinToString(" / ")
 
   /** Workspace `.vibe/.env` overrides `~/.vibe/.env` per variable. */
   internal fun dotEnv(projectBase: String?): Map<String, String> {
