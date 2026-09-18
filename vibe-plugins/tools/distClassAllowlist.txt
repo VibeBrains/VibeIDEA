@@ -1,0 +1,21 @@
+# Классы чужих плагинов, на которые наш код ссылается законно.
+#
+# Каждая строка — имя класса или семейство с `*` на конце, и КАЖДАЯ обязана нести причину:
+# почему этот класс окажется виден загрузчику нашего плагина в собранной IDE. Без причины строка
+# здесь — это будущий NoClassDefFoundError с отключённой сигнализацией.
+#
+# Разбор дефекта, ради которого заведён гейт: knowledge/build/platformClassesInDist.md
+
+# JCEF: плагин «Web Browser (JCEF)» стоит родителем загрузчика наших плагинов в этой сборке —
+# видно в списке parents у PluginClassLoader в idea.log. Панель «Дизайн» на нём и работает.
+com.intellij.ui.jcef.*
+org.cef.*
+
+# Схемы .vibe/*.json: объявленная необязательная зависимость
+# <depends optional="true" config-file="vibe-json-schemas.xml">com.intellij.modules.json</depends>.
+# Классы читаются только из конфигурации, которую платформа грузит при наличии плагина JSON.
+com.jetbrains.jsonSchema.*
+
+# LSP4IJ: объявленная необязательная зависимость vibe-lsp
+# <depends optional="true" config-file="vibe-lsp4ij-integration.xml">com.redhat.devtools.lsp4ij</depends>.
+com.redhat.devtools.lsp4ij.*

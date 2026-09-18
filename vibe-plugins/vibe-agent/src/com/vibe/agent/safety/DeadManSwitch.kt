@@ -32,6 +32,11 @@ object DeadManSwitch {
    */
   fun check(lastActivityMs: Long, nowMs: Long, silenceMs: Long = DEFAULT_SILENCE_MS): Verdict {
     if (silenceMs <= 0) return Verdict.ALIVE
+    // A clock that was never started is not silence. It used to be read as silence since the epoch,
+    // so the first tick of a turn that had streamed nothing yet killed it and announced 29828727
+    // minutes of silence — the age of the Unix clock, not of the turn (caught 18.09.2026 on DeepSeek,
+    // where the model opened with tool calls and no text at all).
+    if (lastActivityMs <= 0) return Verdict.ALIVE
     val silent = nowMs - lastActivityMs
     return when {
       silent >= silenceMs * 2 -> Verdict.DEAD
@@ -40,6 +45,12 @@ object DeadManSwitch {
     }
   }
 
-  /** Minutes of silence, for the line shown to the user. */
-  fun silentMinutes(lastActivityMs: Long, nowMs: Long): Long = ((nowMs - lastActivityMs) / 60_000L).coerceAtLeast(0)
+  /**
+   * How long it has been silent, for the line shown to the user.
+   *
+   * Milliseconds, not minutes: whole minutes turned eleven seconds into «0 мин», and the wording is
+   * [com.vibe.agent.util.HumanDuration]'s business rather than this one's.
+   */
+  fun silentMs(lastActivityMs: Long, nowMs: Long): Long =
+    if (lastActivityMs <= 0) 0 else (nowMs - lastActivityMs).coerceAtLeast(0)
 }

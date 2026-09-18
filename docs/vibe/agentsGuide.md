@@ -34,7 +34,7 @@
 ./vibe-plugins/tools/checkVibeModules.sh   # .iml и BUILD.bazel: ссылка на несуществующий модуль или библиотеку
 ./vibe-plugins/tools/checkVibeConfigFields.sh # настройка из файла пользователя без единого потребителя
 ./bazel.cmd test //vibe-plugins/vibe-agent:vibe-agent_test
-./vibe-plugins/tools/checkVibeDist.sh      # ПОСЛЕ сборки инсталлятора: плагины в индексе, серверы запускаются
+./vibe-plugins/tools/checkVibeDist.sh      # ПОСЛЕ сборки инсталлятора: плагины в индексе, классы видны, серверы запускаются
 ./vibe-plugins/tools/checkUpstreamLag.sh   # отставание базы от upstream/master (в CI — раз в неделю)
 ./vibe-plugins/tools/checkServerDeps.sh    # уязвимости и закрепление версий поставляемых серверов
 ./vibe-plugins/tools/releaseChangelog.sh   # черновик заметок от последнего ОПУБЛИКОВАННОГО релиза

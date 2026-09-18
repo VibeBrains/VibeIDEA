@@ -614,7 +614,14 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
   private fun selectTargetById(id: String?) {
     val t = targets.firstOrNull { it.id == id }
     if (t == null) {
+      // The tab asked for a target the catalogs have not brought yet. Keep wanting it — but SAY
+      // which model the turn would actually go to: a tab that shows one name and spends on another
+      // is the silent half of «switched the model, the old one keeps working».
       desiredTargetId = id
+      if (id != null && target != null && id != target?.id) {
+        systemLine(com.vibe.agent.i18n.VibeI18n.t(
+          "chat.targetNotHere", "wanted" to id, "instead" to (target?.id ?: "")))
+      }
       return
     }
     desiredTargetId = null
@@ -2368,6 +2375,10 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     }
     turnInFlight.set(true)
     status.set(VibeAgentStatusService.State.RUNNING)
+    // The silence clock belongs to the TURN, not to the ACP path that used to be its only winder:
+    // a direct-chat turn left it at zero, and the watchdog read that as silence since the epoch.
+    noteActivity()
+    staleAnnounced.set(false)
     // The cancel flag belongs to the whole turn (Stop during context resolution must not be lost).
     llmCancel.set(false)
     composer.busy = true
@@ -2427,7 +2438,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
         }
       }
       catch (e: Exception) {
-        systemLine(t("chat.error", "reason" to e.message))
+        turnNote(t("chat.error", "reason" to e.message))
         finishTurn()
       }
     }
@@ -2705,7 +2716,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
         t("thrash.timeout", "count" to finding.count, "call" to finding.detail.take(120))
       else -> t("thrash.failures", "count" to finding.count, "window" to com.vibe.agent.safety.ThrashDetector.WINDOW)
     }
-    systemLine("⛔ " + reason)
+    turnNote("⛔ " + reason)
     breakers.trip(com.vibe.agent.safety.ThrashDetector::class.java.simpleName.lowercase(), reason, System.currentTimeMillis())
     synchronized(thrashHistory) { thrashHistory.clear() }
     cancelTurn()
@@ -2718,7 +2729,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     val reason = if (finding.verdict == com.vibe.agent.safety.LoopDetector.Verdict.REPEAT)
       t("loop.repeat", "count" to finding.count, "call" to finding.fingerprint.take(120))
     else t("loop.cycle", "pattern" to finding.fingerprint.take(160))
-    systemLine("🔁 " + reason)
+    turnNote("🔁 " + reason)
     breakers.trip(com.vibe.agent.safety.LoopDetector::class.java.simpleName.lowercase(), reason, System.currentTimeMillis())
     loopHistory.clear()
     cancelTurn()
@@ -2728,6 +2739,11 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
   private fun noteActivity() {
     lastActivityMs.set(System.currentTimeMillis())
   }
+
+  /** How long the turn has been silent, in words. */
+  private fun silentFor(nowMs: Long): String =
+    com.vibe.agent.util.HumanDuration.text(
+      com.vibe.agent.safety.DeadManSwitch.silentMs(lastActivityMs.get(), nowMs))
 
   /**
    * A hung turn looks exactly like a thinking one — same spinner, same silence. Without a clock the
@@ -2741,11 +2757,11 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
       com.vibe.agent.safety.DeadManSwitch.Verdict.ALIVE -> return
       com.vibe.agent.safety.DeadManSwitch.Verdict.STALE -> {
         if (staleAnnounced.compareAndSet(false, true)) {
-          systemLine(t("deadman.stale", "minutes" to com.vibe.agent.safety.DeadManSwitch.silentMinutes(lastActivityMs.get(), now)))
+          systemLine(t("deadman.stale", "duration" to silentFor(now)))
         }
       }
       com.vibe.agent.safety.DeadManSwitch.Verdict.DEAD -> {
-        systemLine(t("deadman.dead", "minutes" to com.vibe.agent.safety.DeadManSwitch.silentMinutes(lastActivityMs.get(), now)))
+        turnNote(t("deadman.dead", "duration" to silentFor(now)))
         cancelTurn()
       }
     }
@@ -3316,7 +3332,10 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
       val allTools = directToolSpecs(t)
       val loaded = loadedTools.getOrPut(threadId) { java.util.Collections.synchronizedSet(LinkedHashSet()) }
       var tools = com.vibe.agent.mcp.ToolSearch.offered(allTools, loaded, VibeAgentSettings.toolSearchThreshold)
-      val wire = com.vibe.agent.providers.ToolRounds.expand(compactForWindow(t, resolved, threadId, transcript, uncompacted, tools))
+      // Where the turn is happening goes FIRST and always: a model that is not told invents the
+      // answer, and which tool it invents with differs from endpoint to endpoint (WorkspaceBriefing).
+      val wire = listOf(workspaceMessage()) +
+                 com.vibe.agent.providers.ToolRounds.expand(compactForWindow(t, resolved, threadId, transcript, uncompacted, tools))
       // Said out loud when it happens: a broken prefix is invisible, and its whole cost lands on
       // the bill. The line names the turn where the conversation stopped being append-only.
       val lines = wire.map {
@@ -3356,17 +3375,20 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
           // рассуждение выглядело молчанием, потому что показывать его было некуда.
           // It is also kept with the answer: a model that requires it back (ECHO_REASONING) gets it
           // in the next request.
-          onThought = { turnReasoning.append(it); roundReasoning.append(it); appendThought(it) },
+          onThought = { noteActivity(); turnReasoning.append(it); roundReasoning.append(it); appendThought(it) },
           tools = tools,
-        ) { delta -> roundText.append(delta); appendAgentText(delta) }
+        ) { delta -> noteActivity(); roundText.append(delta); appendAgentText(delta) }
         usage = usage.merge(llmClient.lastUsage())
         val calls = llmClient.lastToolCalls()
         if (calls.isEmpty() || llmCancel.get()) break
         if (rounds++ >= VibeAgentSettings.directToolMaxRounds) {
-          systemLine(t("directTools.roundsLimit", "limit" to VibeAgentSettings.directToolMaxRounds))
+          turnNote(t("directTools.roundsLimit", "limit" to VibeAgentSettings.directToolMaxRounds))
           break
         }
         val results = calls.map { call ->
+          // A tool round is a sign of life too: a model that only calls tools streams no text, and
+          // the watchdog must not read a working turn as a hung one.
+          noteActivity()
           if (call.name == com.vibe.agent.mcp.ToolSearch.NAME) searchTools(call, allTools, loaded)
           else runDirectTool(call, t.model.id)
         }
@@ -3388,14 +3410,14 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     catch (e: java.io.InterruptedIOException) {
       // The partial answer stays in the transcript — a stop is not amnesia.
       finishAgentBubble((System.currentTimeMillis() - startedAt) / 1000.0, t("chat.interrupted"))
-      systemLine(t("chat.stopError", "reason" to e.message))
+      turnNote(t("chat.stopError", "reason" to e.message))
     }
     catch (e: Exception) {
       if (failOver(t, e, startedAt)) return
       finishAgentBubble((System.currentTimeMillis() - startedAt) / 1000.0, t("chat.failed"))
       // A rejected payload must not poison every later request in this thread.
       turnThreadId?.let { if (history.dropImagesFromLastUser(it)) systemLine(t("chat.imagesDropped")) }
-      systemLine(t("chat.error", "reason" to e.message))
+      turnNote(t("chat.error", "reason" to e.message))
       // Отказ провайдера и петля выглядят одинаково — оборванный ход, — а решения противоположные:
       // первое стоит продолжить, когда провайдер вернётся, второе повторять нельзя.
       val cause = com.vibe.agent.safety.StopCause.of(
@@ -3409,6 +3431,25 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
   }
 
   /** The tools this turn offers, or none — with the reason said once per panel. */
+  /**
+   * The first message of every direct-chat turn: which project this is and where it lives.
+   *
+   * Read from the open project and from `.git/HEAD` — no index, no VCS plugin, nothing that can
+   * hang inside a turn. The branch is best-effort: an unreadable head simply leaves that line out.
+   */
+  private fun workspaceMessage(): ChatMessage {
+    val root = project.basePath.orEmpty()
+    val branch = root.takeIf { it.isNotEmpty() }?.let {
+      runCatching { java.nio.file.Files.readString(java.nio.file.Path.of(it, ".git", "HEAD")) }.getOrNull()
+    }
+    return ChatMessage("system", com.vibe.agent.context.WorkspaceBriefing.text(
+      com.vibe.agent.context.WorkspaceBriefing.Workspace(
+        name = project.name,
+        root = root,
+        branch = com.vibe.agent.context.WorkspaceBriefing.branchOfHead(branch),
+      )))
+  }
+
   private fun directToolSpecs(target: ChatTarget.Model): List<com.vibe.agent.providers.ToolSpec> {
     if (!VibeAgentSettings.directToolsEnabled) return emptyList()
     if (!llmClient.supportsTools(target.model)) {
@@ -3729,7 +3770,13 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     currentThreadId = id
     val thread = history.get(id) ?: return
     renderTranscript(thread)
-    thread.state.targetId?.let { selectTargetById(it) }
+    // The model belongs to the TAB. A tab that has one is restored to it; a fresh tab adopts the
+    // one in the picker and writes it down at once, so a later switch in a neighbouring tab cannot
+    // move it (the choice used to exist only as the panel's, and the store's record followed
+    // whatever tab happened to be open).
+    val wanted = thread.state.targetId
+    if (wanted != null) selectTargetById(wanted)
+    else target?.let { history.updateState(id, ThreadState(it.id)) }
     drafts.remove(id)?.let { composer.restoreDraft(it) }
     updateTabsStrip()
     saveTabs()
@@ -4425,6 +4472,10 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     systemLine(t("pipeline.plan.planningStep"))
     turnInFlight.set(true)
     status.set(VibeAgentStatusService.State.RUNNING)
+    // The silence clock belongs to the TURN, not to the ACP path that used to be its only winder:
+    // a direct-chat turn left it at zero, and the watchdog read that as silence since the epoch.
+    noteActivity()
+    staleAnnounced.set(false)
     composer.busy = true
     turnThreadId = currentThreadId
     ApplicationManager.getApplication().executeOnPooledThread {
@@ -4489,6 +4540,10 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     val qaScope = com.vibe.agent.pipelines.RolesFile.load(project.basePath) { systemLine("[roles] $it") }
     turnInFlight.set(true)
     status.set(VibeAgentStatusService.State.RUNNING)
+    // The silence clock belongs to the TURN, not to the ACP path that used to be its only winder:
+    // a direct-chat turn left it at zero, and the watchdog read that as silence since the epoch.
+    noteActivity()
+    staleAnnounced.set(false)
     composer.busy = true
     turnThreadId = currentThreadId
     turnText.setLength(0)
@@ -5147,6 +5202,14 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     val toolRounds = synchronized(turnToolRounds) {
       com.vibe.agent.providers.ToolRounds.forStorage(turnToolRounds.toList()).also { turnToolRounds.clear() }
     }
+    // A turn that produced no words used to leave NOTHING in the thread — the question alone, and
+    // the reason shown once in the feed and never written down. Reopening the IDE then showed a
+    // conversation where the agent had simply not answered (eight such threads in the owner's store,
+    // 18.09.2026). The outcome is a record now, and the rounds it did run stay with it.
+    if (threadId != null && fullText.isBlank()) {
+      val note = t("chat.turnNoAnswer", "outcome" to (suffix ?: "").ifBlank { t("chat.turnNoAnswerUnknown") })
+      history.append(threadId, ChatMessageRecord(Role.OTHER, note, at = nowIso(), toolRounds = toolRounds))
+    }
     if (threadId != null && fullText.isNotBlank()) {
       history.append(threadId, ChatMessageRecord(Role.ASSISTANT, fullText, at = nowIso(), reasoning = reasoning, toolRounds = toolRounds))
       // The provider's own numbers when it reported them; the old length-based guess only when it
@@ -5235,6 +5298,18 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
       messages.add(label)
       revalidateScroll()
     }
+  }
+
+  /**
+   * A line of the feed that also stays in the thread.
+   *
+   * [systemLine] draws and forgets, which is right for chatter and wrong for the reason a turn
+   * ended: after a restart the thread held the question and no trace of what happened to it.
+   */
+  private fun turnNote(text: String) {
+    systemLine(text)
+    val threadId = turnThreadId ?: currentThreadId
+    if (threadId.isNotEmpty()) history.append(threadId, ChatMessageRecord(Role.OTHER, text, at = nowIso()))
   }
 
   private fun systemLine(text: String) {

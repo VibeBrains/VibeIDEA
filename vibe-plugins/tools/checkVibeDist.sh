@@ -119,6 +119,16 @@ if ! ls "$APP_PLUGINS/vibe-agent/lib/zxing-core.jar" >/dev/null 2>&1; then
   fail=1
 fi
 
+# --- 3б. Классы, которых плагин не видит в образе ---
+# Дефект 18.09.2026: граф кода брал символы из UAST, `.iml` объявлял модуль, компиляция и 1857
+# тестов были зелёными — а UAST лежит ВНУТРИ плагина Java, и в установленной IDE построение графа
+# падало NoClassDefFoundError во всех сборках 0.6.x. Тесты такое не видят по построению: там
+# classpath шире, чем в образе. Разбор — knowledge/build/platformClassesInDist.md.
+if ! "$PYTHON" vibe-plugins/tools/distClassCheck.py "$ROOT_DIR" "$APP_PLUGINS" \
+     vibe-plugins/tools/distClassAllowlist.txt; then
+  fail=1
+fi
+
 # --- 4. Языковые серверы в комплекте ---
 SERVERS="$APP_PLUGINS/vibe-lsp/servers"
 # Задачи и трекеры как в PhpStorm: платформа даёт только ядро Tasks & Contexts, а Open Task и трекеры
@@ -285,4 +295,4 @@ if [ "$fail" -ne 0 ]; then
   say "Гейт дистрибутива: ПРОВАЛЕН"
   exit 1
 fi
-say "Гейт дистрибутива: плагины в индексе, библиотеки и серверы на месте и запускаются"
+say "Гейт дистрибутива: плагины в индексе, классы видны, библиотеки и серверы на месте и запускаются"

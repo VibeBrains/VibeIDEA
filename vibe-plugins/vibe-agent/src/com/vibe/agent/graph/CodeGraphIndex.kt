@@ -87,9 +87,10 @@ object CodeGraphIndex {
       for (symbol in node.symbols) {
         if (symbol.isBlank() || symbol == "?") continue
         byQualifiedName.putIfAbsent(symbol, node.path)
-        bySimpleName.getOrPut(symbol.substringAfterLast('.')) { ArrayList() }.add(node.path)
+        bySimpleName.getOrPut(lastSegment(symbol)) { ArrayList() }.add(node.path)
       }
     }
+    val paths = nodes.mapTo(HashSet()) { it.path }
     val edges = ArrayList<Edge>()
     for (node in nodes) {
       for (import in node.imports) {
@@ -100,12 +101,61 @@ object CodeGraphIndex {
           if (exact != node.path) edges.add(Edge(node.path, exact, clean, Provenance.FACT))
           continue
         }
+        // A module specifier is a path, not a name: `./lib/db` in a TypeScript file names one file
+        // and no other. Resolving it is as firm as matching a qualified name — and without this the
+        // graph of a project written in imports had no edges at all.
+        val resolved = resolveModule(node.path, clean, paths)
+        if (resolved != null) {
+          if (resolved != node.path) edges.add(Edge(node.path, resolved, clean, Provenance.FACT))
+          continue
+        }
         // Only the tail matched: name it a guess, and only when it is unambiguous — a name that
         // resolves to three files is not a link, it is a coin toss.
-        val candidates = bySimpleName[clean.substringAfterLast('.')].orEmpty().filter { it != node.path }
+        val candidates = bySimpleName[lastSegment(clean)].orEmpty().filter { it != node.path }
         if (candidates.size == 1) edges.add(Edge(node.path, candidates.single(), clean, Provenance.GUESS))
       }
     }
     return Graph(nodes, edges.distinct())
   }
+
+  /** Packages are written with a dot, namespaces with a backslash, folders with a slash. */
+  private fun lastSegment(name: String): String =
+    name.trimEnd('.', '/', '\\').split('.', '/', '\\').last()
+
+  /**
+   * The file a module specifier points at, or null when it names no file of this project.
+   *
+   * Only path-shaped specifiers are resolved: `react` is a package, `./lib/db` and `@/lib/db` are
+   * files. The extension is the one the author left out — the alias `@/…` is taken as counted from
+   * the project root, which is what every generated `tsconfig` in reach sets it to.
+   */
+  fun resolveModule(from: String, specifier: String, paths: Set<String>): String? {
+    val relative = specifier.startsWith("./") || specifier.startsWith("../")
+    val rooted = specifier.startsWith("@/") || specifier.startsWith("~/") || specifier.startsWith("/")
+    if (!relative && !rooted) return null
+    val base = if (relative) normalize(from.substringBeforeLast('/', "") + "/" + specifier)
+               else normalize(specifier.removePrefix("@").removePrefix("~").removePrefix("/"))
+    if (base.isEmpty()) return null
+    if (base in paths) return base
+    for (extension in EXTENSIONS) {
+      (base + extension).takeIf { it in paths }?.let { return it }
+      (base + "/index" + extension).takeIf { it in paths }?.let { return it }
+    }
+    return null
+  }
+
+  /** `a/b/../c` is `a/c`; a specifier that climbs out of the project resolves to nothing. */
+  private fun normalize(path: String): String {
+    val parts = ArrayList<String>()
+    for (part in path.split('/')) {
+      when (part) {
+        "", "." -> {}
+        ".." -> if (parts.isEmpty()) return "" else parts.removeAt(parts.size - 1)
+        else -> parts.add(part)
+      }
+    }
+    return parts.joinToString("/")
+  }
+
+  private val EXTENSIONS = listOf(".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs", ".mts", ".cts", ".php", ".py")
 }

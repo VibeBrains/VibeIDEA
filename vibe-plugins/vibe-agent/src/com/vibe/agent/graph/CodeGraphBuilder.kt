@@ -7,21 +7,24 @@ import com.intellij.openapi.roots.ProjectRootManager
 import com.intellij.openapi.vfs.VirtualFile
 import com.intellij.psi.PsiManager
 import com.intellij.psi.search.PsiTodoSearchHelper
-import org.jetbrains.uast.UFile
-import org.jetbrains.uast.toUElementOfType
 
 data class GraphNode(val path: String, val symbols: List<String>, val imports: List<String>, val todos: List<String>)
 
 /**
- * First slice of the VibeIDE code_graph on top of the platform (the case where
- * PSI beats a hand-rolled index): file nodes via ProjectFileIndex, top-level
- * symbols and import edges via UAST (JVM languages; other files stay plain
- * nodes), TODO/FIXME comments as nodes via the platform todo index.
- * Edge provenance mirrors VibeIDE: everything here is "факт" (parsed, not guessed).
+ * First slice of the VibeIDE code_graph on top of the platform: file nodes via ProjectFileIndex,
+ * TODO/FIXME comments via the platform todo index, and declarations and imports from the file's own
+ * text ([SourceOutline]).
+ *
+ * The outline used to come from UAST, which ships inside the Java plugin: in an installed IDE the
+ * class was simply absent and every build died with `NoClassDefFoundError` (18.09.2026), while on
+ * the TypeScript and PHP projects this IDE is for it had nothing to say in the first place.
+ * Edge provenance is decided by [CodeGraphIndex], not here.
  */
 object CodeGraphBuilder {
   private const val MAX_FILES = 5000
   private const val MAX_FILE_SIZE = 1_000_000L
+  /** A TODO is shown as its own line, not as the paragraph the comment continues into. */
+  private const val TODO_CHARS = 160
 
   /** Content files of the project with their fingerprints — the input of an incremental export. */
   fun scan(project: Project): Map<String, CodeGraphStore.Fingerprint> {
@@ -68,14 +71,14 @@ object CodeGraphBuilder {
       // write action — то есть набор текста в редакторе. Платформа объявила compute устаревшим
       // ровно за это (2026.1).
       ReadAction.nonBlocking<GraphNode?> {
-        val psi = psiManager.findFile(vf) ?: return@nonBlocking GraphNode(rel(base, vf), emptyList(), emptyList(), emptyList())
-        val u = psi.toUElementOfType<UFile>()
-        val symbols = u?.classes?.map { it.qualifiedName ?: it.javaPsi.name ?: "?" } ?: emptyList()
-        val imports = u?.imports?.mapNotNull { it.importReference?.asSourceString() } ?: emptyList()
+        val path = rel(base, vf)
+        val psi = psiManager.findFile(vf) ?: return@nonBlocking GraphNode(path, emptyList(), emptyList(), emptyList())
+        val text = psi.text.orEmpty()
+        val outline = SourceOutline.of(path, text)
         val todos = todoHelper.findTodoItemsLight(psi).mapNotNull { item ->
-          item.textRange?.let { r -> psi.text?.substring(r.startOffset, minOf(r.endOffset, r.startOffset + 160))?.lineSequence()?.firstOrNull() }
+          item.textRange?.let { r -> text.substring(r.startOffset, minOf(r.endOffset, r.startOffset + TODO_CHARS)).lineSequence().firstOrNull() }
         }
-        GraphNode(rel(base, vf), symbols, imports, todos)
+        GraphNode(path, outline.symbols, outline.imports, todos)
       }.executeSynchronously()
     }
   }

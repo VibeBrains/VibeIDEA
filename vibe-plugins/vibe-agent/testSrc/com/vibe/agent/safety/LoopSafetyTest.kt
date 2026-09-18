@@ -76,6 +76,8 @@ class LoopDetectorTest {
 
 class DeadManSwitchTest {
   private val minute = 60_000L
+  /** Any real clock reading: zero means «never wound», and the switch must tell the two apart. */
+  private val started = 1_789_000_000_000L
 
   @Test
   fun `recent activity is alive`() {
@@ -84,20 +86,28 @@ class DeadManSwitchTest {
 
   @Test
   fun `silence past the limit is stale, and twice past it is dead`() {
-    assertEquals(DeadManSwitch.Verdict.STALE, DeadManSwitch.check(0, 5 * minute, 5 * minute))
-    assertEquals(DeadManSwitch.Verdict.STALE, DeadManSwitch.check(0, 9 * minute, 5 * minute))
-    assertEquals(DeadManSwitch.Verdict.DEAD, DeadManSwitch.check(0, 10 * minute, 5 * minute))
+    assertEquals(DeadManSwitch.Verdict.STALE, DeadManSwitch.check(started, started + 5 * minute, 5 * minute))
+    assertEquals(DeadManSwitch.Verdict.STALE, DeadManSwitch.check(started, started + 9 * minute, 5 * minute))
+    assertEquals(DeadManSwitch.Verdict.DEAD, DeadManSwitch.check(started, started + 10 * minute, 5 * minute))
   }
 
   @Test
   fun `a zero limit turns the switch off entirely`() {
     // Настройка «выключено» обязана выключать, а не означать «срабатывать всегда».
-    assertEquals(DeadManSwitch.Verdict.ALIVE, DeadManSwitch.check(0, 10_000_000, silenceMs = 0))
+    assertEquals(DeadManSwitch.Verdict.ALIVE, DeadManSwitch.check(started, started + 10_000_000, silenceMs = 0))
   }
 
   @Test
-  fun `the silence is reported in whole minutes and never negative`() {
-    assertEquals(3, DeadManSwitch.silentMinutes(0, 3 * minute + 5_000))
-    assertEquals(0, DeadManSwitch.silentMinutes(minute, 0))
+  fun `a clock that was never started is not silence`() {
+    // Otherwise the first tick kills a turn that has not managed to send anything yet, and reports
+    // silence as old as the Unix clock — exactly what the owner saw on DeepSeek, 18.09.2026.
+    assertEquals(DeadManSwitch.Verdict.ALIVE, DeadManSwitch.check(0, System.currentTimeMillis(), 5 * minute))
+    assertEquals(0, DeadManSwitch.silentMs(0, System.currentTimeMillis()))
+  }
+
+  @Test
+  fun `the silence is measured in milliseconds and never negative`() {
+    assertEquals(3 * minute + 5_000, DeadManSwitch.silentMs(started, started + 3 * minute + 5_000))
+    assertEquals(0, DeadManSwitch.silentMs(started + minute, started))
   }
 }
