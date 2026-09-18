@@ -260,13 +260,20 @@ class LlmClient(
       try {
         // A retry starts a new answer: calls half-collected from the failed stream are not calls.
         toolCalls = ToolCallAccumulator()
+        // Мысль, приехавшая тегами внутри ответа, снимается ОДИН раз на все три провода: модель,
+        // пишущая `<think>`, может стоять на любом из них, и три копии правила разошлись бы.
+        // Свой разделитель на попытку: оборванный поток мог остаться внутри незакрытого тега.
+        val inline = InlineThinking(onAnswer = onDelta, onThought = onThought)
         // The MODEL decides, falling back to the provider: one key can serve three formats
         // (OpenCode Go: MiniMax and Qwen over /v1/messages, GLM and Kimi over /v1/chat/completions).
         when (ProvidersService.protocolFor(provider.protocol, model.protocol)) {
-          "anthropic" -> anthropicChat(provider, model, messages, onDelta)
-          "gemini" -> geminiChat(provider, model, messages, onDelta)
-          else -> openAiChat(provider, model, messages, onDelta)
+          "anthropic" -> anthropicChat(provider, model, messages, inline::accept)
+          "gemini" -> geminiChat(provider, model, messages, inline::accept)
+          else -> openAiChat(provider, model, messages, inline::accept)
         }
+        // Придержанный хвост отдаётся здесь: без этого последние символы ответа теряются, когда
+        // поток кончился на том, что могло быть началом тега.
+        inline.finish()
         lastAnsweredModel?.let { answered ->
           if (ModelEcho.quirkId(model.id, answered) == answered) snapshots[model.id] = answered
         }

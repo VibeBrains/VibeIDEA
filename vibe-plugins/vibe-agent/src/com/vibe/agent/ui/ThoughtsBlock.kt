@@ -54,7 +54,6 @@ class ThoughtsBlock : JPanel(BorderLayout()) {
 
   fun append(text: String) {
     area.text = area.text + text
-    area.caretPosition = area.document.length
   }
 
   companion object {

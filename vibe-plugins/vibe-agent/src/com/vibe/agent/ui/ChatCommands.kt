@@ -75,6 +75,15 @@ object ChatCommands {
   /** True when the command was typed without the argument it cannot work without. */
   fun missesArgument(parsed: Parsed): Boolean = parsed.spec.needsArgument && parsed.argument.isEmpty()
 
-  /** Menu rows: insertion text and the description key. `/cmd ` keeps the cursor after a space. */
-  fun insertionOf(spec: Spec): String = if (spec.needsArgument || spec.name.endsWith(":")) spec.name + " " else spec.name
+  /**
+   * Текст, который вставляет строка меню, — ВСЕГДА с пробелом на конце.
+   *
+   * Пробел здесь не косметика, а то, что закрывает меню. Триггер списка — «слово с `/` в начале и
+   * без пробелов»; команда без аргумента вставлялась как есть, слушатель документа видел ровно тот
+   * же текст и открывал список заново. Со стороны человека это выглядело так, что строка не
+   * выбирается вовсе, сколько ни жми (поймано владельцем на `/help`, 0.6.4, 18.09.2026).
+   *
+   * Разбор команды текст обрезает, поэтому лишний пробел у команды без аргумента ничего не меняет.
+   */
+  fun insertionOf(spec: Spec): String = spec.name + " "
 }

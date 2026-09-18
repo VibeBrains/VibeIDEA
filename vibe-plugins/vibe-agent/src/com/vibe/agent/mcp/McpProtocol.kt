@@ -94,6 +94,13 @@ object McpProtocol {
   const val TOOL_DECISIONS_RECORD = "vibe_decisions_record"
   const val TOOL_CORPUS_SEARCH = "vibe_corpus_search"
   const val TOOL_SYMBOL_USAGES = "vibe_symbol_usages"
+  const val TOOL_OPEN_FILE = "vibe_open_file"
+  const val TOOL_READ_FILE = "vibe_read_file"
+  const val TOOL_IDE_INFO = "vibe_ide_info"
+  const val TOOL_DOCS_SEARCH = "vibe_docs_search"
+  const val TOOL_WRITE_FILE = "vibe_write_file"
+  const val TOOL_REPLACE_IN_FILE = "vibe_replace_in_file"
+  const val TOOL_RUN_COMMAND = "vibe_run_command"
 
   /**
    * Что инструмент делает с машиной человека.
@@ -120,8 +127,15 @@ object McpProtocol {
     TOOL_PROJECT to Risk.READ,
     TOOL_CORPUS_SEARCH to Risk.READ,
     TOOL_SYMBOL_USAGES to Risk.READ,
+    TOOL_OPEN_FILE to Risk.READ,
+    TOOL_READ_FILE to Risk.READ,
+    TOOL_IDE_INFO to Risk.READ,
+    TOOL_DOCS_SEARCH to Risk.READ,
     TOOL_DECISIONS_SEARCH to Risk.READ,
     TOOL_DECISIONS_RECORD to Risk.WRITE,
+    TOOL_WRITE_FILE to Risk.WRITE,
+    TOOL_REPLACE_IN_FILE to Risk.WRITE,
+    TOOL_RUN_COMMAND to Risk.EXECUTE,
     TOOL_RUN to Risk.EXECUTE,
   )
 
@@ -189,6 +203,109 @@ object McpProtocol {
       title = "Что за проект открыт",
       description = "Имя и корень открытого проекта, размер графа импортов.",
       schema = buildJsonObject { put("type", "object"); putJsonObject("properties") {} },
+    ),
+    Tool(
+      name = TOOL_OPEN_FILE,
+      title = "Что открыто в редакторе",
+      description = "Файл, открытый в редакторе IDE прямо сейчас: путь, выделенный человеком кусок и текст файла. " +
+                    "Это ответ на «посмотри открытый файл» — без него такая просьба неисполнима, и остаётся " +
+                    "просить у человека путь, который он уже назвал тем, что файл открыл. Возвращает и список " +
+                    "остальных открытых вкладок: над чем человек работает, видно по ним, а не по одному файлу.",
+      schema = buildJsonObject { put("type", "object"); putJsonObject("properties") {} },
+    ),
+    Tool(
+      name = TOOL_READ_FILE,
+      title = "Прочитать файл",
+      description = "Текст файла по пути — то, чего не даёт ни граф импортов, ни индекс слов: они говорят, КАКОЙ " +
+                    "файл смотреть, а прочитать его было нечем. Путь относительно корня проекта или полный. " +
+                    "Права те же, что у остальных каналов чтения: `.vibe/ignore` и границы проекта соблюдаются, " +
+                    "отказ называется словами. Длинный файл обрезается, и об обрезке говорится прямо.",
+      schema = buildJsonObject {
+        put("type", "object")
+        putJsonObject("properties") {
+          putJsonObject("path") { put("type", "string"); put("description", "Путь файла, например src/main.ts") }
+          putJsonObject("maxChars") { put("type", "integer"); put("description", "Сколько символов вернуть, по умолчанию 60000") }
+        }
+        putJsonArray("required") { add(kotlinx.serialization.json.JsonPrimitive("path")) }
+      },
+    ),
+    Tool(
+      name = TOOL_DOCS_SEARCH,
+      title = "Найти в документации VibeIDEA",
+      description = "Поиск по СОБСТВЕННОЙ документации этой IDE — мануалы, спеки форматов и каталог возможностей, " +
+                    "вшитые в сборку. Лексический и офлайн: описывает установленную версию, а не то, как выглядит " +
+                    "репозиторий сегодня.\n" +
+                    "Звать ДО того, как гадать о чём-либо про VibeIDEA:\n" +
+                    "- формат файла, который просят создать (.vibe/servers.json, .vibe/providers.json, pipelines.json) — " +
+                    "спеки с таблицами полей и примерами лежат здесь;\n" +
+                    "- как задумана возможность и чего она требует заранее;\n" +
+                    "- что продукт вообще умеет, когда просьба сформулирована широко.\n" +
+                    "Ответ называет файл, заголовок и строку — человек может проверить. Пустой результат так и " +
+                    "говорится, с числом просмотренных файлов: «здесь не написано» и «инструмент сломался» — " +
+                    "разные ответы, и ни один не значит «выдумай». База знаний (инженерные грабли) не индексируется.",
+      schema = buildJsonObject {
+        put("type", "object")
+        putJsonObject("properties") {
+          putJsonObject("query") { put("type", "string"); put("description", "Что искать, словами человека: «servers.json», «пайплайны», «языковые серверы»") }
+          putJsonObject("limit") { put("type", "integer"); put("description", "Сколько разделов вернуть, по умолчанию 5") }
+        }
+        putJsonArray("required") { add(kotlinx.serialization.json.JsonPrimitive("query")) }
+      },
+    ),
+    Tool(
+      name = TOOL_IDE_INFO,
+      title = "Что умеет эта IDE",
+      description = "Состояние самой IDE, а не проекта: версия и сборка, включённые плагины, настроенные языковые " +
+                    "серверы и профиль инспекций. Спрашивать ОБЯЗАТЕЛЬНО перед любым советом про настройки IDE: " +
+                    "совет вслепую («включите плагин X») тратит время человека дважды — сперва на выполнение, " +
+                    "потом на выяснение, почему не помогло.",
+      schema = buildJsonObject { put("type", "object"); putJsonObject("properties") {} },
+    ),
+    Tool(
+      name = TOOL_WRITE_FILE,
+      title = "Записать файл",
+      description = "Создать файл или переписать его целиком. Права те же, что у чтения: за пределы проекта и " +
+                    "в закрытое `.vibe/ignore` запись не проходит. Правка ОДНОГО куска в большом файле — " +
+                    "vibe_replace_in_file: переписывать тысячу строк ради трёх значит терять чужие изменения.",
+      schema = buildJsonObject {
+        put("type", "object")
+        putJsonObject("properties") {
+          putJsonObject("path") { put("type", "string"); put("description", "Путь файла относительно корня проекта") }
+          putJsonObject("content") { put("type", "string"); put("description", "Новое содержимое целиком") }
+        }
+        putJsonArray("required") {
+          add(kotlinx.serialization.json.JsonPrimitive("path"))
+          add(kotlinx.serialization.json.JsonPrimitive("content"))
+        }
+      },
+    ),
+    Tool(
+      name = TOOL_REPLACE_IN_FILE,
+      title = "Поправить кусок файла",
+      description = "Заменить кусок текста в файле на другой. Кусок обязан встречаться РОВНО ОДИН раз — иначе отказ " +
+                    "с числом совпадений: правка, попавшая в три места вместо одного, ломает файл молча. " +
+                    "Прочитайте файл (vibe_read_file или vibe_open_file) до замены: кусок должен совпасть посимвольно.",
+      schema = buildJsonObject {
+        put("type", "object")
+        putJsonObject("properties") {
+          putJsonObject("path") { put("type", "string"); put("description", "Путь файла") }
+          putJsonObject("old") { put("type", "string"); put("description", "Кусок, который заменяем, посимвольно как в файле") }
+          putJsonObject("new") { put("type", "string"); put("description", "На что заменяем") }
+        }
+        putJsonArray("required") {
+          add(kotlinx.serialization.json.JsonPrimitive("path"))
+          add(kotlinx.serialization.json.JsonPrimitive("old"))
+          add(kotlinx.serialization.json.JsonPrimitive("new"))
+        }
+      },
+    ),
+    Tool(
+      name = TOOL_RUN_COMMAND,
+      title = "Выполнить команду",
+      description = "Выполнить команду оболочки в корне проекта и вернуть её вывод с кодом выхода. Для сборки, " +
+                    "тестов, git и всего, что проверяет сделанное. Долгая команда останавливается по потолку " +
+                    "времени, и об этом говорится прямо, а не молчанием.",
+      schema = stringArg("command", "Команда как в терминале, например npm test"),
     ),
     Tool(
       name = TOOL_RUN,

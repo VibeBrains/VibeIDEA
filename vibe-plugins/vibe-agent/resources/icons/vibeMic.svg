@@ -1,0 +1,6 @@
+<!-- Copyright 2026 VibeBrains. Use of this source code is governed by the Apache 2.0 license. -->
+<svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+<rect x="6" y="2" width="4" height="7" rx="2" stroke="#6C707E" stroke-width="1.2"/>
+<path d="M3.8 7.4v.6a4.2 4.2 0 0 0 8.4 0v-.6" stroke="#6C707E" stroke-width="1.2" stroke-linecap="round"/>
+<path d="M8 12.2V14" stroke="#6C707E" stroke-width="1.2" stroke-linecap="round"/>
+</svg>

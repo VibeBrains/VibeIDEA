@@ -2,6 +2,7 @@
 package com.vibe.agent.ui.composer
 
 import com.vibe.agent.i18n.VibeI18n.t
+import com.vibe.agent.mcp.PermissionMode
 
 import com.intellij.icons.AllIcons
 import com.intellij.openapi.ui.popup.JBPopupFactory
@@ -148,6 +149,39 @@ class ModePicker(private val onChoose: (modeId: String) -> Unit) {
  * The list is never edited locally: the click reports the wanted value, and the caller redraws
  * from what the agent answered.
  */
+/**
+ * «Автопилот ▾» — насколько агенту разрешено действовать без вопроса.
+ *
+ * Рядом с моделью и режимом агента, а не в настройках: это решение человек меняет по ходу работы —
+ * доверился на рутине, перешёл на «вручную» там, где правка опасна. Спрятанное в настройках, оно
+ * меняется раз и навсегда, то есть не меняется.
+ */
+class PermissionModePicker(private val onChoose: (PermissionMode) -> Unit) {
+  val pill = PillButton(text = "", dropdown = true) { show() }.apply { toolTipText = t("permission.pill.tooltip") }
+
+  fun setMode(mode: PermissionMode) {
+    pill.text = mode.title
+    pill.toolTipText = mode.description
+    pill.revalidate()
+  }
+
+  private fun show() {
+    val current = PermissionMode.of(com.vibe.agent.settings.VibeAgentSettings.permissionMode)
+    JBPopupFactory.getInstance().createPopupChooserBuilder(PermissionMode.entries.toList())
+      .setRenderer(object : ColoredListCellRenderer<PermissionMode>() {
+        override fun customizeCellRenderer(list: JList<out PermissionMode>, value: PermissionMode, index: Int, isSelected: Boolean, hasFocus: Boolean) {
+          icon = if (value == current) AllIcons.Actions.Checked else EmptyIcon.ICON_16
+          append(value.title)
+          append("  " + value.description, SimpleTextAttributes.GRAYED_ATTRIBUTES)
+        }
+      })
+      .setItemChosenCallback { mode -> onChoose(mode) }
+      .createPopup()
+      .also { com.vibe.agent.ui.VibeScroll.thinAllIn(it.content) }
+      .showUnderneathOf(pill)
+  }
+}
+
 class ConfigOptionsPicker(
   private val onToggle: (configId: String, value: Boolean) -> Unit,
   private val onChoose: (configId: String, value: String) -> Unit,

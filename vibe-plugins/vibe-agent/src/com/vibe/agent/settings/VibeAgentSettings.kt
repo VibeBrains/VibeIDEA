@@ -151,6 +151,7 @@ object VibeAgentSettings {
   private const val KEY_BG_TTL_MIN = "vibe.agent.bg.ttlMinutes"
   private const val KEY_BG_POLL_SEC = "vibe.agent.bg.pollSeconds"
   private const val KEY_HANDSHAKE_TIMEOUT_SEC = "vibe.agent.handshakeTimeoutSec"
+  private const val KEY_PERMISSION_MODE = "vibe.agent.permissionMode"
   private const val KEY_DIRECT_TOOLS_ENABLED = "vibe.agent.directTools.enabled"
   private const val KEY_DIRECT_TOOL_MAX_ROUNDS = "vibe.agent.directTools.maxRounds"
   private const val KEY_COMPACT_TRIGGER_PERCENT = "vibe.agent.compaction.triggerPercent"
@@ -310,6 +311,16 @@ object VibeAgentSettings {
   var directToolsEnabled: Boolean
     get() = props.getBoolean(KEY_DIRECT_TOOLS_ENABLED, DEFAULT_DIRECT_TOOLS_ENABLED)
     set(value) = props.setValue(KEY_DIRECT_TOOLS_ENABLED, value, DEFAULT_DIRECT_TOOLS_ENABLED)
+
+  /**
+   * Насколько агенту разрешено действовать без вопроса (`auto`, `edits`, `manual`, `plan`).
+   *
+   * Умолчание — автопилот: решение владельца 18.09.2026, так же у VibeIDE и у Claude Code. Вопрос
+   * на каждую правку человек перестаёт читать на третьем диалоге, и разрешение становится ритуалом.
+   */
+  var permissionMode: String
+    get() = props.getValue(KEY_PERMISSION_MODE, com.vibe.agent.mcp.PermissionMode.DEFAULT.id)
+    set(value) = props.setValue(KEY_PERMISSION_MODE, value, com.vibe.agent.mcp.PermissionMode.DEFAULT.id)
 
   /** How many tool rounds one direct-chat turn may take before it stops: a model calling tools in a loop spends a request per round. */
   var directToolMaxRounds: Int

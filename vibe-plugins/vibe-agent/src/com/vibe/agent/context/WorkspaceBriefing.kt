@@ -26,6 +26,14 @@ object WorkspaceBriefing {
     val root: String,
     /** Current branch, or null when the folder is not a repository (or the ref is unreadable). */
     val branch: String? = null,
+    /**
+     * The file open in the editor right now, or null when nothing is open.
+     *
+     * Named in the turn rather than left to a tool call: «посмотри открытый файл» is the most
+     * ordinary request there is, and paying a tool round to learn WHICH file it is — before the
+     * round that reads it — is two waits for one question (owner, 18.09.2026).
+     */
+    val openFile: String? = null,
     val os: String = System.getProperty("os.name").orEmpty(),
   )
 
@@ -49,6 +57,7 @@ object WorkspaceBriefing {
     appendLine(t("wire.workspace.project", "name" to workspace.name))
     appendLine(t("wire.workspace.root", "path" to workspace.root))
     workspace.branch?.let { appendLine(t("wire.workspace.branch", "name" to it)) }
+    workspace.openFile?.let { appendLine(t("wire.workspace.openFile", "path" to it)) }
     workspace.os.takeIf { it.isNotBlank() }?.let { appendLine(t("wire.workspace.os", "name" to it)) }
     append(t("wire.workspace.tools"))
   }

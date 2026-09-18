@@ -19,6 +19,13 @@
               topic="com.intellij.ide.ui.LafManagerListener"/>
   </applicationListeners>
 
+  <extensionPoints>
+    <!-- Плагин рассказывает о СВОЕЙ части IDE сам: vibe-lsp зависит от нас, и обратная зависимость
+         ради одного списка серверов была бы циклом. -->
+    <extensionPoint qualifiedName="com.vibe.agent.ideFacts" interface="com.vibe.agent.mcp.VibeIdeFacts"
+                    dynamic="true"/>
+  </extensionPoints>
+
   <extensions defaultExtensionNs="com.intellij">
     <!-- Эвалы навыка без окна: отчёт в stdout, код выхода по порогу — чтобы гейт мог их звать. -->
     <appStarter id="vibe-evals" implementation="com.vibe.agent.skills.VibeSkillEvalsStarter"/>

@@ -37,13 +37,11 @@ import javax.swing.text.JTextComponent
 class FeedSelection(private val feed: JComponent, private val scroll: JScrollPane?) {
   private var anchor: FeedSelectionModel.Anchor? = null
   private var dragging = false
-  /** Repeats the last drag point while the mouse stands still outside the viewport. */
-  private val autoScroll = javax.swing.Timer(AUTO_SCROLL_MS, null)
   /**
    * Where the mouse was last, in the VIEWPORT's coordinates (the feed's when there is no scroll).
    *
-   * Not the feed's: while the feed scrolls under a mouse that is not moving, the same feed point
-   * would mean «the selection stopped growing» — the very thing auto-scroll exists to avoid.
+   * Not the feed's: the feed can move under a mouse that is not moving (the person scrolls with the
+   * wheel while holding the button), and the same feed point would then mean two different places.
    */
   private var lastDragPoint: Point? = null
 
@@ -57,9 +55,16 @@ class FeedSelection(private val feed: JComponent, private val scroll: JScrollPan
       override fun mouseDragged(e: MouseEvent) = onDrag(e)
     })
     bindKeys(feed)
-    autoScroll.addActionListener { scrollStep(); extendToLastPoint() }
-    autoScroll.isRepeats = true
   }
+
+  /**
+   * Whether anything is selected right now — the feed asks before following the stream.
+   *
+   * Following and selecting cannot both win: a feed that jumps to the bottom while a selection is
+   * being made moves the text out from under the mouse. So the stream waits, and the person gets
+   * their selection; the «в конец» button is one click away when they are done.
+   */
+  fun isActive(): Boolean = dragging || pieces().any { it.selectionStart != it.selectionEnd }
 
   /** Pieces of the feed in reading order — recomputed on demand, so a rebuilt feed needs no notice. */
   private fun pieces(): List<JTextComponent> {
@@ -95,6 +100,7 @@ class FeedSelection(private val feed: JComponent, private val scroll: JScrollPan
   private fun hookText(text: JTextComponent) {
     if (text.getClientProperty(HOOKED) == true) return
     text.putClientProperty(HOOKED, true)
+    text.caret = QuietCaret()
     text.addMouseListener(object : MouseAdapter() {
       override fun mousePressed(e: MouseEvent) = onPress(e)
       override fun mouseReleased(e: MouseEvent) = onRelease(e)
@@ -127,16 +133,10 @@ class FeedSelection(private val feed: JComponent, private val scroll: JScrollPan
     if (!dragging) return
     remember(e)
     extendToLastPoint()
-    // Beyond the viewport the feed has to move by itself, or a selection can never be longer than
-    // the window — which is exactly when a long one is wanted.
-    val outside = outsideViewport()
-    if (outside && !autoScroll.isRunning) autoScroll.start()
-    if (!outside && autoScroll.isRunning) autoScroll.stop()
   }
 
   private fun onRelease(e: MouseEvent) {
     dragging = false
-    autoScroll.stop()
     if (e.isPopupTrigger) popup(e)
   }
 
@@ -149,21 +149,6 @@ class FeedSelection(private val feed: JComponent, private val scroll: JScrollPan
     val point = lastDragPoint ?: return null
     val source: JComponent = scroll?.viewport ?: return point
     return SwingUtilities.convertPoint(source, point, feed)
-  }
-
-  private fun outsideViewport(): Boolean {
-    val viewport = scroll?.viewport ?: return false
-    val point = lastDragPoint ?: return false
-    return point.y < 0 || point.y > viewport.height
-  }
-
-  private fun scrollStep() {
-    val viewport = scroll?.viewport ?: return
-    val point = lastDragPoint ?: return
-    val step = if (point.y < 0) -AUTO_SCROLL_STEP else AUTO_SCROLL_STEP
-    val position = viewport.viewPosition
-    val maxY = (feed.height - viewport.height).coerceAtLeast(0)
-    viewport.viewPosition = Point(position.x, (position.y + step).coerceIn(0, maxY))
   }
 
   private fun extendToLastPoint() {
@@ -281,13 +266,35 @@ class FeedSelection(private val feed: JComponent, private val scroll: JScrollPan
     })
   }
 
+  /**
+   * A caret that never scrolls its component into view.
+   *
+   * The feed selects by telling EVERY piece what part of it is selected ([show]), and
+   * `JTextComponent.select` is `setCaretPosition` plus `moveCaretPosition` — each of them ends in
+   * `DefaultCaret.adjustVisibility`, which calls `scrollRectToVisible`. So a drag through a long
+   * answer asked the feed to scroll to the START of each selected piece, several times per mouse
+   * move: the feed jumped back to the first paragraph and selecting the tail of a long answer was
+   * impossible (owner, 0.6.4, 18.09.2026).
+   *
+   * Only the SCROLLING is dropped, and nothing else: the caret still owns the selection highlight,
+   * so the pieces paint it as before, and the feed's own auto-scroll at the viewport edge — ours,
+   * by timer, while the mouse is held outside — is untouched.
+   */
+  private class QuietCaret : javax.swing.text.DefaultCaret() {
+    init {
+      // Streaming rewrites the document under the selection; a caret that follows the text would
+      // move the selection with it.
+      updatePolicy = NEVER_UPDATE
+    }
+
+    override fun adjustVisibility(nloc: java.awt.Rectangle?) {}
+  }
+
   private companion object {
     const val HOOKED = "vibe.feedSelection.hooked"
     const val SELECT_ALL = "vibe.feed.selectAll"
     const val COPY = "vibe.feed.copy"
     const val CLEAR = "vibe.feed.clear"
     const val TRIPLE_CLICK = 3
-    const val AUTO_SCROLL_MS = 40
-    const val AUTO_SCROLL_STEP = 16
   }
 }

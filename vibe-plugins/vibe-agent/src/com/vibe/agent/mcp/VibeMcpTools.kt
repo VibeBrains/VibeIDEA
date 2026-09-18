@@ -54,6 +54,13 @@ class VibeMcpTools(private val projectProvider: () -> Project? = { ProjectManage
       McpProtocol.TOOL_SYMBOL_USAGES -> symbolUsages(project, arguments)
       McpProtocol.TOOL_DECISIONS_SEARCH -> decisionsSearch(project, arguments)
       McpProtocol.TOOL_DECISIONS_RECORD -> decisionsRecord(project, arguments)
+      McpProtocol.TOOL_OPEN_FILE -> openFile(project)
+      McpProtocol.TOOL_READ_FILE -> readFile(project, arguments)
+      McpProtocol.TOOL_IDE_INFO -> ideInfo(project)
+      McpProtocol.TOOL_DOCS_SEARCH -> docsSearch(arguments)
+      McpProtocol.TOOL_WRITE_FILE -> writeFile(project, arguments)
+      McpProtocol.TOOL_REPLACE_IN_FILE -> replaceInFile(project, arguments)
+      McpProtocol.TOOL_RUN_COMMAND -> runCommand(project, arguments)
       else -> McpServer.Tools.Result("неизвестный инструмент: $name", isError = true)
     }
   }
@@ -261,6 +268,91 @@ class VibeMcpTools(private val projectProvider: () -> Project? = { ProjectManage
     )
   }
 
+  /**
+   * Файл, открытый в редакторе, — вместе с тем, что человек в нём выделил.
+   *
+   * «Посмотри открытый файл» — обычная просьба, и до 18.09.2026 она была неисполнима: инструментов
+   * было девять, и ни один не умел ни открытый файл, ни файл вообще. Модель честно отвечала, что
+   * такого инструмента у неё нет, и просила назвать путь — тот самый, который человек уже назвал
+   * тем, что открыл файл.
+   *
+   * Выделение отдаётся отдельно от текста: «посмотри вот это» чаще всего означает выделенное, а не
+   * весь файл на три тысячи строк.
+   */
+  private fun openFile(project: Project): McpServer.Tools.Result {
+    val state = IdeEditorFacts.selected(project)
+      ?: return McpServer.Tools.Result("в редакторе IDE сейчас ничего не открыто")
+    if (!readable(state.path, ProjectContextService.getInstance(project).roots())) {
+      return McpServer.Tools.Result("открытый файл читать нельзя: " + state.path, isError = true)
+    }
+    return McpServer.Tools.Result(buildString {
+      appendLine("Открыт: " + state.path)
+      state.selection?.let { appendLine("Выделено (строки " + it.fromLine + "-" + it.toLine + "):\n" + it.text) }
+      if (state.otherTabs.isNotEmpty()) appendLine("Ещё открыты вкладки: " + state.otherTabs.joinToString())
+      append(clip(state.text, DEFAULT_FILE_CHARS))
+    })
+  }
+
+  /**
+   * Текст файла по пути.
+   *
+   * Права берутся у той же политики, что у поиска по индексу слов: два канала чтения с разными
+   * правилами означали бы, что запрет `.vibe/ignore` обходится сменой инструмента.
+   */
+  private fun readFile(project: Project, arguments: JsonObject): McpServer.Tools.Result {
+    val raw = string(arguments, "path") ?: return McpServer.Tools.Result("нужен аргумент path", isError = true)
+    val limit = (arguments["maxChars"]?.jsonPrimitive?.contentOrNull?.toIntOrNull() ?: DEFAULT_FILE_CHARS)
+      .coerceIn(1, MAX_FILE_CHARS)
+    val base = project.basePath
+    val resolved = if (java.io.File(raw).isAbsolute || base == null) raw else java.io.File(base, raw).path
+    if (!readable(resolved, ProjectContextService.getInstance(project).roots())) {
+      return McpServer.Tools.Result("читать нельзя: " + raw, isError = true)
+    }
+    val file = java.io.File(resolved)
+    if (!file.isFile) return McpServer.Tools.Result("файла нет: " + raw, isError = true)
+    val text = try {
+      file.readText()
+    }
+    catch (e: Exception) {
+      return McpServer.Tools.Result("не удалось прочитать " + raw + ": " + (e.message ?: ""), isError = true)
+    }
+    return McpServer.Tools.Result(raw + ":\n" + clip(text, limit))
+  }
+
+  private fun writeFile(project: Project, arguments: JsonObject): McpServer.Tools.Result {
+    val path = string(arguments, "path") ?: return McpServer.Tools.Result("нужен аргумент path", isError = true)
+    val content = arguments["content"]?.jsonPrimitive?.contentOrNull
+      ?: return McpServer.Tools.Result("нужен аргумент content", isError = true)
+    val answer = IdeWorkTools.write(project, path, content)
+    return McpServer.Tools.Result(answer, isError = answer.startsWith("писать нельзя"))
+  }
+
+  private fun replaceInFile(project: Project, arguments: JsonObject): McpServer.Tools.Result {
+    val path = string(arguments, "path") ?: return McpServer.Tools.Result("нужен аргумент path", isError = true)
+    val old = arguments["old"]?.jsonPrimitive?.contentOrNull
+      ?: return McpServer.Tools.Result("нужен аргумент old", isError = true)
+    val new = arguments["new"]?.jsonPrimitive?.contentOrNull
+      ?: return McpServer.Tools.Result("нужен аргумент new", isError = true)
+    val answer = IdeWorkTools.replace(project, path, old, new)
+    return McpServer.Tools.Result(answer, isError = !answer.startsWith("правка внесена"))
+  }
+
+  private fun runCommand(project: Project, arguments: JsonObject): McpServer.Tools.Result {
+    val command = string(arguments, "command") ?: return McpServer.Tools.Result("нужен аргумент command", isError = true)
+    return McpServer.Tools.Result(IdeWorkTools.run(project, command))
+  }
+
+  /** Поиск по документации, вшитой в сборку: формат файла и порядок работы — оттуда, а не из догадок. */
+  private fun docsSearch(arguments: JsonObject): McpServer.Tools.Result {
+    val query = string(arguments, "query") ?: return McpServer.Tools.Result("нужен аргумент query", isError = true)
+    val limit = arguments["limit"]?.jsonPrimitive?.contentOrNull?.toIntOrNull() ?: DEFAULT_DOCS_LIMIT
+    return McpServer.Tools.Result(com.vibe.agent.help.HelpBundle.search(query, limit))
+  }
+
+  /** Состояние самой IDE: наша часть и всё, что рассказали о себе соседние плагины. */
+  private fun ideInfo(project: Project): McpServer.Tools.Result =
+    McpServer.Tools.Result(VibeIdeFacts.collect(project).joinToString("\n"))
+
   private fun run(arguments: JsonObject): McpServer.Tools.Result {
     val task = string(arguments, "task") ?: return McpServer.Tools.Result("нужен аргумент task", isError = true)
     // Never waits for the turn to finish: an MCP tool hanging for minutes reads as stuck and the
@@ -287,6 +379,19 @@ class VibeMcpTools(private val projectProvider: () -> Project? = { ProjectManage
 
     /** Длинная строка в ответе — это минифицированный файл; смысла в ней нет, а токены есть. */
     private const val LINE_CHARS = 200
+
+    private const val DEFAULT_DOCS_LIMIT = 5
+
+    /** Сколько текста файла отдаём по умолчанию: длинный файл вытесняет из хода всё остальное. */
+    private const val DEFAULT_FILE_CHARS = 60_000
+
+    /** Потолок, выше которого не поднимает и явная просьба: за ним начинается обрыв хода по контексту. */
+    private const val MAX_FILE_CHARS = 200_000
+
+    /** Обрезка, которая НАЗЫВАЕТ себя: молча обрезанный файл модель считает файлом целиком. */
+    internal fun clip(text: String, limit: Int): String =
+      if (text.length <= limit) text
+      else text.take(limit) + "\n… обрезано, показано " + limit + " из " + text.length + " символов"
 
     /**
      * May the agent read this file — the file channel's rule, on the same resolved path.

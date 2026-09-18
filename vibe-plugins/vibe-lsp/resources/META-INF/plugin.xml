@@ -14,6 +14,12 @@
   <depends>com.vibe.agent</depends>
   <depends optional="true" config-file="vibe-lsp4ij-integration.xml">com.redhat.devtools.lsp4ij</depends>
 
+  <!-- Инструмент «что умеет эта IDE» спрашивает каждую область у её владельца: про серверы
+       рассказываем мы, а не vibe-agent, который о них не знает. -->
+  <extensions defaultExtensionNs="com.vibe.agent">
+    <ideFacts implementation="com.vibe.lsp.LspIdeFacts"/>
+  </extensions>
+
   <extensions defaultExtensionNs="com.intellij">
     <notificationGroup id="Vibe Languages" displayType="BALLOON"/>
     <!-- Под общим корнем настроек VibeIDEA, который объявляет vibe-agent. -->

@@ -144,6 +144,9 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     horizontalScrollBarPolicy = javax.swing.ScrollPaneConstants.HORIZONTAL_SCROLLBAR_NEVER
   }
 
+  /** Лента со стрелкой «в конец»: сама вниз не ездит, поэтому вернуться вниз можно кнопкой. */
+  private val feedEnd = FeedEndButton(scroll)
+
   /**
    * Выделение текста ЧЕРЕЗ границы сообщений: Ctrl+A на весь разговор, протяжка мышью через
    * пузыри и блоки кода, тройной клик на сообщение целиком (правило владельца 18.09.2026).
@@ -399,6 +402,14 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
   })
   private val modelPicker = ModelPicker({ selectTarget(it) }, { openSettings() })
   private val modePicker = ModePicker { modeId -> switchMode(modeId) }
+
+  /** Насколько агенту разрешено действовать без вопроса; умолчание — автопилот. */
+  private val permissionPicker: com.vibe.agent.ui.composer.PermissionModePicker =
+    com.vibe.agent.ui.composer.PermissionModePicker { mode ->
+      VibeAgentSettings.permissionMode = mode.id
+      permissionPicker.setMode(mode)
+      systemLine(t("permission.switched", "mode" to mode.title))
+    }.also { it.setMode(com.vibe.agent.mcp.PermissionMode.of(VibeAgentSettings.permissionMode)) }
   private val configPicker = com.vibe.agent.ui.composer.ConfigOptionsPicker({ id, value -> switchConfigOption(id, value) }, { id, value -> switchConfigChoice(id, value) })
   private val historyCallbacks = object : ThreadListPanel.Callbacks {
     override fun onOpen(threadId: String) = activateThread(threadId)
@@ -406,7 +417,9 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
   }
   private val landingList = ThreadListPanel(project, ThreadListPanel.Mode.LANDING, this, historyCallbacks)
   private val landing = LandingBlock(landingList) { text -> startTurn(ComposedMessage(text)) }
-  private val historyPill = PillButton(icon = AllIcons.Vcs.History, dropdown = true) { openHistoryPopup() }.apply {
+  // Без шеврона: он обещает второй смысл у кнопки, которого нет — клик открывает список, и это
+  // всё, что она делает. Прижатая к иконке стрелка читалась как теснота, а не как подсказка.
+  private val historyPill = PillButton(icon = AllIcons.Vcs.History) { openHistoryPopup() }.apply {
     toolTipText = t("chat.historyPill")
   }
   private val tabsStrip = ChatTabsStrip(object : ChatTabsStrip.Callbacks {
@@ -424,8 +437,15 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
   }
 
   /** Composer microphone: click to record, click again to transcribe into the draft. */
+  /**
+   * Микрофон композера: клик — запись, повторный — расшифровка в черновик.
+   *
+   * Иконка своя, а не платформенная: `AllIcons.Ide.Macro.Recording_1` рисует кассету, и на месте
+   * микрофона это читается как «что-то сломалось» (владелец, 0.6.4). Во время записи микрофон
+   * красный — состояние видно, не наводя мышь.
+   */
   private val voicePill: PillButton =
-    PillButton(icon = AllIcons.Ide.Macro.Recording_1) { toggleVoice() }.apply { toolTipText = t("chat.voice.start") }
+    PillButton(icon = VibeIcons.MIC) { toggleVoice() }.apply { toolTipText = t("chat.voice.start") }
 
   init {
     border = JBUI.Borders.empty(4)
@@ -433,14 +453,16 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     composer.addPill(configPicker.pill)
     composer.addPill(modelPicker.pill)
     composer.addPill(PillButton(icon = AllIcons.Actions.RunAll) { choosePipeline() }.apply { toolTipText = t("chat.pipelinePill") })
-    composer.addPill(PillButton(icon = AllIcons.General.Settings) { openSettings() }.apply { toolTipText = t("chat.settingsPill") })
+    // Шестерёнка уехала в шапку панели (VibeAgentToolWindowFactory): настройки открывают раз в
+    // месяц, а место в ряду композера занимают всегда — там живёт то, что меняют по ходу работы.
+    composer.addPill(permissionPicker.pill)
     // The microphone appears only where recording is possible: a button that cannot work is worse
     // than no button.
     if (com.vibe.agent.voice.VoiceCapture.isSupported()) composer.addPill(voicePill)
     composer.addRightPill(historyPill)
     add(tabsStrip, BorderLayout.NORTH)
     add(centerWrap, BorderLayout.CENTER)
-    centerWrap.add(scroll, BorderLayout.CENTER)
+    centerWrap.add(feedEnd, BorderLayout.CENTER)
     restoreTabs()
     relayout()
     applyRailVisibility()
@@ -1648,17 +1670,16 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
       }
       return true
     }
-    val docs = com.vibe.agent.help.HelpBundle.find(question)
-    if (docs.isEmpty()) {
+    // Поиск ПО ТЕКСТУ, тот же, которым пользуется агент инструментом vibe_docs_search: два
+    // ранжирования одного набора отвечали бы по-разному на один вопрос, смотря кто спросил.
+    val hits = com.vibe.agent.help.HelpSearch.search(com.vibe.agent.help.HelpBundle.sections, question, HELP_SECTIONS)
+    if (hits.isEmpty()) {
       systemLine(t("help.nothing"))
       return true
     }
-    val bodies = docs.mapNotNull { doc ->
-      com.vibe.agent.help.HelpBundle.read(doc.resource)?.let { doc to it }
-    }
-    systemLine(t("help.using", "docs" to docs.joinToString { it.title }))
-    val block = bodies.joinToString("\n\n") { (doc, body) ->
-      "<context ref=\"help:${doc.resource}\">\n${body.take(HELP_DOC_CHARS)}\n</context>"
+    systemLine(t("help.using", "docs" to hits.map { it.section.file }.distinct().joinToString()))
+    val block = hits.joinToString("\n\n") { hit ->
+      "<context ref=\"help:${hit.section.file}#${hit.section.line}\">\n${hit.section.heading}\n${hit.section.body.take(HELP_DOC_CHARS)}\n</context>"
     }
     return startTurn(ComposedMessage(text = question + "\n\n" + t("help.header") + "\n" + block))
   }
@@ -2138,6 +2159,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
       }
       recording = started
       voicePill.toolTipText = t("chat.voice.stop")
+      voicePill.icon = VibeIcons.MIC_ON
       voicePill.repaint()
       startVoicePreview(started)
       return
@@ -2145,6 +2167,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     recording = null
     stopVoicePreview()
     voicePill.toolTipText = t("chat.voice.start")
+    voicePill.icon = VibeIcons.MIC
     voicePill.repaint()
     val file = active.stop()
     if (file == null) {
@@ -3455,6 +3478,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
         name = project.name,
         root = root,
         branch = com.vibe.agent.context.WorkspaceBriefing.branchOfHead(branch),
+        openFile = runCatching { com.vibe.agent.mcp.IdeEditorFacts.selected(project)?.path }.getOrNull(),
       )))
   }
 
@@ -3506,9 +3530,13 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
       val verdict = com.vibe.agent.mcp.McpAccess.verdict(
         risk, com.intellij.ide.trustedProjects.TrustedProjects.isProjectTrusted(project), allowWrite = true, allowExecute = true)
       val refusal = com.vibe.agent.mcp.McpAccess.refusal(verdict)
+      val mode = com.vibe.agent.mcp.PermissionMode.of(VibeAgentSettings.permissionMode)
+      val decision = mode.decide(risk)
       when {
         refusal != null -> false.also { systemLine(refusal) }
-        risk == com.vibe.agent.mcp.McpProtocol.Risk.READ -> true
+        decision == com.vibe.agent.mcp.PermissionMode.Decision.ALLOW -> true
+        decision == com.vibe.agent.mcp.PermissionMode.Decision.DENY ->
+          false.also { systemLine(t("permission.denied.plan")) }
         else -> askOnEdt {
           Messages.showYesNoDialog(project,
                                    t("directTools.approve", "tool" to asked.name, "args" to asked.arguments.take(DIRECT_TOOL_ARGS_PREVIEW)),
@@ -5346,13 +5374,15 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
   }
 
   private fun revalidateScroll() {
-    // Stick-to-bottom only when the user was already at (or near) the bottom — a reader scrolled
-    // up through history must not be yanked down by every streaming delta.
-    val bar = scroll.verticalScrollBar
-    val wasAtBottom = bar.value + bar.visibleAmount >= bar.maximum - JBUI.scale(STICK_TO_BOTTOM_SLACK)
+    // Следование за потоком — при ДВУХ условиях, и второе появилось 18.09.2026. Первое прежнее:
+    // человек уже внизу, иначе читающего историю сдёргивало бы каждой дельтой. Второе: ничего не
+    // выделено — лента, прыгнувшая вниз посреди протяжки, уводит текст из-под мыши, и выделить
+    // хвост длинного ответа становится нельзя. Вернуться вниз — кнопка «в конец».
+    val follow = feedEnd.isAtEnd() && !feedSelection.isActive()
     messages.revalidate()
     messages.repaint()
-    if (wasAtBottom) SwingUtilities.invokeLater { bar.value = bar.maximum }
+    if (follow) SwingUtilities.invokeLater { feedEnd.scrollToEnd() }
+    feedEnd.update()
   }
 
   // --- AcpClient.Handler (reader thread) ---
@@ -6048,6 +6078,8 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     const val INDEX_PROGRESS_STEP = 25
 
     /** One manual is pages long; two of them plus the question still fit a modest window. */
+    /** Сколько разделов набора уходит в ход /help: больше — и вопрос человека тонет в цитатах. */
+    const val HELP_SECTIONS = 5
     const val HELP_DOC_CHARS = 20_000
     const val COUNCIL_TIMEOUT_MS = 180_000L
     const val GIT_REPORT_LIMIT = 25
@@ -6065,7 +6097,6 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     /** Context-usage chip turns warning-coloured at this fill percentage. */
     const val USAGE_WARN_PCT = 80
     /** «У низа» для прилипания скролла: столько px недоскролла всё ещё считается низом. */
-    const val STICK_TO_BOTTOM_SLACK = 48
     /** Truncation of a command preview shown in a destructive-command confirm dialog. */
     const val DESTRUCTIVE_PREVIEW_LEN = 300
     /** How much of a tool call's arguments the approval dialog shows: enough to recognise the record, not a wall of JSON. */

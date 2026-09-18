@@ -30,6 +30,22 @@ object HelpBundle {
 
   fun list(): List<Doc> = docs
 
+  /**
+   * Все разделы набора, нарезанные один раз.
+   *
+   * Лениво и однократно: три четверти мегабайта режутся за миллисекунды, но делать это на каждый
+   * вопрос модели незачем.
+   */
+  val sections: List<HelpSearch.Section> by lazy {
+    docs.flatMap { doc ->
+      read(doc.resource)?.let { HelpSearch.splitIntoSections(doc.resource.removePrefix("$ROOT/"), it) } ?: emptyList()
+    }
+  }
+
+  /** Ответ на вопрос — разделами, с файлом, заголовком и строкой. */
+  fun search(query: String, limit: Int): String =
+    HelpSearch.format(HelpSearch.search(sections, query, limit), query, docs.size)
+
   fun read(resource: String): String? =
     HelpBundle::class.java.getResourceAsStream(resource)?.bufferedReader()?.readText()
 

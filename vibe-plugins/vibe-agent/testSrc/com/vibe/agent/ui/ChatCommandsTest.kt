@@ -47,9 +47,12 @@ class ChatCommandsTest {
   }
 
   @Test
-  fun `commands that take an argument insert a trailing space`() {
+  fun `every command inserts with a trailing space, so the menu closes on picking`() {
+    // Пробел — это то, что снимает триггер меню: без него выбранная команда снова подходит под
+    // «слово с / и без пробелов», список открывается заново, и строка выглядит невыбираемой.
     assertEquals("/bg ", ChatCommands.insertionOf(ChatCommands.ALL.first { it.name == "/bg" }))
-    assertEquals("/trace", ChatCommands.insertionOf(ChatCommands.ALL.first { it.name == "/trace" }))
+    assertEquals("/trace ", ChatCommands.insertionOf(ChatCommands.ALL.first { it.name == "/trace" }))
+    assertTrue(ChatCommands.ALL.all { ChatCommands.insertionOf(it).endsWith(" ") })
   }
 
   @Test
