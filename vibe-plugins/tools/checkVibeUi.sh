@@ -390,6 +390,41 @@ else
   echo "  фон окна установки: собран для $APP_VERSION"
 fi
 
+# 8ж. Тему переключает ПЛАТФОРМЕННЫЙ путь, а не наша пара строк.
+#
+# `LafManager.setCurrentLookAndFeel` ставит тему и схему редактора — и на этом всё. Переключение
+# светлого на тёмное делает `DarculaInstaller` (`JBColor.setDark` + `IconLoader.setUseDarkIcons`),
+# а зовёт его только `QuickChangeLookAndFeel.switchLafAndUpdateUI` — тот самый вход, которым
+# пользуется платформенная страница оформления. `JBColor.DARK` — кэш, посеянный один раз при
+# старте IDE: без этого шага каждая пара `JBColor(светлый, тёмный)` и каждый значок продолжают
+# отдавать сторону ПРЕЖНЕЙ темы.
+#
+# Цена известна: на 0.6.17 переход со светлой темы на графитовую красил окно проекта в тёмное, а
+# диалог настроек оставался белым. Ни один тест и ни один гейт этого не видели — цвета из json
+# темы применялись правильно, сломан был только шаг, которого у нас не было вовсе.
+SWITCH_HELPER=platform/platform-impl/src/com/intellij/ide/actions/QuickChangeLookAndFeel.java
+# Строки комментариев отбрасываются: упоминание метода в объяснении — не вызов метода, и гейт,
+# падающий на собственном комментарии, учит обходить себя молчанием.
+DIRECT_SWITCH=$(grep -rn "setCurrentLookAndFeel" vibe-plugins --include='*.kt' \
+  | grep -v '/testSrc/' \
+  | grep -vE ':[0-9]+:[[:space:]]*(//|\*)' || true)
+if [ -n "$DIRECT_SWITCH" ]; then
+  echo "ОШИБКА: тема переключается мимо платформенного пути — диалоги останутся в цветах прежней темы"
+  echo "$DIRECT_SWITCH" | sed 's/^/    /'
+  echo "  Зовите QuickChangeLookAndFeel.switchLafAndUpdateUI(manager, info, false): он делает"
+  echo "  DarculaInstaller.install()/uninstall(), то есть JBColor.setDark и IconLoader.setUseDarkIcons"
+  status=1
+elif grep -rq "QuickChangeLookAndFeel.switchLafAndUpdateUI" vibe-plugins --include='*.kt'; then
+  # Обратная сторона: метод, на который мы опираемся, живёт в платформе и может уехать при синке.
+  if ! grep -q "public static void switchLafAndUpdateUI" "$SWITCH_HELPER"; then
+    echo "ОШИБКА: платформа больше не отдаёт switchLafAndUpdateUI ($SWITCH_HELPER)"
+    echo "  Найдите, чем платформа переключает тему теперь, и переведите страницу «Оформление» на это"
+    status=1
+  else
+    echo "  переключение темы: платформенным путём, DarculaInstaller не обойдён"
+  fi
+fi
+
 # 9. Идентификаторы панелей: только ASCII и только из VibeToolWindows.
 #    Идентификатор уезжает в .idea/workspace.xml и в раскладку окон — русская буква там ломается
 #    при смене кодировки, а литерал, написанный руками в пятом файле, однажды разойдётся с XML.

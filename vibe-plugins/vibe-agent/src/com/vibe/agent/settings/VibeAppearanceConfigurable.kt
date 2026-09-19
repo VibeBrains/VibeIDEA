@@ -2,13 +2,17 @@
 package com.vibe.agent.settings
 
 import com.intellij.ide.DataManager
+import com.intellij.ide.actions.QuickChangeLookAndFeel
 import com.intellij.ide.ui.LafManager
+import com.intellij.ide.ui.LafManagerListener
 import com.intellij.ide.ui.laf.UIThemeLookAndFeelInfo
+import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.options.Configurable
 import com.intellij.openapi.options.ex.Settings
 import com.intellij.openapi.ui.ComboBox
 import com.intellij.ui.JBColor
 import com.intellij.ui.components.JBLabel
+import com.intellij.util.messages.MessageBusConnection
 import com.intellij.util.ui.FormBuilder
 import com.intellij.util.ui.JBFont
 import com.intellij.util.ui.JBUI
@@ -54,6 +58,22 @@ class VibeAppearanceConfigurable : Configurable {
   private var initialDay: String? = null
   private var initialNight: String? = null
 
+  /**
+   * Флажок автодетекта живёт по тем же правилам, что тема: виден сразу, возвращается «Отменой».
+   *
+   * До 19.09.2026 он писался в тот же миг и не возвращался ничем: человек пробовал, закрывал
+   * диалог «Отменой» и оставался с включённым автодетектом. Настройка, которую нельзя отменить
+   * там, где есть кнопка «Отмена», — скрытая правка.
+   */
+  private var autodetectBox: JBCheckBox? = null
+  private var initialAutodetect = false
+
+  /** Кнопка ручного переключения пары: гаснет вместе со списком, когда тему выбирает система. */
+  private var switchButton: JButton? = null
+
+  /** Подписка на смену темы платформой — см. [themeChangedElsewhere]. */
+  private var connection: MessageBusConnection? = null
+
   /** Обёртка ради подписи в выпадающем списке: сам `UIThemeLookAndFeelInfo` показывает класс. */
   private class ThemeItem(val info: UIThemeLookAndFeelInfo) {
     override fun toString(): String = info.name
@@ -65,6 +85,7 @@ class VibeAppearanceConfigurable : Configurable {
     val manager = LafManager.getInstance()
     applied = manager.currentUIThemeLookAndFeel
     original = applied
+    initialAutodetect = manager.autodetect
     val themes = manager.installedThemes.toList()
     val ours = themes.filter { isOurs(it) }
     val rest = themes.filterNot { isOurs(it) }
@@ -110,6 +131,7 @@ class VibeAppearanceConfigurable : Configurable {
 
     val switch = JButton(t("settings.appearance.switchNow")).apply {
       addActionListener { switchNow(dayCombo, nightCombo) }
+      switchButton = this
     }
     // Без этого пара «день/ночь» — просто два списка и кнопка: переключать её пришлось бы руками.
     // Флажок отдаёт решение системе, и тогда пара работает сама. Платформа умеет это не везде —
@@ -117,7 +139,8 @@ class VibeAppearanceConfigurable : Configurable {
     val autodetect = JBCheckBox(t("settings.appearance.syncWithOs"), manager.autodetect).apply {
       isEnabled = manager.autodetectSupported
       toolTipText = if (manager.autodetectSupported) null else t("settings.appearance.syncUnsupported")
-      addActionListener { LafManager.getInstance().autodetect = isSelected }
+      addActionListener { setAutodetect(isSelected) }
+      autodetectBox = this
     }
     builder.addComponent(autodetect)
     builder.addLabeledComponent(t("settings.appearance.day"), dayCombo)
@@ -131,7 +154,53 @@ class VibeAppearanceConfigurable : Configurable {
       add(allThemes)
     })
 
+    setManualChoiceEnabled(!manager.autodetect)
+    connection?.disconnect()   // страницу могут пересоздать, не закрыв: вторая подписка была бы утечкой
+    connection = ApplicationManager.getApplication().messageBus.connect().apply {
+      subscribe(LafManagerListener.TOPIC, LafManagerListener { themeChangedElsewhere() })
+    }
     return SettingsUi.page(builder.panel)
+  }
+
+  /**
+   * Пока тему выбирает система, выбирать её руками нельзя — выбор не переживёт ближайшего заката.
+   *
+   * Платформа на своей странице гасит список ровно так же
+   * (`AppearanceConfigurable`: `theme.enabledIf(syncThemeAndEditorScheme.not())`). Живой
+   * переключатель, чей результат молча перетрут через несколько часов, — обещание, которого
+   * страница не держит.
+   */
+  private fun setManualChoiceEnabled(enabled: Boolean) {
+    radios.values.forEach { it.isEnabled = enabled }
+    switchButton?.isEnabled = enabled
+  }
+
+  private fun setAutodetect(enabled: Boolean) {
+    LafManager.getInstance().autodetect = enabled
+    setManualChoiceEnabled(!enabled)
+  }
+
+  /**
+   * Тему меняет не только эта страница, и не всегда в нашем стеке.
+   *
+   * Включённый автодетект применяет системную тему АСИНХРОННО (`LafManagerImpl.detectAndSyncLaf`
+   * зовёт детектор с `async = true`), поэтому прочитать новую тему сразу после щелчка по флажку
+   * нельзя — её ещё нет. Страница не угадывает результат, а слушает платформу: сменилась тема —
+   * поехала и точка в списке. Исходную тему ([original]) это не трогает: возвращать «Отмена»
+   * обязана туда, откуда человек пришёл.
+   */
+  private fun themeChangedElsewhere() {
+    val current = LafManager.getInstance().currentUIThemeLookAndFeel ?: return
+    applied = current
+    radios[current.id]?.isSelected = true
+  }
+
+  /** Вернуть автодетект к тому, с чем человек пришёл. */
+  private fun restoreAutodetect() {
+    val manager = LafManager.getInstance()
+    if (manager.autodetect != initialAutodetect) {
+      manager.autodetect = initialAutodetect
+    }
   }
 
   /**
@@ -142,8 +211,13 @@ class VibeAppearanceConfigurable : Configurable {
    * тему исходной, и тогда возвращать нечего.
    */
   override fun disposeUIResources() {
+    // Автодетект возвращается ПЕРВЫМ: его переключение само меняет тему, и сделай мы это после
+    // возврата темы — вернули бы не то, с чем человек пришёл.
+    restoreAutodetect()
     val current = LafManager.getInstance().currentUIThemeLookAndFeel
     original?.takeIf { it.id != current?.id }?.let { apply(it) }
+    connection?.disconnect()
+    connection = null
     radios.clear()
   }
 
@@ -246,8 +320,15 @@ class VibeAppearanceConfigurable : Configurable {
 
   private fun apply(info: UIThemeLookAndFeelInfo) {
     val manager = LafManager.getInstance()
-    manager.setCurrentLookAndFeel(info, false)
-    manager.updateUI()
+    // Переключаем ПЛАТФОРМЕННЫМ путём, а не парой `setCurrentLookAndFeel` + `updateUI`. Разница в
+    // одном шаге, и она решающая: платформенный путь зовёт `DarculaInstaller`, а тот переключает
+    // `JBColor.setDark` и `IconLoader.setUseDarkIcons`. `JBColor.DARK` — кэш, посеянный один раз
+    // при старте IDE, и сбросить его больше нечем: без этого шага каждая пара
+    // `JBColor(светлый, тёмный)` и каждый значок продолжают отдавать сторону ПРЕЖНЕЙ темы. Со
+    // светлой на графитовую окно проекта уезжало в тёмное, а диалог настроек оставался белым —
+    // владелец увидел это на 0.6.17, и увидеть это можно было только глазами: цвета из json темы
+    // при этом применялись правильно.
+    QuickChangeLookAndFeel.switchLafAndUpdateUI(manager, info, false)
     applied = info
     // Точка в списке обязана поехать за применённой темой. Без этого «Переключить сейчас» меняет
     // оформление, а страница продолжает показывать прежнюю тему выбранной — и следующий «Применить»
@@ -264,6 +345,7 @@ class VibeAppearanceConfigurable : Configurable {
    */
   override fun isModified(): Boolean =
     applied?.id != original?.id ||
+    (autodetectBox?.isSelected ?: initialAutodetect) != initialAutodetect ||
     (day?.selectedItem as? ThemeItem)?.info?.id != initialDay ||
     (night?.selectedItem as? ThemeItem)?.info?.id != initialNight
 
@@ -274,10 +356,18 @@ class VibeAppearanceConfigurable : Configurable {
     // Подтверждение и есть «оставить то, что уже видно»: тема применена предпросмотром, и здесь
     // она перестаёт быть предпросмотром — возвращать больше некуда.
     original = applied
+    initialAutodetect = manager.autodetect
+    // Про перезапуск спрашиваем ЗДЕСЬ, а не при каждой пробе: часть тем платформы (островные)
+    // без него применяется наполовину. Во время предпросмотра этот вопрос был бы вредным —
+    // перезапуск заморозил бы то, что «Отмена» обязана вернуть.
+    manager.checkRestart()
   }
 
   override fun reset() {
     val manager = LafManager.getInstance()
+    restoreAutodetect()
+    autodetectBox?.isSelected = initialAutodetect
+    setManualChoiceEnabled(!initialAutodetect)
     original?.takeIf { it.id != manager.currentUIThemeLookAndFeel?.id }?.let { apply(it) }
     applied = manager.currentUIThemeLookAndFeel
     // Точку тоже: без этого «Сбросить» оставляет выбранной ту тему, от которой человек отказался.
