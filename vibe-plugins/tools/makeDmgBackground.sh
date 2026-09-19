@@ -38,4 +38,11 @@ rsvg-convert -w "$WIDTH" -h "$HEIGHT" "$TMP/bg.svg" -o "$TMP/bg-1x.png"
 rsvg-convert -w $((WIDTH * 2)) -h $((HEIGHT * 2)) "$TMP/bg.svg" -o "$TMP/bg-2x.png"
 tiffutil -cathidpicheck "$TMP/bg-1x.png" "$TMP/bg-2x.png" -out "$OUT" >/dev/null
 
+# Рядом с картинкой кладётся версия, для которой она собрана.
+#
+# Иначе «фон устарел» не видно ниоткуда: картинка на месте, гейт дистрибутива сверяет её с нашей
+# же копией и зеленеет, а на образе 0.6.16 написано 0.6.11 — ровно это и уехало владельцу
+# 19.09.2026, четыре сборки подряд. Прочитать номер с картинки нельзя, а сверить строку — можно.
+printf '%s\n' "$VERSION" > "$OUT.version"
+
 echo "  фон собран: $OUT, версия $VERSION ($(wc -c < "$OUT" | tr -d ' ') байт, страницы ${WIDTH}x${HEIGHT} и $((WIDTH * 2))x$((HEIGHT * 2)))"

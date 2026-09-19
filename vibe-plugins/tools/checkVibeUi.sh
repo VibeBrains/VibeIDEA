@@ -369,6 +369,27 @@ PYSWATCH
 # по всем схемам 4.14.
 "$PYTHON" vibe-plugins/tools/themeContrast.py || status=1
 
+# 8е. Фон окна установки собран для НЫНЕШНЕЙ версии.
+#
+# Версия нарисована на картинке, а картинка коммитится собранной. Забыть пересобрать её после
+# бампа — ошибка на один шаг, и не видно её ниоткуда: файл на месте, гейт дистрибутива сверяет его
+# с нашей же копией и зеленеет. Так на образе 0.6.16 оказалось написано 0.6.11 — четыре сборки
+# подряд, и заметил это владелец, а не мы.
+BG=vibeidea-customization/resources/mac/dmgBackground.tiff
+BG_VERSION_FILE="$BG.version"
+APP_VERSION=$(sed -n 's/.*full="\([^"]*\)".*/\1/p' vibeidea-customization/resources/idea/VibeIdeaApplicationInfo.xml | head -1)
+if [ ! -f "$BG_VERSION_FILE" ]; then
+  echo "ОШИБКА: неизвестно, для какой версии собран фон окна установки"
+  echo "  Пересоберите: ./vibe-plugins/tools/makeDmgBackground.sh"
+  status=1
+elif [ "$(cat "$BG_VERSION_FILE")" != "$APP_VERSION" ]; then
+  echo "ОШИБКА: на фоне окна установки версия $(cat "$BG_VERSION_FILE"), а собираем $APP_VERSION"
+  echo "  Пересоберите: ./vibe-plugins/tools/makeDmgBackground.sh"
+  status=1
+else
+  echo "  фон окна установки: собран для $APP_VERSION"
+fi
+
 # 9. Идентификаторы панелей: только ASCII и только из VibeToolWindows.
 #    Идентификатор уезжает в .idea/workspace.xml и в раскладку окон — русская буква там ломается
 #    при смене кодировки, а литерал, написанный руками в пятом файле, однажды разойдётся с XML.
