@@ -238,7 +238,43 @@ while IFS= read -r page; do
     echo "  Замените на SettingsUi.hint(...) или SettingsUi.section(...); см. knowledge/ui/settingsPageWidth.md"
     status=1
   fi
+  # Литерала мало: длинный текст приходит КЛЮЧОМ каталога, и `JBLabel(t("settings.root.html"))`
+  # проверку на литерал проходил насквозь — ровно так корневая страница и ехала вбок при зелёном
+  # гейте (владелец, 19.09.2026). Поэтому смотрим на САМУ СТРОКУ в каталоге, а не на её запись.
+  "$PYTHON" - "$root" "$page" <<'PYHINT' || status=1
+import io, json, os, re, sys
+root, page = sys.argv[1], sys.argv[2]
+catalog = json.load(io.open(os.path.join(root, 'vibe-plugins/vibe-agent/resources/lang/base.json'), encoding='utf-8'))
+text = io.open(page, encoding='utf-8').read()
+LONG = 60
+bad = []
+for key in re.findall(r'JBLabel\(\s*t\(\s*"([^"]+)"', text):
+    value = catalog.get(key)
+    if value is None:
+        continue
+    if '<html' in value or len(value) > LONG:
+        bad.append((key, len(value)))
+if bad:
+    print('ОШИБКА: длинный текст в сыром JBLabel на странице настроек — он просит ширину в одну строку:')
+    print('  ' + os.path.relpath(page, root))
+    for key, size in bad:
+        print('    %s — %d символов' % (key, size))
+    print('  Замените на SettingsUi.hint(...); перенос проверяется замером в SettingsHintWidthTest')
+    sys.exit(1)
+PYHINT
 done < <(grep -rl 'com.intellij.openapi.options.Configurable\|: Configurable' "$root"/vibe-plugins/*/src --include='*.kt')
+
+# 8б. Подсказка ДЕЙСТВИТЕЛЬНО переносится — это меряется, а не выводится из формы вызова.
+#
+# Четыре предыдущих захода чинили форму и были зелёными; на пятый раз владелец прислал шесть
+# вкладок с обрезанным текстом. Замер показал, что подсказка просила 1702 точки при выданных 420 и
+# не меняла высоту при сужении вовсе. Поэтому гейт спрашивает результат у самого компонента.
+echo "  подсказка настроек: перенос проверяется замером"
+(cd "$root" && ./bazel.cmd test //vibe-plugins/vibe-agent:vibe-agent_test --test_filter=SettingsHintWidth >/dev/null 2>&1) || {
+  echo "ОШИБКА: подсказка настроек не переносится по ширине — страница обрежет текст по правому краю"
+  echo "  Прогоните: ./bazel.cmd test //vibe-plugins/vibe-agent:vibe-agent_test --test_filter=SettingsHintWidth"
+  status=1
+}
 
 # 9. Идентификаторы панелей: только ASCII и только из VibeToolWindows.
 #    Идентификатор уезжает в .idea/workspace.xml и в раскладку окон — русская буква там ломается

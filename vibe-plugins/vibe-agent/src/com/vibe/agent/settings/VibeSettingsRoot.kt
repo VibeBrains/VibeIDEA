@@ -20,7 +20,7 @@ class VibeSettingsRoot : Configurable {
    */
   override fun createComponent(): JComponent = SettingsUi.page(
     FormBuilder.createFormBuilder()
-      .addComponent(JBLabel(t("settings.root.html")))
+      .addComponent(SettingsUi.hint(t("settings.root.html")))
       .addComponentFillVertically(JPanel(), 0)
       .panel.apply { border = JBUI.Borders.empty(8) }
   )

@@ -1,0 +1,208 @@
+// Copyright 2026 VibeBrains. Use of this source code is governed by the Apache 2.0 license.
+package com.vibe.agent.settings
+
+import com.intellij.ide.ui.LafManager
+import com.intellij.ide.ui.laf.UIThemeLookAndFeelInfo
+import com.intellij.openapi.options.Configurable
+import com.intellij.openapi.ui.ComboBox
+import com.intellij.ui.JBColor
+import com.intellij.ui.components.JBLabel
+import com.intellij.util.ui.FormBuilder
+import com.intellij.util.ui.JBFont
+import com.intellij.util.ui.JBUI
+import com.vibe.agent.i18n.VibeI18n.t
+import java.awt.Dimension
+import java.awt.FlowLayout
+import java.awt.Graphics
+import java.awt.GridLayout
+import javax.swing.ButtonGroup
+import javax.swing.JButton
+import javax.swing.JComponent
+import javax.swing.JPanel
+import javax.swing.JRadioButton
+
+/**
+ * Settings → Tools → VibeIDEA → Оформление: наши темы там, где их ищут.
+ *
+ * До 19.09.2026 семь тем жили единственным местом — платформенным списком Appearance, вперемешку с
+ * базовыми, без признака «наша» и без образца палитры. Владелец их попросту не нашёл, и это
+ * справедливо: продукт, который везёт свои темы, обязан показывать их у себя, а не рассчитывать,
+ * что человек опознает их по имени в чужом списке.
+ *
+ * Палитра берётся у самой платформы (`describe().colorPalette`), а не дублируется здесь: копия
+ * цветов разошлась бы с темой молча, а показывать образец, который врёт, хуже, чем не показывать
+ * ничего.
+ */
+class VibeAppearanceConfigurable : Configurable {
+  private var group: ButtonGroup? = null
+  private var chosen: UIThemeLookAndFeelInfo? = null
+  private var applied: UIThemeLookAndFeelInfo? = null
+  private var day: ComboBox<ThemeItem>? = null
+  private var night: ComboBox<ThemeItem>? = null
+  private var initialDay: String? = null
+  private var initialNight: String? = null
+
+  /** Обёртка ради подписи в выпадающем списке: сам `UIThemeLookAndFeelInfo` показывает класс. */
+  private class ThemeItem(val info: UIThemeLookAndFeelInfo) {
+    override fun toString(): String = info.name
+  }
+
+  override fun getDisplayName(): String = t("settings.appearance.title")
+
+  override fun createComponent(): JComponent {
+    val manager = LafManager.getInstance()
+    applied = manager.currentUIThemeLookAndFeel
+    chosen = applied
+    val themes = manager.installedThemes.toList()
+    val ours = themes.filter { isOurs(it) }
+    val rest = themes.filterNot { isOurs(it) }
+
+    val buttons = ButtonGroup().also { group = it }
+    val list = JPanel(GridLayout(0, 1, 0, JBUI.scale(2)))
+    (ours + rest).forEach { list.add(themeRow(it, buttons)) }
+
+    val builder = FormBuilder.createFormBuilder()
+      .addComponent(SettingsUi.section(t("settings.appearance.themes")))
+      .addComponent(SettingsUi.hint(t("settings.appearance.themesHint")))
+      .addComponent(list)
+      .addComponent(SettingsUi.section(t("settings.appearance.dayNight")))
+      .addComponent(SettingsUi.hint(t("settings.appearance.dayNightHint")))
+
+    val items = themes.map { ThemeItem(it) }
+    val dayCombo = ComboBox(items.filter { !it.info.isDark }.toTypedArray()).also { day = it }
+    val nightCombo = ComboBox(items.filter { it.info.isDark }.toTypedArray()).also { night = it }
+    // Ночную тему платформа отдаёт (`getPreferredDarkThemeId`), дневную — нет: поле приватное, и
+    // публичного геттера у `LafManager` не существует. Поэтому дневная показывается от нынешней
+    // темы, если она светлая, а изменённость считается от того, что человек увидел при открытии,
+    // — а не от значения, которого нам не дают.
+    select(nightCombo, manager.preferredDarkThemeId)
+    manager.currentUIThemeLookAndFeel?.takeIf { !it.isDark }?.let { select(dayCombo, it.id) }
+    initialDay = (dayCombo.selectedItem as? ThemeItem)?.info?.id
+    initialNight = (nightCombo.selectedItem as? ThemeItem)?.info?.id
+
+    val switch = JButton(t("settings.appearance.switchNow")).apply {
+      addActionListener { switchNow(dayCombo, nightCombo) }
+    }
+    builder.addLabeledComponent(t("settings.appearance.day"), dayCombo)
+    builder.addLabeledComponent(t("settings.appearance.night"), nightCombo)
+    builder.addComponent(JPanel(FlowLayout(FlowLayout.LEFT, 0, 0)).apply { add(switch) })
+
+    return SettingsUi.page(builder.panel)
+  }
+
+  private fun themeRow(info: UIThemeLookAndFeelInfo, buttons: ButtonGroup): JComponent {
+    val radio = JRadioButton(info.name, info.id == applied?.id).apply {
+      addActionListener { chosen = info }
+    }
+    buttons.add(radio)
+    val row = JPanel(FlowLayout(FlowLayout.LEFT, JBUI.scale(6), 0)).apply {
+      isOpaque = false
+      add(radio)
+    }
+    if (isOurs(info)) {
+      row.add(JBLabel(t("settings.appearance.ours")).apply {
+        foreground = JBColor.GRAY
+        font = JBFont.label().deriveFont(JBFont.label().size2D - 1f)
+      })
+    }
+    swatches(info).forEach { row.add(it) }
+    return row
+  }
+
+  /**
+   * Образцы палитры темы — по ним её узнают быстрее, чем по имени.
+   *
+   * Цвета спрашиваются у платформы, а не у наших файлов: тема может быть и чужой, а описание у всех
+   * одно. Нет палитры — нет и кружков, вместо выдумывания цвета.
+   */
+  private fun swatches(info: UIThemeLookAndFeelInfo): List<JComponent> {
+    val palette = runCatching { info.describe().colorPalette }.getOrNull().orEmpty()
+    return SWATCH_KEYS.mapNotNull { key -> palette[key]?.let { parse(it) } }.map { Swatch(it) }
+  }
+
+  private class Swatch(private val color: JBColor) : JComponent() {
+    init {
+      val size = JBUI.scale(10)
+      preferredSize = Dimension(size, size)
+      minimumSize = preferredSize
+    }
+
+    override fun paintComponent(g: Graphics) {
+      g.color = color
+      g.fillOval(0, 0, width - 1, height - 1)
+    }
+  }
+
+  private fun parse(value: String): JBColor? {
+    val hex = value.removePrefix("#").takeIf { it.length == 6 } ?: return null
+    val rgb = hex.toIntOrNull(16) ?: return null
+    return JBColor(java.awt.Color(rgb), java.awt.Color(rgb))
+  }
+
+  private fun select(combo: ComboBox<ThemeItem>, id: String?) {
+    if (id == null) return
+    for (index in 0 until combo.itemCount) {
+      if (combo.getItemAt(index).info.id == id) {
+        combo.selectedIndex = index
+        return
+      }
+    }
+  }
+
+  /**
+   * Переключить сейчас: на ту из пары, которой сейчас НЕ стоит.
+   *
+   * Кнопка отвечает на единственный вопрос, ради которого пару и заводят: «сделай светло» или
+   * «сделай темно» одним нажатием, не выбирая тему из списка заново.
+   */
+  private fun switchNow(dayCombo: ComboBox<ThemeItem>, nightCombo: ComboBox<ThemeItem>) {
+    val manager = LafManager.getInstance()
+    val target = if (manager.currentUIThemeLookAndFeel?.isDark == true) {
+      dayCombo.selectedItem as? ThemeItem
+    } else {
+      nightCombo.selectedItem as? ThemeItem
+    }
+    target?.info?.let { apply(it) }
+  }
+
+  private fun apply(info: UIThemeLookAndFeelInfo) {
+    val manager = LafManager.getInstance()
+    manager.setCurrentLookAndFeel(info, false)
+    manager.updateUI()
+    applied = info
+    chosen = info
+  }
+
+  override fun isModified(): Boolean =
+    chosen?.id != applied?.id ||
+    (day?.selectedItem as? ThemeItem)?.info?.id != initialDay ||
+    (night?.selectedItem as? ThemeItem)?.info?.id != initialNight
+
+  override fun apply() {
+    val manager = LafManager.getInstance()
+    (day?.selectedItem as? ThemeItem)?.let { manager.setPreferredLightLaf(it.info); initialDay = it.info.id }
+    (night?.selectedItem as? ThemeItem)?.let { manager.setPreferredDarkLaf(it.info); initialNight = it.info.id }
+    chosen?.takeIf { it.id != applied?.id }?.let { apply(it) }
+  }
+
+  override fun reset() {
+    val manager = LafManager.getInstance()
+    applied = manager.currentUIThemeLookAndFeel
+    chosen = applied
+  }
+
+  private companion object {
+    /**
+     * Ключи палитры для кружков — в том порядке, в каком их читает глаз: акцент, тёплый, холодный,
+     * фон. Имена наши; у чужой темы их нет, и кружков тоже не будет.
+     */
+    val SWATCH_KEYS = listOf("Accent", "Warm", "Cool", "PanelBg")
+
+    /**
+     * Наша тема — по префиксу идентификатора, который мы сами и назначаем в `themeProvider`.
+     * Проверять по загрузчику классов надёжнее ровно до первого раза, когда тему вынесут в свой
+     * плагин; префикс переживает и это.
+     */
+    fun isOurs(info: UIThemeLookAndFeelInfo): Boolean = info.id.startsWith("Vibe")
+  }
+}

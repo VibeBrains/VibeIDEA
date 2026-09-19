@@ -167,6 +167,15 @@
         "waiting": "#7eacb4",
         "error": "#ad6a5c"
       }
-    }
+    },
+    "RecentProject.Color1.MainToolbarGradientStart": "#4F2E27",
+    "RecentProject.Color2.MainToolbarGradientStart": "#4F3227",
+    "RecentProject.Color3.MainToolbarGradientStart": "#4F3727",
+    "RecentProject.Color4.MainToolbarGradientStart": "#4F3B27",
+    "RecentProject.Color5.MainToolbarGradientStart": "#4F3F27",
+    "RecentProject.Color6.MainToolbarGradientStart": "#4F4327",
+    "RecentProject.Color7.MainToolbarGradientStart": "#4F4727",
+    "RecentProject.Color8.MainToolbarGradientStart": "#4F4C27",
+    "RecentProject.Color9.MainToolbarGradientStart": "#4D4F27"
   }
 }

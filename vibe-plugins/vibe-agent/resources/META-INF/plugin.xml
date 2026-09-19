@@ -62,6 +62,7 @@
     <applicationConfigurable parentId="com.vibe.settings" displayName="Агент" id="com.vibe.agent.behavior" instance="com.vibe.agent.settings.VibeAgentConfigurable"/>
     <applicationConfigurable parentId="com.vibe.settings" displayName="Чат" id="com.vibe.agent.chat" instance="com.vibe.agent.settings.VibeChatConfigurable"/>
     <applicationConfigurable parentId="com.vibe.settings" displayName="Интерфейс" id="com.vibe.agent.ui" instance="com.vibe.agent.settings.VibeUiConfigurable"/>
+    <applicationConfigurable parentId="com.vibe.settings" displayName="Оформление" id="com.vibe.agent.appearance" instance="com.vibe.agent.settings.VibeAppearanceConfigurable"/>
     <!-- Толщину читает пропатченный JBScrollBar платформы (см. FORK_CHANGES.md): платформа не может
          зависеть от плагина, поэтому мостом служит Registry, а ключ объявляем здесь. -->
     <registryKey key="vibe.scrollbar.thickness" defaultValue="4" restartRequired="false"

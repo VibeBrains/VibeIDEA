@@ -48,7 +48,7 @@ class VibeModelsConfigurable(private val project: Project) : Configurable, Confi
     val header: JBLabel,
     val body: JPanel,
     val container: JPanel,
-    val filteredOutHint: JBLabel,
+    val filteredOutHint: javax.swing.JComponent,
     val statusHint: JBLabel,
   ) {
     var expanded = false // manual state; searching temporarily force-expands matching groups
@@ -152,10 +152,7 @@ class VibeModelsConfigurable(private val project: Project) : Configurable, Confi
         }, BorderLayout.NORTH)
         add(body, BorderLayout.CENTER)
       }
-      val filteredOutHint = JBLabel(t("settings.models.allHidden")).apply {
-        foreground = com.intellij.ui.JBColor.GRAY
-        isVisible = false
-      }
+      val filteredOutHint = SettingsUi.hint(t("settings.models.allHidden")).apply { isVisible = false }
       val statusHint = JBLabel().apply { foreground = com.intellij.ui.JBColor.GRAY; isVisible = false }
       val group = Group(p.id, p.name, header, body, container, filteredOutHint, statusHint)
       header.addMouseListener(object : MouseAdapter() {

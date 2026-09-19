@@ -67,13 +67,12 @@ class VibeProvidersConfigurable(private val project: Project) : Configurable, Co
         ProviderOrigin.OVERRIDDEN -> t("settings.providers.originOverridden")
         else -> t("settings.providers.originGlobal")
       }
-      val hint = JBLabel(t("settings.providers.hint", "origin" to originLabel, "id" to p.id,
-                            "env" to (p.apiKeyEnv?.let { " · env: <code>$it</code>" } ?: ""))).apply {
+      // Та же форма, что на всех страницах: перенос по ширине проверен замером, а не на глаз
+      // (SettingsHintWidthTest). Прежний `JBLabel` с `setAllowAutoWrapping` просил ширину всей
+      // фразы в одну строку — так уезжали шесть вкладок подряд 19.09.2026.
+      val hint = SettingsUi.hint(t("settings.providers.hint", "origin" to originLabel, "id" to p.id,
+                                   "env" to (p.apiKeyEnv?.let { " · env: <code>$it</code>" } ?: ""))).apply {
         font = com.intellij.util.ui.JBFont.label().deriveFont(11f)
-        foreground = com.intellij.ui.JBColor.GRAY
-        // Long html text must wrap to the card width, not dictate it.
-        setAllowAutoWrapping(true)
-        minimumSize = Dimension(0, 0)
       }
       val card = JPanel(BorderLayout(0, JBUI.scale(4))).apply {
         border = IdeBorderFactory.createTitledBorder(p.name, false)

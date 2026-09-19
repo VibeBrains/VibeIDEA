@@ -312,7 +312,12 @@ public class DarculaJBPopupComboPopup<T> implements ComboPopup, ComboBoxPopup.Co
 
   protected ComboBoxPopup<T> createPopup(@Nullable T selectedItem) {
     ComboBoxPopup<T> popup = new ComboBoxPopup<>(this, selectedItem, value -> {
-      if (value == myComboBox.getSelectedItem()) {
+      // VibeIDEA: только у редактируемого списка. У нередактируемого редактор всё равно ничего не
+      // показывает, зато на macOS он бывает Aqua-шный (AquaCustomComboTextField), и его setText
+      // дёргает AquaComboBoxUI.editorTextChanged, который разыменовывает СВОЙ popup — а popup здесь
+      // наш, и поле у Aqua пустое. Итог — NullPointerException при повторном выборе уже выбранного
+      // пункта; поймано владельцем в диалоге настроек 19.09.2026. Запись в FORK_CHANGES.md.
+      if (value == myComboBox.getSelectedItem() && myComboBox.isEditable()) {
         myComboBox.getEditor().setItem(value);
       }
       myComboBox.setSelectedItem(value);

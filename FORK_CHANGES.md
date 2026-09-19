@@ -48,6 +48,11 @@
 **Изменено:** `getTrackSizePx`, `getThumbPaddingPx`, `getThumbRadiusPx` при `JBScrollBar.vibeScrollBarThickness() > 0` возвращают толщину из настройки, нулевой отступ и половину толщины; при `0` — штатные 14 / 3 / 7. Комментарии-маркеры `[VibeIDEA]`.
 **При синке:** конфликт вероятен только если апстрим сам правит эти три метода — проверять `./vibe-plugins/tools/checkVibeUi.sh`.
 
+### platform/platform-impl/src/com/intellij/ide/ui/laf/darcula/ui/DarculaJBPopupComboPopup.java
+**Причина:** настоящий баг, а не вкус — `NullPointerException` при выборе в выпадающем списке диалога настроек на macOS (поймано владельцем 19.09.2026). `createPopup` при повторном выборе уже выбранного пункта звал `myComboBox.getEditor().setItem(value)` **не спрашивая, редактируемый ли список**. У нередактируемого редактор ничего не показывает, зато на macOS им бывает `AquaCustomComboTextField`: его `setText` дёргает `AquaComboBoxUI.editorTextChanged`, тот разыменовывает СВОЙ `popup` — а popup здесь наш, `DarculaJBPopupComboPopup`, и поле у Aqua пустое.
+**Изменено:** условие дополнено проверкой `myComboBox.isEditable()`. У редактируемого списка поведение прежнее; у нередактируемого вызов был бесполезен и теперь не делается.
+**Кандидат на отправку в апстрим:** правка общая, не продуктовая.
+
 ### Добавлено для Фазы 2 (языки)
 - `vibe-plugins/vibe-lsp/` — плагин `com.vibe.lsp`: vtsls (TS) + Phpactor (PHP) через LSP4IJ (optional depends). **Причина:** плагины PhpStorm/WebStorm закрыты; LSP — лицензионно чистый путь.
 - `vibe-plugins/deps/` — пиненная загрузка LSP4IJ 0.20.2 с GitHub releases (sha256), раскладывается в `plugins/lsp4ij/` на сборке.

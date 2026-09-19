@@ -2,7 +2,6 @@
 package com.vibe.agent.settings
 
 import com.intellij.ui.JBColor
-import com.intellij.ui.components.JBLabel
 import com.intellij.util.ui.JBUI
 import javax.swing.JComponent
 import javax.swing.JScrollPane
@@ -49,12 +48,5 @@ object SettingsUi {
    * [text] — как он лежит в каталоге строк, без обрамляющего `<html>`: тег добавляется здесь, иначе
    * о нём забывают ровно в той строке, которая потом и ломает страницу.
    */
-  fun hint(text: String): JComponent = JBLabel("<html>$text</html>").apply {
-    foreground = JBColor.GRAY
-    setCopyable(true)
-    setAllowAutoWrapping(true)
-    // Минимум в ноль — вторая половина того же правила: с ненулевым минимумом окно не сожмётся
-    // ниже него, и полоса прокрутки вернулась бы, сколько бы вид ни следовал за шириной.
-    minimumSize = java.awt.Dimension(0, 0)
-  }
+  fun hint(text: String): JComponent = WrappingHint("<html>$text</html>")
 }
