@@ -1742,6 +1742,7 @@
   "settings.appearance.dayNightHint": "Пара тем, между которыми переключается IDE: светлая днём, тёмная ночью. Кнопка ниже переключает на ту из двух, которая сейчас не стоит.",
   "settings.appearance.night": "Ночью:",
   "settings.appearance.ours": "наша",
+  "settings.appearance.platform": "Базовые темы платформы",
   "settings.appearance.switchNow": "Переключить сейчас",
   "settings.appearance.themes": "Тема оформления",
   "settings.appearance.themesHint": "Темы, которые поставляются с VibeIDEA, и базовые темы платформы. Наши помечены и показаны с образцами палитры — по кружкам тема узнаётся быстрее, чем по имени. Выбор применяется по кнопке «Применить».",

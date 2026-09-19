@@ -58,8 +58,23 @@ class VibeAppearanceConfigurable : Configurable {
     val rest = themes.filterNot { isOurs(it) }
 
     val buttons = ButtonGroup().also { group = it }
-    val list = JPanel(GridLayout(0, 1, 0, JBUI.scale(2)))
-    (ours + rest).forEach { list.add(themeRow(it, buttons)) }
+    // Список в рамке с отступами, а не голый столбец переключателей: у страницы должно быть видно,
+    // где кончается выбор темы и начинается остальное. Наши темы идут первыми и помечены, базовые —
+    // после подписи, чтобы не приходилось опознавать их по имени.
+    val list = JPanel(GridLayout(0, 1, 0, JBUI.scale(2))).apply {
+      border = JBUI.Borders.compound(
+        JBUI.Borders.customLine(JBColor.border(), 1),
+        JBUI.Borders.empty(6, 8),
+      )
+    }
+    ours.forEach { list.add(themeRow(it, buttons)) }
+    if (rest.isNotEmpty()) {
+      list.add(JBLabel(t("settings.appearance.platform")).apply {
+        foreground = JBColor.GRAY
+        border = JBUI.Borders.emptyTop(6)
+      })
+      rest.forEach { list.add(themeRow(it, buttons)) }
+    }
 
     val builder = FormBuilder.createFormBuilder()
       .addComponent(SettingsUi.section(t("settings.appearance.themes")))
@@ -116,8 +131,11 @@ class VibeAppearanceConfigurable : Configurable {
    * одно. Нет палитры — нет и кружков, вместо выдумывания цвета.
    */
   private fun swatches(info: UIThemeLookAndFeelInfo): List<JComponent> {
-    val palette = runCatching { info.describe().colorPalette }.getOrNull().orEmpty()
-    return SWATCH_KEYS.mapNotNull { key -> palette[key]?.let { parse(it) } }.map { Swatch(it) }
+    // `colors`, а не `colorPalette`: второе — палитра ЗНАЧКОВ (`icons["ColorPalette"]` темы), и на
+    // наших темах она пуста, отчего кружков не было вовсе (проверено на живой 0.6.15). Цвета самой
+    // темы платформа отдаёт целыми числами в `colors` — это и есть секция `colors` её json.
+    val colors = runCatching { info.describe().colors }.getOrNull().orEmpty()
+    return SWATCH_KEYS.mapNotNull { key -> colors[key] }.map { Swatch(JBColor(java.awt.Color(it), java.awt.Color(it))) }
   }
 
   private class Swatch(private val color: JBColor) : JComponent() {
@@ -131,12 +149,6 @@ class VibeAppearanceConfigurable : Configurable {
       g.color = color
       g.fillOval(0, 0, width - 1, height - 1)
     }
-  }
-
-  private fun parse(value: String): JBColor? {
-    val hex = value.removePrefix("#").takeIf { it.length == 6 } ?: return null
-    val rgb = hex.toIntOrNull(16) ?: return null
-    return JBColor(java.awt.Color(rgb), java.awt.Color(rgb))
   }
 
   private fun select(combo: ComboBox<ThemeItem>, id: String?) {

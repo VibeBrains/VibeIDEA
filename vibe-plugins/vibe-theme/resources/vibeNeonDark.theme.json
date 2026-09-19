@@ -11,7 +11,10 @@
     "NeonPurple": "#9D5CFF",
     "DeepBg": "#16171B",
     "PanelBg": "#1E1F24",
-    "SelBg": "#28324A"
+    "SelBg": "#28324A",
+    "Accent": "#00E5FF",
+    "Warm": "#FF2E97",
+    "Cool": "#9D5CFF"
   },
   "ui": {
     "*": {
@@ -168,14 +171,14 @@
         "error": "#FF6B5A"
       }
     },
-    "RecentProject.Color1.MainToolbarGradientStart": "#2C5958",
-    "RecentProject.Color2.MainToolbarGradientStart": "#2C5559",
-    "RecentProject.Color3.MainToolbarGradientStart": "#2C5059",
-    "RecentProject.Color4.MainToolbarGradientStart": "#2C4C59",
-    "RecentProject.Color5.MainToolbarGradientStart": "#2C4759",
-    "RecentProject.Color6.MainToolbarGradientStart": "#2C4259",
-    "RecentProject.Color7.MainToolbarGradientStart": "#2C3D59",
-    "RecentProject.Color8.MainToolbarGradientStart": "#2C3959",
-    "RecentProject.Color9.MainToolbarGradientStart": "#2C3459"
+    "RecentProject.Color1.MainToolbarGradientStart": "#2C594A",
+    "RecentProject.Color2.MainToolbarGradientStart": "#2C594F",
+    "RecentProject.Color3.MainToolbarGradientStart": "#2C5954",
+    "RecentProject.Color4.MainToolbarGradientStart": "#2C5959",
+    "RecentProject.Color5.MainToolbarGradientStart": "#2C5459",
+    "RecentProject.Color6.MainToolbarGradientStart": "#2C4F59",
+    "RecentProject.Color7.MainToolbarGradientStart": "#2C4B59",
+    "RecentProject.Color8.MainToolbarGradientStart": "#2C4659",
+    "RecentProject.Color9.MainToolbarGradientStart": "#2C4159"
   }
 }

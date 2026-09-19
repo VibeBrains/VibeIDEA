@@ -276,6 +276,38 @@ echo "  подсказка настроек: перенос проверяетс
   status=1
 }
 
+# 8в. Кружки палитры на странице «Оформление» действительно будут нарисованы.
+#
+# Страница берёт цвета у платформы по именам из SWATCH_KEYS. Тема, не объявившая такое имя, даёт
+# молча пустую строку без кружков — и это не видно ниоткуда, кроме глаза: ни тест, ни компиляция
+# про имена в чужом json не знают. На 0.6.15 кружков не было вовсе, потому что цвета читались из
+# `colorPalette` (палитра ЗНАЧКОВ), а не из `colors`.
+"$PYTHON" - "$root" <<'PYSWATCH' || status=1
+import glob, io, json, os, re, sys
+root = sys.argv[1]
+page = os.path.join(root, 'vibe-plugins/vibe-agent/src/com/vibe/agent/settings/VibeAppearanceConfigurable.kt')
+text = io.open(page, encoding='utf-8').read()
+match = re.search(r'SWATCH_KEYS\s*=\s*listOf\(([^)]*)\)', text)
+if not match:
+    print('ОШИБКА: в VibeAppearanceConfigurable не найден список SWATCH_KEYS')
+    sys.exit(1)
+keys = re.findall(r'"([^"]+)"', match.group(1))
+bad = []
+for path in sorted(glob.glob(os.path.join(root, 'vibe-plugins/vibe-theme/resources/vibe*.theme.json'))):
+    colors = json.load(io.open(path, encoding='utf-8')).get('colors', {})
+    missing = [k for k in keys if k not in colors]
+    if missing:
+        bad.append((os.path.basename(path), missing))
+if bad:
+    print('ОШИБКА: тема не объявляет цвета, по которым страница «Оформление» рисует кружки палитры:')
+    for name, missing in bad:
+        print('    %s — нет %s' % (name, ', '.join(missing)))
+    print('  Либо добавьте цвет в тему, либо уберите имя из SWATCH_KEYS — пустой ряд кружков ничего не говорит')
+    sys.exit(1)
+print('  кружки палитры: все %d тем объявляют %s' % (
+    len(glob.glob(os.path.join(root, 'vibe-plugins/vibe-theme/resources/vibe*.theme.json'))), ', '.join(keys)))
+PYSWATCH
+
 # 9. Идентификаторы панелей: только ASCII и только из VibeToolWindows.
 #    Идентификатор уезжает в .idea/workspace.xml и в раскладку окон — русская буква там ломается
 #    при смене кодировки, а литерал, написанный руками в пятом файле, однажды разойдётся с XML.

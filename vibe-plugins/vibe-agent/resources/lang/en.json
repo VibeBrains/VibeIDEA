@@ -1742,6 +1742,7 @@
   "settings.appearance.dayNightHint": "The pair the IDE switches between: light by day, dark by night. The button below switches to whichever of the two is not current.",
   "settings.appearance.night": "By night:",
   "settings.appearance.ours": "ours",
+  "settings.appearance.platform": "Platform's own themes",
   "settings.appearance.switchNow": "Switch now",
   "settings.appearance.themes": "Theme",
   "settings.appearance.themesHint": "Themes shipped with VibeIDEA and the platform's own. Ours are marked and shown with palette swatches — the dots identify a theme faster than its name does. The choice is applied with Apply.",

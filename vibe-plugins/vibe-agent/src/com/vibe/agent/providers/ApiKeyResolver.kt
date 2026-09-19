@@ -25,6 +25,28 @@ object ApiKeyResolver {
   }
 
   /**
+   * Записать ключ ЗАНОВО — с удалением прежней записи, а не поверх неё.
+   *
+   * Разница не косметическая, и стоила она владельцу недели вопросов пароля. Связка ключей держит
+   * список доступа У КАЖДОЙ ЗАПИСИ и заполняет его при СОЗДАНИИ записи. Платформа на macOS, найдя
+   * существующую запись, зовёт `SecKeychainItemModifyContent` — правку на месте
+   * (`platform/credential-store-impl/src/credentialStore/macOsKeychainLibrary.kt`), а правка на
+   * месте список доступа не трогает. Поэтому «прочитать и записать обратно» оставляло владельцем
+   * записи ТО САМОЕ старое приложение, и связка продолжала спрашивать пароль при каждом чтении —
+   * сколько бы раз мы ни «переписывали».
+   *
+   * Удаление уводит платформу в другую ветку того же метода (`SecKeychainItemDelete`), и следующая
+   * запись создаётся заново — `SecKeychainAddGenericPassword`, список доступа наш.
+   *
+   * Найдено 19.09.2026 по коду платформы, после того как владелец сообщил, что вопросы вернулись
+   * после действия, которое должно было их убрать.
+   */
+  fun restoreKey(provider: ProviderEntry, key: String) {
+    storeKey(provider, null)
+    storeKey(provider, key)
+  }
+
+  /**
    * The key of this provider, or null when there is none.
    *
    * Blank is NOT a key, at any of the three sources. An empty `ZAI_API_KEY=` in `.vibe/.env` used to
