@@ -70,6 +70,23 @@ class LspDefinitionCacheTest {
                  cache.answer(LspDefinitionCache.Key("file:///a.ts", 0), stamp = 1))
   }
 
+  /**
+   * Цели живут ровно столько же, сколько ответ.
+   *
+   * Иначе получится худшее из возможного: подчёркивание пропало (ответ протух), а переход ведёт по
+   * старым координатам — то есть в случайное место файла.
+   */
+  @Test
+  fun `цели протухают вместе с ответом`() {
+    var clock = 0L
+    val cache = LspDefinitionCache(ttlMs = 100, now = { clock })
+    val target = LspDefinitionCache.Target("file:///b.ts", line = 10, character = 4)
+    cache.put(key, stamp = 1, answer = LspDefinitionCache.Answer.RESOLVED, targets = listOf(target))
+    assertEquals(listOf(target), cache.targets(key, stamp = 1))
+    clock = 101
+    assertTrue(cache.targets(key, stamp = 1).isEmpty())
+  }
+
   @Test
   fun `закрытый файл забывается целиком`() {
     val cache = LspDefinitionCache()

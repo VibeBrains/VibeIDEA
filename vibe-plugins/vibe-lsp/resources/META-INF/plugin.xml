@@ -38,6 +38,12 @@
     <fileBasedIndex implementation="com.vibe.lsp.extjs.ExtMemberIndexExtension"/>
     <fileBasedIndex implementation="com.vibe.lsp.extjs.ExtEventIndexExtension"/>
     <gotoDeclarationHandler implementation="com.vibe.lsp.extjs.ExtGotoDeclarationHandler"/>
+    <!-- Точная навигация: подчёркиваем только то, что сервер действительно резолвит.
+         Первым — как и наш ElementDescriptionProvider: обработчик LSP4IJ отвечает на что угодно,
+         и встать после него значит не ответить никогда. Выключена ключом реестра по умолчанию. -->
+    <gotoDeclarationHandler order="first" implementation="com.vibe.lsp.nav.VibeLspGotoDeclarationHandler"/>
+    <registryKey key="vibe.lsp.precise.navigation" defaultValue="false"
+                 description="VibeIDEA: подчёркивать под курсором только то, что языковой сервер резолвит (опытный режим)"/>
   </extensions>
 
   <projectListeners>

@@ -21,6 +21,14 @@ class LspDefinitionCache(
   private val ttlMs: Long = DEFAULT_TTL_MS,
   private val now: () -> Long = System::currentTimeMillis,
 ) {
+  /**
+   * Куда ведёт переход.
+   *
+   * Свой тип, а не тип LSP4J: кэш остаётся чистым и проверяется тестом без платформы, а перевод
+   * из протокольных типов делается один раз, на границе.
+   */
+  data class Target(val uri: String, val line: Int, val character: Int)
+
   /** Ответ про позицию. */
   enum class Answer {
     /** Сервер сказал, что объявление есть. */
@@ -33,7 +41,7 @@ class LspDefinitionCache(
     UNKNOWN,
   }
 
-  private data class Entry(val answer: Answer, val at: Long, val stamp: Long)
+  private data class Entry(val answer: Answer, val targets: List<Target>, val at: Long, val stamp: Long)
 
   /**
    * Позиция в файле.
@@ -47,20 +55,26 @@ class LspDefinitionCache(
   private val asked = HashSet<Key>()
 
   @Synchronized
-  fun answer(key: Key, stamp: Long): Answer {
-    val entry = entries[key] ?: return Answer.UNKNOWN
+  fun answer(key: Key, stamp: Long): Answer = live(key, stamp)?.answer ?: Answer.UNKNOWN
+
+  /** Цели перехода, если ответ есть и он свежий. Пусто — и «не знаем», и «некуда»: решает [answer]. */
+  @Synchronized
+  fun targets(key: Key, stamp: Long): List<Target> = live(key, stamp)?.targets.orEmpty()
+
+  private fun live(key: Key, stamp: Long): Entry? {
+    val entry = entries[key] ?: return null
     if (entry.stamp != stamp || now() - entry.at > ttlMs) {
       entries.remove(key)
-      return Answer.UNKNOWN
+      return null
     }
-    return entry.answer
+    return entry
   }
 
   /** Запомнить ответ сервера. */
   @Synchronized
-  fun put(key: Key, stamp: Long, answer: Answer) {
+  fun put(key: Key, stamp: Long, answer: Answer, targets: List<Target> = emptyList()) {
     if (answer == Answer.UNKNOWN) return
-    entries[key] = Entry(answer, now(), stamp)
+    entries[key] = Entry(answer, targets, now(), stamp)
     asked.remove(key)
     while (entries.size > capacity) {
       val oldest = entries.keys.firstOrNull() ?: break

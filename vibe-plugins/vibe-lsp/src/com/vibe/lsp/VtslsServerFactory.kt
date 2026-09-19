@@ -6,9 +6,11 @@ import com.google.gson.JsonObject
 import com.google.gson.JsonPrimitive
 import com.intellij.openapi.project.Project
 import com.redhat.devtools.lsp4ij.LanguageServerFactory
+import com.redhat.devtools.lsp4ij.client.features.LSPClientFeatures
 import com.redhat.devtools.lsp4ij.client.LanguageClientImpl
 import com.redhat.devtools.lsp4ij.server.ProcessStreamConnectionProvider
 import com.redhat.devtools.lsp4ij.server.StreamConnectionProvider
+import com.vibe.lsp.nav.PreciseNavigation
 
 /**
  * The TypeScript server: the project's own TypeScript 7 in LSP mode when it has one, the bundled vtsls
@@ -24,6 +26,11 @@ class VtslsServerFactory : LanguageServerFactory {
   }
 
   override fun createLanguageClient(project: Project): LanguageClientImpl = VtslsLanguageClient(project)
+
+  // Точная навигация заменяет переход LSP4IJ, и его надо выключить: пока их обработчик
+  // отвечает «да» на весь файл, наша точность ничего не изменит. Ключ реестра выключен
+  // по умолчанию, поэтому без него поведение прежнее.
+  override fun createClientFeatures(): LSPClientFeatures = PreciseNavigation.features()
 }
 
 /**

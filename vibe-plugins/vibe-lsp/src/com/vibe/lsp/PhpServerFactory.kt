@@ -3,8 +3,10 @@ package com.vibe.lsp
 
 import com.intellij.openapi.project.Project
 import com.redhat.devtools.lsp4ij.LanguageServerFactory
+import com.redhat.devtools.lsp4ij.client.features.LSPClientFeatures
 import com.redhat.devtools.lsp4ij.server.ProcessStreamConnectionProvider
 import com.redhat.devtools.lsp4ij.server.StreamConnectionProvider
+import com.vibe.lsp.nav.PreciseNavigation
 
 /**
  * One PHP server entry, two possible engines behind it — see [PhpEngine] for why there are two.
@@ -16,6 +18,11 @@ import com.redhat.devtools.lsp4ij.server.StreamConnectionProvider
 class PhpServerFactory : LanguageServerFactory {
   override fun createConnectionProvider(project: Project): StreamConnectionProvider =
     PhpConnectionProvider(ServerBinaries.phpCommand(), project.basePath)
+
+  // Точная навигация заменяет переход LSP4IJ, и его надо выключить: пока их обработчик
+  // отвечает «да» на весь файл, наша точность ничего не изменит. Ключ реестра выключен
+  // по умолчанию, поэтому без него поведение прежнее.
+  override fun createClientFeatures(): LSPClientFeatures = PreciseNavigation.features()
 }
 
 /**

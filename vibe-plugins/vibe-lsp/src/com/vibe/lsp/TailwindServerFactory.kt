@@ -20,9 +20,11 @@ class TailwindServerFactory : LanguageServerFactory {
   override fun createConnectionProvider(project: Project): StreamConnectionProvider =
     TailwindConnectionProvider(project.basePath)
 
-  override fun createClientFeatures(): LSPClientFeatures = object : LSPClientFeatures() {
-    override fun isEnabled(file: VirtualFile): Boolean = TailwindConfig.isTailwindProject(project?.basePath)
-  }
+  override fun createClientFeatures(): LSPClientFeatures = com.vibe.lsp.nav.PreciseNavigation.install(
+    object : LSPClientFeatures() {
+      override fun isEnabled(file: VirtualFile): Boolean = TailwindConfig.isTailwindProject(project?.basePath)
+    }
+  )
 }
 
 /** Named, not anonymous: the vintage engine cannot name an anonymous subclass and test discovery dies. */

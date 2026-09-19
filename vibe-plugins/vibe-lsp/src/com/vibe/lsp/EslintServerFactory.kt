@@ -37,7 +37,8 @@ class EslintServerFactory : LanguageServerFactory {
 
   override fun createLanguageClient(project: Project): LanguageClientImpl = EslintLanguageClient(project)
 
-  override fun createClientFeatures(): LSPClientFeatures = EslintClientFeatures()
+  override fun createClientFeatures(): LSPClientFeatures =
+    com.vibe.lsp.nav.PreciseNavigation.install(EslintClientFeatures())
 }
 
 private class EslintConnectionProvider(workingDirectory: String?) :
