@@ -36,12 +36,12 @@
     </option>
     <option name="DEFAULT_LINE_COMMENT">
       <value>
-        <option name="FOREGROUND" value="6f7679"/>
+        <option name="FOREGROUND" value="7d8487"/>
       </value>
     </option>
     <option name="DEFAULT_BLOCK_COMMENT">
       <value>
-        <option name="FOREGROUND" value="6f7679"/>
+        <option name="FOREGROUND" value="7d8487"/>
       </value>
     </option>
     <option name="DEFAULT_FUNCTION_DECLARATION">

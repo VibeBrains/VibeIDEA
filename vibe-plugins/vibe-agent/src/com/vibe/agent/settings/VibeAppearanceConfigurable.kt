@@ -39,7 +39,6 @@ import com.intellij.ui.components.JBCheckBox
 class VibeAppearanceConfigurable : Configurable {
   /** Переключатели по id темы: без них список не привести в соответствие с применённой темой. */
   private val radios = LinkedHashMap<String, JRadioButton>()
-  private var chosen: UIThemeLookAndFeelInfo? = null
   private var applied: UIThemeLookAndFeelInfo? = null
 
   /**
@@ -65,7 +64,6 @@ class VibeAppearanceConfigurable : Configurable {
   override fun createComponent(): JComponent {
     val manager = LafManager.getInstance()
     applied = manager.currentUIThemeLookAndFeel
-    chosen = applied
     original = applied
     val themes = manager.installedThemes.toList()
     val ours = themes.filter { isOurs(it) }
@@ -155,10 +153,7 @@ class VibeAppearanceConfigurable : Configurable {
       // результат которой виден только глазами: судить о нём по названию в списке нельзя, и
       // заставлять человека жать «Применить» после каждой пробы значит мешать ему выбирать.
       // «Отмена» и закрытие возвращают прежнюю ([disposeUIResources]).
-      addActionListener {
-        chosen = info
-        if (info.id != applied?.id) apply(info)
-      }
+      addActionListener { if (info.id != applied?.id) apply(info) }
     }
     buttons.add(radio)
     radios[info.id] = radio
@@ -254,7 +249,6 @@ class VibeAppearanceConfigurable : Configurable {
     manager.setCurrentLookAndFeel(info, false)
     manager.updateUI()
     applied = info
-    chosen = info
     // Точка в списке обязана поехать за применённой темой. Без этого «Переключить сейчас» меняет
     // оформление, а страница продолжает показывать прежнюю тему выбранной — и следующий «Применить»
     // возвращает то, от чего человек только что ушёл.
@@ -286,7 +280,6 @@ class VibeAppearanceConfigurable : Configurable {
     val manager = LafManager.getInstance()
     original?.takeIf { it.id != manager.currentUIThemeLookAndFeel?.id }?.let { apply(it) }
     applied = manager.currentUIThemeLookAndFeel
-    chosen = applied
     // Точку тоже: без этого «Сбросить» оставляет выбранной ту тему, от которой человек отказался.
     applied?.id?.let { radios[it]?.isSelected = true }
     day?.let { combo -> initialDay?.let { select(combo, it) } }
