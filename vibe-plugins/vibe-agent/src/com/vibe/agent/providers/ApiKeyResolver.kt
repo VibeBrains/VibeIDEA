@@ -41,10 +41,53 @@ object ApiKeyResolver {
    * Найдено 19.09.2026 по коду платформы, после того как владелец сообщил, что вопросы вернулись
    * после действия, которое должно было их убрать.
    */
-  fun restoreKey(provider: ProviderEntry, key: String) {
+  fun restoreKey(provider: ProviderEntry, key: String): Boolean {
+    val ref = provider.apiKeyRef ?: provider.id
+    // Страховка перед удалением. Между удалением и записью есть окно, и цена падения в нём —
+    // не «неудобство», а потерянный ключ: половина провайдеров показывает его ОДИН раз при
+    // создании, и восстановить его человеку неоткуда. Запасная запись переживает и падение
+    // процесса, и отказ связки: следующий запуск подберёт её сам ([recoverLeftovers]).
+    PasswordSafe.instance.setPassword(attributes(ref + BACKUP_SUFFIX), key)
     storeKey(provider, null)
     storeKey(provider, key)
+    // Читаем обратно, а не верим записи: связка может отказать молча, и «переписано» без проверки
+    // означало бы отчёт о работе, которой не было.
+    val written = storedKey(provider) == key
+    if (written) PasswordSafe.instance.setPassword(attributes(ref + BACKUP_SUFFIX), null)
+    return written
   }
+
+  /**
+   * Вернуть ключи из страховочных записей, оставшихся от прерванной перезаписи.
+   *
+   * Зовётся перед перезаписью: если прошлый заход умер между удалением и записью, ключ лежит в
+   * запасной записи, и человек об этом не знает — он знает только, что провайдер перестал работать.
+   *
+   * @return сколько ключей возвращено
+   */
+  fun recoverLeftovers(providers: List<ProviderEntry>): Int {
+    var recovered = 0
+    providers.forEach { provider ->
+      val ref = provider.apiKeyRef ?: provider.id
+      val backup = runCatching { PasswordSafe.instance.getPassword(attributes(ref + BACKUP_SUFFIX)) }
+        .getOrNull()?.takeIf { it.isNotBlank() } ?: return@forEach
+      if (storedKey(provider) == null) {
+        storeKey(provider, backup)
+        recovered++
+      }
+      PasswordSafe.instance.setPassword(attributes(ref + BACKUP_SUFFIX), null)
+    }
+    return recovered
+  }
+
+  /**
+   * Суффикс страховочной записи. Отдельная запись, а не поле: связка хранит одну строку на ключ.
+   *
+   * По-английски намеренно, и это не про стиль: имя записи — АДРЕС, по которому страховка ищется
+   * при следующем запуске. Переведи его — и после смены языка интерфейса старая страховка станет
+   * недостижимой ровно тогда, когда она нужна.
+   */
+  private const val BACKUP_SUFFIX = " (backup)"
 
   /**
    * The key of this provider, or null when there is none.

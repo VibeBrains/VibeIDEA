@@ -1,9 +1,11 @@
 // Copyright 2026 VibeBrains. Use of this source code is governed by the Apache 2.0 license.
 package com.vibe.agent.settings
 
+import com.intellij.ide.DataManager
 import com.intellij.ide.ui.LafManager
 import com.intellij.ide.ui.laf.UIThemeLookAndFeelInfo
 import com.intellij.openapi.options.Configurable
+import com.intellij.openapi.options.ex.Settings
 import com.intellij.openapi.ui.ComboBox
 import com.intellij.ui.JBColor
 import com.intellij.ui.components.JBLabel
@@ -20,6 +22,7 @@ import javax.swing.JButton
 import javax.swing.JComponent
 import javax.swing.JPanel
 import javax.swing.JRadioButton
+import com.intellij.ui.components.JBCheckBox
 
 /**
  * Settings → Tools → VibeIDEA → Оформление: наши темы там, где их ищут.
@@ -34,7 +37,8 @@ import javax.swing.JRadioButton
  * ничего.
  */
 class VibeAppearanceConfigurable : Configurable {
-  private var group: ButtonGroup? = null
+  /** Переключатели по id темы: без них список не привести в соответствие с применённой темой. */
+  private val radios = LinkedHashMap<String, JRadioButton>()
   private var chosen: UIThemeLookAndFeelInfo? = null
   private var applied: UIThemeLookAndFeelInfo? = null
   private var day: ComboBox<ThemeItem>? = null
@@ -57,7 +61,8 @@ class VibeAppearanceConfigurable : Configurable {
     val ours = themes.filter { isOurs(it) }
     val rest = themes.filterNot { isOurs(it) }
 
-    val buttons = ButtonGroup().also { group = it }
+    radios.clear()
+    val buttons = ButtonGroup()
     // Список в рамке с отступами, а не голый столбец переключателей: у страницы должно быть видно,
     // где кончается выбор темы и начинается остальное. Наши темы идут первыми и помечены, базовые —
     // после подписи, чтобы не приходилось опознавать их по имени.
@@ -98,18 +103,42 @@ class VibeAppearanceConfigurable : Configurable {
     val switch = JButton(t("settings.appearance.switchNow")).apply {
       addActionListener { switchNow(dayCombo, nightCombo) }
     }
+    // Без этого пара «день/ночь» — просто два списка и кнопка: переключать её пришлось бы руками.
+    // Флажок отдаёт решение системе, и тогда пара работает сама. Платформа умеет это не везде —
+    // где не умеет, флажок выключен и объясняет почему.
+    val autodetect = JBCheckBox(t("settings.appearance.syncWithOs"), manager.autodetect).apply {
+      isEnabled = manager.autodetectSupported
+      toolTipText = if (manager.autodetectSupported) null else t("settings.appearance.syncUnsupported")
+      addActionListener { LafManager.getInstance().autodetect = isSelected }
+    }
+    builder.addComponent(autodetect)
     builder.addLabeledComponent(t("settings.appearance.day"), dayCombo)
     builder.addLabeledComponent(t("settings.appearance.night"), nightCombo)
-    builder.addComponent(JPanel(FlowLayout(FlowLayout.LEFT, 0, 0)).apply { add(switch) })
+    val allThemes = JButton(t("settings.appearance.allThemes")).apply {
+      // Темы с площадки ставятся штатной страницей платформы — свою витрину плагинов мы не строим.
+      addActionListener { openPlatformAppearance(it.source as? JComponent) }
+    }
+    builder.addComponent(JPanel(FlowLayout(FlowLayout.LEFT, JBUI.scale(8), 0)).apply {
+      add(switch)
+      add(allThemes)
+    })
 
     return SettingsUi.page(builder.panel)
   }
 
   private fun themeRow(info: UIThemeLookAndFeelInfo, buttons: ButtonGroup): JComponent {
     val radio = JRadioButton(info.name, info.id == applied?.id).apply {
-      addActionListener { chosen = info }
+      // Тема применяется СРАЗУ, а не по «Применить». Выбор оформления — единственная настройка,
+      // результат которой виден только глазами: судить о нём по названию в списке нельзя, и
+      // заставлять человека жать «Применить» после каждой пробы значит мешать ему выбирать.
+      // «Отмена» возвращает прежнюю ([reset]).
+      addActionListener {
+        chosen = info
+        if (info.id != applied?.id) apply(info)
+      }
     }
     buttons.add(radio)
+    radios[info.id] = radio
     val row = JPanel(FlowLayout(FlowLayout.LEFT, JBUI.scale(6), 0)).apply {
       isOpaque = false
       add(radio)
@@ -146,8 +175,16 @@ class VibeAppearanceConfigurable : Configurable {
     }
 
     override fun paintComponent(g: Graphics) {
-      g.color = color
-      g.fillOval(0, 0, width - 1, height - 1)
+      // Сглаживание обязательно: кружок в десять точек без него выходит ступенчатым квадратиком,
+      // и ряд образцов читается как брак, а не как палитра.
+      val g2 = g.create() as java.awt.Graphics2D
+      try {
+        g2.setRenderingHint(java.awt.RenderingHints.KEY_ANTIALIASING, java.awt.RenderingHints.VALUE_ANTIALIAS_ON)
+        g2.color = color
+        g2.fillOval(0, 0, width - 1, height - 1)
+      } finally {
+        g2.dispose()
+      }
     }
   }
 
@@ -177,12 +214,28 @@ class VibeAppearanceConfigurable : Configurable {
     target?.info?.let { apply(it) }
   }
 
+  /**
+   * Открыть платформенную страницу оформления — там ставятся темы с площадки.
+   *
+   * Идём через уже открытый диалог настроек (`Settings.KEY`), а не показываем второй: два диалога
+   * настроек поверх друг друга — это способ потерять несохранённое в первом.
+   */
+  private fun openPlatformAppearance(source: JComponent?) {
+    val context = source?.let { DataManager.getInstance().getDataContext(it) } ?: return
+    val settings = Settings.KEY.getData(context) ?: return
+    settings.find(PLATFORM_APPEARANCE_ID)?.let { settings.select(it) }
+  }
+
   private fun apply(info: UIThemeLookAndFeelInfo) {
     val manager = LafManager.getInstance()
     manager.setCurrentLookAndFeel(info, false)
     manager.updateUI()
     applied = info
     chosen = info
+    // Точка в списке обязана поехать за применённой темой. Без этого «Переключить сейчас» меняет
+    // оформление, а страница продолжает показывать прежнюю тему выбранной — и следующий «Применить»
+    // возвращает то, от чего человек только что ушёл.
+    radios[info.id]?.isSelected = true
   }
 
   override fun isModified(): Boolean =
@@ -201,6 +254,10 @@ class VibeAppearanceConfigurable : Configurable {
     val manager = LafManager.getInstance()
     applied = manager.currentUIThemeLookAndFeel
     chosen = applied
+    // Точку тоже: без этого «Сбросить» оставляет выбранной ту тему, от которой человек отказался.
+    applied?.id?.let { radios[it]?.isSelected = true }
+    day?.let { combo -> initialDay?.let { select(combo, it) } }
+    night?.let { combo -> initialNight?.let { select(combo, it) } }
   }
 
   private companion object {
@@ -209,6 +266,9 @@ class VibeAppearanceConfigurable : Configurable {
      * фон. Имена наши; у чужой темы их нет, и кружков тоже не будет.
      */
     val SWATCH_KEYS = listOf("Accent", "Warm", "Cool", "PanelBg")
+
+    /** Идентификатор платформенной страницы оформления — он же в её собственной регистрации. */
+    const val PLATFORM_APPEARANCE_ID = "preferences.lookFeel"
 
     /**
      * Наша тема — по префиксу идентификатора, который мы сами и назначаем в `themeProvider`.

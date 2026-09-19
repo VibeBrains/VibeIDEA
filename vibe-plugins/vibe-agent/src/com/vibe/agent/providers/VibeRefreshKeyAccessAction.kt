@@ -40,7 +40,11 @@ class VibeRefreshKeyAccessAction : DumbAwareAction() {
     val project = e.project ?: return
     ApplicationManager.getApplication().executeOnPooledThread {
       val providers = ProvidersService.load(project.basePath) { }
+      // Сперва подбираем то, что могло остаться от прерванного захода: ключ в страховочной записи
+      // человеку не виден, он видит только переставшего работать провайдера.
+      val recovered = runCatching { ApiKeyResolver.recoverLeftovers(providers) }.getOrDefault(0)
       var moved = 0
+      var failed = 0
       var missing = 0
       // Читаем и пишем по очереди, а не пачкой: пароль спрашивается на чтение, и человек должен
       // видеть, за какой ключ его спрашивают — окна связки называют запись по имени.
@@ -50,16 +54,21 @@ class VibeRefreshKeyAccessAction : DumbAwareAction() {
           missing++
         }
         else {
-          runCatching { ApiKeyResolver.restoreKey(provider, key) }.onSuccess { moved++ }
+          val ok = runCatching { ApiKeyResolver.restoreKey(provider, key) }.getOrDefault(false)
+          if (ok) moved++ else failed++
         }
       }
       ApplicationManager.getApplication().invokeLater {
-        Messages.showInfoMessage(project, message(moved, missing), t("keys.refresh.title"))
+        Messages.showInfoMessage(project, message(moved, missing, failed, recovered), t("keys.refresh.title"))
       }
     }
   }
 
-  private fun message(moved: Int, missing: Int): String =
-    if (moved == 0) t("keys.refresh.none", "checked" to missing)
-    else t("keys.refresh.done", "moved" to moved)
+  private fun message(moved: Int, missing: Int, failed: Int, recovered: Int): String = buildString {
+    // Неудача называется отдельной строкой, а не растворяется в числе переписанных: провайдер, чей
+    // ключ не записался, перестанет работать, и человек должен узнать об этом здесь, а не потом.
+    if (recovered > 0) appendLine(t("keys.refresh.recovered", "recovered" to recovered))
+    append(if (moved == 0) t("keys.refresh.none", "checked" to missing) else t("keys.refresh.done", "moved" to moved))
+    if (failed > 0) { appendLine(); append(t("keys.refresh.failed", "failed" to failed)) }
+  }
 }
