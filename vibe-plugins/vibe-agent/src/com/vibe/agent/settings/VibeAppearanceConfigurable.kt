@@ -41,6 +41,15 @@ class VibeAppearanceConfigurable : Configurable {
   private val radios = LinkedHashMap<String, JRadioButton>()
   private var chosen: UIThemeLookAndFeelInfo? = null
   private var applied: UIThemeLookAndFeelInfo? = null
+
+  /**
+   * Тема, которая стояла при открытии страницы, — та, куда возвращает «Отмена».
+   *
+   * Мгновенное применение без этого было бы ловушкой: человек пробует пять тем, жмёт «Отмена» —
+   * и остаётся с пятой. Платформа на своей странице оформления делает ровно так же: применяет как
+   * предпросмотр, а на закрытии без подтверждения возвращает прежнюю.
+   */
+  private var original: UIThemeLookAndFeelInfo? = null
   private var day: ComboBox<ThemeItem>? = null
   private var night: ComboBox<ThemeItem>? = null
   private var initialDay: String? = null
@@ -57,6 +66,7 @@ class VibeAppearanceConfigurable : Configurable {
     val manager = LafManager.getInstance()
     applied = manager.currentUIThemeLookAndFeel
     chosen = applied
+    original = applied
     val themes = manager.installedThemes.toList()
     val ours = themes.filter { isOurs(it) }
     val rest = themes.filterNot { isOurs(it) }
@@ -126,12 +136,25 @@ class VibeAppearanceConfigurable : Configurable {
     return SettingsUi.page(builder.panel)
   }
 
+  /**
+   * Закрытие страницы без подтверждения возвращает тему, с которой человек пришёл.
+   *
+   * `disposeUIResources` зовётся и на «Отмена», и на крестик, и при уходе на другую страницу после
+   * «ОК». Отличить подтверждённое от брошенного позволяет [original]: `apply` делает применённую
+   * тему исходной, и тогда возвращать нечего.
+   */
+  override fun disposeUIResources() {
+    val current = LafManager.getInstance().currentUIThemeLookAndFeel
+    original?.takeIf { it.id != current?.id }?.let { apply(it) }
+    radios.clear()
+  }
+
   private fun themeRow(info: UIThemeLookAndFeelInfo, buttons: ButtonGroup): JComponent {
     val radio = JRadioButton(info.name, info.id == applied?.id).apply {
       // Тема применяется СРАЗУ, а не по «Применить». Выбор оформления — единственная настройка,
       // результат которой виден только глазами: судить о нём по названию в списке нельзя, и
       // заставлять человека жать «Применить» после каждой пробы значит мешать ему выбирать.
-      // «Отмена» возвращает прежнюю ([reset]).
+      // «Отмена» и закрытие возвращают прежнюю ([disposeUIResources]).
       addActionListener {
         chosen = info
         if (info.id != applied?.id) apply(info)
@@ -238,8 +261,15 @@ class VibeAppearanceConfigurable : Configurable {
     radios[info.id]?.isSelected = true
   }
 
+  /**
+   * Изменённость считается от темы, стоявшей при ОТКРЫТИИ, а не от применённой сейчас.
+   *
+   * Применённая меняется в тот же миг, когда человек ткнул переключатель (предпросмотр), поэтому
+   * сравнение с ней всегда давало бы «ничего не менялось» — и «ОК» не подтвердил бы выбор, а
+   * закрытие вернуло бы прежнюю тему. Ровно эта ошибка здесь и была.
+   */
   override fun isModified(): Boolean =
-    chosen?.id != applied?.id ||
+    applied?.id != original?.id ||
     (day?.selectedItem as? ThemeItem)?.info?.id != initialDay ||
     (night?.selectedItem as? ThemeItem)?.info?.id != initialNight
 
@@ -247,11 +277,14 @@ class VibeAppearanceConfigurable : Configurable {
     val manager = LafManager.getInstance()
     (day?.selectedItem as? ThemeItem)?.let { manager.setPreferredLightLaf(it.info); initialDay = it.info.id }
     (night?.selectedItem as? ThemeItem)?.let { manager.setPreferredDarkLaf(it.info); initialNight = it.info.id }
-    chosen?.takeIf { it.id != applied?.id }?.let { apply(it) }
+    // Подтверждение и есть «оставить то, что уже видно»: тема применена предпросмотром, и здесь
+    // она перестаёт быть предпросмотром — возвращать больше некуда.
+    original = applied
   }
 
   override fun reset() {
     val manager = LafManager.getInstance()
+    original?.takeIf { it.id != manager.currentUIThemeLookAndFeel?.id }?.let { apply(it) }
     applied = manager.currentUIThemeLookAndFeel
     chosen = applied
     // Точку тоже: без этого «Сбросить» оставляет выбранной ту тему, от которой человек отказался.

@@ -269,12 +269,26 @@ done < <(grep -rl 'com.intellij.openapi.options.Configurable\|: Configurable' "
 # Четыре предыдущих захода чинили форму и были зелёными; на пятый раз владелец прислал шесть
 # вкладок с обрезанным текстом. Замер показал, что подсказка просила 1702 точки при выданных 420 и
 # не меняла высоту при сужении вовсе. Поэтому гейт спрашивает результат у самого компонента.
+#
+# Вывод НЕ глушится в /dev/null: «тест упал» и «тест не удалось прогнать» — разные новости, и
+# общее сообщение об одной врёт про другую. Гейт, который на сбой сборки говорит «подсказка не
+# переносится», отправляет человека чинить работающее — ровно та ошибка, за которую этот файл уже
+# ругал сам себя выше.
 echo "  подсказка настроек: перенос проверяется замером"
-(cd "$root" && ./bazel.cmd test //vibe-plugins/vibe-agent:vibe-agent_test --test_filter=SettingsHintWidth >/dev/null 2>&1) || {
-  echo "ОШИБКА: подсказка настроек не переносится по ширине — страница обрежет текст по правому краю"
-  echo "  Прогоните: ./bazel.cmd test //vibe-plugins/vibe-agent:vibe-agent_test --test_filter=SettingsHintWidth"
-  status=1
-}
+HINT_OUT=$(cd "$root" && ./bazel.cmd test //vibe-plugins/vibe-agent:vibe-agent_test --test_filter=SettingsHintWidth 2>&1) || true
+case "$HINT_OUT" in
+  *"tests pass"*|*"test passes"*)
+    : ;;
+  *"FAILED"*|*"failing"*)
+    echo "ОШИБКА: подсказка настроек не переносится по ширине — страница обрежет текст по правому краю"
+    printf '%s\n' "$HINT_OUT" | grep -F 'AssertionFailedError' | head -3 | sed 's/^/    /'
+    echo "  Прогоните: ./bazel.cmd test //vibe-plugins/vibe-agent:vibe-agent_test --test_filter=SettingsHintWidth"
+    status=1 ;;
+  *)
+    echo "ОШИБКА: замер переноса НЕ ВЫПОЛНЕН — это не приговор подсказке, а невозможность её проверить"
+    printf '%s\n' "$HINT_OUT" | tail -3 | sed 's/^/    /'
+    status=1 ;;
+esac
 
 # 8в. Кружки палитры на странице «Оформление» действительно будут нарисованы.
 #
@@ -304,6 +318,36 @@ if bad:
         print('    %s — нет %s' % (name, ', '.join(missing)))
     print('  Либо добавьте цвет в тему, либо уберите имя из SWATCH_KEYS — пустой ряд кружков ничего не говорит')
     sys.exit(1)
+
+# Реестр тем и файлы на диске обязаны совпадать В ОБЕ СТОРОНЫ, и схема редактора обязана быть.
+# Такую ошибку видит только запущенная IDE: объявленная, но отсутствующая тема просто не появится
+# в списке, а тема без своей схемы откроет редактор чужими цветами. Ни компиляция, ни тесты про
+# содержимое чужого json не знают.
+themes_dir = os.path.join(root, 'vibe-plugins/vibe-theme/resources')
+descriptor = io.open(os.path.join(themes_dir, 'META-INF/plugin.xml'), encoding='utf-8').read()
+declared = set(re.findall(r'<themeProvider[^>]*path="([^"]+)"', descriptor))
+present = {'/' + os.path.basename(p) for p in glob.glob(os.path.join(themes_dir, 'vibe*.theme.json'))}
+problems = []
+for path in sorted(declared - present):
+    problems.append('объявлена в plugin.xml, но файла нет: %s' % path)
+for path in sorted(present - declared):
+    problems.append('файл есть, но в plugin.xml не объявлен — темы не будет в списке: %s' % path)
+for path in sorted(glob.glob(os.path.join(themes_dir, 'vibe*.theme.json'))):
+    theme = json.load(io.open(path, encoding='utf-8'))
+    for field in ('name', 'dark'):
+        if field not in theme:
+            problems.append('%s: нет обязательного поля «%s»' % (os.path.basename(path), field))
+    scheme = theme.get('editorScheme')
+    if not scheme:
+        problems.append('%s: нет editorScheme — редактор откроется чужими цветами' % os.path.basename(path))
+    elif not os.path.isfile(os.path.join(themes_dir, scheme.lstrip('/'))):
+        problems.append('%s: схема редактора %s не найдена' % (os.path.basename(path), scheme))
+if problems:
+    print('ОШИБКА: реестр тем разошёлся с файлами:')
+    for line in problems:
+        print('    ' + line)
+    sys.exit(1)
+print('  темы: %d объявлено и на месте, у каждой своя схема редактора' % len(present))
 print('  кружки палитры: все %d тем объявляют %s' % (
     len(glob.glob(os.path.join(root, 'vibe-plugins/vibe-theme/resources/vibe*.theme.json'))), ', '.join(keys)))
 PYSWATCH
