@@ -332,8 +332,10 @@ for path in sorted(declared - present):
     problems.append('объявлена в plugin.xml, но файла нет: %s' % path)
 for path in sorted(present - declared):
     problems.append('файл есть, но в plugin.xml не объявлен — темы не будет в списке: %s' % path)
+sides = []
 for path in sorted(glob.glob(os.path.join(themes_dir, 'vibe*.theme.json'))):
     theme = json.load(io.open(path, encoding='utf-8'))
+    sides.append(bool(theme.get('dark')))
     for field in ('name', 'dark'):
         if field not in theme:
             problems.append('%s: нет обязательного поля «%s»' % (os.path.basename(path), field))
@@ -342,12 +344,19 @@ for path in sorted(glob.glob(os.path.join(themes_dir, 'vibe*.theme.json'))):
         problems.append('%s: нет editorScheme — редактор откроется чужими цветами' % os.path.basename(path))
     elif not os.path.isfile(os.path.join(themes_dir, scheme.lstrip('/'))):
         problems.append('%s: схема редактора %s не найдена' % (os.path.basename(path), scheme))
+# В наборе обязаны быть обе стороны. Пара «день/ночь» на странице «Оформление» берёт дневную тему
+# из светлых, ночную из тёмных: набор из одних тёмных делает половину пары чужой, и узнаёт об этом
+# человек, а не гейт (до 19.09.2026 все семь наших тем были тёмными).
+if sides and (all(sides) or not any(sides)):
+    problems.append('в наборе только %s темы — вторая половина пары «день/ночь» будет чужой'
+                    % ('тёмные' if all(sides) else 'светлые'))
 if problems:
     print('ОШИБКА: реестр тем разошёлся с файлами:')
     for line in problems:
         print('    ' + line)
     sys.exit(1)
-print('  темы: %d объявлено и на месте, у каждой своя схема редактора' % len(present))
+print('  темы: %d объявлено и на месте, у каждой своя схема редактора — тёмных %d, светлых %d'
+      % (len(present), sum(sides), len(sides) - sum(sides)))
 print('  кружки палитры: все %d тем объявляют %s' % (
     len(glob.glob(os.path.join(root, 'vibe-plugins/vibe-theme/resources/vibe*.theme.json'))), ', '.join(keys)))
 PYSWATCH

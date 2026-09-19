@@ -22,7 +22,10 @@ KEY = 'RecentProject.Color%d.MainToolbarGradientStart'
 COUNT = 9
 HUE_SPAN = 0.14      # вся вилка ≈50° — различимо, но в одной семье
 SATURATION = 0.34    # приглушённо: это фон шапки, а не вывеска
-LIFT = 0.13          # насколько светлее фона панели
+LIFT = 0.13          # тёмная тема: насколько светлее фона панели
+DARK_CEILING = 0.42  # выше — полоса начинает спорить с тёмным интерфейсом
+DROP = 0.13          # светлая тема: насколько ТЕМНЕЕ фона панели
+LIGHT_FLOOR = 0.78   # ниже — на светлой теме получается тёмная плашка поперёк шапки
 
 
 def rgb(value):
@@ -34,11 +37,17 @@ def hexed(parts):
     return '#%02X%02X%02X' % tuple(max(0, min(255, round(c * 255))) for c in parts)
 
 
-def colors_for(accent, panel):
+def colors_for(accent, panel, dark):
+    """Девять оттенков вокруг акцента темы, светлее её панели на тёмной теме и темнее — на светлой.
+
+    Сторона темы здесь обязательна. Первая версия считала только для тёмных (других у нас не было)
+    и зажимала светлоту сверху: на светлой теме та же формула дала бы тёмную плашку поперёк светлой
+    шапки. Гейт этого не увидел бы — он сверяет генератор с им же посчитанными значениями.
+    """
     ah, _, _ = colorsys.rgb_to_hls(*rgb(accent))
     pr, pg, pb = rgb(panel)
     _, pl, _ = colorsys.rgb_to_hls(pr, pg, pb)
-    lightness = min(0.42, pl + LIFT)
+    lightness = min(DARK_CEILING, pl + LIFT) if dark else max(LIGHT_FLOOR, pl - DROP)
     out = []
     for i in range(COUNT):
         hue = (ah + HUE_SPAN * (i / (COUNT - 1) - 0.5)) % 1.0
@@ -59,7 +68,7 @@ def run(check_only):
             drift.append('%s: нет Accent или PanelBg в палитре' % path.name)
             continue
         ui = data.setdefault('ui', {})
-        values = colors_for(accent, panel)
+        values = colors_for(accent, panel, bool(data.get('dark', True)))
         for index, value in enumerate(values, start=1):
             key = KEY % index
             if check_only:

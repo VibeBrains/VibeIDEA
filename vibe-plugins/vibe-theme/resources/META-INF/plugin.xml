@@ -3,7 +3,7 @@
   <name>Vibe Themes</name>
   <vendor>VibeBrains</vendor>
   <category>Themes</category>
-  <description>The VibeIDEA themes: Neon Dark, Midnight, Graphite, Terracotta, Espresso, Honey and Tobacco.</description>
+  <description>The VibeIDEA themes: Neon Dark, Midnight, Graphite, Terracotta, Espresso, Honey and Tobacco for the night, Porcelain for the day.</description>
   <depends>com.intellij.modules.platform</depends>
   <extensions defaultExtensionNs="com.intellij">
     <themeProvider id="VibeNeonDark" path="/vibeNeonDark.theme.json" targetUi="new"/>
@@ -13,5 +13,6 @@
     <themeProvider id="VibeEspresso" path="/vibeEspresso.theme.json" targetUi="new"/>
     <themeProvider id="VibeHoney" path="/vibeHoney.theme.json" targetUi="new"/>
     <themeProvider id="VibeTobacco" path="/vibeTobacco.theme.json" targetUi="new"/>
+    <themeProvider id="VibePorcelain" path="/vibePorcelain.theme.json" targetUi="new"/>
   </extensions>
 </idea-plugin>
