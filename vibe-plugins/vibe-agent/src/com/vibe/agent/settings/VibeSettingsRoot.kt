@@ -4,12 +4,10 @@ package com.vibe.agent.settings
 import com.vibe.agent.i18n.VibeI18n.t
 
 import com.intellij.openapi.options.Configurable
-import com.intellij.ui.components.JBLabel
 import com.intellij.util.ui.FormBuilder
 import com.intellij.util.ui.JBUI
 import javax.swing.JComponent
 import javax.swing.JPanel
-import com.vibe.agent.ui.VibeScroll
 
 /** Root of the VibeIDEA settings hub (children: providers, models). */
 class VibeSettingsRoot : Configurable {

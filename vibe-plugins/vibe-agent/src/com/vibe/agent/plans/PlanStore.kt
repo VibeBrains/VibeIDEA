@@ -10,7 +10,6 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.put
 import java.nio.file.Files
-import java.nio.file.Path
 
 /**
  * Plans on disk, one per chat thread, in `.vibe/plans.json`.

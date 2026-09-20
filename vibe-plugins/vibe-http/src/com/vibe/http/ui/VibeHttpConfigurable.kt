@@ -3,7 +3,6 @@ package com.vibe.http.ui
 
 import com.intellij.openapi.options.Configurable
 import com.intellij.ui.components.JBCheckBox
-import com.intellij.ui.components.JBLabel
 import com.intellij.util.ui.FormBuilder
 import com.vibe.agent.i18n.VibeI18n.t
 import com.vibe.http.HttpSettings
@@ -11,7 +10,6 @@ import javax.swing.JComponent
 import javax.swing.JSpinner
 import javax.swing.SpinnerNumberModel
 import com.vibe.agent.settings.SettingsUi
-import com.vibe.agent.ui.VibeScroll
 
 /** Настройки клиента запросов: таймауты и поведение по умолчанию. */
 class VibeHttpConfigurable : Configurable {

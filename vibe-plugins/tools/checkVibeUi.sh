@@ -432,7 +432,35 @@ if problems:
 print('  темы: %d объявлено и на месте, у каждой своя схема редактора — тёмных %d, светлых %d'
       % (len(present), sum(sides), len(sides) - sum(sides)))
 print('  пара «день/ночь»: обе засеваемые темы объявлены')
-print('  палитра: повторённых безымянных цветов нет')
+# И обратное: запись палитры, которой никто не пользуется, — мёртвый цвет.
+#
+# Так у неоновой темы жили `NeonCyan` и `Accent` с одним и тем же значением: второй появился ради
+# гейта кружков, который с тех пор заменён. Дубликат имени хуже дубликата литерала — он выглядит
+# как осмысленное различие (20.09.2026).
+GENERATOR_INPUTS = {'Accent', 'PanelBg', 'DeepBg'}   # их читает themeProjectColors.py, а не ui
+orphans = []
+for path in sorted(glob.glob(os.path.join(themes_dir, 'vibe*.theme.json'))):
+    data = json.load(io.open(path, encoding='utf-8'))
+    used = set()
+
+    def collect(node):
+        for value in node.values():
+            if isinstance(value, dict):
+                collect(value)
+            elif isinstance(value, str):
+                used.add(value)
+
+    collect(data.get('ui', {}))
+    dead = [name for name in data.get('colors', {}) if name not in used and name not in GENERATOR_INPUTS]
+    if dead:
+        orphans.append((os.path.basename(path), dead))
+if orphans:
+    print('ОШИБКА: запись палитры есть, а пользуется ею никто — мёртвый цвет:')
+    for name, dead in orphans:
+        print('    %s — %s' % (name, ', '.join(dead)))
+    print('  Уберите запись или подставьте её имя туда, где она задумывалась')
+    sys.exit(1)
+print('  палитра: повторённых безымянных цветов нет, мёртвых записей нет')
 PYSWATCH
 
 # 8г. Цвет проекта в шапке окна — из палитры самой темы, а не платформенный.

@@ -8,7 +8,6 @@ import com.intellij.codeInsight.inline.completion.InlineCompletionRequest
 import com.intellij.codeInsight.inline.completion.elements.InlineCompletionGrayTextElement
 import com.intellij.codeInsight.inline.completion.suggestion.InlineCompletionSingleSuggestion
 import com.intellij.codeInsight.inline.completion.suggestion.InlineCompletionSuggestion
-import com.intellij.openapi.editor.Document
 import com.vibe.agent.providers.LlmClient
 import com.vibe.agent.providers.ModelEntry
 import com.vibe.agent.providers.ProvidersService

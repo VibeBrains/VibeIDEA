@@ -3,7 +3,6 @@ package com.vibe.agent.learning
 
 import kotlin.test.Test
 import kotlin.test.assertEquals
-import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 class LearningPlanTest {

@@ -9,7 +9,6 @@ import com.intellij.execution.process.OSProcessHandler
 import com.intellij.openapi.util.Key
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.CountDownLatch
-import java.util.concurrent.TimeUnit
 
 /**
  * Executes standard ACP `terminal/…` methods for NON-Claude agents (Gemini CLI

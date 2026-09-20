@@ -5,59 +5,57 @@
   "parentTheme": "Dark",
   "editorScheme": "/vibeNeonScheme.xml",
   "colors": {
-    "NeonCyan": "#00E5FF",
-    "NeonCyanDim": "#00B8CC",
-    "NeonMagenta": "#FF2E97",
-    "NeonPurple": "#9D5CFF",
+    "Accent": "#00E5FF",
+    "AccentDim": "#00B8CC",
+    "Warm": "#FF2E97",
+    "Cool": "#9D5CFF",
     "DeepBg": "#16171B",
     "PanelBg": "#1E1F24",
     "SelBg": "#28324A",
-    "Accent": "#00E5FF",
-    "Warm": "#FF2E97",
-    "Cool": "#9D5CFF",
-    "Error": "#FF6B5A",
-    "Hover": "#252A38",
     "Text": "#E6E8EF",
+    "TextDim": "#00b8cc",
+    "Error": "#FF6B5A",
     "Border": "#2A2D36",
-    "Warn": "#E0A030",
-    "ButtonBg": "#2A3550",
     "BorderControl": "#3A4050",
-    "Ok": "#5FAD5F"
+    "Hover": "#252A38",
+    "Ok": "#5FAD5F",
+    "Warn": "#E0A030",
+    "ButtonBg": "#2A3550"
   },
   "ui": {
     "*": {
-      "focusColor": "NeonCyan",
-      "underlineColor": "NeonCyan",
-      "inactiveUnderlineColor": "NeonCyanDim",
+      "focusColor": "Accent",
+      "underlineColor": "Accent",
+      "inactiveUnderlineColor": "AccentDim",
       "selectionBackground": "SelBg"
     },
     "Component": {
-      "focusedBorderColor": "NeonCyan",
+      "focusedBorderColor": "Accent",
       "arc": 8
     },
     "Button": {
       "default": {
         "startBackground": "ButtonBg",
         "endBackground": "ButtonBg",
-        "startBorderColor": "NeonCyan",
-        "endBorderColor": "NeonCyan",
+        "startBorderColor": "Accent",
+        "endBorderColor": "Accent",
         "foreground": "#E8FBFF"
       }
     },
     "Link": {
-      "activeForeground": "NeonCyan",
-      "hoverForeground": "NeonCyan",
-      "pressedForeground": "NeonMagenta",
-      "visitedForeground": "NeonPurple"
+      "activeForeground": "Accent",
+      "hoverForeground": "Accent",
+      "pressedForeground": "Warm",
+      "visitedForeground": "Cool"
     },
     "EditorTabs": {
       "underlineHeight": 3,
       "underlineArc": 3
     },
     "ProgressBar": {
-      "progressColor": "NeonCyan",
-      "indeterminateStartColor": "NeonCyan",
-      "indeterminateEndColor": "NeonMagenta"
+      "progressColor": "Accent",
+      "indeterminateStartColor": "Accent",
+      "indeterminateEndColor": "Warm"
     },
     "SearchMatch": {
       "startBackground": "#3C2B4F",
@@ -69,7 +67,7 @@
       }
     },
     "TabbedPane": {
-      "focusColor": "NeonCyan",
+      "focusColor": "Accent",
       "hoverColor": "Hover"
     },
     "StatusBar": {
@@ -78,7 +76,7 @@
       }
     },
     "Counter": {
-      "background": "NeonMagenta"
+      "background": "Warm"
     },
     "Vibe": {
       "Feed": {
@@ -90,7 +88,7 @@
         "background": "DeepBg",
         "userBubbleBackground": "SelBg",
         "toolCardBackground": "PanelBg",
-        "metaForeground": "NeonCyanDim",
+        "metaForeground": "TextDim",
         "terminalBackground": "#131417",
         "terminalForeground": "#BFC7D0",
         "terminalBorder": "Border",
@@ -100,25 +98,25 @@
       "Composer": {
         "background": "PanelBg",
         "border": "Border",
-        "focusBorder": "NeonCyanDim",
+        "focusBorder": "AccentDim",
         "separator": "Border",
         "chipBackground": "SelBg",
         "chipForeground": "Text",
         "pillForeground": "Text",
         "pillHoverBackground": "Hover",
-        "accent": "NeonCyan",
+        "accent": "Accent",
         "accentHover": "#33ECFF",
         "accentForeground": "DeepBg",
         "accentDisabled": "#3A4A52",
         "pillBorder": "BorderControl",
-        "pillBorderHover": "NeonCyan",
+        "pillBorderHover": "Accent",
         "queueBackground": "#3A3220",
         "queueBorder": "#6B5A2E",
         "queueForeground": "#F2E6C4",
-        "usageForeground": "NeonCyanDim",
+        "usageForeground": "TextDim",
         "usageWarnForeground": "Warn",
         "contextRingTrack": "BorderControl",
-        "contextRingFill": "NeonCyan",
+        "contextRingFill": "Accent",
         "contextRingWarn": "Warn"
       },
       "Docs": {
@@ -132,28 +130,28 @@
         "category6": "#D673A8",
         "orphanNode": "#D6AE58",
         "brokenNode": "Error",
-        "hoverRing": "NeonCyan",
+        "hoverRing": "Accent",
         "hintForeground": "#8A90A6",
-        "edge": "NeonCyanDim",
+        "edge": "AccentDim",
         "nodeForeground": "Text"
       },
       "Mention": {
         "headerForeground": "Text",
-        "hintForeground": "NeonCyanDim"
+        "hintForeground": "TextDim"
       },
       "Tabs": {
         "activeForeground": "Text",
-        "inactiveForeground": "NeonCyanDim",
+        "inactiveForeground": "TextDim",
         "activeBackground": "Hover",
         "hoverBackground": "#20242E",
-        "underline": "NeonCyan"
+        "underline": "Accent"
       },
       "History": {
         "rowHoverBackground": "Hover",
-        "activeStripe": "NeonMagenta",
+        "activeStripe": "Warm",
         "badgeBackground": "SelBg",
-        "quoteForeground": "NeonCyanDim",
-        "groupForeground": "NeonCyanDim",
+        "quoteForeground": "TextDim",
+        "groupForeground": "TextDim",
         "revealBackground": "SelBg"
       },
       "Http": {
@@ -173,8 +171,8 @@
       },
       "Status": {
         "ready": "Ok",
-        "thinking": "NeonCyan",
-        "tool": "NeonPurple",
+        "thinking": "Accent",
+        "tool": "Cool",
         "waiting": "Warn",
         "error": "Error"
       }

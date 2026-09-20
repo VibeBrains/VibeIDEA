@@ -16,16 +16,43 @@
 Планка выбрана ПО ИЗМЕРЕНИЮ, а не из головы: после починки худшее значение по всем схемам —
 4.14, и 4.0 стоит под ним, оставляя место обычному подбору цвета и ловя провалы.
 
+Меряется ДВА набора: цвета схемы редактора и цвета нашего интерфейса (токены `Vibe.*`). Второй
+добавлен 20.09.2026 и на первом же прогоне нашёл двенадцать провалов — тусклый текст ленты и
+композера шёл на 2.08–3.53, потому что один и тот же `AccentDim` служил и украшением (подчёркивание,
+рамка фокуса, рёбра графа), и ТЕКСТОМ. Украшению тусклость идёт, тексту она означает «не прочесть».
+
 Вызов:  ./vibe-plugins/tools/themeContrast.py           — проверить (код возврата 1 при провале)
         ./vibe-plugins/tools/themeContrast.py --report  — напечатать все значения
 """
 import glob
+import json
+import io
 import os
 import sys
 import xml.etree.ElementTree as ET
 
 FLOOR = 4.0
 SCHEMES = 'vibe-plugins/vibe-theme/resources/*Scheme.xml'
+THEMES = 'vibe-plugins/vibe-theme/resources/vibe*.theme.json'
+
+# Пары «текст на фоне» нашего интерфейса. Таблица заземлённая, а не придуманная: либо тема сама
+# называет обе половины (`terminalForeground` и `terminalBackground`), либо фон подтверждён кодом —
+# `AgentPanel.CHAT_BG` = `Vibe.Chat.background`, `ComposerPanel.BG` = `Vibe.Composer.background`.
+# Токен, чей фон не удалось подтвердить, в таблицу не попадает: мерить к выдуманному фону — хуже,
+# чем не мерить.
+UI_PAIRS = (
+    ('Chat.terminalForeground', 'Chat.terminalBackground'),
+    ('Chat.terminalOk', 'Chat.terminalBackground'),
+    ('Chat.terminalError', 'Chat.terminalBackground'),
+    ('Chat.metaForeground', 'Chat.background'),
+    ('Composer.chipForeground', 'Composer.chipBackground'),
+    ('Composer.queueForeground', 'Composer.queueBackground'),
+    ('Composer.accentForeground', 'Composer.accent'),
+    ('Composer.pillForeground', 'Composer.background'),
+    ('Composer.usageForeground', 'Composer.background'),
+    ('Composer.usageWarnForeground', 'Composer.background'),
+    ('Tabs.activeForeground', 'Tabs.activeBackground'),
+)
 # Не цвета текста: подчёркивание, полоса ошибок и заливки меряются к другому и по другим правилам.
 NOT_TEXT = {'FOREGROUND', 'BACKGROUND', 'EFFECT_COLOR', 'ERROR_STRIPE_COLOR'}
 
@@ -83,6 +110,26 @@ def measure(path):
     return background, found
 
 
+def token(theme, path):
+    """Значение токена `Vibe.<path>` с разрешённым именем палитры."""
+    node = theme['ui']['Vibe']
+    for part in path.split('.'):
+        node = node[part]
+    return theme['colors'].get(node, node)
+
+
+def measure_ui(path):
+    """Пары «токен → контраст» одной темы, от худшей к лучшей."""
+    theme = json.loads(io.open(path, encoding='utf-8').read())
+    found = []
+    for foreground, background in UI_PAIRS:
+        measured = contrast(token(theme, foreground), token(theme, background))
+        if measured:
+            found.append((measured, foreground, background))
+    found.sort()
+    return found
+
+
 def main():
     report = '--report' in sys.argv
     failures = []
@@ -100,13 +147,25 @@ def main():
             if measured < FLOOR:
                 failures.append('%s: %s (%s) — контраст %.2f при планке %.2f'
                                 % (name, token, colour, measured, FLOOR))
+    for path in sorted(glob.glob(THEMES)):
+        name = os.path.basename(path)
+        found = measure_ui(path)
+        if report:
+            print('%-28s интерфейс' % name)
+            for measured, foreground, background in found:
+                print('    %6.2f  %-30s на %s' % (measured, foreground, background))
+        for measured, foreground, background in found:
+            if measured < FLOOR:
+                failures.append('%s: Vibe.%s на Vibe.%s — контраст %.2f при планке %.2f'
+                                % (name, foreground, background, measured, FLOOR))
     if failures:
-        print('✖ цвет текста в схеме редактора не читается на её же фоне:')
+        print('✖ цвет текста не читается на своём фоне:')
         for line in failures:
             print('    ' + line)
         print('  Осветлите цвет, сохранив тон: ниже %.1f текст не читается ни у кого' % FLOOR)
         return 1
-    print('  контраст схем: все цвета текста выше планки %.1f' % FLOOR)
+    print('  контраст: все цвета текста выше планки %.1f — и в схемах редактора, и в наших панелях (%d пар)'
+          % (FLOOR, len(UI_PAIRS)))
     return 0
 
 

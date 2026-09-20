@@ -9,7 +9,6 @@ import com.intellij.util.ui.FormBuilder
 import com.vibe.agent.i18n.VibeI18n.t
 import javax.swing.JComponent
 import com.vibe.agent.settings.SettingsUi
-import com.vibe.agent.ui.VibeScroll
 
 /**
  * Settings page: where each language server actually is.

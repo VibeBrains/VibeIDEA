@@ -3,7 +3,6 @@ package com.vibe.agent.watch
 
 import org.junit.jupiter.api.Test
 import kotlin.test.assertEquals
-import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 class SubtitlesTest {

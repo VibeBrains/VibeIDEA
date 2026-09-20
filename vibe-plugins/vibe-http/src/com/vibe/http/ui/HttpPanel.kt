@@ -10,22 +10,18 @@ import com.intellij.openapi.ui.ComboBox
 import com.intellij.ui.JBColor
 import com.intellij.ui.components.JBLabel
 import com.intellij.ui.components.JBList
-import com.intellij.ui.components.JBTabbedPane
 import com.intellij.util.ui.JBUI
 import com.vibe.agent.i18n.VibeI18n.t
 import com.vibe.agent.ui.VibeScroll
 import com.vibe.http.HttpEnvironments
-import com.vibe.http.HttpExchange
 import com.vibe.http.HttpRequestFile
 import com.vibe.http.HttpVariables
 import com.vibe.http.VibeHttpService
 import java.awt.BorderLayout
-import java.awt.Dimension
 import java.nio.file.Path
 import javax.swing.DefaultListModel
 import javax.swing.JButton
 import javax.swing.JPanel
-import javax.swing.JTextArea
 import javax.swing.SwingUtilities
 
 /**

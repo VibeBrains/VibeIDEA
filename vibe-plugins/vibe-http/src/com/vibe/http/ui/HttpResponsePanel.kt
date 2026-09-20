@@ -14,7 +14,6 @@ import com.vibe.http.HttpRequestFile
 import com.vibe.http.HttpVariables
 import com.vibe.http.VibeHttpService
 import java.awt.BorderLayout
-import java.awt.Dimension
 import javax.swing.JButton
 import javax.swing.JPanel
 import javax.swing.JTextArea

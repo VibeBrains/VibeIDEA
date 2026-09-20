@@ -18,7 +18,8 @@
     "Hover": "#2e363b",
     "Ok": "#8fae74",
     "Warn": "#d3b884",
-    "ButtonBg": "#3a4852"
+    "ButtonBg": "#3a4852",
+    "TextDim": "#658cae"
   },
   "ui": {
     "*": {
@@ -86,7 +87,7 @@
         "background": "DeepBg",
         "userBubbleBackground": "SelBg",
         "toolCardBackground": "PanelBg",
-        "metaForeground": "AccentDim",
+        "metaForeground": "TextDim",
         "terminalBackground": "#17181a",
         "terminalForeground": "Text",
         "terminalBorder": "Border",
@@ -111,7 +112,7 @@
         "queueBackground": "#4f493e",
         "queueBorder": "#726750",
         "queueForeground": "Text",
-        "usageForeground": "AccentDim",
+        "usageForeground": "TextDim",
         "usageWarnForeground": "Warn",
         "contextRingTrack": "Border",
         "contextRingFill": "Accent",
@@ -135,11 +136,11 @@
       },
       "Mention": {
         "headerForeground": "Text",
-        "hintForeground": "AccentDim"
+        "hintForeground": "TextDim"
       },
       "Tabs": {
         "activeForeground": "Text",
-        "inactiveForeground": "AccentDim",
+        "inactiveForeground": "TextDim",
         "activeBackground": "Hover",
         "hoverBackground": "#20242E",
         "underline": "Accent"
@@ -148,8 +149,8 @@
         "rowHoverBackground": "Hover",
         "activeStripe": "Warm",
         "badgeBackground": "SelBg",
-        "quoteForeground": "AccentDim",
-        "groupForeground": "AccentDim",
+        "quoteForeground": "TextDim",
+        "groupForeground": "TextDim",
         "revealBackground": "SelBg"
       },
       "Http": {

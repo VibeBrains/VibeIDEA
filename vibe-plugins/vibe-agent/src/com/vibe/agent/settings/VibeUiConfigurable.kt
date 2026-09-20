@@ -5,7 +5,6 @@ import com.intellij.openapi.options.Configurable
 import com.intellij.openapi.util.registry.Registry
 import com.intellij.ui.JBIntSpinner
 import com.intellij.ui.components.JBCheckBox
-import com.intellij.ui.components.JBLabel
 import com.intellij.util.ui.FormBuilder
 import com.intellij.util.ui.JBUI
 import com.vibe.agent.i18n.VibeI18n

@@ -17,8 +17,6 @@ import com.vibe.agent.providers.ProvidersChangeListener
 import com.vibe.agent.providers.ProvidersService
 import java.awt.BorderLayout
 import java.awt.Dimension
-import java.awt.Rectangle
-import javax.swing.Scrollable
 import javax.swing.BoxLayout
 import javax.swing.JButton
 import javax.swing.JComponent

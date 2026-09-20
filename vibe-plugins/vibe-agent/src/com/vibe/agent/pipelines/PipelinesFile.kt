@@ -2,7 +2,6 @@
 package com.vibe.agent.pipelines
 
 import com.vibe.agent.i18n.VibeI18n.t
-import com.vibe.agent.providers.ProvidersFile
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.intOrNull

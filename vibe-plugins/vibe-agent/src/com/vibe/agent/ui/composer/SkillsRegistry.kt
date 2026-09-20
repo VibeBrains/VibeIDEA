@@ -3,7 +3,6 @@ package com.vibe.agent.ui.composer
 
 import com.vibe.agent.i18n.VibeI18n.t
 
-import java.io.File
 
 /**
  * Skills on disk: `<project>/.vibe/skills/<id>/SKILL.md`. The id is the directory name;

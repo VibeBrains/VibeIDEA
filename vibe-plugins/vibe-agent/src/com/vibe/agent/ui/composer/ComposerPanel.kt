@@ -16,7 +16,6 @@ import com.intellij.ui.JBColor
 import com.intellij.ui.components.JBScrollPane
 import com.intellij.ui.components.JBTextArea
 import com.intellij.ui.components.TextComponentEmptyText
-import com.intellij.util.ui.AsyncProcessIcon
 import com.intellij.util.ui.JBFont
 import com.intellij.util.ui.JBUI
 import com.intellij.util.ui.WrapLayout
