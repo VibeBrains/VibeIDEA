@@ -97,7 +97,10 @@ class VibeProvidersConfigurable(private val project: Project) : Configurable, Co
   private fun loadKeyStatesInBackground() {
     val snapshot = cards.toList()
     ApplicationManager.getApplication().executeOnPooledThread {
-      val states = snapshot.map { it to (ApiKeyResolver.storedKey(it.provider) != null) }
+      // hasStoredKey, а не storedKey: странице нужен ответ «есть ли ключ», а не сам ключ. Чтение
+      // значения вызывает диалог связки НА КАЖДОГО провайдера при открытии страницы — владелец
+      // получал их подряд, ничего не попросив (20.09.2026).
+      val states = snapshot.map { it to ApiKeyResolver.hasStoredKey(it.provider) }
       val lines = snapshot.associateWith { sourceLine(it.provider) }
       SwingUtilities.invokeLater {
         if (project.isDisposed) return@invokeLater
@@ -112,7 +115,7 @@ class VibeProvidersConfigurable(private val project: Project) : Configurable, Co
   }
 
   private fun sourceLine(p: ProviderEntry): String {
-    val stored = ApiKeyResolver.storedKey(p) != null
+    val stored = ApiKeyResolver.hasStoredKey(p)
     val envName = p.apiKeyEnv
     // Пустая строка ключом не считается нигде, иначе строка состояния обещает ключ, которого нет.
     val dotenv = envName != null && !ApiKeyResolver.dotEnv(project.basePath)[envName].isNullOrBlank()
@@ -199,7 +202,7 @@ class VibeProvidersConfigurable(private val project: Project) : Configurable, Co
         value.isEmpty() -> if (c.initiallyStored) { ApiKeyResolver.storeKey(c.provider, null); changed = true }
         else -> { ApiKeyResolver.storeKey(c.provider, value); c.field.text = STORED_PLACEHOLDER; changed = true }
       }
-      c.initiallyStored = ApiKeyResolver.storedKey(c.provider) != null
+      c.initiallyStored = ApiKeyResolver.hasStoredKey(c.provider)
       if (c.initiallyStored && String(c.field.password).isEmpty()) c.field.text = STORED_PLACEHOLDER
       c.status.text = sourceLine(c.provider)
     }

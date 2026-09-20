@@ -268,7 +268,10 @@ class VibeModelsConfigurable(private val project: Project) : Configurable, Confi
       val tasks = providers.mapNotNull { p ->
         val mySeq = seq[p.id] ?: 0
         if (p.modelsFetch?.enabled == false) { setStatus(p.id, mySeq, t("settings.models.fetchDisabled")); return@mapNotNull null }
-        val resolved = ProvidersService.resolve(p, project.basePath) { }
+        // quiet: страница моделей обновляет каталоги сама при открытии, и в связку за этим не
+        // ходит — иначе диалог с паролем на каждого провайдера. Ключ, ещё никем не прочитанный,
+        // здесь выглядит как «нет ключа»: каталог останется из кэша.
+        val resolved = ProvidersService.resolve(p, project.basePath, quiet = true) { }
         if (resolved == null || (resolved.apiKey == null && !resolved.isLocal)) {
           setStatus(p.id, mySeq, t("settings.models.noKey"))
           return@mapNotNull null

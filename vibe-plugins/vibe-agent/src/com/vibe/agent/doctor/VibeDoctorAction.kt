@@ -48,8 +48,13 @@ class VibeDoctorAction : AnAction({ t("doctor.action") }) {
                                  com.vibe.agent.i18n.VibeI18n.activeCode()))
 
     val providers = ProvidersService.load(base) { }
-    val withKey = providers.count { ProvidersService.resolve(it, base) { }?.apiKey != null }
-    val localCount = providers.count { ProvidersService.resolve(it, base) { }?.isLocal == true }
+    // Доктору нужно ЧИСЛО провайдеров с ключом, а не сами ключи: читать значения значило бы
+    // показывать диалог связки на каждого при открытии доктора (20.09.2026).
+    val withKey = providers.count {
+      com.vibe.agent.providers.ApiKeyResolver.hasStoredKey(it) ||
+      ProvidersService.resolve(it, base, quiet = true) { }?.apiKey != null
+    }
+    val localCount = providers.count { ProvidersService.resolve(it, base, quiet = true) { }?.isLocal == true }
     lines.add(VibeDiagnosis.Line(
       t("doctor.line.providers"),
       if (providers.isEmpty()) VibeDiagnosis.State.ABSENT

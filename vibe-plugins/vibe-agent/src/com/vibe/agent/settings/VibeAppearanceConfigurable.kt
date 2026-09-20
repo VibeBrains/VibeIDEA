@@ -105,7 +105,10 @@ class VibeAppearanceConfigurable : Configurable, Configurable.NoScroll {
     // кнопки диалога раскладываются по чужим метрикам и налезают друг на друга. Владелец видел это
     // на 0.6.17, 0.6.21 и 0.6.22 и справедливо спрашивал, почему тема «непонятно какая». Предлагать
     // такую тему значит предлагать сломать интерфейс одним щелчком.
-    val themes = manager.installedThemes.filterNot { it.isRestartRequired() }.toList()
+    // Признак — targetUi темы, а не флаг isRestartRequired: у классических Darcula и IntelliJ флаг
+    // ЛОЖЬ, и фильтр по нему (0.6.24) не отсекал ничего. Разбор — [ThemeTargeting].
+    val switchable = com.vibe.agent.appearance.ThemeTargeting.switchableIds()
+    val themes = manager.installedThemes.filter { switchable.isEmpty() || it.id in switchable }.toList()
     val ours = themes.filter { isOurs(it) }
     val rest = themes.filterNot { isOurs(it) }
 
@@ -370,10 +373,10 @@ class VibeAppearanceConfigurable : Configurable, Configurable.NoScroll {
 
   private fun apply(info: UIThemeLookAndFeelInfo) {
     val manager = LafManager.getInstance()
-    // Страховка от того же на входе: тема, требующая перезапуска, в список не попадает, но может
+    // Страховка от того же на входе: тема другого типа интерфейса в список не попадает, но может
     // прийти из сохранённой пары (у владельца ночной стояла Darcula). Переключать на неё нельзя —
     // это и есть половинчатый интерфейс.
-    if (info.isRestartRequired()) return
+    if (!com.vibe.agent.appearance.ThemeTargeting.switchable(info.id)) return
     // Переключаем ПЛАТФОРМЕННЫМ путём, а не парой `setCurrentLookAndFeel` + `updateUI`. Разница в
     // одном шаге, и она решающая: платформенный путь зовёт `DarculaInstaller`, а тот переключает
     // `JBColor.setDark` и `IconLoader.setUseDarkIcons`. `JBColor.DARK` — кэш, посеянный один раз

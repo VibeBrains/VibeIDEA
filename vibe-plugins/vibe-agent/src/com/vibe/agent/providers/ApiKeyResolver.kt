@@ -98,6 +98,26 @@ object ApiKeyResolver {
    */
   private val attempted = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
 
+  /**
+   * Сохранён ли ключ этого провайдера — без чтения значения и без диалога с паролем.
+   *
+   * Для показа состояния на странице значение не нужно: нужен ответ «да/нет». Читать ради него
+   * пароль значит вызывать диалог связки на каждого провайдера при открытии страницы. Разбор —
+   * [KeychainProbe].
+   *
+   * Не удалось спросить (не macOS, связка не ответила) — отвечаем по тому, что уже знаем в этом
+   * запуске, и НЕ лезем в связку: «не знаю» честнее ложного «нет» и тем более честнее диалога.
+   */
+  fun hasStoredKey(provider: ProviderEntry): Boolean {
+    val ref = provider.apiKeyRef ?: provider.id
+    if (known.containsKey(ref)) return true
+    return when (KeychainProbe.probe(attributes(ref).serviceName)) {
+      KeychainProbe.State.PRESENT -> true
+      KeychainProbe.State.ABSENT -> false
+      KeychainProbe.State.UNKNOWN -> false
+    }
+  }
+
   fun storeKey(provider: ProviderEntry, key: String?) {
     val ref = provider.apiKeyRef ?: provider.id
     if (key.isNullOrBlank()) known.remove(ref) else known[ref] = key
