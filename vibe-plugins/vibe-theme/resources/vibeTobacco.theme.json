@@ -26,7 +26,64 @@
       "focusColor": "Accent",
       "underlineColor": "Accent",
       "inactiveUnderlineColor": "AccentDim",
-      "selectionBackground": "SelBg"
+      "selectionBackground": "SelBg",
+      "background": "PanelBg",
+      "foreground": "Text",
+      "infoForeground": "TextDim",
+      "selectionForeground": "Text",
+      "selectionInactiveBackground": "Hover",
+      "borderColor": "Border",
+      "separatorColor": "Border",
+      "disabledForeground": "TextDim"
+    },
+    "Tree": {
+      "background": "DeepBg"
+    },
+    "List": {
+      "background": "DeepBg"
+    },
+    "Table": {
+      "background": "DeepBg"
+    },
+    "Popup": {
+      "background": "PanelBg",
+      "borderColor": "Border"
+    },
+    "MainToolbar": {
+      "background": "PanelBg"
+    },
+    "StatusBar": {
+      "Widget": {
+        "hoverBackground": "Hover"
+      },
+      "background": "PanelBg"
+    },
+    "ToolWindow": {
+      "Button": {
+        "selectedBackground": "ButtonBg"
+      },
+      "background": "PanelBg",
+      "Header": {
+        "background": "PanelBg",
+        "inactiveBackground": "PanelBg"
+      }
+    },
+    "EditorTabs": {
+      "underlineHeight": 3,
+      "underlineArc": 3,
+      "background": "PanelBg",
+      "underlinedTabBackground": "Hover"
+    },
+    "ScrollBar": {
+      "track": "PanelBg"
+    },
+    "CompletionPopup": {
+      "background": "PanelBg"
+    },
+    "NewClass": {
+      "Panel": {
+        "background": "PanelBg"
+      }
     },
     "Component": {
       "focusedBorderColor": "Accent",
@@ -47,10 +104,6 @@
       "pressedForeground": "Warm",
       "visitedForeground": "Cool"
     },
-    "EditorTabs": {
-      "underlineHeight": 3,
-      "underlineArc": 3
-    },
     "ProgressBar": {
       "progressColor": "Accent",
       "indeterminateStartColor": "Accent",
@@ -60,19 +113,9 @@
       "startBackground": "#4d4130",
       "endBackground": "#4d4130"
     },
-    "ToolWindow": {
-      "Button": {
-        "selectedBackground": "ButtonBg"
-      }
-    },
     "TabbedPane": {
       "focusColor": "Accent",
       "hoverColor": "Hover"
-    },
-    "StatusBar": {
-      "Widget": {
-        "hoverBackground": "Hover"
-      }
     },
     "Counter": {
       "background": "Warm"
