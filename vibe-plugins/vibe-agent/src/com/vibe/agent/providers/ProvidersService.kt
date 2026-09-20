@@ -159,7 +159,12 @@ object ProvidersService {
       else -> "openai"
     }
 
-  fun resolve(entry: ProviderEntry, projectBase: String?, onWarning: (String) -> Unit): ResolvedProvider? {
+  /**
+   * @param quiet фоновый вызов: ключ берётся без обращения к связке ключей ([ApiKeyResolver.resolveQuietly]),
+   *   и провайдер без известного ключа возвращается с `apiKey = null` — фон его пропустит, а диалога
+   *   с паролем человек не увидит. Настоящий запрос человека идёт с `quiet = false`.
+   */
+  fun resolve(entry: ProviderEntry, projectBase: String?, quiet: Boolean = false, onWarning: (String) -> Unit): ResolvedProvider? {
     val base = entry.baseURL
     if (base.isNullOrBlank()) {
       onWarning(t("providers.warn.noBaseUrl", "id" to entry.id))
@@ -167,7 +172,7 @@ object ProvidersService {
     }
     val protocol = protocolFor(entry.protocol)
     val host = runCatching { java.net.URI(base).host }.getOrNull() ?: ""
-    val key = ApiKeyResolver.resolve(entry, projectBase)
+    val key = if (quiet) ApiKeyResolver.resolveQuietly(entry, projectBase) else ApiKeyResolver.resolve(entry, projectBase)
     return ResolvedProvider(
       entry = entry,
       protocol = protocol,

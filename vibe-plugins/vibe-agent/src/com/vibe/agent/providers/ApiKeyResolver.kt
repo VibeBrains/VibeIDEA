@@ -23,7 +23,37 @@ object ApiKeyResolver {
 
   fun storedKey(provider: ProviderEntry): String? =
     PasswordSafe.instance.getPassword(attributes(provider.apiKeyRef ?: provider.id))?.takeIf { it.isNotBlank() }
-      ?.also { reownOnce(provider, it) }
+      ?.also { known[provider.apiKeyRef ?: provider.id] = it; reownOnce(provider, it) }
+
+  /**
+   * Ключи, которые в ЭТОМ запуске уже удалось прочитать из связки, — чтобы фон к ней не ходил.
+   *
+   * Зачем. Обновление каталогов моделей при старте шло по всем провайдерам и читало ключ каждого —
+   * шесть обращений к связке ещё до того, как человек что-то попросил. Запись, чей список доступа
+   * не наш, на каждое такое обращение отвечает диалогом с паролем: владелец получал его при
+   * каждом запуске за провайдера, которым в тот день и не пользовался (opencode, 20.09.2026).
+   *
+   * Фоновые задачи теперь спрашивают [resolveQuietly]: ключ из окружения, из `.vibe/.env` или уже
+   * прочитанный здесь — и никогда из связки. Первым связку читает настоящий запрос человека к
+   * этому провайдеру; после него ключ известен, а запись переписана ([reownOnce]).
+   */
+  private val known = java.util.concurrent.ConcurrentHashMap<String, String>()
+
+  /**
+   * Ключ провайдера БЕЗ обращения к связке: для фона, которому нельзя показывать диалог.
+   *
+   * Отсутствие ключа здесь не означает «ключа нет» — означает «его ещё никто не читал». Фоновая
+   * задача в этом случае пропускает провайдера и оставляет то, что у неё есть (кэш каталога), а не
+   * стучится в связку сама.
+   */
+  fun resolveQuietly(provider: ProviderEntry, projectBase: String?): String? {
+    known[provider.apiKeyRef ?: provider.id]?.let { return it }
+    provider.apiKeyEnv?.let { envName ->
+      dotEnv(projectBase)[envName]?.takeIf { it.isNotBlank() }?.let { return it }
+      System.getenv(envName)?.takeIf { it.isNotBlank() }?.let { return it }
+    }
+    return null
+  }
 
   /**
    * Переписать запись под нынешнее приложение — один раз на ключ, в фоне, молча.
@@ -69,7 +99,9 @@ object ApiKeyResolver {
   private val attempted = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
 
   fun storeKey(provider: ProviderEntry, key: String?) {
-    PasswordSafe.instance.setPassword(attributes(provider.apiKeyRef ?: provider.id), key?.ifBlank { null })
+    val ref = provider.apiKeyRef ?: provider.id
+    if (key.isNullOrBlank()) known.remove(ref) else known[ref] = key
+    PasswordSafe.instance.setPassword(attributes(ref), key?.ifBlank { null })
   }
 
   /**

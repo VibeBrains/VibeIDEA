@@ -5196,7 +5196,12 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
       val failed = java.util.Collections.synchronizedList(ArrayList<Pair<String, String>>())
       val pending = snapshot.mapNotNull { p ->
         if (p.modelsFetch?.enabled == false) return@mapNotNull null // absent = fetch on (default)
-        val resolved = ProvidersService.resolve(p, project.basePath) { } ?: return@mapNotNull null
+        // quiet: обновление каталогов — фон, и в связку ключей оно не ходит. Иначе шесть обращений
+        // при каждом старте, и каждая запись с чужим списком доступа отвечает диалогом с паролем —
+        // за провайдера, которым человек в этот день и не пользуется (opencode, 20.09.2026).
+        // Ключ, ещё никем не прочитанный, здесь выглядит как «нет ключа» и уводит в keyless ниже:
+        // каталог остаётся из кэша, а первым связку прочитает настоящий запрос человека.
+        val resolved = ProvidersService.resolve(p, project.basePath, quiet = true) { } ?: return@mapNotNull null
         // No key and not a local endpoint: asking would earn a predictable 401. Не спрашиваем и
         // не называем это ошибкой провайдера — у человека просто не введён ключ.
         if (resolved.apiKey == null && !resolved.isLocal) {

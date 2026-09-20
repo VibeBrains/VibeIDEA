@@ -98,7 +98,14 @@ class VibeAppearanceConfigurable : Configurable, Configurable.NoScroll {
     applied = manager.currentUIThemeLookAndFeel
     original = applied
     initialAutodetect = manager.autodetect
-    val themes = manager.installedThemes.toList()
+    // Только темы, на которые можно переключиться БЕЗ перезапуска. Классические (Darcula, IntelliJ)
+    // под новым интерфейсом переключаются наполовину: `LafManager.updateUI()` падает на первом же
+    // `ToolbarComboButton` («no ComponentUI class for…», idea.log 20.09.2026 16:47:25) и бросает
+    // обход окон на середине — окно проекта остаётся тёмным, диалог настроек становится светлым,
+    // кнопки диалога раскладываются по чужим метрикам и налезают друг на друга. Владелец видел это
+    // на 0.6.17, 0.6.21 и 0.6.22 и справедливо спрашивал, почему тема «непонятно какая». Предлагать
+    // такую тему значит предлагать сломать интерфейс одним щелчком.
+    val themes = manager.installedThemes.filterNot { it.isRestartRequired() }.toList()
     val ours = themes.filter { isOurs(it) }
     val rest = themes.filterNot { isOurs(it) }
 
@@ -277,7 +284,10 @@ class VibeAppearanceConfigurable : Configurable, Configurable.NoScroll {
     return listOf(CodePreview(scheme, info.name))
   }
 
-  private class CodePreview(scheme: EditorColorsScheme, themeName: String) : JComponent() {
+  // Подпись для экранного диктора живёт в NamedGraphic: прямая запись в `accessibleContext` у голого
+  // JComponent роняла конструктор — и вместе с ним всю страницу «Оформление» (0.6.22, 20.09.2026).
+  private class CodePreview(scheme: EditorColorsScheme, themeName: String)
+    : com.vibe.agent.ui.NamedGraphic(t("settings.appearance.previewTooltip", "name" to themeName)) {
     private val background: java.awt.Color = scheme.defaultBackground
     private val strokes: List<java.awt.Color> = PREVIEW_TOKENS.map {
       scheme.getAttributes(it)?.foregroundColor ?: scheme.defaultForeground
@@ -286,12 +296,6 @@ class VibeAppearanceConfigurable : Configurable, Configurable.NoScroll {
     init {
       preferredSize = Dimension(JBUI.scale(46), JBUI.scale(20))
       minimumSize = preferredSize
-      // Образец — картинка, и без подписи он молчит дважды: голосом экранного диктора и словами
-      // для того, кто не понял, что это за полоски. У соседних наших рисованных компонентов
-      // (кольцо контекста, точка состояния) подпись есть, и у этого обязана быть.
-      val explained = t("settings.appearance.previewTooltip", "name" to themeName)
-      toolTipText = explained
-      accessibleContext.accessibleName = explained
     }
 
     override fun paintComponent(g: Graphics) {
@@ -366,6 +370,10 @@ class VibeAppearanceConfigurable : Configurable, Configurable.NoScroll {
 
   private fun apply(info: UIThemeLookAndFeelInfo) {
     val manager = LafManager.getInstance()
+    // Страховка от того же на входе: тема, требующая перезапуска, в список не попадает, но может
+    // прийти из сохранённой пары (у владельца ночной стояла Darcula). Переключать на неё нельзя —
+    // это и есть половинчатый интерфейс.
+    if (info.isRestartRequired()) return
     // Переключаем ПЛАТФОРМЕННЫМ путём, а не парой `setCurrentLookAndFeel` + `updateUI`. Разница в
     // одном шаге, и она решающая: платформенный путь зовёт `DarculaInstaller`, а тот переключает
     // `JBColor.setDark` и `IconLoader.setUseDarkIcons`. `JBColor.DARK` — кэш, посеянный один раз
