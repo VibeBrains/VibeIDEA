@@ -271,10 +271,10 @@ class VibeAppearanceConfigurable : Configurable {
   private fun preview(info: UIThemeLookAndFeelInfo): List<JComponent> {
     val scheme = runCatching { info.editorSchemeId?.let { EditorColorsManager.getInstance().getScheme(it) } }
       .getOrNull() ?: return emptyList()
-    return listOf(CodePreview(scheme))
+    return listOf(CodePreview(scheme, info.name))
   }
 
-  private class CodePreview(scheme: EditorColorsScheme) : JComponent() {
+  private class CodePreview(scheme: EditorColorsScheme, themeName: String) : JComponent() {
     private val background: java.awt.Color = scheme.defaultBackground
     private val strokes: List<java.awt.Color> = PREVIEW_TOKENS.map {
       scheme.getAttributes(it)?.foregroundColor ?: scheme.defaultForeground
@@ -283,6 +283,12 @@ class VibeAppearanceConfigurable : Configurable {
     init {
       preferredSize = Dimension(JBUI.scale(46), JBUI.scale(20))
       minimumSize = preferredSize
+      // Образец — картинка, и без подписи он молчит дважды: голосом экранного диктора и словами
+      // для того, кто не понял, что это за полоски. У соседних наших рисованных компонентов
+      // (кольцо контекста, точка состояния) подпись есть, и у этого обязана быть.
+      val explained = t("settings.appearance.previewTooltip", "name" to themeName)
+      toolTipText = explained
+      accessibleContext.accessibleName = explained
     }
 
     override fun paintComponent(g: Graphics) {

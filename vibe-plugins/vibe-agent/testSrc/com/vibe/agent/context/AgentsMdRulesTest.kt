@@ -3,6 +3,7 @@ package com.vibe.agent.context
 
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 /**
@@ -12,9 +13,10 @@ import kotlin.test.assertTrue
  * [ProjectRules.AGENTS_FILE]; здесь проверяется контракт, на который он опирается.
  */
 class AgentsMdRulesTest {
+  /** Ровно то, что собирает читатель в [ProjectContextService]: имя — путь файла. */
   private fun agents(dir: String, body: String) = ProjectRules.Rule(
-    name = ProjectRules.AGENTS_FILE, dir = dir, description = null,
-    globs = emptyList(), alwaysApply = true, body = body,
+    name = if (dir.isEmpty()) ProjectRules.AGENTS_FILE else "$dir/${ProjectRules.AGENTS_FILE}",
+    dir = dir, description = null, globs = emptyList(), alwaysApply = true, body = body,
   )
 
   @Test
@@ -26,10 +28,28 @@ class AgentsMdRulesTest {
   }
 
   @Test
-  fun `AGENTS_md пакета перекрывает корневой для файлов пакета`() {
-    val kept = ProjectRules.nearestWins(listOf(agents("", "корневое"), agents("packages/ui", "пакетное")))
-    assertEquals(1, kept.size)
-    assertEquals("пакетное", kept.single().body)
+  fun `AGENTS_md двух пакетов не перекрывают друг друга`() {
+    // Правила опознаются по ИМЕНИ, и пока имя было константой «AGENTS.md», ход, тронувший файлы
+    // двух пакетов сразу, молча терял правила одного из них: и `applicable`, и `nearestWins`
+    // схлопывали их в одно. Имя-путь возвращает файлу личность.
+    val rules = listOf(agents("", "корневое"), agents("packages/ui", "для ui"), agents("packages/api", "для api"))
+    val kept = ProjectRules.nearestWins(rules)
+    assertEquals(3, kept.size, "ни корневое, ни соседнее не должно исчезнуть")
+    val applied = ProjectRules.applicable(rules, listOf("packages/ui/Button.tsx", "packages/api/index.ts"), "")
+    assertEquals(setOf("для ui", "для api", "корневое"), applied.map { it.body }.toSet())
+  }
+
+  @Test
+  fun `более близкий AGENTS_md идёт в подсказке после корневого`() {
+    // Порядок и есть разрешение конфликта: ближний к файлу читается последним.
+    val kept = ProjectRules.nearestWins(listOf(agents("packages/ui", "пакетное"), agents("", "корневое")))
+    assertEquals(listOf("корневое", "пакетное"), kept.map { it.body })
+  }
+
+  @Test
+  fun `правило пакета не касается файлов соседнего пакета`() {
+    assertTrue(ProjectRules.coversPath(agents("packages/ui", "для ui"), "packages/ui/Button.tsx"))
+    assertFalse(ProjectRules.coversPath(agents("packages/ui", "для ui"), "packages/api/index.ts"))
   }
 
   @Test

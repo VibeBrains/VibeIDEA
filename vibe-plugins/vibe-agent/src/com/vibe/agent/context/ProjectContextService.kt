@@ -135,20 +135,27 @@ class ProjectContextService(private val project: Project) {
   /**
    * Правило из `AGENTS.md`, если он есть и не пуст.
    *
-   * Тело обрезается по общей планке: один разросшийся файл правил не должен съедать ход. Формат
-   * без заголовка — обычный markdown, поэтому `alwaysApply` здесь не читается из файла, а стоит
-   * по смыслу самой конвенции: `AGENTS.md` — это «читай всегда», а не «читай по просьбе».
+   * Формат без заголовка — обычный markdown, поэтому `alwaysApply` здесь не читается из файла, а
+   * стоит по смыслу самой конвенции: `AGENTS.md` — это «читай всегда», а не «читай по просьбе».
+   *
+   * **Имя правила — путь, а не имя файла**, и это не косметика. Правила опознаются по имени: по
+   * нему их складывает `applicable` и по нему же схлопывает `nearestWins`. У курсорных правил имя
+   * даёт файл и оно разное, а у `AGENTS.md` оно одно на весь репозиторий — и ход, тронувший файлы
+   * в двух пакетах сразу, молча потерял бы правила одного из них. Путь возвращает файлу его
+   * настоящую личность: корневой и пакетные живут рядом, соседи друг друга не перекрывают, а
+   * более близкий к файлу оказывается в подсказке ниже — там, где его и прочтут последним.
    */
   private fun agentsRule(path: Path, dir: String): ProjectRules.Rule? {
     if (!Files.isRegularFile(path)) return null
     val text = runCatching { Files.readString(path) }.getOrNull()?.trim()?.takeIf { it.isNotBlank() } ?: return null
     return ProjectRules.Rule(
-      name = ProjectRules.AGENTS_FILE,
+      name = if (dir.isEmpty()) ProjectRules.AGENTS_FILE else "$dir/${ProjectRules.AGENTS_FILE}",
       dir = dir,
       description = null,
       globs = emptyList(),
       alwaysApply = true,
-      body = text.take(ProjectRules.MAX_RULE_CHARS),
+      // Планку длины держит `promptBlock` — обрезать ещё и здесь значит завести ей второе место.
+      body = text,
     )
   }
 

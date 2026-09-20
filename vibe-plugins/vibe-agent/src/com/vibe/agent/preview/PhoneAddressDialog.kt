@@ -30,7 +30,7 @@ class PhoneAddressDialog(project: Project, private val url: String) : DialogWrap
     val image = QrCode.image(url)
     val body = JPanel().apply { layout = BoxLayout(this, BoxLayout.Y_AXIS) }
     if (image != null) {
-      body.add(QrView(image).apply { alignmentX = Component.CENTER_ALIGNMENT })
+      body.add(QrView(image, url).apply { alignmentX = Component.CENTER_ALIGNMENT })
       body.add(Box.createVerticalStrut(JBUI.scale(8)))
     }
     body.add(JBLabel(url, SwingConstants.CENTER).apply { alignmentX = Component.CENTER_ALIGNMENT })
@@ -44,10 +44,13 @@ class PhoneAddressDialog(project: Project, private val url: String) : DialogWrap
   }
 
   /** Painted at the exact module grid: scaling a QR code with interpolation blurs it into a code that will not scan. */
-  private class QrView(private val image: BufferedImage) : JComponent() {
+  private class QrView(private val image: BufferedImage, address: String) : JComponent() {
     init {
       preferredSize = Dimension(image.width, image.height)
       maximumSize = preferredSize
+      // Картинка без подписи для экранного диктора не существует. Адрес в диалоге есть и текстом,
+      // поэтому потери сведений нет — но сам код обязан называть себя, а не молчать квадратом.
+      accessibleContext.accessibleName = t("preview.qr.alt", "address" to address)
     }
 
     override fun paintComponent(g: Graphics) {

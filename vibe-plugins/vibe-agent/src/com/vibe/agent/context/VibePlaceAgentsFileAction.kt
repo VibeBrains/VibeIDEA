@@ -24,6 +24,11 @@ import java.nio.file.Path
 class VibePlaceAgentsFileAction : DumbAwareAction() {
   override fun getActionUpdateThread(): ActionUpdateThread = ActionUpdateThread.BGT
 
+  /** Без проекта класть файл некуда: живой пункт меню, который ничего не делает, — обещание впустую. */
+  override fun update(e: AnActionEvent) {
+    e.presentation.isEnabled = e.project?.basePath != null
+  }
+
   override fun actionPerformed(e: AnActionEvent) {
     val project = e.project ?: return
     val base = project.basePath?.let { Path.of(it) } ?: return
