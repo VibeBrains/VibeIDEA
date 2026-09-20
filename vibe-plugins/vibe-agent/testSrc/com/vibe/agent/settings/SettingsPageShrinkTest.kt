@@ -4,6 +4,7 @@ package com.vibe.agent.settings
 import com.intellij.openapi.ui.TextFieldWithBrowseButton
 import com.intellij.util.ui.FormBuilder
 import kotlin.test.Test
+import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 /**
@@ -62,5 +63,58 @@ class SettingsPageShrinkTest {
                                  .panel)
     assertTrue(page.minimumSize.width <= SettingsUi.COMBO_MIN_WIDTH,
                "страница просит минимум ${page.minimumSize.width} точек — она задаёт ширину диалогу")
+  }
+
+  /**
+   * Узкое окно НИЧЕГО не теряет: вместо молчаливой обрезки появляется полоса прокрутки.
+   *
+   * Это проверка не на ширину, а на честность. Три причины дефекта были разными, а следствие —
+   * одно: не поместившееся содержимое исчезало без следа. Пока полоса есть, любая будущая
+   * причина даст неудобство, но не потерю.
+   */
+  @Test
+  fun `окно уже минимума отдаёт полосу прокрутки, а не режет`() {
+    val form = FormBuilder.createFormBuilder()
+      .addLabeledComponent("Angular (@angular/language-server)", TextFieldWithBrowseButton())
+      .panel
+    val page = SettingsUi.page(form)
+    val floor = form.minimumSize.width
+
+    page.setSize(floor * 2, 400)
+    page.doLayout()
+    val view = page.viewport.view as javax.swing.Scrollable
+    assertTrue(view.scrollableTracksViewportWidth,
+               "при широком окне страница обязана следовать его ширине, а не заводить полосу")
+
+    page.setSize(floor / 2, 400)
+    page.doLayout()
+    assertFalse(view.scrollableTracksViewportWidth,
+                "окно уже минимума ($floor точек) — страница обязана отдать полосу, а не обрезать содержимое")
+  }
+
+  /**
+   * Страница не раздувает диалог: у неё есть и потолок предпочтительной ширины.
+   *
+   * Вторая половина того же симптома. Кнопки диалога слипались не сами по себе — их ряд
+   * раскладывался под ширину, которую требовало содержимое. Сжимаемость снизу этого не лечит:
+   * нужна и умеренность сверху.
+   */
+  @Test
+  fun `страница не просит у диалога лишней ширины`() {
+    val page = SettingsUi.page(FormBuilder.createFormBuilder()
+                                 .addLabeledComponent("Сервер для TypeScript", longCombo())
+                                 .addComponent(SettingsUi.hint(
+                                   "Очень длинное объяснение под настройкой, которое в одну строку заняло бы " +
+                                   "полторы тысячи точек и утащило бы за собой всю страницу, а вместе с ней и диалог."))
+                                 .addLabeledComponent("Angular (@angular/language-server)", TextFieldWithBrowseButton())
+                                 .panel)
+    val asked = page.preferredSize.width
+    assertTrue(asked in 1..PAGE_WIDTH_CEILING,
+               "страница просит у диалога $asked точек при потолке $PAGE_WIDTH_CEILING")
+  }
+
+  private companion object {
+    /** Потолок взят с запасом к обычной ширине диалога настроек: важен порядок величины. */
+    const val PAGE_WIDTH_CEILING = 900
   }
 }

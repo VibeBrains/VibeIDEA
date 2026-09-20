@@ -33,7 +33,12 @@ object SettingsUi {
   /** Содержимое страницы настроек: вертикальная прокрутка и никакой горизонтальной. */
   fun page(content: JComponent): JScrollPane =
     com.vibe.agent.ui.VibeScroll.pane(TracksViewportWidthPanel(content)).apply {
-      horizontalScrollBarPolicy = ScrollPaneConstants.HORIZONTAL_SCROLLBAR_NEVER
+      // Полоса как ПОСЛЕДНЕЕ средство, а не запрет. Запрет означал, что не поместившееся
+      // содержимое обрезается молча, — и именно молчание возвращало дефект трижды, каждый раз с
+      // новой причиной. Теперь страница следует ширине окна, пока может, а когда уже не может —
+      // отдаёт полосу, и ничего не теряется. Насколько редко она появляется, держат наши формы и
+      // замер `SettingsPageShrinkTest`.
+      horizontalScrollBarPolicy = ScrollPaneConstants.HORIZONTAL_SCROLLBAR_AS_NEEDED
       verticalScrollBarPolicy = ScrollPaneConstants.VERTICAL_SCROLLBAR_AS_NEEDED
       border = JBUI.Borders.empty()
     }

@@ -41,14 +41,27 @@ object ApiKeyResolver {
     val properties = PropertiesComponent.getInstance()
     val mark = KeyOwnership.markOf(ref)
     if (!KeyOwnership.needsReown(SystemInfo.isMac, properties.getBoolean(mark, false), keyPresent = true)) return
-    // Отметку ставим ДО перезаписи: если она не удалась, повторять её при каждом чтении значило бы
-    // дёргать связку в каждом запросе. Не получилось — остаётся действие по просьбе человека.
-    properties.setValue(mark, true)
+    // Отметка ставится ТОЛЬКО на удачу, а от повторных попыток в этом же запуске защищает список
+    // в памяти. Первая версия ставила отметку заранее — «чтобы не дёргать связку каждым запросом»,
+    // — и тем самым делала неудачу вечной: перезапись не удалась, второй попытки уже не будет, и
+    // человек остаётся с вопросом пароля навсегда. Память процесса решает ту же задачу и не
+    // переживает перезапуск: следующий запуск попробует снова.
+    if (!attempted.add(ref)) return
     ApplicationManager.getApplication().executeOnPooledThread {
-      runCatching { restoreKey(provider, key) }
+      val done = runCatching { restoreKey(provider, key) }
         .onFailure { logger<ApiKeyResolver>().warn("could not re-own the keychain entry for $ref: ${it.message}") }
+        .getOrDefault(false)
+      if (done) properties.setValue(mark, true)
     }
   }
+
+  /**
+   * Ключи, перезапись которых уже пробовали в ЭТОМ запуске.
+   *
+   * Не кэш и не состояние — предохранитель от того, чтобы неудача повторялась на каждом чтении
+   * ключа, то есть на каждом запросе к модели.
+   */
+  private val attempted = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
 
   fun storeKey(provider: ProviderEntry, key: String?) {
     PasswordSafe.instance.setPassword(attributes(provider.apiKeyRef ?: provider.id), key?.ifBlank { null })
