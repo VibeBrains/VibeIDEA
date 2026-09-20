@@ -27,6 +27,12 @@ import javax.swing.JEditorPane
  * мы: вид сразу знает, где рвать строку, и честно отдаёт и ширину, и высоту с первого вопроса.
  * Ширина фиксированная, в символах — так же, как у платформенных подсказок в настройках: страница
  * не тянется за самой длинной фразой, а фраза не растягивает страницу.
+ * **И эта ширина обязана следовать окну.** До 20.09.2026 она была зашита числом — семьдесят
+ * символов, — и в этом был весь дефект, который владелец присылал четырежды: при крупном шрифте
+ * или узком окне семьдесят символов шире выданного места, и текст обрезается по правому краю.
+ * Замеры этого не видели: подсказку мерили в одиночку, а она сама и назначала себе ширину.
+ * Поэтому число символов — только ПЕРВЫЙ ответ, пока настоящая ширина неизвестна; как только вид
+ * получает границы, текст переносится заново по ним ([setBounds]).
  */
 internal class WrappingHint(html: String) : JEditorPane() {
   /**
@@ -37,6 +43,9 @@ internal class WrappingHint(html: String) : JEditorPane() {
    * конструкторе. Ловушка общая для любого Swing-компонента со своим состоянием и своим `updateUI`.
    */
   private var source: String? = null
+
+  /** Ширина, по которой текст перенесён сейчас; -1 — ещё ни разу по настоящей. */
+  private var wrappedAt: Int = -1
 
   init {
     contentType = "text/html"
@@ -53,11 +62,31 @@ internal class WrappingHint(html: String) : JEditorPane() {
 
   private fun applyText() {
     val html = source ?: return
-    val width = getFontMetrics(font).charWidth('0') * WRAP_COLUMNS
+    // Пока настоящая ширина неизвестна — по числу символов; дальше её заменит [setBounds].
+    val width = if (wrappedAt > 0) wrappedAt else getFontMetrics(font).charWidth('0') * WRAP_COLUMNS
     text = "<html><body width='$width'>$html</body></html>"
     // Обход бага JDK, тот же, что и у платформы: JEditorPane, однажды получивший нулевую высоту,
     // больше никогда не отдаёт правильный предпочтительный размер (BasicTextUI.getPreferredSize).
     size = Dimension(0, 0)
+  }
+
+  /**
+   * Настоящая ширина приходит только с раскладкой — и текст переносится заново по ней.
+   *
+   * Сравнение с прежней шириной здесь не оптимизация, а условие остановки: перенос меняет высоту,
+   * высота вызывает раскладку, раскладка снова зовёт `setBounds`. Ширина в вертикальной форме от
+   * высоты не зависит, поэтому второй проход приходит с тем же числом и на нём всё замирает.
+   */
+  override fun setBounds(x: Int, y: Int, width: Int, height: Int) {
+    super.setBounds(x, y, width, height)
+    // Минус запас: html с `body width='N'` отдаёт предпочтительную ширину N+1, и подсказка просила
+    // бы на точку больше выданного — то есть край буквы уходил бы под обрез. Две точки покрывают
+    // это округление при любом масштабе.
+    val usable = width - insets.left - insets.right - SLACK
+    if (usable <= 0 || usable == wrappedAt) return
+    wrappedAt = usable
+    applyText()
+    revalidate()
   }
 
   override fun updateUI() {
@@ -81,5 +110,8 @@ internal class WrappingHint(html: String) : JEditorPane() {
      * и примерно столько же держат подсказки самой IDE.
      */
     const val WRAP_COLUMNS = 70
+
+    /** Запас на округление html: `body width='N'` просит N+1. */
+    const val SLACK = 2
   }
 }
