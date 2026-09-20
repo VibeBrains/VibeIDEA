@@ -30,6 +30,21 @@ object ProjectRules {
   const val LEGACY_FILE = ".cursorrules"
   const val RULE_EXTENSION = ".mdc"
 
+  /**
+   * Правила проекта в формате agents.md — третья граница, которую задаёт сам репозиторий.
+   *
+   * Формат сложился как соглашение: формальной спеки у него нет, есть договорённость об имени и
+   * месте файла (agents.md), и читают его Codex, Cursor, Zed, opencode, goose, Copilot coding
+   * agent и Junie. Репозиторий, несущий `AGENTS.md`, до 20.09.2026 не давал нашему агенту ничего:
+   * файл лежал только пунктом `@`-меню.
+   *
+   * Читается ВСЕГДА, а не как запасной вариант при отсутствии `.cursor/rules`. У Claude Code
+   * фолбэк осмыслен — там своя `CLAUDE.md` спорит с чужим файлом; у нас обе границы чужие, и
+   * молча выбросить одну из них значит потерять инструкции, которые человек написал. Конфликты
+   * решает то же правило близости, что и для вложенных правил: ближний к файлу побеждает.
+   */
+  const val AGENTS_FILE = "AGENTS.md"
+
   /** Bodies above this are truncated: one runaway rule must not eat the turn's context. */
   const val MAX_RULE_CHARS = 20_000
 

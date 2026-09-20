@@ -5,6 +5,7 @@ import com.vibe.agent.util.obj
 import com.vibe.agent.util.arr
 import com.intellij.openapi.diagnostic.logger
 import com.vibe.agent.i18n.VibeI18n.t
+import com.vibe.agent.resilience.ProxySettings
 import com.vibe.agent.resilience.RetryPolicy
 
 import kotlinx.serialization.json.Json
@@ -642,8 +643,28 @@ class LlmClient(
           logger<LlmClient>().warn("LLM proxy setting is malformed and was ignored: ${it.message}")
           null
         }
-      spec?.let { builder.proxy(java.net.ProxySelector.of(java.net.InetSocketAddress(it.host, it.port))) }
+      // `ProxySelector.of(...)` отправлял бы в прокси ВСЁ, включая локальные модели на этой же
+      // машине: заданный прокси ломал Ollama на localhost:11434 и локальный muse-glimmer. Решение
+      // о том, идёт ли хост мимо, принимает [ProxySettings.bypasses]; здесь только проводка.
+      spec?.let { builder.proxy(BypassingProxySelector(it.toProxy(), System.getenv("NO_PROXY") ?: System.getenv("no_proxy"))) }
       return builder.build()
+    }
+
+    /**
+     * Выбор прокси по хосту: петля и перечисленное в `NO_PROXY` идут напрямую.
+     *
+     * Отдельный класс, а не лямбда, потому что `ProxySelector` — абстрактный класс с двумя
+     * методами, и второй обязателен. `connectFailed` молчит осознанно: выбор здесь статический,
+     * запасного маршрута нет, и «запомнить неудачу» означало бы ровно ничего.
+     */
+    private class BypassingProxySelector(
+      private val proxy: java.net.Proxy,
+      private val noProxy: String?,
+    ) : java.net.ProxySelector() {
+      override fun select(uri: java.net.URI): List<java.net.Proxy> =
+        if (ProxySettings.bypasses(uri.host.orEmpty(), noProxy)) listOf(java.net.Proxy.NO_PROXY) else listOf(proxy)
+
+      override fun connectFailed(uri: java.net.URI, address: java.net.SocketAddress, failure: java.io.IOException) = Unit
     }
 
     /**

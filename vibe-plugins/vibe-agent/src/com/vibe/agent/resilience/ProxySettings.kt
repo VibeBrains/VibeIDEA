@@ -49,4 +49,43 @@ object ProxySettings {
     }
     return Spec(type, host, port)
   }
+
+  /**
+   * Идёт ли этот хост МИМО прокси.
+   *
+   * Петля — всегда мимо, и это не настройка. Прокси стоит между нами и внешней сетью; локальная
+   * модель живёт на этой же машине, и отправлять запрос к ней через внешний шлюз значит просить
+   * его соединиться с самим собой. До 20.09.2026 клиент был один на все запросы и прокси ставился
+   * `ProxySelector.of(...)` без исключений — заданный прокси ломал Ollama на `localhost:11434` и
+   * локальный muse-glimmer. Так же поступают и чужие клиенты: Claude Code никогда не гонит
+   * loopback через прокси (docs.claude.com/en/docs/claude-code/corporate-proxy).
+   *
+   * Остальное перечисляет человек в `NO_PROXY` — имя переменной взято у экосистемы, а не
+   * придумано: тот же список уже стоит у всех, кто работает за корпоративным шлюзом. Разделители
+   * — запятая или пробел; `*` означает «мимо прокси вообще всё»; запись с точки впереди
+   * (`.example.com`) покрывает и сам домен, и поддомены; порт в записи игнорируется.
+   *
+   * Чистая: строки внутрь, решение наружу.
+   */
+  fun bypasses(host: String, noProxy: String?): Boolean {
+    val target = host.trim().trimStart('[').trimEnd(']').lowercase()
+    if (target.isEmpty()) return false
+    if (isLoopback(target)) return true
+    for (raw in noProxy.orEmpty().split(',', ' ', '\t')) {
+      val trimmed = raw.trim()
+      // Порт в записи игнорируется: `example.com:8080` перечисляет хост, а не соединение.
+      val entry = trimmed.substringBeforeLast(':', trimmed).lowercase()
+      if (entry.isEmpty()) continue
+      if (entry == "*") return true
+      val bare = entry.removePrefix(".")
+      if (target == bare || target.endsWith(".$bare")) return true
+    }
+    return false
+  }
+
+  /** Петля во всех её написаниях, включая `*.localhost` из RFC 6761. */
+  private fun isLoopback(host: String): Boolean =
+    host == "localhost" || host.endsWith(".localhost") ||
+    host == "::1" || host == "0:0:0:0:0:0:0:1" ||
+    host.startsWith("127.")
 }

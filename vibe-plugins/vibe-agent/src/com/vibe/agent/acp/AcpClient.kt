@@ -14,6 +14,7 @@ import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.longOrNull
 import kotlinx.serialization.json.put
@@ -291,6 +292,7 @@ class AcpClient(
       })
     }
     return request("initialize", init).thenCompose { initResult ->
+      agreedVersion(initResult)?.let { return@thenCompose CompletableFuture.failedFuture<String>(it) }
       capabilities = parseCapabilities(initResult)
       authMethods = AgentAuth.methods(initResult as? JsonObject)
       ideTools = handler.ideToolsFor(capabilities?.mcpHttp == true)
@@ -441,6 +443,31 @@ class AcpClient(
   }
 
   // Lenient parsing: a missing or malformed field never fails the handshake, it just reads as "unsupported".
+  /**
+   * Версия протокола, на которой сошлись, — и почему молчать здесь нельзя.
+   *
+   * По спеке мы называем в `initialize` СВОЙ максимум, а агент отвечает либо им же, либо своим
+   * последним, и дальше обязательство обоюдное: «Clients and Agents MUST agree on a protocol
+   * version», а клиенту прямо предписано отключиться, если ответ ему не по зубам
+   * (agentclientprotocol.com/protocol/v1/initialization). Версия меняется ТОЛЬКО на ломающих
+   * изменениях — v2 уже объявлен черновиком, — поэтому «продолжим и посмотрим» означает разговор
+   * на другом проводе: часть методов переименована, часть убрана, и человек увидит не отказ, а
+   * странности. До 20.09.2026 мы ответ по версии не читали вовсе.
+   *
+   * Молчание агента (поля нет) ошибкой не считаем: так отвечали ранние сборки, и придираться к
+   * ним значит отказать работающему агенту из-за формальности.
+   *
+   * @return причина отказа или null, если версия наша.
+   */
+  private fun agreedVersion(initResult: JsonElement): Throwable? {
+    val answered = (initResult as? JsonObject)?.get("protocolVersion")?.jsonPrimitive?.intOrNull ?: return null
+    if (answered == PROTOCOL_VERSION) return null
+    handler.onProtocolLog("[acp] protocolVersion mismatch: we speak $PROTOCOL_VERSION, the agent answered $answered")
+    return IllegalStateException(
+      t("acp.error.protocolVersion", "agent" to answered.toString(), "ours" to PROTOCOL_VERSION.toString())
+    )
+  }
+
   private fun parseCapabilities(initResult: JsonElement): AgentCapabilities {
     val obj = initResult as? JsonObject ?: return AgentCapabilities(image = false, embeddedContext = false)
     val agent = obj["agentCapabilities"] as? JsonObject

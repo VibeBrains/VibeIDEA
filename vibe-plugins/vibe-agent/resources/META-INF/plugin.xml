@@ -107,6 +107,11 @@
               description="Материалы вне проекта: агент читает, но правит только проект"/>
       <action id="Vibe.ManageReferenceFolders" class="com.vibe.agent.context.VibeManageReferenceFoldersAction"
               text="Папки-справочники" description="Показать подключённые папки и отключить лишние"/>
+      <!-- Шаблон правил лежит в .vibe, а AGENTS.md — в корне и в коммите человека: переносит его
+           он сам, когда захотел, а не сеялка при открытии проекта. -->
+      <action id="Vibe.PlaceAgentsFile" class="com.vibe.agent.context.VibePlaceAgentsFileAction"
+              text="Создать AGENTS.md из шаблона"
+              description="Правила проекта в формате agents.md — их читают и наш агент, и Codex, Cursor, Zed, Junie"/>
       <!-- Связка ключей спрашивает пароль за КАЖДУЮ запись, сохранённую прежними сборками: её
            список доступа помнит то приложение. Действие переписывает ключи под нынешнюю подпись —
            один раз, когда человек сам этого захотел, а не посреди работы. -->

@@ -36,6 +36,10 @@ object VibeDefaults {
    */
   private val MANIFEST = listOf(
     "README.md" to "README.md",
+    // Шаблон правил проекта в формате agents.md. Засевается В `.vibe/`, а не в корень: `AGENTS.md`
+    // уезжает в коммит человека, и класть его в чужой репозиторий без спроса мы не вправе — в
+    // корень его переносит действие IDE.
+    "AGENTS.template.md" to "AGENTS.template.md",
     "agents.json" to "agents.json",
     "design/components.md" to "design/components.md",
     "dataSources.json" to "dataSources.json",
@@ -62,6 +66,7 @@ object VibeDefaults {
     "providers/arbr.jsonc" to "providers/arbr.jsonc",
     "providers/atria.jsonc" to "providers/atria.jsonc",
     "providers/deepseek.jsonc" to "providers/deepseek.jsonc",
+    "providers/edge0.jsonc" to "providers/edge0.jsonc",
     "providers/google-gemini.jsonc" to "providers/google-gemini.jsonc",
     "providers/inference-net.jsonc" to "providers/inference-net.jsonc",
     "providers/kimi.jsonc" to "providers/kimi.jsonc",

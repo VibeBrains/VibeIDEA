@@ -87,6 +87,9 @@ class ProjectContextService(private val project: Project) {
     val nested = ArrayList<ProjectRules.Rule>()
     for (dir in ProjectRules.ruleDirsFor(touchedPaths)) {
       if (dir.isEmpty()) continue
+      // Вложенный AGENTS.md — та же конвенция близости: у пакета своё соглашение, и оно бьёт
+      // корневое для файлов внутри пакета.
+      agentsRule(Path.of(base, dir, ProjectRules.AGENTS_FILE), dir)?.let { nested.add(it) }
       val rulesDir = Path.of(base, dir, ProjectRules.RULES_DIR)
       if (!Files.isDirectory(rulesDir)) continue
       val files = runCatching { Files.list(rulesDir).use { stream -> stream.toList() } }.getOrDefault(emptyList())
@@ -103,7 +106,10 @@ class ProjectContextService(private val project: Project) {
     val base = project.basePath ?: return emptyList()
     val dir = Path.of(base, ProjectRules.RULES_DIR)
     val legacy = Path.of(base, ProjectRules.LEGACY_FILE)
-    val stamp = stampOf(dir) * 31 + stampOf(legacy) + fileStamps(dir)
+    val agents = Path.of(base, ProjectRules.AGENTS_FILE)
+    // Отпечаток считает и AGENTS.md: без этого правка файла не долетела бы до следующего хода —
+    // кэш правил остался бы прежним, и человек решил бы, что агент его не слушает.
+    val stamp = stampOf(dir) * 31 + stampOf(legacy) + stampOf(agents) * 17 + fileStamps(dir)
     rules?.let { if (it.stamp == stamp) return it.value }
 
     val loaded = ArrayList<ProjectRules.Rule>()
@@ -121,8 +127,29 @@ class ProjectContextService(private val project: Project) {
                                      alwaysApply = true, body = it.trim()))
       }
     }
+    agentsRule(Path.of(base, ProjectRules.AGENTS_FILE), dir = "")?.let { loaded.add(it) }
     rules = Cached(loaded, stamp)
     return loaded
+  }
+
+  /**
+   * Правило из `AGENTS.md`, если он есть и не пуст.
+   *
+   * Тело обрезается по общей планке: один разросшийся файл правил не должен съедать ход. Формат
+   * без заголовка — обычный markdown, поэтому `alwaysApply` здесь не читается из файла, а стоит
+   * по смыслу самой конвенции: `AGENTS.md` — это «читай всегда», а не «читай по просьбе».
+   */
+  private fun agentsRule(path: Path, dir: String): ProjectRules.Rule? {
+    if (!Files.isRegularFile(path)) return null
+    val text = runCatching { Files.readString(path) }.getOrNull()?.trim()?.takeIf { it.isNotBlank() } ?: return null
+    return ProjectRules.Rule(
+      name = ProjectRules.AGENTS_FILE,
+      dir = dir,
+      description = null,
+      globs = emptyList(),
+      alwaysApply = true,
+      body = text.take(ProjectRules.MAX_RULE_CHARS),
+    )
   }
 
   private fun fileStamps(dir: Path): Long {
