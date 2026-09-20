@@ -132,8 +132,8 @@ class VibeAppearanceConfigurable : Configurable {
     // «Днём» первую светлую тему из списка, то есть догадку, а «ОК» эту догадку записывал.
     val dayItems = listOf(ThemeItem(null)) + themes.filterNot { it.isDark }.map { ThemeItem(it) }
     val nightItems = listOf(ThemeItem(null)) + themes.filter { it.isDark }.map { ThemeItem(it) }
-    val dayCombo = ComboBox(dayItems.toTypedArray()).also { day = it }
-    val nightCombo = ComboBox(nightItems.toTypedArray()).also { night = it }
+    val dayCombo = SettingsUi.combo(dayItems.toTypedArray()).also { day = it }
+    val nightCombo = SettingsUi.combo(nightItems.toTypedArray()).also { night = it }
     select(dayCombo, manager.preferredLightThemeId)
     select(nightCombo, manager.preferredDarkThemeId)
     initialDay = (dayCombo.selectedItem as? ThemeItem)?.info?.id

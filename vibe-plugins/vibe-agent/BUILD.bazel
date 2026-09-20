@@ -71,6 +71,10 @@ jvm_library(
         "@lib//:kotlinx-serialization-core",
         "@lib//:kotlin-test",
         "@lib//:kotlin-test-junit5",
+        # Чтобы тест мог МЕРЯТЬ настоящие компоненты страницы настроек, а не их описание.
+        "//platform/platform-api:ide",
+        "//platform/util:util-ui",
+        "//platform/core-ui",
         "//libraries/zxing-core",
         "//libraries/junit5",
         "//libraries/junit5:junit5_test_lib",

@@ -20,8 +20,8 @@ import com.vibe.agent.settings.SettingsUi
  */
 class VibeLspConfigurable : Configurable {
   private val fields = LinkedHashMap<String, TextFieldWithBrowseButton>()
-  private val phpEngine = com.intellij.openapi.ui.ComboBox(PhpEngine.entries.toTypedArray())
-  private val tsEngine = com.intellij.openapi.ui.ComboBox(TsEngine.entries.toTypedArray())
+  private val phpEngine = SettingsUi.combo(PhpEngine.entries.toTypedArray())
+  private val tsEngine = SettingsUi.combo(TsEngine.entries.toTypedArray())
   /** Пусто — «автоматически»: путь, названный руками, сильнее любого поиска. */
   private val nodePath = TextFieldWithBrowseButton()
   private val nodeStatus = JBLabel()

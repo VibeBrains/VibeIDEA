@@ -49,7 +49,7 @@ class VibeUiConfigurable : Configurable {
   }
 
   private fun languageCombo(): com.intellij.openapi.ui.ComboBox<String> =
-    com.intellij.openapi.ui.ComboBox(VibeI18n.available().toTypedArray()).also {
+    SettingsUi.combo(VibeI18n.available().toTypedArray()).also {
       it.item = VibeI18n.activeCode()
       language = it
     }

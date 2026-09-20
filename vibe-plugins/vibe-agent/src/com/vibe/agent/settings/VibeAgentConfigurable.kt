@@ -92,17 +92,17 @@ class VibeAgentConfigurable : Configurable, Configurable.NoScroll {
     val watchHeight = JBIntSpinner(VibeAgentSettings.watchFrameHeight, VibeAgentSettings.MIN_WATCH_FRAME_HEIGHT, VibeAgentSettings.MAX_WATCH_FRAME_HEIGHT).also { watchHeightSpinner = it }
     val telegramProxy = com.intellij.ui.components.JBTextField(VibeAgentSettings.telegramProxy, 24).also { telegramProxyField = it }
     val telegramProject = com.intellij.ui.components.JBTextField(VibeAgentSettings.telegramProject, 24).also { telegramProjectField = it }
-    val reasoning = com.intellij.openapi.ui.ComboBox(arrayOf("off", "low", "medium", "high")).also {
+    val reasoning = SettingsUi.combo(arrayOf("off", "low", "medium", "high")).also {
       it.selectedItem = VibeAgentSettings.reasoningLevel
       reasoningLevel = it
     }
     val offline = com.intellij.ui.components.JBCheckBox(t("settings.agent.offline"), VibeAgentSettings.offline).also { offlineBox = it }
     val metric = com.intellij.ui.components.JBTextField(VibeAgentSettings.metricPattern, 28).also { metricPattern = it }
-    val metricDir = com.intellij.openapi.ui.ComboBox(arrayOf("lower", "higher")).also {
+    val metricDir = SettingsUi.combo(arrayOf("lower", "higher")).also {
       it.selectedItem = VibeAgentSettings.metricDirection
       metricDirection = it
     }
-    val minimalism = com.intellij.openapi.ui.ComboBox(arrayOf("off", "light", "full", "ultra")).also {
+    val minimalism = SettingsUi.combo(arrayOf("off", "light", "full", "ultra")).also {
       it.selectedItem = VibeAgentSettings.minimalismMode
       minimalismMode = it
     }
@@ -110,7 +110,7 @@ class VibeAgentConfigurable : Configurable, Configurable.NoScroll {
     val digest = com.intellij.ui.components.JBTextField(VibeAgentSettings.digestTime, 8).also { digestField = it }
     val proxy = com.intellij.ui.components.JBTextField(VibeAgentSettings.llmProxyUrl, 32).also { proxyField = it }
     val failover = com.intellij.ui.components.JBTextField(VibeAgentSettings.failoverChain, 32).also { failoverField = it }
-    val filterMode = com.intellij.openapi.ui.ComboBox(arrayOf("auto", "raw", "aggregate", "off")).also {
+    val filterMode = SettingsUi.combo(arrayOf("auto", "raw", "aggregate", "off")).also {
       it.selectedItem = VibeAgentSettings.contextFilterMode
       contextFilter = it
     }
@@ -124,16 +124,16 @@ class VibeAgentConfigurable : Configurable, Configurable.NoScroll {
     val autopilotEvery = JBIntSpinner(VibeAgentSettings.autopilotCheckpointEvery, 0, VibeAgentSettings.MAX_AUTOPILOT_TURNS).also { autopilotCheckpoint = it }
     val autopilotBudget = JBIntSpinner(VibeAgentSettings.autopilotMaxTokens, 0, VibeAgentSettings.MAX_AUTOPILOT_MAX_TOKENS).also { autopilotTokens = it }
     val rotation = JBIntSpinner(VibeAgentSettings.auditRotationMb, VibeAgentSettings.MIN_AUDIT_ROTATION_MB, VibeAgentSettings.MAX_AUDIT_ROTATION_MB).also { auditRotation = it }
-    val vMode = ComboBox(VibeAgentSettings.VERIFY_MODES.toTypedArray()).apply { item = VibeAgentSettings.verifyMode }.also { verifyMode = it }
+    val vMode = SettingsUi.combo(VibeAgentSettings.VERIFY_MODES.toTypedArray()).apply { item = VibeAgentSettings.verifyMode }.also { verifyMode = it }
     val vCommand = JBTextField(VibeAgentSettings.verifyCommand, 28).also { verifyCommand = it }
     val vAttempts = JBIntSpinner(VibeAgentSettings.verifyMaxAttempts, VibeAgentSettings.MIN_VERIFY_MAX_ATTEMPTS, VibeAgentSettings.MAX_VERIFY_MAX_ATTEMPTS).also { verifyMaxAttempts = it }
     val vTimeout = JBIntSpinner(VibeAgentSettings.verifyTimeoutMs / 1000, VibeAgentSettings.MIN_VERIFY_TIMEOUT_MS / 1000, VibeAgentSettings.MAX_VERIFY_TIMEOUT_MS / 1000).also { verifyTimeoutSec = it }
-    val cMode = ComboBox(VibeAgentSettings.CHECKS_MODES.toTypedArray()).apply { item = VibeAgentSettings.checksMode }.also { checksMode = it }
+    val cMode = SettingsUi.combo(VibeAgentSettings.CHECKS_MODES.toTypedArray()).apply { item = VibeAgentSettings.checksMode }.also { checksMode = it }
     val cAttempts = JBIntSpinner(VibeAgentSettings.checksMaxAttempts, VibeAgentSettings.MIN_CHECKS_MAX_ATTEMPTS, VibeAgentSettings.MAX_CHECKS_MAX_ATTEMPTS).also { checksMaxAttempts = it }
     val cMaxFiles = JBIntSpinner(VibeAgentSettings.checksMaxFiles, VibeAgentSettings.MIN_CHECKS_MAX_FILES, VibeAgentSettings.MAX_CHECKS_MAX_FILES).also { checksMaxFiles = it }
     val cMaxFileKb = JBIntSpinner(VibeAgentSettings.checksMaxFileKb, VibeAgentSettings.MIN_CHECKS_MAX_FILE_KB, VibeAgentSettings.MAX_CHECKS_MAX_FILE_KB).also { checksMaxFileKb = it }
     val terminal = JBCheckBox(t("settings.agent.terminal"), VibeAgentSettings.terminalEnabled).also { terminalEnabled = it }
-    val design = com.intellij.openapi.ui.ComboBox(VibeAgentSettings.DESIGN_MODES.toTypedArray())
+    val design = SettingsUi.combo(VibeAgentSettings.DESIGN_MODES.toTypedArray())
       .also { it.item = VibeAgentSettings.designMode; designMode = it }
     val designTries = JBIntSpinner(VibeAgentSettings.designMaxAttempts, VibeAgentSettings.MIN_DESIGN_MAX_ATTEMPTS, VibeAgentSettings.MAX_DESIGN_MAX_ATTEMPTS)
       .also { designAttempts = it }
