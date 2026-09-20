@@ -22,7 +22,10 @@ import javax.swing.JPanel
  * extension point, so it also shows up in the internal Registry — but a person should not have to
  * go there for something this visible.
  */
-class VibeUiConfigurable : Configurable {
+// NoScroll обязателен: без него платформа заворачивает нашу страницу-со-скроллом во ВТОРОЙ скролл
+// и выдаёт ей всю предпочтительную ширину — наш скролл тогда ничего не решает, и содержимое уезжает
+// за край диалога (ConfigurableCardPanel.createConfigurableComponent; владелец, 20.09.2026).
+class VibeUiConfigurable : Configurable, Configurable.NoScroll {
   private var thickness: JBIntSpinner? = null
   private var promo: JBCheckBox? = null
   private var language: com.intellij.openapi.ui.ComboBox<String>? = null

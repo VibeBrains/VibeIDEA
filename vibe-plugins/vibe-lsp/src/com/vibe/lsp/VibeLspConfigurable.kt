@@ -18,7 +18,10 @@ import com.vibe.agent.settings.SettingsUi
  * rule cannot express: a server that lives in `vendor/bin`, in a shared container folder, or in a
  * checkout built from source.
  */
-class VibeLspConfigurable : Configurable {
+// NoScroll обязателен: без него платформа заворачивает нашу страницу-со-скроллом во ВТОРОЙ скролл
+// и выдаёт ей всю предпочтительную ширину — наш скролл тогда ничего не решает, и содержимое уезжает
+// за край диалога (ConfigurableCardPanel.createConfigurableComponent; владелец, 20.09.2026).
+class VibeLspConfigurable : Configurable, Configurable.NoScroll {
   private val fields = LinkedHashMap<String, TextFieldWithBrowseButton>()
   private val phpEngine = SettingsUi.combo(PhpEngine.entries.toTypedArray())
   private val tsEngine = SettingsUi.combo(TsEngine.entries.toTypedArray())

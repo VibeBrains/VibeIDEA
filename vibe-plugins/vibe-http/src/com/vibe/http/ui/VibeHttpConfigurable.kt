@@ -12,7 +12,10 @@ import javax.swing.SpinnerNumberModel
 import com.vibe.agent.settings.SettingsUi
 
 /** Настройки клиента запросов: таймауты и поведение по умолчанию. */
-class VibeHttpConfigurable : Configurable {
+// NoScroll обязателен: без него платформа заворачивает нашу страницу-со-скроллом во ВТОРОЙ скролл
+// и выдаёт ей всю предпочтительную ширину — наш скролл тогда ничего не решает, и содержимое уезжает
+// за край диалога (ConfigurableCardPanel.createConfigurableComponent; владелец, 20.09.2026).
+class VibeHttpConfigurable : Configurable, Configurable.NoScroll {
   private val requestTimeout = JSpinner(SpinnerNumberModel(
     HttpSettings.DEFAULT_REQUEST_TIMEOUT_SECONDS, HttpSettings.MIN_TIMEOUT_SECONDS, HttpSettings.MAX_TIMEOUT_SECONDS, 1))
   private val connectTimeout = JSpinner(SpinnerNumberModel(

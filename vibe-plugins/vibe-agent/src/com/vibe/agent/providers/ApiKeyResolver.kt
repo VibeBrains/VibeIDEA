@@ -51,7 +51,12 @@ object ApiKeyResolver {
       val done = runCatching { restoreKey(provider, key) }
         .onFailure { logger<ApiKeyResolver>().warn("could not re-own the keychain entry for $ref: ${it.message}") }
         .getOrDefault(false)
-      if (done) properties.setValue(mark, true)
+      // Удача тоже пишется в лог: иначе «сработало или нет» невозможно узнать иначе как по
+      // отсутствию вопроса пароля через день.
+      if (done) {
+        properties.setValue(mark, true)
+        logger<ApiKeyResolver>().info("keychain entry for $ref re-owned by this build; no more password prompts for it")
+      }
     }
   }
 
@@ -92,6 +97,16 @@ object ApiKeyResolver {
     // процесса, и отказ связки: следующий запуск подберёт её сам ([recoverLeftovers]).
     PasswordSafe.instance.setPassword(attributes(ref + BACKUP_SUFFIX), key)
     storeKey(provider, null)
+    // Удаление обязано СОСТОЯТЬСЯ, и это проверяется отдельно. Если список доступа записи не наш,
+    // связка может отказать в удалении (или человек откажет в диалоге) — запись остаётся, следующая
+    // запись поверх неё идёт правкой на месте, список доступа не меняется, а прочитанное обратно
+    // всё равно совпадает с ключом. Прежняя проверка «прочитали то, что писали» считала это
+    // успехом и ставила отметку — вопрос пароля становился вечным.
+    if (storedKey(provider) != null) {
+      logger<ApiKeyResolver>().warn("keychain entry for $ref survived the delete — its access list is not ours, will retry on the next launch")
+      PasswordSafe.instance.setPassword(attributes(ref + BACKUP_SUFFIX), null)
+      return false
+    }
     storeKey(provider, key)
     // Читаем обратно, а не верим записи: связка может отказать молча, и «переписано» без проверки
     // означало бы отчёт о работе, которой не было.

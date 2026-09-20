@@ -43,7 +43,10 @@ import com.intellij.ui.components.JBCheckBox
  * цветов разошлась бы с темой молча, а показывать образец, который врёт, хуже, чем не показывать
  * ничего.
  */
-class VibeAppearanceConfigurable : Configurable {
+// NoScroll обязателен: без него платформа заворачивает нашу страницу-со-скроллом во ВТОРОЙ скролл
+// и выдаёт ей всю предпочтительную ширину — наш скролл тогда ничего не решает, и содержимое уезжает
+// за край диалога (ConfigurableCardPanel.createConfigurableComponent; владелец, 20.09.2026).
+class VibeAppearanceConfigurable : Configurable, Configurable.NoScroll {
   /** Переключатели по id темы: без них список не привести в соответствие с применённой темой. */
   private val radios = LinkedHashMap<String, JRadioButton>()
   private var applied: UIThemeLookAndFeelInfo? = null

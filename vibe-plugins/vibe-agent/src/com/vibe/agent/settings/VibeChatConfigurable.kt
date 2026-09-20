@@ -11,7 +11,10 @@ import javax.swing.JComponent
 import javax.swing.JPanel
 
 /** Settings → Tools → VibeIDEA → Чат. */
-class VibeChatConfigurable : Configurable {
+// NoScroll обязателен: без него платформа заворачивает нашу страницу-со-скроллом во ВТОРОЙ скролл
+// и выдаёт ей всю предпочтительную ширину — наш скролл тогда ничего не решает, и содержимое уезжает
+// за край диалога (ConfigurableCardPanel.createConfigurableComponent; владелец, 20.09.2026).
+class VibeChatConfigurable : Configurable, Configurable.NoScroll {
   private var continueField: JBTextField? = null
   private var tabsSpinner: JBIntSpinner? = null
   private var messagesSpinner: JBIntSpinner? = null

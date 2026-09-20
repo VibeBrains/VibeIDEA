@@ -10,7 +10,10 @@ import javax.swing.JComponent
 import javax.swing.JPanel
 
 /** Root of the VibeIDEA settings hub (children: providers, models). */
-class VibeSettingsRoot : Configurable {
+// NoScroll обязателен: без него платформа заворачивает нашу страницу-со-скроллом во ВТОРОЙ скролл
+// и выдаёт ей всю предпочтительную ширину — наш скролл тогда ничего не решает, и содержимое уезжает
+// за край диалога (ConfigurableCardPanel.createConfigurableComponent; владелец, 20.09.2026).
+class VibeSettingsRoot : Configurable, Configurable.NoScroll {
   override fun getDisplayName(): String = "VibeIDEA"
   /**
    * Прокрутка только вертикальная: страница настроек, которая едет вбок, — дефект, а не мелочь.

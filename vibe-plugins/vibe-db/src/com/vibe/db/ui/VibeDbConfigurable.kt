@@ -12,7 +12,10 @@ import javax.swing.SpinnerNumberModel
 import com.vibe.agent.settings.SettingsUi
 
 /** Настройки работы с базой: сколько строк показывать, сколько ждать, что прятать. */
-class VibeDbConfigurable : Configurable {
+// NoScroll обязателен: без него платформа заворачивает нашу страницу-со-скроллом во ВТОРОЙ скролл
+// и выдаёт ей всю предпочтительную ширину — наш скролл тогда ничего не решает, и содержимое уезжает
+// за край диалога (ConfigurableCardPanel.createConfigurableComponent; владелец, 20.09.2026).
+class VibeDbConfigurable : Configurable, Configurable.NoScroll {
   private val previewRows = JSpinner(SpinnerNumberModel(
     DbSettings.DEFAULT_PREVIEW_ROWS, DbSettings.MIN_PREVIEW_ROWS, DbSettings.MAX_PREVIEW_ROWS, 50))
   private val queryTimeout = JSpinner(SpinnerNumberModel(
