@@ -2,7 +2,7 @@
   "name": "Vibe Honey",
   "dark": true,
   "author": "VibeBrains",
-  "parentTheme": "Dark",
+  "parentTheme": "ExperimentalDark",
   "editorScheme": "/vibeHoneyScheme.xml",
   "colors": {
     "Accent": "#d8ad5a",

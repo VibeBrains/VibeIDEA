@@ -2,7 +2,7 @@
   "name": "Vibe Neon Dark",
   "dark": true,
   "author": "VibeBrains",
-  "parentTheme": "Dark",
+  "parentTheme": "ExperimentalDark",
   "editorScheme": "/vibeNeonScheme.xml",
   "colors": {
     "Accent": "#00E5FF",

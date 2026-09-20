@@ -2,7 +2,7 @@
   "name": "Vibe Terracotta",
   "dark": true,
   "author": "VibeBrains",
-  "parentTheme": "Dark",
+  "parentTheme": "ExperimentalDark",
   "editorScheme": "/vibeTerracottaScheme.xml",
   "colors": {
     "Accent": "#d98a68",

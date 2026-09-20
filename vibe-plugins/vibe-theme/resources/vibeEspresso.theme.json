@@ -2,7 +2,7 @@
   "name": "Vibe Espresso",
   "dark": true,
   "author": "VibeBrains",
-  "parentTheme": "Dark",
+  "parentTheme": "ExperimentalDark",
   "editorScheme": "/vibeEspressoScheme.xml",
   "colors": {
     "Accent": "#d9a06c",

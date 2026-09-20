@@ -2,7 +2,7 @@
   "name": "Vibe Tobacco",
   "dark": true,
   "author": "VibeBrains",
-  "parentTheme": "Dark",
+  "parentTheme": "ExperimentalDark",
   "editorScheme": "/vibeTobaccoScheme.xml",
   "colors": {
     "Accent": "#bd9f70",

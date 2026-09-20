@@ -2,7 +2,7 @@
   "name": "Vibe Porcelain",
   "dark": false,
   "author": "VibeBrains",
-  "parentTheme": "Light",
+  "parentTheme": "ExperimentalLight",
   "editorScheme": "/vibePorcelainScheme.xml",
   "colors": {
     "Accent": "#2f6f9e",

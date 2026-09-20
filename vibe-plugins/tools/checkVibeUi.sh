@@ -465,6 +465,41 @@ if problems:
     sys.exit(1)
 print('  темы: %d объявлено и на месте, у каждой своя схема редактора — тёмных %d, светлых %d'
       % (len(present), sum(sides), len(sides) - sum(sides)))
+# Родитель темы обязан существовать в реестре платформы И совпадать со стороной темы.
+#
+# `parentTheme` платформа ищет по ИДЕНТИФИКАТОРУ (`findParentTheme`: `it.id == parentId`), а не по
+# имени. У новой тёмной темы id `ExperimentalDark`, а имя — «Dark»; все семь наших тёмных тем
+# писали `"parentTheme": "Dark"`, совпадения не было, и платформа молча подставляла запасного
+# родителя — КЛАССИЧЕСКУЮ `Darcula`. Под новым интерфейсом это означало таблицу умолчаний без
+# классов UI новых компонентов: `no ComponentUI class for ToolbarComboButton` в логе при каждом
+# старте, диалоги в чужой светлой теме поверх тёмного окна, «часть светлая, часть тёмная».
+# Найдено 20.09.2026 по логу владельца; до этого дефект жил с основания набора и выглядел как
+# что угодно, кроме своей причины.
+platform_themes = io.open(os.path.join(root, 'platform/platform-impl/resources/intellij.platform.ide.impl.xml'),
+                          encoding='utf-8').read()
+known_ids = dict(re.findall(r'<themeProvider id="([^"]+)"[^>]*targetUi="([^"]+)"', platform_themes))
+wrong_parent = []
+for path in sorted(glob.glob(os.path.join(themes_dir, 'vibe*.theme.json'))):
+    theme = json.load(io.open(path, encoding='utf-8'))
+    parent = theme.get('parentTheme')
+    want = 'ExperimentalDark' if theme.get('dark') else 'ExperimentalLight'
+    if parent not in known_ids:
+        wrong_parent.append('%s: parentTheme «%s» — такого id в реестре платформы нет, '
+                            'родителем молча станет классическая тема' % (os.path.basename(path), parent))
+    elif known_ids[parent] != 'new':
+        wrong_parent.append('%s: parentTheme «%s» — тема типа «%s», а не «new»'
+                            % (os.path.basename(path), parent, known_ids[parent]))
+    elif parent != want:
+        wrong_parent.append('%s: parentTheme «%s», а по стороне темы ожидается «%s»'
+                            % (os.path.basename(path), parent, want))
+if wrong_parent:
+    print('ОШИБКА: родитель темы разошёлся с реестром платформы:')
+    for line in wrong_parent:
+        print('    ' + line)
+    print('  Платформа ищет parentTheme по ID, а не по имени: у новой тёмной это ExperimentalDark,')
+    print('  у новой светлой — ExperimentalLight. Промах даёт классического родителя и ломаный интерфейс')
+    sys.exit(1)
+print('  родители тем: все восемь наследуют новый интерфейс')
 print('  пара «день/ночь»: обе засеваемые темы объявлены')
 # И обратное: запись палитры, которой никто не пользуется, — мёртвый цвет.
 #

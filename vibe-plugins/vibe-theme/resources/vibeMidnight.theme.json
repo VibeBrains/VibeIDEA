@@ -2,7 +2,7 @@
   "name": "Vibe Midnight",
   "dark": true,
   "author": "VibeBrains",
-  "parentTheme": "Dark",
+  "parentTheme": "ExperimentalDark",
   "editorScheme": "/vibeMidnightScheme.xml",
   "colors": {
     "Accent": "#7aa2f7",

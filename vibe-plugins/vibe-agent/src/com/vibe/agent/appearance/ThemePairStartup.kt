@@ -32,10 +32,15 @@ class ThemePairStartup : ProjectActivity {
     val dark = installed[ThemePairDefault.DARK_ID] ?: return
     ApplicationManager.getApplication().invokeLater {
       // При починке меняем только сломанную половину: вторая — выбор человека, и трогать её не за что.
-      if (action == ThemePairDefault.Action.SEED || broken(manager.preferredLightThemeId)) {
+      // Чиним сломанную половину И заполняем пустую: пара с одной половиной не работает вовсе,
+      // а «не задано» днём при единственной светлой теме в наборе — не выбор человека, а дырка
+      // (владелец увидел ровно это на 0.6.25).
+      if (action == ThemePairDefault.Action.SEED || broken(manager.preferredLightThemeId) ||
+          manager.preferredLightThemeId == null) {
         manager.setPreferredLightLaf(light)
       }
-      if (action == ThemePairDefault.Action.SEED || broken(manager.preferredDarkThemeId)) {
+      if (action == ThemePairDefault.Action.SEED || broken(manager.preferredDarkThemeId) ||
+          manager.preferredDarkThemeId == null) {
         manager.setPreferredDarkLaf(dark)
       }
     }

@@ -2,7 +2,7 @@
   "name": "Vibe Graphite",
   "dark": true,
   "author": "VibeBrains",
-  "parentTheme": "Dark",
+  "parentTheme": "ExperimentalDark",
   "editorScheme": "/vibeGraphiteScheme.xml",
   "colors": {
     "Accent": "#7fb3d5",
