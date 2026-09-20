@@ -14,7 +14,15 @@
     "SelBg": "#28324A",
     "Accent": "#00E5FF",
     "Warm": "#FF2E97",
-    "Cool": "#9D5CFF"
+    "Cool": "#9D5CFF",
+    "Error": "#FF6B5A",
+    "Hover": "#252A38",
+    "Text": "#E6E8EF",
+    "Border": "#2A2D36",
+    "Warn": "#E0A030",
+    "ButtonBg": "#2A3550",
+    "BorderControl": "#3A4050",
+    "Ok": "#5FAD5F"
   },
   "ui": {
     "*": {
@@ -29,8 +37,8 @@
     },
     "Button": {
       "default": {
-        "startBackground": "#2A3550",
-        "endBackground": "#2A3550",
+        "startBackground": "ButtonBg",
+        "endBackground": "ButtonBg",
         "startBorderColor": "NeonCyan",
         "endBorderColor": "NeonCyan",
         "foreground": "#E8FBFF"
@@ -57,16 +65,16 @@
     },
     "ToolWindow": {
       "Button": {
-        "selectedBackground": "#2A3550"
+        "selectedBackground": "ButtonBg"
       }
     },
     "TabbedPane": {
       "focusColor": "NeonCyan",
-      "hoverColor": "#252A38"
+      "hoverColor": "Hover"
     },
     "StatusBar": {
       "Widget": {
-        "hoverBackground": "#252A38"
+        "hoverBackground": "Hover"
       }
     },
     "Counter": {
@@ -76,7 +84,7 @@
       "Feed": {
         "endButtonBackground": "PanelBg",
         "endButtonHoverBackground": "SelBg",
-        "endButtonBorder": "#3A4050"
+        "endButtonBorder": "BorderControl"
       },
       "Chat": {
         "background": "DeepBg",
@@ -85,37 +93,37 @@
         "metaForeground": "NeonCyanDim",
         "terminalBackground": "#131417",
         "terminalForeground": "#BFC7D0",
-        "terminalBorder": "#2A2D36",
-        "terminalOk": "#5FAD5F",
-        "terminalError": "#FF6B5A"
+        "terminalBorder": "Border",
+        "terminalOk": "Ok",
+        "terminalError": "Error"
       },
       "Composer": {
         "background": "PanelBg",
-        "border": "#2A2D36",
+        "border": "Border",
         "focusBorder": "NeonCyanDim",
-        "separator": "#2A2D36",
+        "separator": "Border",
         "chipBackground": "SelBg",
-        "chipForeground": "#E6E8EF",
-        "pillForeground": "#E6E8EF",
-        "pillHoverBackground": "#252A38",
+        "chipForeground": "Text",
+        "pillForeground": "Text",
+        "pillHoverBackground": "Hover",
         "accent": "NeonCyan",
         "accentHover": "#33ECFF",
         "accentForeground": "DeepBg",
         "accentDisabled": "#3A4A52",
-        "pillBorder": "#3A4050",
+        "pillBorder": "BorderControl",
         "pillBorderHover": "NeonCyan",
         "queueBackground": "#3A3220",
         "queueBorder": "#6B5A2E",
         "queueForeground": "#F2E6C4",
         "usageForeground": "NeonCyanDim",
-        "usageWarnForeground": "#E0A030",
-        "contextRingTrack": "#3A4050",
+        "usageWarnForeground": "Warn",
+        "contextRingTrack": "BorderControl",
         "contextRingFill": "NeonCyan",
-        "contextRingWarn": "#E0A030"
+        "contextRingWarn": "Warn"
       },
       "Docs": {
-        "nodeBorder": "#2A2D36",
-        "problemForeground": "#FF6B5A",
+        "nodeBorder": "Border",
+        "problemForeground": "Error",
         "category1": "#A47BE8",
         "category2": "#548AF7",
         "category3": "#4CB782",
@@ -123,25 +131,25 @@
         "category5": "#3FB6C4",
         "category6": "#D673A8",
         "orphanNode": "#D6AE58",
-        "brokenNode": "#FF6B5A",
+        "brokenNode": "Error",
         "hoverRing": "NeonCyan",
         "hintForeground": "#8A90A6",
         "edge": "NeonCyanDim",
-        "nodeForeground": "#E6E8EF"
+        "nodeForeground": "Text"
       },
       "Mention": {
-        "headerForeground": "#E6E8EF",
+        "headerForeground": "Text",
         "hintForeground": "NeonCyanDim"
       },
       "Tabs": {
-        "activeForeground": "#E6E8EF",
+        "activeForeground": "Text",
         "inactiveForeground": "NeonCyanDim",
-        "activeBackground": "#252A38",
+        "activeBackground": "Hover",
         "hoverBackground": "#20242E",
         "underline": "NeonCyan"
       },
       "History": {
-        "rowHoverBackground": "#252A38",
+        "rowHoverBackground": "Hover",
         "activeStripe": "NeonMagenta",
         "badgeBackground": "SelBg",
         "quoteForeground": "NeonCyanDim",
@@ -149,26 +157,26 @@
         "revealBackground": "SelBg"
       },
       "Http": {
-        "success": "#5FAD5F",
-        "redirect": "#E0A030",
-        "error": "#FF6B5A"
+        "success": "Ok",
+        "redirect": "Warn",
+        "error": "Error"
       },
       "Db": {
-        "error": "#FF6B5A",
+        "error": "Error",
         "editedCell": "#4A4327"
       },
       "Design": {
-        "floor": "#FF6B5A"
+        "floor": "Error"
       },
       "Runs": {
-        "attention": "#FF6B5A"
+        "attention": "Error"
       },
       "Status": {
-        "ready": "#5FAD5F",
+        "ready": "Ok",
         "thinking": "NeonCyan",
         "tool": "NeonPurple",
-        "waiting": "#E0A030",
-        "error": "#FF6B5A"
+        "waiting": "Warn",
+        "error": "Error"
       }
     },
     "RecentProject.Color1.MainToolbarGradientStart": "#2C594A",

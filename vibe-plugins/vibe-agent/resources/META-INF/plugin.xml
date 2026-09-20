@@ -69,6 +69,7 @@
                  description="Толщина скроллбаров VibeIDEA в пикселях (0 — штатные скроллы платформы)"/>
     <postStartupActivity implementation="com.vibe.agent.i18n.VibeLangSeeder"/>
     <postStartupActivity implementation="com.vibe.agent.appearance.CompactModeStartup"/>
+    <postStartupActivity implementation="com.vibe.agent.appearance.ThemePairStartup"/>
     <postStartupActivity implementation="com.vibe.agent.features.FeaturesStartup"/>
     <postStartupActivity implementation="com.vibe.agent.patrol.PatrolStartup"/>
     <postStartupActivity implementation="com.vibe.agent.history.VibeHistoryWarmUp"/>

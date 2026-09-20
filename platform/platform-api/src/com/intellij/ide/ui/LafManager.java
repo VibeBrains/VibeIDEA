@@ -80,6 +80,11 @@ public abstract class LafManager {
     return null;
   }
 
+  @ApiStatus.Internal
+  public @Nullable String getPreferredLightThemeId() {
+    return null;
+  }
+
   public abstract void setPreferredDarkLaf(@NotNull UIThemeLookAndFeelInfo value);
 
   public abstract void setPreferredLightLaf(@NotNull UIThemeLookAndFeelInfo value);

@@ -7,6 +7,9 @@ import com.intellij.ide.ui.LafManager
 import com.intellij.ide.ui.LafManagerListener
 import com.intellij.ide.ui.laf.UIThemeLookAndFeelInfo
 import com.intellij.openapi.application.ApplicationManager
+import com.intellij.openapi.editor.DefaultLanguageHighlighterColors
+import com.intellij.openapi.editor.colors.EditorColorsManager
+import com.intellij.openapi.editor.colors.EditorColorsScheme
 import com.intellij.openapi.options.Configurable
 import com.intellij.openapi.options.ex.Settings
 import com.intellij.openapi.ui.ComboBox
@@ -74,9 +77,15 @@ class VibeAppearanceConfigurable : Configurable {
   /** Подписка на смену темы платформой — см. [themeChangedElsewhere]. */
   private var connection: MessageBusConnection? = null
 
-  /** Обёртка ради подписи в выпадающем списке: сам `UIThemeLookAndFeelInfo` показывает класс. */
-  private class ThemeItem(val info: UIThemeLookAndFeelInfo) {
-    override fun toString(): String = info.name
+  /**
+   * Обёртка ради подписи в выпадающем списке: сам `UIThemeLookAndFeelInfo` показывает класс.
+   *
+   * Пустая обёртка (`info == null`) — это «не задано», и она нужна как настоящий пункт. Без неё
+   * список показывал бы первую светлую тему там, где половина пары не выбрана, — догадку в виде
+   * факта.
+   */
+  private class ThemeItem(val info: UIThemeLookAndFeelInfo?) {
+    override fun toString(): String = info?.name ?: t("settings.appearance.unset")
   }
 
   override fun getDisplayName(): String = t("settings.appearance.title")
@@ -117,15 +126,16 @@ class VibeAppearanceConfigurable : Configurable {
       .addComponent(SettingsUi.section(t("settings.appearance.dayNight")))
       .addComponent(SettingsUi.hint(t("settings.appearance.dayNightHint")))
 
-    val items = themes.map { ThemeItem(it) }
-    val dayCombo = ComboBox(items.filter { !it.info.isDark }.toTypedArray()).also { day = it }
-    val nightCombo = ComboBox(items.filter { it.info.isDark }.toTypedArray()).also { night = it }
-    // Ночную тему платформа отдаёт (`getPreferredDarkThemeId`), дневную — нет: поле приватное, и
-    // публичного геттера у `LafManager` не существует. Поэтому дневная показывается от нынешней
-    // темы, если она светлая, а изменённость считается от того, что человек увидел при открытии,
-    // — а не от значения, которого нам не дают.
+    // Обе половины пары читаются у платформы. Светлую она до 20.09.2026 наружу не отдавала —
+    // `getPreferredDarkThemeId` был, близнеца не было, поле приватное; добавлен симметричный
+    // геттер точечной правкой платформы (запись в FORK_CHANGES.md). До неё страница показывала в
+    // «Днём» первую светлую тему из списка, то есть догадку, а «ОК» эту догадку записывал.
+    val dayItems = listOf(ThemeItem(null)) + themes.filterNot { it.isDark }.map { ThemeItem(it) }
+    val nightItems = listOf(ThemeItem(null)) + themes.filter { it.isDark }.map { ThemeItem(it) }
+    val dayCombo = ComboBox(dayItems.toTypedArray()).also { day = it }
+    val nightCombo = ComboBox(nightItems.toTypedArray()).also { night = it }
+    select(dayCombo, manager.preferredLightThemeId)
     select(nightCombo, manager.preferredDarkThemeId)
-    manager.currentUIThemeLookAndFeel?.takeIf { !it.isDark }?.let { select(dayCombo, it.id) }
     initialDay = (dayCombo.selectedItem as? ThemeItem)?.info?.id
     initialNight = (nightCombo.selectedItem as? ThemeItem)?.info?.id
 
@@ -241,49 +251,74 @@ class VibeAppearanceConfigurable : Configurable {
         font = JBFont.label().deriveFont(JBFont.label().size2D - 1f)
       })
     }
-    swatches(info).forEach { row.add(it) }
+    preview(info).forEach { row.add(it) }
     return row
   }
 
   /**
-   * Образцы палитры темы — по ним её узнают быстрее, чем по имени.
+   * Образец темы — кусочек КОДА, а не палитра интерфейса.
    *
-   * Цвета спрашиваются у платформы, а не у наших файлов: тема может быть и чужой, а описание у всех
-   * одно. Нет палитры — нет и кружков, вместо выдумывания цвета.
+   * Тему в IDE выбирают по тому, как в ней выглядит код: фон редактора, ключевое слово, строка,
+   * комментарий. Четыре кружка, стоявшие здесь до 20.09.2026, показывали акцент и фон панели —
+   * цвета, которых в редакторе не видно; на вопрос «а как я буду в ней читать код» они не
+   * отвечали. Заодно образец сразу говорит, светлая тема или тёмная, — подписи над группами для
+   * этого не нужны.
+   *
+   * Цвета спрашиваются у схемы самой темы (`editorSchemeId` → `EditorColorsManager`), а не у наших
+   * файлов: тема может быть и чужой, а схема есть у каждой. Нет схемы — нет образца, вместо
+   * выдумывания цвета.
    */
-  private fun swatches(info: UIThemeLookAndFeelInfo): List<JComponent> {
-    // `colors`, а не `colorPalette`: второе — палитра ЗНАЧКОВ (`icons["ColorPalette"]` темы), и на
-    // наших темах она пуста, отчего кружков не было вовсе (проверено на живой 0.6.15). Цвета самой
-    // темы платформа отдаёт целыми числами в `colors` — это и есть секция `colors` её json.
-    val colors = runCatching { info.describe().colors }.getOrNull().orEmpty()
-    return SWATCH_KEYS.mapNotNull { key -> colors[key] }.map { Swatch(JBColor(java.awt.Color(it), java.awt.Color(it))) }
+  private fun preview(info: UIThemeLookAndFeelInfo): List<JComponent> {
+    val scheme = runCatching { info.editorSchemeId?.let { EditorColorsManager.getInstance().getScheme(it) } }
+      .getOrNull() ?: return emptyList()
+    return listOf(CodePreview(scheme))
   }
 
-  private class Swatch(private val color: JBColor) : JComponent() {
+  private class CodePreview(scheme: EditorColorsScheme) : JComponent() {
+    private val background: java.awt.Color = scheme.defaultBackground
+    private val strokes: List<java.awt.Color> = PREVIEW_TOKENS.map {
+      scheme.getAttributes(it)?.foregroundColor ?: scheme.defaultForeground
+    }
+
     init {
-      val size = JBUI.scale(10)
-      preferredSize = Dimension(size, size)
+      preferredSize = Dimension(JBUI.scale(46), JBUI.scale(20))
       minimumSize = preferredSize
     }
 
     override fun paintComponent(g: Graphics) {
-      // Сглаживание обязательно: кружок в десять точек без него выходит ступенчатым квадратиком,
-      // и ряд образцов читается как брак, а не как палитра.
+      // Сглаживание обязательно: скруглённый прямоугольник в двадцать точек без него выходит
+      // ступенчатым, и ряд образцов читается как брак, а не как палитра.
       val g2 = g.create() as java.awt.Graphics2D
       try {
         g2.setRenderingHint(java.awt.RenderingHints.KEY_ANTIALIASING, java.awt.RenderingHints.VALUE_ANTIALIAS_ON)
-        g2.color = color
-        g2.fillOval(0, 0, width - 1, height - 1)
+        val arc = JBUI.scale(4)
+        g2.color = background
+        g2.fillRoundRect(0, 0, width - 1, height - 1, arc, arc)
+        // Рамка обязательна: у светлой темы фон образца почти белый и без неё сливается со
+        // страницей — образца как будто нет вовсе.
+        g2.color = JBColor.border()
+        g2.drawRoundRect(0, 0, width - 1, height - 1, arc, arc)
+        val pad = JBUI.scale(4)
+        val thickness = JBUI.scale(2)
+        val gap = JBUI.scale(3)
+        var y = pad
+        for ((index, color) in strokes.withIndex()) {
+          g2.color = color
+          // Длины строк разные: ровные полоски читаются как шкала, разные — как код.
+          val length = (width - pad * 2) * PREVIEW_WIDTHS[index] / 100
+          g2.fillRoundRect(pad, y, length, thickness, thickness, thickness)
+          y += thickness + gap
+        }
       } finally {
         g2.dispose()
       }
     }
   }
 
+  /** `id == null` совпадает с пунктом «не задано» — отдельной ветки для него не нужно. */
   private fun select(combo: ComboBox<ThemeItem>, id: String?) {
-    if (id == null) return
     for (index in 0 until combo.itemCount) {
-      if (combo.getItemAt(index).info.id == id) {
+      if (combo.getItemAt(index).info?.id == id) {
         combo.selectedIndex = index
         return
       }
@@ -303,6 +338,8 @@ class VibeAppearanceConfigurable : Configurable {
     } else {
       nightCombo.selectedItem as? ThemeItem
     }
+    // Половина пары может быть не задана — тогда переключать не на что, и молчание здесь честнее
+    // прыжка на первую попавшуюся тему списка.
     target?.info?.let { apply(it) }
   }
 
@@ -351,8 +388,17 @@ class VibeAppearanceConfigurable : Configurable {
 
   override fun apply() {
     val manager = LafManager.getInstance()
-    (day?.selectedItem as? ThemeItem)?.let { manager.setPreferredLightLaf(it.info); initialDay = it.info.id }
-    (night?.selectedItem as? ThemeItem)?.let { manager.setPreferredDarkLaf(it.info); initialNight = it.info.id }
+    // Пишем ТОЛЬКО изменённое. До 20.09.2026 «ОК» записывал обе половины пары всегда, даже когда
+    // человек списков не касался, — и в «Днём» уезжала первая светлая тема списка. На снимке
+    // владельца с 0.6.17 там стояла чужая IntelliJ, которую он не выбирал.
+    (day?.selectedItem as? ThemeItem)?.info?.takeIf { it.id != initialDay }?.let {
+      manager.setPreferredLightLaf(it)
+      initialDay = it.id
+    }
+    (night?.selectedItem as? ThemeItem)?.info?.takeIf { it.id != initialNight }?.let {
+      manager.setPreferredDarkLaf(it)
+      initialNight = it.id
+    }
     // Подтверждение и есть «оставить то, что уже видно»: тема применена предпросмотром, и здесь
     // она перестаёт быть предпросмотром — возвращать больше некуда.
     original = applied
@@ -372,16 +418,22 @@ class VibeAppearanceConfigurable : Configurable {
     applied = manager.currentUIThemeLookAndFeel
     // Точку тоже: без этого «Сбросить» оставляет выбранной ту тему, от которой человек отказался.
     applied?.id?.let { radios[it]?.isSelected = true }
-    day?.let { combo -> initialDay?.let { select(combo, it) } }
-    night?.let { combo -> initialNight?.let { select(combo, it) } }
+    // Без `?.let` по значению: незаданная половина пары — тоже значение («не задано»), и «Сбросить»
+    // обязан возвращать к ней, а не оставлять выбранное человеком.
+    day?.let { select(it, initialDay) }
+    night?.let { select(it, initialNight) }
   }
 
   private companion object {
-    /**
-     * Ключи палитры для кружков — в том порядке, в каком их читает глаз: акцент, тёплый, холодный,
-     * фон. Имена наши; у чужой темы их нет, и кружков тоже не будет.
-     */
-    val SWATCH_KEYS = listOf("Accent", "Warm", "Cool", "PanelBg")
+    /** Что показывает образец, в том порядке, в каком рисуется: ключевое слово, строка, комментарий. */
+    val PREVIEW_TOKENS = listOf(
+      DefaultLanguageHighlighterColors.KEYWORD,
+      DefaultLanguageHighlighterColors.STRING,
+      DefaultLanguageHighlighterColors.LINE_COMMENT,
+    )
+
+    /** Длины строк образца в процентах его ширины. */
+    val PREVIEW_WIDTHS = listOf(55, 80, 35)
 
     /** Идентификатор платформенной страницы оформления — он же в её собственной регистрации. */
     const val PLATFORM_APPEARANCE_ID = "preferences.lookFeel"

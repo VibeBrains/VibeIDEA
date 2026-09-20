@@ -290,34 +290,65 @@ case "$HINT_OUT" in
     status=1 ;;
 esac
 
-# 8в. Кружки палитры на странице «Оформление» действительно будут нарисованы.
+# 8в. Образец кода на странице «Оформление» действительно будет нарисован.
 #
-# Страница берёт цвета у платформы по именам из SWATCH_KEYS. Тема, не объявившая такое имя, даёт
-# молча пустую строку без кружков — и это не видно ниоткуда, кроме глаза: ни тест, ни компиляция
-# про имена в чужом json не знают. На 0.6.15 кружков не было вовсе, потому что цвета читались из
-# `colorPalette` (палитра ЗНАЧКОВ), а не из `colors`.
+# Страница рисует рядом с каждой темой кусочек кода цветами ЕЁ схемы редактора. Схема, не
+# объявившая такой цвет, отдаёт цвет РОДИТЕЛЬСКОЙ схемы — выбранный для другого фона и другой
+# палитры, — и образец тихо врёт. Проверяется и то, что схема объявляет общий минимум: семь наших
+# схем объявляли восемь атрибутов, восьмая (неоновая, наша подпись) — пять, и разница была не
+# задумана, а забыта. Гейт контраста этого поймать не мог по построению: он меряет объявленное, а
+# не отсутствующее (20.09.2026).
 "$PYTHON" - "$root" <<'PYSWATCH' || status=1
-import glob, io, json, os, re, sys
+import collections, glob, io, json, os, re, sys
 root = sys.argv[1]
 page = os.path.join(root, 'vibe-plugins/vibe-agent/src/com/vibe/agent/settings/VibeAppearanceConfigurable.kt')
 text = io.open(page, encoding='utf-8').read()
-match = re.search(r'SWATCH_KEYS\s*=\s*listOf\(([^)]*)\)', text)
+match = re.search(r'PREVIEW_TOKENS\s*=\s*listOf\(([^)]*)\)', text)
 if not match:
-    print('ОШИБКА: в VibeAppearanceConfigurable не найден список SWATCH_KEYS')
+    print('ОШИБКА: в VibeAppearanceConfigurable не найден список PREVIEW_TOKENS')
     sys.exit(1)
-keys = re.findall(r'"([^"]+)"', match.group(1))
+# Внешнее имя ключа в схеме — «DEFAULT_» + имя константы (DefaultLanguageHighlighterColors.java).
+tokens = ['DEFAULT_' + name for name in re.findall(r'DefaultLanguageHighlighterColors\.([A-Z_]+)', match.group(1))]
+if not tokens:
+    print('ОШИБКА: PREVIEW_TOKENS пуст — образец темы нарисуется голым прямоугольником')
+    sys.exit(1)
 bad = []
-for path in sorted(glob.glob(os.path.join(root, 'vibe-plugins/vibe-theme/resources/vibe*.theme.json'))):
-    colors = json.load(io.open(path, encoding='utf-8')).get('colors', {})
-    missing = [k for k in keys if k not in colors]
+for path in sorted(glob.glob(os.path.join(root, 'vibe-plugins/vibe-theme/resources/vibe*Scheme.xml'))):
+    body = io.open(path, encoding='utf-8').read()
+    missing = [key for key in tokens
+               if not re.search(r'<option name="%s">\s*<value>\s*<option name="FOREGROUND"' % key, body)]
+    # Фон образца берётся оттуда же, откуда его берёт редактор.
+    if not re.search(r'<option name="TEXT">\s*<value>[\s\S]*?<option name="BACKGROUND"', body):
+        missing.append('TEXT/BACKGROUND')
     if missing:
         bad.append((os.path.basename(path), missing))
 if bad:
-    print('ОШИБКА: тема не объявляет цвета, по которым страница «Оформление» рисует кружки палитры:')
+    print('ОШИБКА: схема темы не объявляет того, что рисует образец на странице «Оформление»:')
     for name, missing in bad:
         print('    %s — нет %s' % (name, ', '.join(missing)))
-    print('  Либо добавьте цвет в тему, либо уберите имя из SWATCH_KEYS — пустой ряд кружков ничего не говорит')
+    print('  Образец показывает, как в теме выглядит КОД; без этих цветов он выйдет пустым прямоугольником')
     sys.exit(1)
+# Общий минимум — то, что объявляют все наши схемы. Список не «из головы»: он снят с семи схем,
+# писавшихся подряд, и восьмая отстала от него молча.
+MINIMUM = ('DEFAULT_KEYWORD', 'DEFAULT_STRING', 'DEFAULT_NUMBER', 'DEFAULT_LINE_COMMENT',
+           'DEFAULT_BLOCK_COMMENT', 'DEFAULT_FUNCTION_DECLARATION', 'DEFAULT_CLASS_NAME')
+thin = []
+for path in sorted(glob.glob(os.path.join(root, 'vibe-plugins/vibe-theme/resources/vibe*Scheme.xml'))):
+    body = io.open(path, encoding='utf-8').read()
+    missing = [key for key in MINIMUM
+               if not re.search(r'<option name="%s">\s*<value>\s*<option name="FOREGROUND"' % key, body)]
+    if missing:
+        thin.append((os.path.basename(path), missing))
+if thin:
+    print('ОШИБКА: схема темы не объявляет общего минимума и возьмёт цвета родительской схемы:')
+    for name, missing in thin:
+        print('    %s — нет %s' % (name, ', '.join(missing)))
+    print('  Родительские цвета выбраны для другого фона: тема выглядит наполовину чужой,')
+    print('  а гейт контраста этого не измерит — он меряет объявленное, а не отсутствующее')
+    sys.exit(1)
+print('  образец кода: все %d схем дают фон и %s' % (
+    len(glob.glob(os.path.join(root, 'vibe-plugins/vibe-theme/resources/vibe*Scheme.xml'))), ', '.join(tokens)))
+print('  общий минимум схем: %d атрибутов у каждой' % len(MINIMUM))
 
 # Реестр тем и файлы на диске обязаны совпадать В ОБЕ СТОРОНЫ, и схема редактора обязана быть.
 # Такую ошибку видит только запущенная IDE: объявленная, но отсутствующая тема просто не появится
@@ -355,10 +386,53 @@ if problems:
     for line in problems:
         print('    ' + line)
     sys.exit(1)
+# Повторённый литерал обязан иметь имя в палитре.
+#
+# Это ровно то, о чём наш собственный дизайн-детектор предупреждает чужие страницы: палитра
+# расползается по одному hex за раз, и каждый шаг выглядит нормально. Замер 20.09.2026: в каждой из
+# восьми тем 7–8 цветов были повторены до восьми раз — правка тона означала восемь одинаковых замен,
+# и разъезд был бы молчаливым. Цвета проекта не в счёт: их пишет генератор.
+spread = []
+for path in sorted(glob.glob(os.path.join(themes_dir, 'vibe*.theme.json'))):
+    counts = collections.Counter()
+
+    def count(node, prefix=''):
+        for key, value in node.items():
+            full = prefix + key
+            if isinstance(value, dict):
+                count(value, full + '.')
+            elif isinstance(value, str) and value.startswith('#') and not full.startswith('RecentProject'):
+                counts[value] += 1
+
+    count(json.load(io.open(path, encoding='utf-8')).get('ui', {}))
+    repeated = sorted('%s ×%d' % (colour, times) for colour, times in counts.items() if times >= 3)
+    if repeated:
+        spread.append((os.path.basename(path), repeated))
+if spread:
+    print('ОШИБКА: цвет повторён в теме трижды и не назван — палитра расползается по одному hex:')
+    for name, repeated in spread:
+        print('    %s — %s' % (name, ', '.join(repeated)))
+    print('  Заведите запись в секции «colors» темы и подставьте её имя вместо литерала:')
+    print('  иначе правка тона это N одинаковых замен, и разъезд первой же из них никто не заметит')
+    sys.exit(1)
+# Пара «день/ночь» засевается по ИДЕНТИФИКАТОРАМ тем — их легко переименовать и не заметить:
+# засев молча не сработает, а человек увидит в паре чужие темы и решит, что так и задумано.
+pair = os.path.join(root, 'vibe-plugins/vibe-agent/src/com/vibe/agent/appearance/ThemePairDefault.kt')
+declared_ids = set(re.findall(r'<themeProvider[^>]*id="([^"]+)"', descriptor))
+for field, value in re.findall(r'const val (LIGHT_ID|DARK_ID): String = "([^"]+)"',
+                               io.open(pair, encoding='utf-8').read()):
+    if value not in declared_ids:
+        problems.append('ThemePairDefault.%s = %s — такой темы нет в plugin.xml, засев пары промолчит'
+                        % (field, value))
+if problems:
+    print('ОШИБКА: реестр тем разошёлся с файлами:')
+    for line in problems:
+        print('    ' + line)
+    sys.exit(1)
 print('  темы: %d объявлено и на месте, у каждой своя схема редактора — тёмных %d, светлых %d'
       % (len(present), sum(sides), len(sides) - sum(sides)))
-print('  кружки палитры: все %d тем объявляют %s' % (
-    len(glob.glob(os.path.join(root, 'vibe-plugins/vibe-theme/resources/vibe*.theme.json'))), ', '.join(keys)))
+print('  пара «день/ночь»: обе засеваемые темы объявлены')
+print('  палитра: повторённых безымянных цветов нет')
 PYSWATCH
 
 # 8г. Цвет проекта в шапке окна — из палитры самой темы, а не платформенный.
