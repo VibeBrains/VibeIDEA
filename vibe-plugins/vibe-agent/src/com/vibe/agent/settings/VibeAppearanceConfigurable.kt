@@ -386,11 +386,36 @@ class VibeAppearanceConfigurable : Configurable, Configurable.NoScroll {
     // владелец увидел это на 0.6.17, и увидеть это можно было только глазами: цвета из json темы
     // при этом применялись правильно.
     QuickChangeLookAndFeel.switchLafAndUpdateUI(manager, info, false)
+    applyEditorScheme(info)
     applied = info
     // Точка в списке обязана поехать за применённой темой. Без этого «Переключить сейчас» меняет
     // оформление, а страница продолжает показывать прежнюю тему выбранной — и следующий «Применить»
     // возвращает то, от чего человек только что ушёл.
     radios[info.id]?.isSelected = true
+  }
+
+  /**
+   * Схема редактора идёт за темой — иначе меняется всё, кроме кода.
+   *
+   * Платформа этим не занимается намеренно: `updateEditorSchemeIfNecessary` выходит сразу, если у
+   * темы объявлена своя схема (`editorSchemeId != null`), — считается, что схему поставит тот, кто
+   * ставит тему. А поверх этого платформа ПОМНИТ, какую схему человек видел с каждой темой
+   * (`lafToPreviousScheme`), и возвращает запомненную.
+   *
+   * Итог виден в конфиге живой сборки: тема `VibeHoney`, схема `_@user_Vibe Neon`. Центральная
+   * панель осталась от прежней темы, и владелец справедливо сказал, что меняться должен и код
+   * (20.09.2026).
+   *
+   * Поэтому схему ставим сами. Цена названа честно: человек, выбравший другую схему руками,
+   * потеряет её при смене темы. Это осознанный размен — наши темы везут собственные схемы, и
+   * тема, не меняющая код, не тема; «Отмена» возвращает и тему, и схему вместе с ней.
+   */
+  private fun applyEditorScheme(info: UIThemeLookAndFeelInfo) {
+    val id = info.editorSchemeId ?: return
+    val colors = EditorColorsManager.getInstance()
+    val target = runCatching { colors.getScheme(id) }.getOrNull() ?: return
+    if (colors.globalScheme.name == target.name) return
+    colors.setGlobalScheme(target)
   }
 
   /**
