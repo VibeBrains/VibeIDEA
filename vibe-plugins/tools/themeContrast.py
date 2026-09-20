@@ -32,6 +32,12 @@ import sys
 import xml.etree.ElementTree as ET
 
 FLOOR = 4.0
+# Насколько цвет ошибки обязан отличаться от тёплого акцента (ΔE76 в Lab). Планка выбрана ПО
+# ИЗМЕРЕНИЮ, а не из головы: у двух тем, где расхождение было задумано, оно составляло 22.0
+# (фарфоровая) и 51.1 (неоновая); 20 стоит под меньшим из них. Зачем вообще: в шести темах из
+# восьми `Warm` и `Error` были ОДНИМ И ТЕМ ЖЕ цветом, то есть бейдж счётчика, нажатая ссылка и
+# сообщение об ошибке выглядели одинаково — сигнал тревоги не выделялся ничем (20.09.2026).
+DISTANCE_FLOOR = 20.0
 SCHEMES = 'vibe-plugins/vibe-theme/resources/*Scheme.xml'
 THEMES = 'vibe-plugins/vibe-theme/resources/vibe*.theme.json'
 
@@ -110,6 +116,26 @@ def measure(path):
     return background, found
 
 
+def lab(value):
+    """sRGB → CIE Lab: в нём «насколько цвета разные» считается числом, а не на глаз."""
+    v = value.strip().lstrip('#')
+    channels = []
+    for i in (0, 2, 4):
+        c = int(v[i:i + 2], 16) / 255
+        channels.append(c / 12.92 if c <= 0.04045 else ((c + 0.055) / 1.055) ** 2.4)
+    r, g, b = channels
+    x = (0.4124 * r + 0.3576 * g + 0.1805 * b) / 0.95047
+    y = 0.2126 * r + 0.7152 * g + 0.0722 * b
+    z = (0.0193 * r + 0.1192 * g + 0.9505 * b) / 1.08883
+    f = lambda t: t ** (1 / 3) if t > 0.008856 else 7.787 * t + 16 / 116
+    fx, fy, fz = f(x), f(y), f(z)
+    return 116 * fy - 16, 500 * (fx - fy), 200 * (fy - fz)
+
+
+def distance(first, second):
+    return sum((a - b) ** 2 for a, b in zip(lab(first), lab(second))) ** 0.5
+
+
 def token(theme, path):
     """Значение токена `Vibe.<path>` с разрешённым именем палитры."""
     node = theme['ui']['Vibe']
@@ -158,6 +184,22 @@ def main():
             if measured < FLOOR:
                 failures.append('%s: Vibe.%s на Vibe.%s — контраст %.2f при планке %.2f'
                                 % (name, foreground, background, measured, FLOOR))
+    apart = []
+    for path in sorted(glob.glob(THEMES)):
+        palette = json.loads(io.open(path, encoding='utf-8').read())['colors']
+        measured = distance(palette['Warm'], palette['Error'])
+        if report:
+            print('%-28s ошибка отличается от тёплого акцента на ΔE %.1f' % (os.path.basename(path), measured))
+        if measured < DISTANCE_FLOOR:
+            apart.append('%s: Error %s и Warm %s — ΔE %.1f при планке %.1f'
+                         % (os.path.basename(path), palette['Error'], palette['Warm'], measured, DISTANCE_FLOOR))
+    if apart:
+        print('✖ цвет ошибки не отличить от тёплого акцента — тревога выглядит украшением:')
+        for line in apart:
+            print('    ' + line)
+        print('  Сдвиньте Error в красную сторону, сохранив светлоту темы: ниже ΔE %.0f это один цвет'
+              % DISTANCE_FLOOR)
+        return 1
     if failures:
         print('✖ цвет текста не читается на своём фоне:')
         for line in failures:
@@ -166,6 +208,7 @@ def main():
         return 1
     print('  контраст: все цвета текста выше планки %.1f — и в схемах редактора, и в наших панелях (%d пар)'
           % (FLOOR, len(UI_PAIRS)))
+    print('  различимость: цвет ошибки отстоит от тёплого акцента не меньше чем на ΔE %.0f' % DISTANCE_FLOOR)
     return 0
 
 
