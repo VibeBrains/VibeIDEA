@@ -4,6 +4,10 @@ package com.vibe.agent.providers
 import com.intellij.credentialStore.CredentialAttributes
 import com.intellij.credentialStore.generateServiceName
 import com.intellij.ide.passwordSafe.PasswordSafe
+import com.intellij.ide.util.PropertiesComponent
+import com.intellij.openapi.application.ApplicationManager
+import com.intellij.openapi.diagnostic.logger
+import com.intellij.openapi.util.SystemInfo
 import java.nio.file.Files
 import java.nio.file.Path
 
@@ -19,6 +23,32 @@ object ApiKeyResolver {
 
   fun storedKey(provider: ProviderEntry): String? =
     PasswordSafe.instance.getPassword(attributes(provider.apiKeyRef ?: provider.id))?.takeIf { it.isNotBlank() }
+      ?.also { reownOnce(provider, it) }
+
+  /**
+   * Переписать запись под нынешнее приложение — один раз на ключ, в фоне, молча.
+   *
+   * Момент выбран не случайно: чтение только что удалось, значит вопрос пароля (если он был)
+   * человек уже увидел и закрыл. Перезапись делает так, что второго вопроса не будет никогда.
+   * Раньше это умело только действие по просьбе человека, и закрывало лишь те ключи, что были на
+   * момент запуска, — новый ключ приносил вопрос снова. Разбор — [KeyOwnership].
+   *
+   * В фоне и под `runCatching`, потому что это удобство, а не работа: отказ связки не должен
+   * ни задержать запрос к модели, ни тем более его уронить.
+   */
+  private fun reownOnce(provider: ProviderEntry, key: String) {
+    val ref = provider.apiKeyRef ?: provider.id
+    val properties = PropertiesComponent.getInstance()
+    val mark = KeyOwnership.markOf(ref)
+    if (!KeyOwnership.needsReown(SystemInfo.isMac, properties.getBoolean(mark, false), keyPresent = true)) return
+    // Отметку ставим ДО перезаписи: если она не удалась, повторять её при каждом чтении значило бы
+    // дёргать связку в каждом запросе. Не получилось — остаётся действие по просьбе человека.
+    properties.setValue(mark, true)
+    ApplicationManager.getApplication().executeOnPooledThread {
+      runCatching { restoreKey(provider, key) }
+        .onFailure { logger<ApiKeyResolver>().warn("could not re-own the keychain entry for $ref: ${it.message}") }
+    }
+  }
 
   fun storeKey(provider: ProviderEntry, key: String?) {
     PasswordSafe.instance.setPassword(attributes(provider.apiKeyRef ?: provider.id), key?.ifBlank { null })
