@@ -1874,6 +1874,7 @@
   "settings.providers.keyReading": "reading the key state…",
   "settings.providers.keySaved": "{status} · key saved",
   "settings.providers.keyStored": "Key saved · source: OS keychain",
+  "settings.providers.keyUnknown": "Could not check · the OS store did not answer; the key may well be there",
   "settings.providers.keyValid": "Key is valid · the catalogue returned {count} models",
   "settings.providers.noBaseUrl": "The provider has no baseURL — nothing to check",
   "settings.providers.originGlobal": "global entry (~/.vibe)",

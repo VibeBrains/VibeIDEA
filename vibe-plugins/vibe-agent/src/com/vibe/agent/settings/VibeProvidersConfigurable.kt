@@ -115,15 +115,18 @@ class VibeProvidersConfigurable(private val project: Project) : Configurable, Co
   }
 
   private fun sourceLine(p: ProviderEntry): String {
-    val stored = ApiKeyResolver.hasStoredKey(p)
+    val presence = ApiKeyResolver.keyPresence(p)
     val envName = p.apiKeyEnv
     // Пустая строка ключом не считается нигде, иначе строка состояния обещает ключ, которого нет.
     val dotenv = envName != null && !ApiKeyResolver.dotEnv(project.basePath)[envName].isNullOrBlank()
     val osEnv = envName != null && !System.getenv(envName).isNullOrBlank()
     return when {
-      stored -> t("settings.providers.keyStored")
+      presence == ApiKeyResolver.Presence.PRESENT -> t("settings.providers.keyStored")
       dotenv -> t("settings.providers.keyFromEnvFile")
       osEnv -> t("settings.providers.keyFromEnv", "name" to envName)
+      // «Спросить не удалось» — не «ключа нет»: человек, которому сказали «ключа нет», идёт
+      // вводить его заново, а ключ может быть на месте (владелец на Windows, 21.09.2026).
+      presence == ApiKeyResolver.Presence.UNKNOWN -> t("settings.providers.keyUnknown")
       else -> t("settings.providers.keyMissing")
     }
   }

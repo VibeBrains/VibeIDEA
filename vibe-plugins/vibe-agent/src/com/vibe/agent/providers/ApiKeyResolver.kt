@@ -21,9 +21,10 @@ object ApiKeyResolver {
   fun attributes(ref: String): CredentialAttributes =
     CredentialAttributes(generateServiceName("VibeIDEA Providers", ref))
 
-  fun storedKey(provider: ProviderEntry): String? =
-    PasswordSafe.instance.getPassword(attributes(provider.apiKeyRef ?: provider.id))?.takeIf { it.isNotBlank() }
-      ?.also { known[provider.apiKeyRef ?: provider.id] = it; reownOnce(provider, it) }
+  fun storedKey(provider: ProviderEntry): String? {
+    val ref = provider.apiKeyRef ?: provider.id
+    return readStored(ref)?.also { known[ref] = it; reownOnce(provider, it) }
+  }
 
   /**
    * Ключи, которые в ЭТОМ запуске уже удалось прочитать из связки, — чтобы фон к ней не ходил.
@@ -98,25 +99,71 @@ object ApiKeyResolver {
    */
   private val attempted = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
 
+  /** Ответ про ключ: он есть, его нет, или спросить не удалось. Третье — не синоним второго. */
+  enum class Presence { PRESENT, ABSENT, UNKNOWN }
+
+  fun hasStoredKey(provider: ProviderEntry): Boolean = keyPresence(provider) == Presence.PRESENT
+
   /**
-   * Сохранён ли ключ этого провайдера — без чтения значения и без диалога с паролем.
+   * Есть ли ключ — тремя ответами, а не двумя.
    *
-   * Для показа состояния на странице значение не нужно: нужен ответ «да/нет». Читать ради него
-   * пароль значит вызывать диалог связки на каждого провайдера при открытии страницы. Разбор —
-   * [KeychainProbe].
+   * Диалог связки вызывает ЧТЕНИЕ ЗНАЧЕНИЯ, и только на macOS: там список доступа охраняет данные
+   * записи ([KeychainProbe]). Поэтому порядок такой:
    *
-   * Не удалось спросить (не macOS, связка не ответила) — отвечаем по тому, что уже знаем в этом
-   * запуске, и НЕ лезем в связку: «не знаю» честнее ложного «нет» и тем более честнее диалога.
+   * - на macOS сперва спрашиваем пробой, без чтения;
+   * - **на остальных системах читаем значение сразу**: хранилище там не связка Apple, диалога нет
+   *   вовсе, и отвечать «не знаю» было бы выдумкой;
+   * - на macOS, когда проба не ответила, так и говорим — `UNKNOWN`.
+   *
+   * Почему это переписано. Прежняя версия возвращала `Boolean` и сворачивала «не удалось спросить»
+   * в `false`, а проба первой строкой отвечает `UNKNOWN` всюду, кроме macOS. Значит **на Windows
+   * ответ «ключа нет» выдавался всегда**, при любом сохранённом ключе: страница, доктор и каталоги
+   * моделей хором сообщали владельцу, что ключей у него нет (скриншот с Windows, 21.09.2026).
+   * В комментарии при этом было написано, что «не знаю» честнее ложного «нет», — а код делал
+   * ровно обратное.
    */
-  fun hasStoredKey(provider: ProviderEntry): Boolean {
+  fun keyPresence(provider: ProviderEntry): Presence {
     val ref = provider.apiKeyRef ?: provider.id
-    if (known.containsKey(ref)) return true
-    return when (KeychainProbe.probe(attributes(ref).serviceName)) {
-      KeychainProbe.State.PRESENT -> true
-      KeychainProbe.State.ABSENT -> false
-      KeychainProbe.State.UNKNOWN -> false
-    }
+    val onMac = SystemInfo.isMac
+    val knownInThisRun = known.containsKey(ref)
+    val valueFound = KeyPresenceRule.mustReadValue(onMac, knownInThisRun) && readStored(ref) != null
+    val probe = if (!knownInThisRun && onMac) KeychainProbe.probe(attributes(ref).serviceName)
+                else KeychainProbe.State.UNKNOWN
+    return KeyPresenceRule.decide(onMac, knownInThisRun, probe, valueFound)
   }
+
+  /**
+   * Прочитать запись хранилища вместе со страховкой прерванной перезаписи.
+   *
+   * Страховка проверяется здесь, а не только в действии по кнопке: [restoreKey] удаляет запись
+   * перед тем, как создать её заново, и в окно между этими шагами помещается и перезапуск IDE, и
+   * отказ связки. Ключ тогда цел, но лежит в записи `(backup)`, а человек видит пустое поле и
+   * знает лишь то, что провайдер перестал работать. Подбор обязан происходить там, где ключ
+   * читают, а не там, где о нём вспомнили.
+   */
+  private fun readStored(ref: String): String? {
+    rawStored(ref)?.let { return it }
+    val backup = runCatching { PasswordSafe.instance.getPassword(attributes(ref + BACKUP_SUFFIX)) }
+      .getOrNull()?.takeIf { it.isNotBlank() } ?: return null
+    // Нашли страховку — возвращаем ключ на место сразу: следующий запуск не должен зависеть от
+    // того, вспомнит ли кто-то нажать кнопку.
+    runCatching {
+      PasswordSafe.instance.setPassword(attributes(ref), backup)
+      PasswordSafe.instance.setPassword(attributes(ref + BACKUP_SUFFIX), null)
+      logger<ApiKeyResolver>().info("recovered the key for $ref from its backup entry")
+    }
+    return backup
+  }
+
+  /**
+   * Только основная запись, без подбора страховки.
+   *
+   * Нужна [restoreKey]: он проверяет, ИСЧЕЗЛА ли запись после удаления, и подбор страховки там
+   * вернул бы ключ, который он сам минуту назад туда и положил, — проверка стала бы всегда
+   * ложно-положительной, а перезапись всегда «неудачной».
+   */
+  private fun rawStored(ref: String): String? =
+    PasswordSafe.instance.getPassword(attributes(ref))?.takeIf { it.isNotBlank() }
 
   fun storeKey(provider: ProviderEntry, key: String?) {
     val ref = provider.apiKeyRef ?: provider.id
@@ -154,7 +201,7 @@ object ApiKeyResolver {
     // запись поверх неё идёт правкой на месте, список доступа не меняется, а прочитанное обратно
     // всё равно совпадает с ключом. Прежняя проверка «прочитали то, что писали» считала это
     // успехом и ставила отметку — вопрос пароля становился вечным.
-    if (storedKey(provider) != null) {
+    if (rawStored(ref) != null) {
       logger<ApiKeyResolver>().warn("keychain entry for $ref survived the delete — its access list is not ours, will retry on the next launch")
       PasswordSafe.instance.setPassword(attributes(ref + BACKUP_SUFFIX), null)
       return false
@@ -162,7 +209,7 @@ object ApiKeyResolver {
     storeKey(provider, key)
     // Читаем обратно, а не верим записи: связка может отказать молча, и «переписано» без проверки
     // означало бы отчёт о работе, которой не было.
-    val written = storedKey(provider) == key
+    val written = rawStored(ref) == key
     if (written) PasswordSafe.instance.setPassword(attributes(ref + BACKUP_SUFFIX), null)
     return written
   }

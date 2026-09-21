@@ -1874,6 +1874,7 @@
   "settings.providers.keyReading": "читаю состояние ключа…",
   "settings.providers.keySaved": "{status} · ключ сохранён",
   "settings.providers.keyStored": "Ключ сохранён · источник: защищённое хранилище ОС",
+  "settings.providers.keyUnknown": "Проверить не удалось · хранилище ОС не ответило; ключ может быть на месте",
   "settings.providers.keyValid": "Ключ действителен · каталог отдал {count} моделей",
   "settings.providers.noBaseUrl": "Провайдер без baseURL — проверять нечего",
   "settings.providers.originGlobal": "глобальная запись (~/.vibe)",
