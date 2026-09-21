@@ -82,7 +82,22 @@ class StatusDot : JComponent() {
     return Dimension(metrics.stringWidth(text()) + JBUI.scale(DOT + GAP * 2), metrics.height)
   }
 
-  override fun getMinimumSize(): Dimension = preferredSize
+  /**
+   * Минимум НЕ равен предпочтительному: иначе строка не сжимается никогда.
+   *
+   * Цена равенства измерена: у имени инструмента длины нет («Инструмент: Выполнить команду —
+   * npm install -g @vtsls/language-server»), а несжимаемый компонент в `BorderLayout.EAST`
+   * не переносится и не усекается — он НАКЛАДЫВАЕТСЯ на западного соседа, и человек видит кашу
+   * из двух строк поверх друг друга (снимок владельца 21.09.2026). Тот же класс дефекта, что
+   * трижды обрезал страницы настроек: несжимаемый минимум плюс раскладка, которая при нехватке
+   * места не сжимает, а кладёт одно на другое.
+   *
+   * Минимум — точка и несколько символов: меньше нечего показывать, больше — повод для наложения.
+   */
+  override fun getMinimumSize(): Dimension {
+    val metrics = getFontMetrics(font)
+    return Dimension(metrics.charWidth('m') * MIN_CHARS + JBUI.scale(DOT + GAP * 2), metrics.height)
+  }
 
   override fun getMaximumSize(): Dimension = preferredSize
 
@@ -93,7 +108,9 @@ class StatusDot : JComponent() {
       g2.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING, RenderingHints.VALUE_TEXT_ANTIALIAS_ON)
       g2.font = font
       val metrics = g2.fontMetrics
-      val label = text()
+      // Усечение, а не выход за край: обрезанный молча текст неотличим от короткого, а многоточие
+      // называет, что сказано не всё. Полная фраза остаётся в подсказке — её ставит setState.
+      val label = fit(text(), metrics, width - JBUI.scale(DOT + GAP * 2))
       g2.color = LABEL
       g2.drawString(label, 0, metrics.ascent)
       val dot = JBUI.scale(DOT)
@@ -111,9 +128,28 @@ class StatusDot : JComponent() {
     }
   }
 
-  private companion object {
+  internal companion object {
+    /**
+     * Уместить [text] в [available] пикселей, при нехватке — обрезать и закончить многоточием.
+     *
+     * Чистая функция на метриках, а не метод компонента: её итог мерится тестом без окна и
+     * шрифтов экрана — ровно то, чего не умел прежний гейт, зеленевший на наложенных строках.
+     */
+    fun fit(text: String, metrics: java.awt.FontMetrics, available: Int): String {
+      if (available <= 0) return ""
+      if (metrics.stringWidth(text) <= available) return text
+      val ellipsisWidth = metrics.stringWidth(ELLIPSIS)
+      if (ellipsisWidth > available) return ""
+      var end = text.length
+      while (end > 0 && metrics.stringWidth(text.substring(0, end)) + ellipsisWidth > available) end--
+      return text.substring(0, end) + ELLIPSIS
+    }
+
     const val DOT = 7
     const val GAP = 5
+    /** Сколько символов строка обязана показать даже в самой узкой панели. */
+    const val MIN_CHARS = 3
+    const val ELLIPSIS = "…"
     const val PULSE_MS = 60
     const val PULSE_STEP = 0.04
     const val MIN_ALPHA = 0.35

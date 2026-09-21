@@ -201,32 +201,38 @@ class ComposerPanel(
   fun usageAnchor(): javax.swing.JComponent = contextRing
 
   /**
-   * Полоска над вводом: слева — что изменено и кнопки разговора, справа — состояние.
+   * Полоска над вводом: что изменено и кнопки работы с разговором.
    *
-   * Собственной строкой, а не частью ряда пилюль: у ряда пилюль перенос по ширине, и состояние
-   * уезжало на вторую строку, отрываясь от всего остального.
+   * Собственной строкой, а не частью ряда пилюль: у ряда пилюль перенос по ширине, и полоска
+   * уезжала на вторую строку, отрываясь от всего остального.
    */
-  private fun commandStrip(): JPanel {
-    val left = JPanel(FlowLayout(FlowLayout.LEFT, JBUI.scale(PILL_GAP), 0)).apply {
-      isOpaque = false
-      add(changedFilesLabel)
-      add(commandsLabel)
-      add(acceptAllButton)
-      add(rejectAllButton)
-      add(copyChatButton)
-      add(exportChatButton)
-    }
-    val right = JPanel(FlowLayout(FlowLayout.RIGHT, JBUI.scale(PILL_GAP), 0)).apply {
-      isOpaque = false
-      add(statusDot)
-    }
+  private fun commandStrip(): JPanel = JPanel(FlowLayout(FlowLayout.LEFT, JBUI.scale(PILL_GAP), 0)).apply {
+    isOpaque = false
+    border = JBUI.Borders.emptyBottom(PILL_GAP)
+    add(changedFilesLabel)
+    add(commandsLabel)
+    add(acceptAllButton)
+    add(rejectAllButton)
+    add(copyChatButton)
+    add(exportChatButton)
     setChangedFiles(0)
-    return JPanel(BorderLayout()).apply {
-      isOpaque = false
-      border = JBUI.Borders.emptyBottom(PILL_GAP)
-      add(left, BorderLayout.WEST)
-      add(right, BorderLayout.EAST)
-    }
+  }
+
+  /**
+   * Состояние — СВОЕЙ строкой над полоской действий, на всю ширину панели.
+   *
+   * Раньше оно жило в `BorderLayout.EAST` той же строки, и у длинного имени инструмента не было
+   * выбора: `BorderLayout` при нехватке ширины не сжимает и не переносит — он кладёт восточного
+   * соседа поверх западного. «Готово» помещалось, «Инструмент: Выполнить команду — npm install -g
+   * @vtsls/language-server» — нет, и человек видел две строки поверх друг друга (21.09.2026).
+   *
+   * Своя строка снимает соревнование за ширину, а усечение в [StatusDot] закрывает остаток: даже
+   * в одиночку длинная фраза не вылезет за край, а скажет многоточием, что сказано не всё.
+   */
+  private fun statusStrip(): JPanel = JPanel(BorderLayout()).apply {
+    isOpaque = false
+    border = JBUI.Borders.emptyBottom(PILL_GAP)
+    add(statusDot, BorderLayout.CENTER)
   }
 
   /**
@@ -328,6 +334,7 @@ class ComposerPanel(
       add(queueBanner.apply { alignmentX = LEFT_ALIGNMENT })
       add(attachmentsStrip.apply { alignmentX = LEFT_ALIGNMENT })
       add(contextStrip.apply { alignmentX = LEFT_ALIGNMENT })
+      add(statusStrip().apply { alignmentX = LEFT_ALIGNMENT })
       add(commandStrip().apply { alignmentX = LEFT_ALIGNMENT })
     }
     val icons = JPanel(FlowLayout(FlowLayout.RIGHT, JBUI.scale(ICON_GAP), 0)).apply {
