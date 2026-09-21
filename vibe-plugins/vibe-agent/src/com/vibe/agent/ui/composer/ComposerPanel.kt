@@ -4,10 +4,15 @@ package com.vibe.agent.ui.composer
 import com.vibe.agent.i18n.VibeI18n.t
 
 import com.intellij.icons.AllIcons
-import com.intellij.ide.dnd.FileCopyPasteUtil
+import com.intellij.ide.PasteProvider
 import com.intellij.openapi.Disposable
 import com.intellij.openapi.actionSystem.ActionUpdateThread
 import com.intellij.openapi.actionSystem.AnActionEvent
+import com.intellij.openapi.actionSystem.DataContext
+import com.intellij.openapi.actionSystem.DataSink
+import com.intellij.openapi.actionSystem.PlatformDataKeys
+import com.intellij.openapi.actionSystem.UiDataProvider
+import com.intellij.openapi.ide.CopyPasteManager
 import com.intellij.openapi.actionSystem.CustomShortcutSet
 import com.intellij.openapi.project.DumbAwareAction
 import com.intellij.openapi.project.Project
@@ -28,7 +33,7 @@ import java.awt.Graphics
 import java.awt.Graphics2D
 import java.awt.RenderingHints
 import java.awt.Toolkit
-import java.awt.datatransfer.DataFlavor
+import java.awt.datatransfer.Transferable
 import java.awt.event.ActionEvent
 import java.awt.event.FocusAdapter
 import java.awt.event.FocusEvent
@@ -56,7 +61,7 @@ class ComposerPanel(
   private val project: Project,
   parentDisposable: Disposable,
   private val listener: Listener,
-) : JPanel(BorderLayout()) {
+) : JPanel(BorderLayout()), UiDataProvider {
   interface Listener {
     /** Validate and start sending; return false to keep the draft in the field (blocking error). */
     fun onSend(message: ComposedMessage): Boolean
@@ -638,6 +643,68 @@ class ComposerPanel(
     updateSendEnabled()
   }
 
+  private val composerPaste = ComposerPaste()
+
+  /**
+   * Взять на себя содержимое буфера (или перетаскивания), если оно наше. EDT.
+   *
+   * Общий вход для обоих путей вставки — обработчика Swing и действия вставки IDE. Возвращает
+   * `false`, когда в буфере нет ничего нашего: тогда вставку делает поле ввода своим порядком.
+   */
+  private fun acceptClipboard(transferable: Transferable?): Boolean =
+    when (val kind = ClipboardContent.of(transferable)) {
+      is ClipboardContent.Kind.Files -> {
+        Attachments.loadAsync(kind.files.filter { Attachments.isImageFile(it.name) }) { addImages(it) }
+        // A PDF dropped as a plain file would be attached as bytes nobody can read: the text has
+        // to be pulled out first, and that is slow enough to belong off the EDT.
+        attachPdfs(kind.files.filter { Attachments.isPdfFile(it) })
+        val fs = LocalFileSystem.getInstance()
+        kind.files.filter { !Attachments.isImageFile(it.name) && !Attachments.isPdfFile(it) }
+          .mapNotNull { fs.findFileByIoFile(it) }.forEach { vf ->
+            addContext(if (vf.isDirectory) ContextRef.Folder(vf) else ContextRef.File(vf))
+          }
+        true
+      }
+      is ClipboardContent.Kind.Picture -> {
+        addImages(listOf(kind.image))
+        true
+      }
+      ClipboardContent.Kind.Text -> false
+    }
+
+  /**
+   * Отдать платформе наш обработчик вставки: через него приходит действие `${'$'}Paste` IDE.
+   *
+   * Панель отдаёт его за всё своё поддерево, поэтому нажатие в поле ввода находит его снизу вверх.
+   */
+  override fun uiDataSnapshot(sink: DataSink) {
+    sink[PlatformDataKeys.PASTE_PROVIDER] = composerPaste
+  }
+
+  /**
+   * Второй вход вставки: действие IDE.
+   *
+   * `Cmd+V`/`Ctrl+V` над полем ввода может не дойти до Swing — платформа раздаёт сочетания через
+   * свой диспетчер, и что именно перехватит нажатие, зависит от контекста. Пока вставка картинки
+   * жила только в обработчике Swing, у владельца не работал ни скриншот, ни копирование из
+   * браузера: снаружи это ровно одно и то же — «нажал и ничего».
+   *
+   * Поэтому панель отдаёт собственный обработчик вставки. Он берёт на себя только наше (картинку
+   * и файлы) и честно отвечает «не моё» на текст — тогда работает обычная текстовая вставка.
+   */
+  private inner class ComposerPaste : PasteProvider {
+    override fun getActionUpdateThread(): ActionUpdateThread = ActionUpdateThread.EDT
+
+    override fun performPaste(dataContext: DataContext) {
+      acceptClipboard(CopyPasteManager.getInstance().contents)
+    }
+
+    override fun isPastePossible(dataContext: DataContext): Boolean = isPasteEnabled(dataContext)
+
+    override fun isPasteEnabled(dataContext: DataContext): Boolean =
+      ClipboardContent.carriesOurs(CopyPasteManager.getInstance().contents)
+  }
+
   /**
    * Paste/drop: images become attachments, project files become context chips,
    * anything else (plain text) goes to the default text handler.
@@ -647,28 +714,11 @@ class ComposerPanel(
     val handler = object : TransferHandler() {
       // The text delegate casts the target to JTextComponent: consult it only for the field itself.
       override fun canImport(support: TransferSupport): Boolean =
-        support.isDataFlavorSupported(DataFlavor.imageFlavor) ||
-        FileCopyPasteUtil.isFileListFlavorAvailable(support.dataFlavors) ||
+        ClipboardContent.carriesOurs(support.transferable) ||
         (support.component === input && delegate.canImport(support))
 
       override fun importData(support: TransferSupport): Boolean {
-        val t = support.transferable
-        if (FileCopyPasteUtil.isFileListFlavorAvailable(support.dataFlavors)) {
-          val files = FileCopyPasteUtil.getFileList(t).orEmpty()
-          Attachments.loadAsync(files.filter { Attachments.isImageFile(it.name) }) { addImages(it) }
-          // A PDF dropped as a plain file would be attached as bytes nobody can read: the text has
-          // to be pulled out first, and that is slow enough to belong off the EDT.
-          attachPdfs(files.filter { Attachments.isPdfFile(it) })
-          val fs = LocalFileSystem.getInstance()
-          files.filter { !Attachments.isImageFile(it.name) && !Attachments.isPdfFile(it) }
-            .mapNotNull { fs.findFileByIoFile(it) }.forEach { vf ->
-              addContext(if (vf.isDirectory) ContextRef.Folder(vf) else ContextRef.File(vf))
-            }
-          return true
-        }
-        if (support.isDataFlavorSupported(DataFlavor.imageFlavor) && !support.isDataFlavorSupported(DataFlavor.stringFlavor)) {
-          Attachments.fromTransferable(t)?.let { addImages(listOf(it)); return true }
-        }
+        if (acceptClipboard(support.transferable)) return true
         return support.component === input && delegate.importData(support)
       }
     }

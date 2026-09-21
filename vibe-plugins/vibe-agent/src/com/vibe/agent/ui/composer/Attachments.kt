@@ -78,13 +78,29 @@ object Attachments {
   }
 
   /** An image from the clipboard / a drop, or null when the transferable carries none. */
-  fun fromTransferable(t: Transferable): ImageAttachment? {
+  fun fromTransferable(t: Transferable): ImageAttachment? = runCatching { readImage(t) }.getOrNull()
+
+  /**
+   * Чтение картинки из буфера. Бросает — обёртка выше превращает это в «картинки нет».
+   *
+   * Молчать тут правильнее, чем падать: неудачный разбор означает лишь, что вставку надо отдать
+   * тексту, а не что нажатие потеряно.
+   */
+  private fun readImage(t: Transferable): ImageAttachment? {
     if (!t.isDataFlavorSupported(DataFlavor.imageFlavor)) return null
     val image = t.getTransferData(DataFlavor.imageFlavor) as? Image ?: return null
-    val buffered = image as? BufferedImage ?: BufferedImage(image.getWidth(null), image.getHeight(null), BufferedImage.TYPE_INT_ARGB).also {
-      val g = it.createGraphics()
-      g.drawImage(image, 0, 0, null)
-      g.dispose()
+    val buffered = image as? BufferedImage ?: run {
+      // У ещё не загруженной картинки размеры приходят -1, и `BufferedImage(-1, -1, …)` падает.
+      // `ImageIcon` дожидается загрузки (внутри MediaTracker) и отвечает настоящими размерами.
+      val ready = javax.swing.ImageIcon(image)
+      val width = ready.iconWidth
+      val height = ready.iconHeight
+      if (width <= 0 || height <= 0) return null
+      BufferedImage(width, height, BufferedImage.TYPE_INT_ARGB).also {
+        val g = it.createGraphics()
+        g.drawImage(ready.image, 0, 0, null)
+        g.dispose()
+      }
     }
     val out = ByteArrayOutputStream()
     ImageIO.write(buffered, "png", out)
