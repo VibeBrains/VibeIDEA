@@ -29,6 +29,13 @@ class ConfiguredServersSource(
    * серверов, и человек увидел бы «инструментов нет» вместо «один сервер не запустился».
    */
   private val onFailure: (List<String>) -> Unit = {},
+  /**
+   * Куда сказать, что сервер изменил описания инструментов после одобрения.
+   *
+   * Отдельным каналом от неудач запуска: это не поломка, а событие безопасности, и читается оно
+   * иначе — «сервер работает, но обещает уже не то, на что вы соглашались».
+   */
+  private val onDrift: (String, ToolFingerprint.Drift) -> Unit = { _, _ -> },
   private val timeoutMs: Long = DirectChatTools.CALL_TIMEOUT_MS,
 ) : DirectChatTools.Source {
   private class Running(
@@ -58,8 +65,29 @@ class ConfiguredServersSource(
           client.initialize(clientVersion, timeoutMs)
           val tools = client.listTools(timeoutMs)
           val specs = tools.map { ToolSpec(it.name, it.description, it.inputSchema) }
-          running[entry.name] = Running(entry, client, tools.map { it.name }, specs)
-          specs
+          // Сверка с тем, на что человек соглашался. Набор, изменившийся после одобрения, модели
+          // НЕ отдаётся: согласие давалось на другие описания, а решает человек по ним.
+          val project = workingDir?.toString()
+          val drift = ApprovedTools.drift(project, entry.name, specs)
+          when {
+            ApprovedTools.isFirstSight(project, entry.name) -> {
+              // Первая встреча: одобрять нечего, набор запоминается как отправная точка. Права
+              // при этом прежние — чужой инструмент спрашивается на каждый вызов ([riskOf]).
+              ApprovedTools.approve(project, entry.name, specs)
+              running[entry.name] = Running(entry, client, tools.map { it.name }, specs)
+              specs
+            }
+            drift.isEmpty -> {
+              running[entry.name] = Running(entry, client, tools.map { it.name }, specs)
+              specs
+            }
+            else -> {
+              onDrift(entry.name, drift)
+              // Сервер остаётся запущенным (его ещё подтвердят), но инструментов не даёт.
+              running[entry.name] = Running(entry, client, emptyList(), emptyList())
+              emptyList()
+            }
+          }
         }.getOrElse { error ->
           failures += entry.name + ": " + (error.message ?: error.javaClass.simpleName)
           emptyList()
