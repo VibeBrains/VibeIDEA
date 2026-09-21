@@ -51,6 +51,9 @@
               topic="com.intellij.openapi.fileEditor.FileEditorManagerListener"/>
     <listener class="com.vibe.lsp.VibeJsConfigNotifier"
               topic="com.intellij.openapi.fileEditor.FileEditorManagerListener"/>
+    <!-- Смена ветки меняет файлы под запущенным сервером: его модель проекта надо пересобрать. -->
+    <listener class="com.vibe.lsp.VibeBranchListener"
+              topic="com.intellij.openapi.vcs.BranchChangeListener"/>
   </projectListeners>
 
   <actions>

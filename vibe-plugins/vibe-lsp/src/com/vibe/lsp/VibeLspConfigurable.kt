@@ -29,6 +29,9 @@ class VibeLspConfigurable : Configurable, Configurable.NoScroll {
   private val nodePath = TextFieldWithBrowseButton()
   private val nodeStatus = JBLabel()
 
+  /** Строка под полем сервера: что ответила проверка или установка. Пустая, пока не спросили. */
+  private val serverStatus = LinkedHashMap<String, JBLabel>()
+
   override fun getDisplayName(): String = t("settings.lsp.title")
 
   override fun createComponent(): JComponent {
@@ -85,7 +88,10 @@ class VibeLspConfigurable : Configurable, Configurable.NoScroll {
         )
       }
       fields[spec.id] = field
-      builder.addLabeledComponent(spec.displayName, field)
+      val status = JBLabel().apply { foreground = com.intellij.ui.JBColor.GRAY }
+      serverStatus[spec.id] = status
+      builder.addLabeledComponent(spec.displayName, serverRow(spec, field, status))
+      builder.addComponent(status)
       // Ровно та ошибка, которую человек делает первой: в поле сервера кладут путь к ноде.
       ServerPaths.interpreterInstead(spec.id)?.let {
         builder.addComponent(SettingsUi.hint(t("settings.lsp.interpreterInField", "path" to it)))
@@ -93,6 +99,96 @@ class VibeLspConfigurable : Configurable, Configurable.NoScroll {
     }
     builder.addComponent(SettingsUi.hint(t("settings.lsp.hint")))
     return SettingsUi.page(builder.panel)
+  }
+
+  /**
+   * Ряд сервера: поле пути и две кнопки — «Проверить» и «Установить последнее».
+   *
+   * Кнопки нужны рядом с полем, а не в отдельном месте: человек приходит сюда именно тогда, когда
+   * сервер не работает, и оба вопроса у него про ЭТОТ сервер — «что у меня стоит» и «поставь
+   * свежее». Гонять его за этим в терминал значит отдать три шага там, где хватает одного
+   * ([ServerInstall]).
+   */
+  private fun serverRow(spec: LspDoctor.ServerSpec, field: TextFieldWithBrowseButton, status: JBLabel): JComponent {
+    val buttons = javax.swing.JPanel(java.awt.FlowLayout(java.awt.FlowLayout.RIGHT, com.intellij.util.ui.JBUI.scale(4), 0)).apply {
+      isOpaque = false
+      add(javax.swing.JButton(t("settings.lsp.server.check")).apply {
+        addActionListener { checkServer(spec, field, status) }
+      })
+      add(javax.swing.JButton(t("settings.lsp.server.install")).apply {
+        addActionListener { installServer(spec, status) }
+      })
+    }
+    return javax.swing.JPanel(java.awt.BorderLayout(com.intellij.util.ui.JBUI.scale(6), 0)).apply {
+      isOpaque = false
+      add(field, java.awt.BorderLayout.CENTER)
+      add(buttons, java.awt.BorderLayout.EAST)
+    }
+  }
+
+  /**
+   * «Проверить»: запустить сам сервер и напечатать, что он ответил.
+   *
+   * Путь берётся из поля, а если оно пусто — из обычного поиска: страница обязана проверять то,
+   * что реально запустится, а не то, что набрано.
+   */
+  private fun checkServer(spec: LspDoctor.ServerSpec, field: TextFieldWithBrowseButton, status: JBLabel) {
+    val typed = field.text.trim()
+    val path = typed.ifEmpty { ServerBinaries.find(spec.binary) ?: LspDoctor.bundledPath(spec) }
+    status.text = "<html>" + describe(spec, ServerCheck.of(path)) + "</html>"
+  }
+
+  /** Ответ проверки человеческой строкой. */
+  private fun describe(spec: LspDoctor.ServerSpec, outcome: ServerCheck.Outcome): String = when (outcome) {
+    is ServerCheck.Outcome.Works -> t("settings.lsp.server.works", "path" to outcome.path, "version" to outcome.version)
+    is ServerCheck.Outcome.NoVersion -> t("settings.lsp.server.noVersion", "path" to outcome.path)
+    ServerCheck.Outcome.Missing -> t("settings.lsp.server.missing", "server" to spec.displayName)
+    is ServerCheck.Outcome.Failed -> t("settings.lsp.server.failed", "path" to outcome.path, "reason" to outcome.reason)
+  }
+
+  /**
+   * «Установить последнее»: выполнить команду установки из каталога, показав её и её вывод.
+   *
+   * В фоне с прогрессом, потому что `npm install -g` идёт десятки секунд и ходит в сеть: страница,
+   * замершая без объяснений, читается как сломанная. Вывод показывается и при удаче, и при отказе
+   * — за корпоративным прокси причина видна только там.
+   */
+  private fun installServer(spec: LspDoctor.ServerSpec, status: JBLabel) {
+    val command = if (com.vibe.agent.util.ExecutableNames.isWindows()) spec.installCommandWindows ?: spec.installCommand
+                  else spec.installCommand
+    if (!ServerInstall.isOfferable(command)) {
+      status.text = "<html>" + t("settings.lsp.server.installRefused", "command" to command) + "</html>"
+      return
+    }
+    status.text = "<html>" + t("settings.lsp.server.installing", "server" to spec.displayName, "command" to command) + "</html>"
+    val task = object : com.intellij.openapi.progress.Task.Backgroundable(
+      null, t("settings.lsp.server.installing", "server" to spec.displayName, "command" to command), true,
+    ) {
+      override fun run(indicator: com.intellij.openapi.progress.ProgressIndicator) {
+        indicator.isIndeterminate = true
+        val result = runCatching {
+          val process = ProcessBuilder(ServerInstall.shellCommand(command)).redirectErrorStream(true).start()
+          val output = process.inputStream.readBytes().decodeToString()
+          process.waitFor()
+          process.exitValue() to output
+        }
+        com.intellij.openapi.application.ApplicationManager.getApplication().invokeLater {
+          val text = result.fold(
+            onSuccess = { (code, output) ->
+              if (code == 0) {
+                val path = ServerBinaries.find(spec.binary)
+                val version = (ServerCheck.of(path) as? ServerCheck.Outcome.Works)?.version.orEmpty()
+                t("settings.lsp.server.installed", "server" to spec.displayName, "version" to version)
+              }
+              else t("settings.lsp.server.installFailed", "reason" to ServerInstall.failureTail(output))
+            },
+            onFailure = { t("settings.lsp.server.installFailed", "reason" to (it.message ?: "")) },
+          )
+          status.text = "<html>" + text + "</html>"
+        }
+      }
+    }
+    com.intellij.openapi.progress.ProgressManager.getInstance().run(task)
   }
 
   /** Что за интерпретатор сейчас в деле и откуда он взят — строка, а не молчание. */

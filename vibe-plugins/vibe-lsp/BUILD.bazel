@@ -32,6 +32,8 @@ jvm_library(
         "//platform/analysis-api:analysis",
         # Отладчики: конфигурации запуска и XDebugger — точка расширения DAP у LSP4IJ говорит на них.
         "//platform/execution",
+        # Смена ветки: BranchChangeListener живёт в vcs-api.
+        "//platform/vcs-api:vcs",
         "//platform/execution-impl",
         "//platform/xdebugger-api:debugger",
         "//vibe-plugins/vibe-agent",
