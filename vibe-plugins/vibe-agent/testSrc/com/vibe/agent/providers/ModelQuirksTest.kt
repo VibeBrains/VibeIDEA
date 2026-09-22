@@ -84,4 +84,20 @@ class ModelQuirksTest {
     assertTrue(ModelQuirks.quirksOf("").isEmpty())
     assertTrue(ModelQuirks.quirksOf("   ").isEmpty())
   }
+
+  @Test
+  fun `MiMo v2_6 не получает температуру и top_p — вендор их всё равно перепишет`() {
+    val sent = ModelQuirks.applyToBody("mimo-v2.6-pro", body())
+    assertNull(sent["temperature"], "температура ушла модели, которая её принудительно заменяет")
+    assertNull(sent["top_p"], "top_p ушёл модели, которая его принудительно заменяет")
+    assertTrue(ModelQuirks.quirksOf("mimo-v2.6-pro").contains(ModelQuirks.Quirk.ECHO_REASONING),
+               "у MiMo блок размышления обязан возвращаться в историю вместе с вызовами инструментов")
+  }
+
+  @Test
+  fun `у MiMo прежних версий ручки не отнимаются`() {
+    val sent = ModelQuirks.applyToBody("mimo-v2.5-pro", body())
+    assertEquals(JsonPrimitive(0.7), sent["temperature"],
+                 "правило про форсирование объявлено вендором для линейки v2.6, а не для всех")
+  }
 }

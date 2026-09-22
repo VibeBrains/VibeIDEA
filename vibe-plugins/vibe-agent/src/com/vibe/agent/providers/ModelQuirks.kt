@@ -182,6 +182,21 @@ object ModelQuirks {
       "mimo: the thinking block comes back with the answer and its tool calls in the history",
     ),
     Rule(
+      // MiMo v2.6 в режиме размышления ФОРСИРУЕТ temperature 1.0 и top_p 0.95: «the actual
+      // effective values will be forcibly set by the model» — переданное значение не даёт ошибки,
+      // оно молча игнорируется (mimo.mi.com/docs/en-US/api/chat/anthropic-api, сверено 22.09.2026).
+      //
+      // Цена этого правила названа честно: оно снимает обе ручки у ВСЕЙ линейки v2.6, включая
+      // случай, когда размышление выключено и вендор их принял бы. Выбрано так потому, что
+      // противоположная ошибка хуже: ползунок, который двигают и который ничего не меняет, —
+      // это молчание, а с молчанием мы и боремся. Режима запроса каталог причуд не знает, а
+      // заводить его ради одного вендора дороже, чем потеря температуры у flash.
+      // Тот же вывод независимо сделан в VibeIDE (записка 22.09.2026).
+      Regex("^mimo-v2\\.6"),
+      setOf(Quirk.NO_SAMPLING),
+      "mimo v2.6: in thinking mode the vendor overrides temperature and top_p, so we do not send them",
+    ),
+    Rule(
       // DeepSeek ставит то же условие и ровно так же обусловливает его инструментами: «with `tools`,
       // the `reasoning_content` of all previous turns should be passed back», без инструментов
       // возвращать не нужно и присланное будет проигнорировано
