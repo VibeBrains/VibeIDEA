@@ -173,6 +173,15 @@ object ModelQuirks {
       "kimi: the assistant's reasoning_content goes back with its answer and its tool calls in the history",
     ),
     Rule(
+      // Xiaomi MiMo: «during multi-turn tool calls in thinking mode the model returns a `thinking`
+      // content block alongside `tool_use`», и прошлые блоки вендор рекомендует возвращать обратно
+      // (mimo.mi.com/docs/en-US/api/chat/anthropic-api, сверено 22.09.2026) — то же условие, что у
+      // Kimi и DeepSeek. Проверено по документации, не живым ключом.
+      Regex("^mimo-"),
+      setOf(Quirk.ECHO_REASONING),
+      "mimo: the thinking block comes back with the answer and its tool calls in the history",
+    ),
+    Rule(
       // DeepSeek ставит то же условие и ровно так же обусловливает его инструментами: «with `tools`,
       // the `reasoning_content` of all previous turns should be passed back», без инструментов
       // возвращать не нужно и присланное будет проигнорировано

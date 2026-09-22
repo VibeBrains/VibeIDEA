@@ -638,6 +638,7 @@ class LlmClient(
      */
     fun defaultClient(timeout: Duration): HttpClient {
       val builder = HttpClient.newBuilder().connectTimeout(timeout)
+      applyIdeTrust(builder)
       val spec = runCatching { com.vibe.agent.resilience.ProxySettings.parse(com.vibe.agent.settings.VibeAgentSettings.llmProxyUrl) }
         .getOrElse {
           logger<LlmClient>().warn("LLM proxy setting is malformed and was ignored: ${it.message}")
@@ -648,6 +649,36 @@ class LlmClient(
       // о том, идёт ли хост мимо, принимает [ProxySettings.bypasses]; здесь только проводка.
       spec?.let { builder.proxy(BypassingProxySelector(it.toProxy(), System.getenv("NO_PROXY") ?: System.getenv("no_proxy"))) }
       return builder.build()
+    }
+
+    /**
+     * Доверие и авторизация — те же, что у самой IDE: сертификаты и аутентификатор прокси.
+     *
+     * Чего не хватало. Клиент собирался с нуля, и потому НЕ знал двух вещей, которые человек уже
+     * настроил в IDE: (1) хранилища сертификатов — корпоративный корневой сертификат, добавленный
+     * в настройках, на запросы к провайдерам не действовал, и за таким прокси чат падал на
+     * рукопожатии TLS; (2) логина и пароля прокси — прокси с авторизацией мы не проходили вовсе.
+     * Платформа отдаёт и то, и другое (`PlatformHttpClient`, 2026.3), и это ровно та часть, которую
+     * незачем писать самим.
+     *
+     * МАРШРУТ при этом остаётся НАШ. Трафик моделей ходит своим прокси намеренно — человеку
+     * регулярно нужен один туннель и не нужен другой, — поэтому здесь берутся только доверие и
+     * авторизация, а выбор прокси делает [BypassingProxySelector] ниже. Аутентификатор без прокси
+     * ничего не делает: он срабатывает, лишь когда прокси реально ответил «нужен пароль».
+     *
+     * Под `runCatching` и с проверкой стадии запуска: до инициализации приложения сервисов ещё
+     * нет, а падать из-за украшения клиента нельзя — без него запрос просто пойдёт как раньше.
+     */
+    private fun applyIdeTrust(builder: HttpClient.Builder) {
+      runCatching {
+        val app = com.intellij.openapi.application.ApplicationManager.getApplication() ?: return
+        if (app.isDisposed) return
+        app.getServiceIfCreated(com.intellij.util.net.ssl.CertificateManager::class.java)
+          ?.let { builder.sslContext(it.sslContext) }
+        builder.authenticator(com.intellij.util.net.JdkProxyProvider.getInstance().authenticator)
+      }.onFailure {
+        logger<LlmClient>().warn("could not take the IDE trust settings for the model client: ${it.message}")
+      }
     }
 
     /**

@@ -67,6 +67,8 @@ object VibeDefaults {
     "providers/atria.jsonc" to "providers/atria.jsonc",
     "providers/deepseek.jsonc" to "providers/deepseek.jsonc",
     "providers/stepfun.jsonc" to "providers/stepfun.jsonc",
+    "providers/xai.jsonc" to "providers/xai.jsonc",
+    "providers/xiaomi-mimo.jsonc" to "providers/xiaomi-mimo.jsonc",
     "providers/edge0.jsonc" to "providers/edge0.jsonc",
     "providers/google-gemini.jsonc" to "providers/google-gemini.jsonc",
     "providers/inference-net.jsonc" to "providers/inference-net.jsonc",
