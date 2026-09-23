@@ -98,4 +98,46 @@ class AgentRegistryTest {
   fun `адрес каталога не переизобретается`() {
     assertEquals("https://cdn.agentclientprotocol.com/registry/v1/latest/registry.json", AgentRegistry.URL)
   }
+
+  @Test
+  fun `a record the importer marked with the registry id is configured under any name, binary included`() {
+    val entries = AgentRegistry.parse(catalog).associateBy { it.id }
+    val imported = AgentServerConfig("My native", "/opt/agents/native", emptyList(), emptyMap(),
+                                     registry = RegistryRef("native", "1.0.0"))
+    assertTrue(AgentRegistry.isConfigured(entries["native"]!!, listOf(imported)))
+    assertEquals(listOf("claude-acp", "some-uv"), AgentRegistry.newAgents(entries.values.toList(), listOf(imported)).map { it.id })
+  }
+
+  @Test
+  fun `the registry note is read from a project record, and a note without an id says nothing`() {
+    val records = AcpConfig.parseProject("""
+      { "version": 1, "agents": [
+        { "id": "minimax", "command": "npx", "args": ["@minimax/code@0.2.7"],
+          "registry": { "id": "minimax-code", "version": "0.2.7" } },
+        { "id": "partial", "command": "npx", "args": ["x"], "registry": { "version": "1.0.0" } }
+      ] }
+    """.trimIndent()) { error("no warning expected: $it") }
+    assertEquals(RegistryRef("minimax-code", "0.2.7"), records[0].registry)
+    assertNull(records[1].registry)
+  }
+
+  @Test
+  fun `a move of a registry-noted record names the note too`() {
+    val entry = AgentRegistry.parse(catalog).first { it.id == "claude-acp" }
+    val upgrade = AgentRegistry.Upgrade("Claude Agent", entry, "@agentclientprotocol/claude-agent-acp@2.0.0", "2.0.0", "2.1.0",
+                                        RegistryRef("claude-acp", "2.0.0"))
+    val lines = AcpConfigWriter.upgradeSnippet(listOf(upgrade)).lines()
+    assertEquals(2, lines.size)
+    assertTrue("registry.version" in lines[1] && "2.1.0" in lines[1], lines[1])
+  }
+
+  @Test
+  fun `only web addresses from the registry become links`() {
+    assertTrue(AgentRegistry.isWebAddress("https://github.com/google-gemini/gemini-cli/blob/main/LICENSE"))
+    assertTrue(AgentRegistry.isWebAddress("http://example.com"))
+    // Third-party data: a scheme that runs or reads something locally must not be one click away.
+    for (address in listOf("javascript:alert(1)", "file:///etc/passwd", "vscode://x", "not a url", "")) {
+      assertTrue(!AgentRegistry.isWebAddress(address), address)
+    }
+  }
 }

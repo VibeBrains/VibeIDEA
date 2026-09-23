@@ -28,6 +28,11 @@ object ModelEcho {
   /** Gemini repeats it in every event as `modelVersion`. */
   fun fromGeminiEvent(event: JsonObject): String? = event.string("modelVersion")
 
+  /** The Responses wire names it in the response object that its lifecycle events carry, and in a whole answer. */
+  fun fromResponsesEvent(event: JsonObject): String? = (event["response"] as? JsonObject)?.string("model")
+
+  fun fromResponsesBody(response: JsonObject): String? = response.string("model")
+
   /** True when [answered] is a different model, not another spelling of [requested]. */
   fun substituted(requested: String, answered: String?): Boolean {
     val asked = tail(requested.trim().lowercase())

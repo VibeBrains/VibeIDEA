@@ -65,10 +65,39 @@ class ReasoningByDefaultTest {
   }
 
   @Test
-  fun `gpt-6 astra refuses none, so off sends low, and it takes no tools on chat completions`() {
+  fun `gpt-6 astra refuses none, so off sends low, and it takes tools on the responses wire only`() {
     assertEquals("low", fields("gpt-6-astra", "openai", off).path("reasoning_effort"))
-    assertTrue(ModelQuirks.has("gpt-6-astra", ModelQuirks.Quirk.NO_TOOLS))
-    assertFalse(ModelQuirks.has("gpt-6-sol", ModelQuirks.Quirk.NO_TOOLS))
+    assertEquals("low", fields("gpt-6-astra", "openai-responses", off).path("reasoning", "effort"))
+    assertEquals(ModelQuirks.ToolSupport.ONLY_ON_RESPONSES, ModelQuirks.toolSupport("gpt-6-astra", ModelQuirks.WIRE_OPENAI))
+    assertEquals(ModelQuirks.ToolSupport.YES, ModelQuirks.toolSupport("gpt-6-astra", ModelQuirks.WIRE_OPENAI_RESPONSES))
+    assertEquals(ModelQuirks.ToolSupport.YES, ModelQuirks.toolSupport("gpt-6-sol", ModelQuirks.WIRE_OPENAI))
+  }
+
+  @Test
+  fun `gpt-6 sol and luna are switched off with reasoning effort none on the responses wire`() {
+    val body = fields("gpt-6-sol", "openai-responses", off)
+    assertEquals("none", body.path("reasoning", "effort"))
+    assertNull(body["reasoning_effort"])
+    // Above off the level goes as an effort word inside `reasoning`, never as the chat/completions field.
+    assertEquals("high", fields("gpt-6-luna", "openai-responses", high).path("reasoning", "effort"))
+  }
+
+  @Test
+  fun `on chat completions sol and luna give up reasoning for tools, on the responses wire they do not`() {
+    assertTrue(ModelQuirks.reasoningYieldsToTools("gpt-6-sol", ModelQuirks.WIRE_OPENAI))
+    assertTrue(ModelQuirks.reasoningYieldsToTools("openai/gpt-6-luna", ModelQuirks.WIRE_OPENAI))
+    assertFalse(ModelQuirks.reasoningYieldsToTools("gpt-6-sol", ModelQuirks.WIRE_OPENAI_RESPONSES))
+    assertFalse(ModelQuirks.reasoningYieldsToTools("gpt-6-astra", ModelQuirks.WIRE_OPENAI))
+  }
+
+  @Test
+  fun `the answer limit keeps its responses name under the gpt-6 rename`() {
+    // max_completion_tokens is chat/completions' name; the Responses wire calls the limit max_output_tokens for every model.
+    val responses = ModelQuirks.applyToBody("gpt-6-sol", buildJsonObject { put("max_output_tokens", 4000); put("temperature", 0.3) },
+                                            wire = ModelQuirks.WIRE_OPENAI_RESPONSES)
+    assertEquals(setOf("max_output_tokens"), responses.keys)
+    val chat = ModelQuirks.applyToBody("gpt-6-sol", buildJsonObject { put("max_tokens", 4000) })
+    assertEquals(setOf("max_completion_tokens"), chat.keys)
   }
 
   @Test

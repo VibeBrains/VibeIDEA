@@ -85,6 +85,9 @@ data class TokenUsage(
                    ?: details?.longOrNull("prompt_cache_hit_tokens")
                    ?: usage.longOrNull("prompt_cache_hit_tokens")
                    ?: 0
+      // Part of `prompt_tokens` like the cached count, and billed above base input where the vendor charges for writes
+      // (GPT-6 does): left inside the input, a write was priced as a plain input token.
+      val written = details?.longOrNull("cache_write_tokens") ?: 0
       val prompt = usage.long("prompt_tokens")
       // Orchestrator tokens are ADDITIVE, not nested inside prompt/completion (unlike reasoning tokens,
       // which live inside completion). An orchestrator model (Sakana Fugu and the like) calls other
@@ -99,9 +102,36 @@ data class TokenUsage(
       val orchestrationCached = orchestration.long("orchestration_input_cached_tokens")
       val orchestrationInput = orchestration.long("orchestration_input_tokens")
       return TokenUsage(
-        inputTokens = (prompt - cached).coerceAtLeast(0) + (orchestrationInput - orchestrationCached).coerceAtLeast(0),
+        inputTokens = (prompt - cached - written).coerceAtLeast(0) + (orchestrationInput - orchestrationCached).coerceAtLeast(0),
         outputTokens = usage.long("completion_tokens") + orchestration.long("orchestration_output_tokens"),
         cacheReadTokens = cached + orchestrationCached,
+        cacheWriteTokens = written,
+      ).takeIf { it.known }
+    }
+
+    /**
+     * Usage from an event of the Responses stream, or null when the event carries none.
+     *
+     * Only the events that close the answer carry it — `response.completed`, `response.incomplete`, `response.failed` —
+     * inside their response object.
+     */
+    fun fromResponsesEvent(event: JsonObject): TokenUsage? =
+      event["response"].obj()?.let { fromResponsesBody(it) }
+
+    /**
+     * Usage of a whole Responses answer. `input_tokens` INCLUDES the cached and the written parts on this wire, so both
+     * are taken out to keep the fields disjoint; reasoning is inside `output_tokens` and billed as output.
+     */
+    fun fromResponsesBody(response: JsonObject): TokenUsage? {
+      val usage = response["usage"].obj() ?: return null
+      val details = usage["input_tokens_details"] as? JsonObject
+      val cached = details?.long("cached_tokens") ?: 0
+      val written = details?.long("cache_write_tokens") ?: 0
+      return TokenUsage(
+        inputTokens = (usage.long("input_tokens") - cached - written).coerceAtLeast(0),
+        outputTokens = usage.long("output_tokens"),
+        cacheReadTokens = cached,
+        cacheWriteTokens = written,
       ).takeIf { it.known }
     }
 

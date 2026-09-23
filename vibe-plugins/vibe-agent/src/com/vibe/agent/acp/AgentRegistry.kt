@@ -50,7 +50,15 @@ object AgentRegistry {
    * An agent configured with a pinned package whose registry version is newer: [from] is what the entry runs, [to] what
    * the registry offers. Pinned stays pinned — the person decides to move, but is told there is somewhere to move to.
    */
-  data class Upgrade(val agentName: String, val entry: Entry, val fromSpec: String, val from: String, val to: String) {
+  data class Upgrade(
+    val agentName: String,
+    val entry: Entry,
+    val fromSpec: String,
+    val from: String,
+    val to: String,
+    /** The record's registry note, which moves together with the version when the record carries one. */
+    val registry: RegistryRef? = null,
+  ) {
     /** The package spec the entry will run after the upgrade. */
     val toSpec: String get() = fromSpec.substring(0, fromSpec.length - from.length) + to
   }
@@ -185,6 +193,9 @@ object AgentRegistry {
    * Agent», our seed «Claude Code», and the package is the same (decision №76).
    */
   fun isConfigured(entry: Entry, configured: List<AgentServerConfig>): Boolean {
+    // The registry id an importer wrote is the exact answer; the package and the name below only approximate it, and a
+    // binary agent has no package at all.
+    if (configured.any { it.registry?.id == entry.id }) return true
     val pkg = entry.pkg?.let { withoutVersion(it) }
     if (pkg != null && configured.any { packageOf(it) == pkg }) return true
     val name = entry.name.trim().lowercase()
@@ -215,7 +226,7 @@ object AgentRegistry {
     val entry = catalog.firstOrNull { it.pkg != null && withoutVersion(it.pkg) == name } ?: return@mapNotNull null
     val to = entry.pkg?.let { versionOf(it) } ?: entry.version ?: return@mapNotNull null
     if (!isNewer(to, from)) return@mapNotNull null
-    Upgrade(config.name, entry, spec, from, to)
+    Upgrade(config.name, entry, spec, from, to, config.registry)
   }
 
   /** The package operand of an npx/uvx-style entry, version included; null for anything else. */
@@ -224,6 +235,12 @@ object AgentRegistry {
       .removeSuffix(".cmd").removeSuffix(".exe")
     if (runner !in RUNNERS) return null
     return config.args.firstOrNull { !it.startsWith("-") }
+  }
+
+  /** Whether [address] is a web address a link may open: http or https, nothing else a third party could write there. */
+  fun isWebAddress(address: String): Boolean {
+    val scheme = runCatching { java.net.URI(address.trim()).scheme }.getOrNull()?.lowercase() ?: return false
+    return scheme == "https" || scheme == "http"
   }
 
   /** `@scope/name@1.2.3` → `1.2.3`, `name==1.2` → `1.2`, no version → null. */

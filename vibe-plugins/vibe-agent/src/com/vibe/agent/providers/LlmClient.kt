@@ -40,6 +40,12 @@ data class ChatMessage(
   val toolResults: List<ToolResult> = emptyList(),
   /** Assistant only, from the thread history: the tool rounds before this answer; expanded by [ToolRounds.expand] before sending. */
   val toolRounds: List<ToolRound> = emptyList(),
+  /** Assistant only: the thinking blocks of a tool-calling answer on Anthropic's wire, as they streamed. */
+  val thinking: List<ThinkingBlock> = emptyList(),
+  /** The [ThinkingBlock.prefixKey] of the request that produced [thinking]; null for blocks read back from the thread. */
+  val thinkingKey: String? = null,
+  /** Assistant only: this answer's output items on the Responses wire, in place of its text and calls for the same model. */
+  val responses: ResponsesReplay? = null,
 ) {
   /** Text-only copy for models without vision; the dropped images are named so the model knows context went missing. */
   fun withoutImages(): ChatMessage =
@@ -86,9 +92,9 @@ internal object LlmMessages {
    * the same on the next turn, so the provider may bill it as a cache hit. Marked on the message
    * rather than on the whole request because that is where the boundary actually is.
    */
-  fun anthropic(m: ChatMessage, cacheable: Boolean = false, ttl: String? = null): JsonObject = when {
+  fun anthropic(m: ChatMessage, cacheable: Boolean = false, ttl: String? = null, withThinking: Boolean = false): JsonObject = when {
     m.role == ToolCalls.ROLE -> ToolCalls.anthropicResults(m)
-    m.toolCalls.isNotEmpty() -> ToolCalls.anthropicAssistant(m)
+    m.toolCalls.isNotEmpty() -> ToolCalls.anthropicAssistant(m, withThinking)
     else -> anthropicPlain(m, cacheable, ttl)
   }
 
@@ -147,7 +153,8 @@ internal object LlmMessages {
 
 /**
  * Direct streaming chat against a provider endpoint.
- * Wire protocols mirror VibeIDE: "openai" (chat/completions SSE) and
+ * Wire protocols mirror VibeIDE: "openai" (chat/completions SSE), "openai-responses"
+ * (responses SSE, [ResponsesWire]), "gemini" and
  * "anthropic" (messages SSE; the base URL must already include the versioned
  * root — the client appends only the method name, per the VibeIDE spec).
  * Model-level extraBody is merged into the request verbatim (vendor quirks).
@@ -197,14 +204,38 @@ class LlmClient(
   /** Why the last completed request's answer ended, as the provider named it; null when it named nothing. */
   fun lastStopReason(): StopReason? = lastStopReason
 
+  @Volatile private var thinking = ThinkingAccumulator()
+  @Volatile private var lastThinkingKey: String? = null
+
+  /** The thinking blocks of the last answer on Anthropic's wire, in answer order; empty on the other wires. */
+  fun lastThinking(): List<ThinkingBlock> = thinking.blocks()
+
+  /** The [ThinkingBlock.prefixKey] of the last Anthropic request; null after a request on another wire. */
+  fun lastThinkingKey(): String? = lastThinkingKey
+
+  @Volatile private var responses = ResponsesAccumulator()
+  @Volatile private var lastResponsesKey: String? = null
+
+  /** The output items of the last answer on the Responses wire, to go back with it; null on the other wires. */
+  fun lastResponses(): ResponsesReplay? =
+    lastResponsesKey?.let { key -> responses.items().takeIf { it.isNotEmpty() }?.let { ResponsesReplay(key, it) } }
+
   @Volatile private var offeredTools: List<ToolSpec> = emptyList()
   @Volatile private var toolCalls = ToolCallAccumulator()
 
   /** The tools the model called in the last completed request, in answer order; empty when it called none. */
   fun lastToolCalls(): List<ToolCall> = toolCalls.calls()
 
-  /** False for a model the quirk catalogue marks [ModelQuirks.Quirk.NO_TOOLS]: a request with tools fails as a whole. */
-  fun supportsTools(model: ModelEntry): Boolean = !ModelQuirks.has(quirkIdOf(model), ModelQuirks.Quirk.NO_TOOLS, quirks())
+  /**
+   * Whether a request to this model on [wire] may carry tools; anything but [ModelQuirks.ToolSupport.YES] and the request
+   * with tools fails as a whole.
+   */
+  fun toolSupport(model: ModelEntry, wire: String): ModelQuirks.ToolSupport =
+    ModelQuirks.toolSupport(quirkIdOf(model), wire, quirks())
+
+  /** True when this model on [wire] takes tools only with reasoning off, so a turn with tools goes without it. */
+  fun reasoningYieldsToTools(model: ModelEntry, wire: String): Boolean =
+    ModelQuirks.reasoningYieldsToTools(quirkIdOf(model), wire, quirks())
 
   /**
    * Requested id → the snapshot that answered it, learned from replies of this client.
@@ -267,7 +298,10 @@ class LlmClient(
     lastUsage = TokenUsage.NONE
     lastAnsweredModel = null
     lastStopReason = null
-    offeredTools = if (tools.isEmpty() || !supportsTools(model)) emptyList() else tools
+    // The MODEL decides, falling back to the provider: one key can serve three formats (OpenCode Go: MiniMax and Qwen
+    // over /v1/messages, GLM and Kimi over /v1/chat/completions, Grok and GPT over /v1/responses).
+    val wire = ProvidersService.protocolFor(provider.protocol, model.protocol)
+    offeredTools = if (tools.isEmpty() || toolSupport(model, wire) != ModelQuirks.ToolSupport.YES) emptyList() else tools
     toolCalls = ToolCallAccumulator()
     // The offline promise is kept HERE, at the single door out: a check in the UI would be a
     // reminder, and a reminder is not a guarantee. A local provider is still allowed — nothing
@@ -281,15 +315,18 @@ class LlmClient(
         // A retry starts a new answer: calls half-collected from the failed stream are not calls.
         toolCalls = ToolCallAccumulator()
         lastStopReason = null
-        // Мысль, приехавшая тегами внутри ответа, снимается ОДИН раз на все три провода: модель,
-        // пишущая `<think>`, может стоять на любом из них, и три копии правила разошлись бы.
-        // Свой разделитель на попытку: оборванный поток мог остаться внутри незакрытого тега.
+        thinking = ThinkingAccumulator()
+        lastThinkingKey = null
+        responses = ResponsesAccumulator()
+        lastResponsesKey = null
+        // Reasoning that arrives as tags inside the answer is taken out ONCE for every wire: a model writing `<think>` can
+        // stand behind any of them, and a copy of the rule per wire would drift. A fresh splitter per attempt: a broken
+        // stream may have stopped inside an unclosed tag.
         val inline = InlineThinking(onAnswer = onDelta, onThought = onThought)
-        // The MODEL decides, falling back to the provider: one key can serve three formats
-        // (OpenCode Go: MiniMax and Qwen over /v1/messages, GLM and Kimi over /v1/chat/completions).
-        when (ProvidersService.protocolFor(provider.protocol, model.protocol)) {
+        when (wire) {
           "anthropic" -> anthropicChat(provider, model, messages, inline::accept)
           "gemini" -> geminiChat(provider, model, messages, inline::accept)
+          ModelQuirks.WIRE_OPENAI_RESPONSES -> openAiResponsesChat(provider, model, messages, inline::accept)
           else -> openAiChat(provider, model, messages, inline::accept)
         }
         // Придержанный хвост отдаётся здесь: без этого последние символы ответа теряются, когда
@@ -451,7 +488,12 @@ class LlmClient(
       }))
       if (offeredTools.isNotEmpty()) put("tools", ToolCalls.openAiTools(offeredTools))
       PromptCacheKey.sent(provider.entry.promptCacheKey, cacheKey)?.let { put("prompt_cache_key", it) }
-    }.let { withReasoning(it, "openai", model) }), model.extraBody)
+    }.let {
+      // A model that takes tools here only without reasoning gets the turn without it rather than a 400 for the whole
+      // turn; the chat says so once ([reasoningYieldsToTools]).
+      val yields = offeredTools.isNotEmpty() && ModelQuirks.reasoningYieldsToTools(quirkId, ModelQuirks.WIRE_OPENAI, overrides)
+      withReasoning(it, ModelQuirks.WIRE_OPENAI, model, forceOff = yields)
+    }), model.extraBody)
     if (ModelQuirks.quirksOf(quirkId, overrides).isNotEmpty()) {
       logger<LlmClient>().info("Model quirks applied for " + quirkId + ": " + ModelQuirks.noteOf(quirkId, overrides))
     }
@@ -477,6 +519,63 @@ class LlmClient(
       val delta = chunk["choices"].arr()?.firstOrNull()
         .obj()?.get("delta").obj()?.get("content")?.jsonPrimitive?.contentOrNull
       if (delta != null) onDelta(delta)
+    }
+  }
+
+  /**
+   * The Responses wire ([ResponsesWire]): `/responses`, stateless, the conversation and the model's own output items in
+   * `input`. Quirks and extras apply as on chat/completions, in this wire's field names.
+   */
+  private fun openAiResponsesChat(provider: ResolvedProvider, model: ModelEntry, messages: List<ChatMessage>, onDelta: (String) -> Unit) {
+    val overrides = quirks()
+    val quirkId = quirkIdOf(model)
+    val key = ResponsesReplay.keyOf(provider.entry.id, model.id)
+    lastResponsesKey = key
+    val (instructions, input) = ResponsesWire.input(ModelQuirks.applyToMessages(quirkId, messages, overrides), key)
+    val streaming = ModelQuirks.supportsStreaming(quirkId, overrides)
+    val body = withExtras(ModelQuirks.applyToBody(quirkId, wire = ModelQuirks.WIRE_OPENAI_RESPONSES, overrides = overrides, body = buildJsonObject {
+      put("model", model.id)
+      put("stream", true)
+      // Nothing is kept at the vendor between requests: what the conversation needs travels in `input`.
+      put("store", false)
+      if (instructions.isNotBlank()) put("instructions", instructions)
+      put("input", input)
+      model.temperature?.let { put("temperature", it) }
+      model.topP?.let { put("top_p", it) }
+      model.maxOutputTokens?.let { put("max_output_tokens", it) }
+      if (offeredTools.isNotEmpty()) put("tools", ResponsesWire.tools(offeredTools))
+      PromptCacheKey.sent(provider.entry.promptCacheKey, cacheKey)?.let { put("prompt_cache_key", it) }
+    }.let { withReasoning(it, ModelQuirks.WIRE_OPENAI_RESPONSES, model) }), model.extraBody)
+    if (ModelQuirks.quirksOf(quirkId, overrides).isNotEmpty()) {
+      logger<LlmClient>().info("Model quirks applied for " + quirkId + ": " + ModelQuirks.noteOf(quirkId, overrides))
+    }
+    val request = requestBuilder(provider, "responses")
+      .POST(HttpRequest.BodyPublishers.ofString(body.toString()))
+      .build()
+    if (!streaming) {
+      val answer = sendWholeBody(request)
+      TokenUsage.fromResponsesBody(answer)?.let { lastUsage = lastUsage.merge(it) }
+      ModelEcho.fromResponsesBody(answer)?.let { lastAnsweredModel = it }
+      StopReason.fromResponsesBody(answer)?.let { lastStopReason = it }
+      ResponsesWire.outputItems(answer).forEach { item ->
+        responses.item(item)
+        toolCalls.responsesItem(item)
+      }
+      onDelta(ResponsesWire.outputText(answer))
+      return
+    }
+    streamSse(request) { data ->
+      val event = eventObject(data) ?: return@streamSse
+      ResponsesWire.failure(event)?.let { throw RuntimeException(it) }
+      TokenUsage.fromResponsesEvent(event)?.let { lastUsage = lastUsage.merge(it) }
+      ModelEcho.fromResponsesEvent(event)?.let { lastAnsweredModel = it }
+      StopReason.fromResponsesEvent(event)?.let { lastStopReason = it }
+      ReasoningStream.fromResponsesEvent(event)?.let { thought(it) }
+      ResponsesWire.doneItem(event)?.let { item ->
+        responses.item(item)
+        toolCalls.responsesItem(item)
+      }
+      ResponsesWire.textDelta(event)?.let { onDelta(it) }
     }
   }
 
@@ -507,10 +606,15 @@ class LlmClient(
       // boundary never includes the last message, which is precisely what changed.
       val wire = messages.filter { it.role != "system" }
       val boundary = PromptCache.cacheBoundary(wire)
+      val tools = if (offeredTools.isNotEmpty()) ToolCalls.anthropicTools(offeredTools) else null
+      val key = ThinkingBlock.prefixKey(system, tools?.toString().orEmpty())
+      lastThinkingKey = key
+      val replay = ThinkingReplay.of(quirkIdOf(model), overrides)
       put("messages", JsonArray(wire.mapIndexed { index, message ->
-        LlmMessages.anthropic(message, cacheable = index == boundary, ttl = model.cacheTtl)
+        LlmMessages.anthropic(message, cacheable = index == boundary, ttl = model.cacheTtl,
+                              withThinking = message.thinking.isNotEmpty() && replay.admits(message.thinkingKey, key))
       }))
-      if (offeredTools.isNotEmpty()) put("tools", ToolCalls.anthropicTools(offeredTools))
+      tools?.let { put("tools", it) }
     }.let { withReasoning(it, "anthropic", model) }
       // Quirks were applied on the OpenAI path only, which left the Anthropic-compatible endpoints
       // — where MiniMax and Qwen actually live — sending exactly the fields those models ignore.
@@ -529,6 +633,7 @@ class LlmClient(
       TokenUsage.fromAnthropicEvent(obj)?.let { lastUsage = lastUsage.merge(it) }
       ModelEcho.fromAnthropicEvent(obj)?.let { lastAnsweredModel = it }
       StopReason.fromAnthropicEvent(obj)?.let { lastStopReason = it }
+      thinking.anthropicEvent(obj)
       // Рассуждение приезжает тем же событием, но другой дельтой: без этой ветки модель молчала
       // ровно столько, сколько думала, и это выглядело как зависание.
       ReasoningStream.fromAnthropicEvent(obj)?.let { thought(it) }
@@ -575,8 +680,9 @@ class LlmClient(
   /** Куда отдавать рассуждение текущего запроса. Сбрасывается на каждый вызов [chat]. */
   private var thought: (String) -> Unit = {}
 
-  private fun withReasoning(body: JsonObject, protocol: String, model: ModelEntry): JsonObject {
-    val asked = ReasoningMode.levelOf(com.vibe.agent.settings.VibeAgentSettings.reasoningLevel)
+  private fun withReasoning(body: JsonObject, protocol: String, model: ModelEntry, forceOff: Boolean = false): JsonObject {
+    val asked = if (forceOff) ReasoningMode.Level.OFF
+                else ReasoningMode.levelOf(com.vibe.agent.settings.VibeAgentSettings.reasoningLevel)
     val fields = reasoningFields(protocol, asked, quirkIdOf(model), model.reasoning,
                                  model.maxOutputTokens ?: DEFAULT_MAX_OUTPUT_TOKENS, quirks())
     return if (fields.isEmpty()) body else JsonObject(body + fields)
@@ -589,18 +695,25 @@ class LlmClient(
 
   /** One-shot request for a model that refuses to stream; the whole answer comes back as text. */
   private fun sendWhole(request: HttpRequest): String {
+    val answer = sendWholeBody(request)
+    // A whole answer carries its usage at the top level, where the stream's last chunk carries it.
+    TokenUsage.fromOpenAiChunk(answer)?.let { lastUsage = lastUsage.merge(it) }
+    ModelEcho.fromOpenAiChunk(answer)?.let { lastAnsweredModel = it }
+    StopReason.fromOpenAiChunk(answer)?.let { lastStopReason = it }
+    answer["choices"].arr()?.firstOrNull().obj()?.get("message").obj()?.let { toolCalls.openAiMessage(it) }
+    return answer["choices"].arr()?.firstOrNull()
+      .obj()?.get("message").obj()?.get("content")?.jsonPrimitive?.contentOrNull ?: ""
+  }
+
+  /** The body of a one-shot request, after the same checks a stream gets: a stop, then the status. */
+  private fun sendWholeBody(request: HttpRequest): JsonObject {
     val response = http.send(request, HttpResponse.BodyHandlers.ofString())
     lastRetryAfter = response.headers().firstValue("retry-after").orElse(null)
     if (cancelled()) throw java.io.InterruptedIOException(STOPPED_BY_USER)
     if (response.statusCode() !in 200..299) {
       throw RuntimeException("HTTP " + response.statusCode() + ": " + response.body().take(500))
     }
-    val answer = json.parseToJsonElement(response.body()).jsonObject
-    ModelEcho.fromOpenAiChunk(answer)?.let { lastAnsweredModel = it }
-    StopReason.fromOpenAiChunk(answer)?.let { lastStopReason = it }
-    answer["choices"].arr()?.firstOrNull().obj()?.get("message").obj()?.let { toolCalls.openAiMessage(it) }
-    return answer["choices"].arr()?.firstOrNull()
-      .obj()?.get("message").obj()?.get("content")?.jsonPrimitive?.contentOrNull ?: ""
+    return json.parseToJsonElement(response.body()).jsonObject
   }
 
   /**

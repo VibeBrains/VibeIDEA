@@ -9,6 +9,7 @@ import com.vibe.agent.pipelines.StepLimits
 import com.vibe.agent.pipelines.StepReport
 import com.vibe.agent.providers.LlmClient
 import com.vibe.agent.providers.ModelPricing
+import com.vibe.agent.providers.ResponsesReplay
 import com.vibe.agent.providers.TokenUsage
 import com.vibe.agent.providers.ToolRound
 import java.awt.Component
@@ -69,6 +70,9 @@ internal class TurnState(
   /** A direct model's reasoning and tool rounds, stored with its answer. */
   val reasoning = StringBuffer()
   val toolRounds: MutableList<ToolRound> = java.util.Collections.synchronizedList(ArrayList())
+
+  /** The final answer's output items on the Responses wire, stored with it ([com.vibe.agent.history.ChatMessageRecord.responses]). */
+  @Volatile var responses: ResponsesReplay? = null
 
   // The feed projection; the UI thread only.
   var uiConsumed = 0

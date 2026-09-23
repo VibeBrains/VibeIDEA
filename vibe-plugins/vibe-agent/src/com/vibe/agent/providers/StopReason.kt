@@ -91,6 +91,45 @@ data class StopReason(
       return StopReason(kind, raw)
     }
 
+    /**
+     * The event that closes a Responses stream: `response.completed` or `response.incomplete`.
+     *
+     * This wire has no finish reason. An answer either completes or is incomplete with `incomplete_details.reason`,
+     * and a refusal is not a way of stopping but a `refusal` part in place of the text — which, unread, is an empty
+     * answer that looks finished.
+     */
+    fun fromResponsesEvent(event: JsonObject): StopReason? = when (string(event["type"])) {
+      "response.completed" -> event["response"].obj()?.let { fromResponse(it, incomplete = false) }
+      "response.incomplete" -> event["response"].obj()?.let { fromResponse(it, incomplete = true) }
+      else -> null
+    }
+
+    /** A whole Responses answer, from a request that did not stream. */
+    fun fromResponsesBody(response: JsonObject): StopReason? = when (string(response["status"])) {
+      "completed" -> fromResponse(response, incomplete = false)
+      "incomplete" -> fromResponse(response, incomplete = true)
+      else -> null
+    }
+
+    private fun fromResponse(response: JsonObject, incomplete: Boolean): StopReason {
+      val output = response["output"].arr().orEmpty().mapNotNull { it.obj() }
+      val refusal = output.filter { string(it["type"]) == "message" }
+        .flatMap { it["content"].arr().orEmpty() }
+        .mapNotNull { it.obj() }
+        .firstOrNull { string(it["type"]) == "refusal" }
+      if (refusal != null) return StopReason(Kind.REFUSAL, "refusal", explanation = string(refusal["refusal"]))
+      if (incomplete) {
+        val reason = string(response["incomplete_details"].obj()?.get("reason"))
+        val kind = when (reason) {
+          "max_output_tokens" -> Kind.LENGTH
+          "content_filter" -> Kind.CONTENT_FILTER
+          else -> Kind.OTHER
+        }
+        return StopReason(kind, reason ?: "incomplete")
+      }
+      return StopReason(if (output.any { string(it["type"]) == ResponsesWire.FUNCTION_CALL }) Kind.TOOL_USE else Kind.END, "completed")
+    }
+
     /** An event of the Gemini stream that carries `finishReason`. */
     fun fromGeminiEvent(event: JsonObject): StopReason? {
       val raw = string(event["candidates"].arr()?.firstOrNull().obj()?.get("finishReason")) ?: return null

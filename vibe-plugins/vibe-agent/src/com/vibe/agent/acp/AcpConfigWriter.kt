@@ -78,7 +78,11 @@ object AcpConfigWriter {
 
   /** What to change by hand, one line per agent: the file is the person's, the edit is theirs to make. */
   fun upgradeSnippet(upgrades: List<AgentRegistry.Upgrade>): String =
-    upgrades.joinToString("\n") { "\"${it.agentName}\": \"${it.fromSpec}\" → \"${it.toSpec}\"" }
+    upgrades.joinToString("\n") { upgrade ->
+      "\"${upgrade.agentName}\": \"${upgrade.fromSpec}\" → \"${upgrade.toSpec}\"" +
+        // A record with a registry note keeps it true: the version it names moves with the package.
+        (upgrade.registry?.let { "\n\"${upgrade.agentName}\".registry.version: \"${it.version ?: upgrade.from}\" → \"${upgrade.to}\"" } ?: "")
+    }
 
   /** The `agent_servers` fragment for these agents, ready to paste. */
   fun snippet(agents: List<AgentServerConfig>): String =

@@ -41,9 +41,14 @@ class ChatMessageRecord(
   val reasoning: String? = null,
   /** ASSISTANT only: the tool rounds of the turn, so the next request carries what the tools returned. */
   val toolRounds: List<com.vibe.agent.providers.ToolRound> = emptyList(),
+  /**
+   * ASSISTANT only: the final answer's output items on the Responses wire. The same model gets them back in place of
+   * the text: they carry the labels the vendor asks to resend with every earlier answer.
+   */
+  val responses: com.vibe.agent.providers.ResponsesReplay? = null,
 ) {
   fun withPinned(pinned: Boolean): ChatMessageRecord =
-    ChatMessageRecord(role, text, images, at, wireText, pinned, reasoning, toolRounds)
+    ChatMessageRecord(role, text, images, at, wireText, pinned, reasoning, toolRounds, responses)
 }
 
 /** Per-thread snapshot of composer choices (restored when the tab is activated). */
@@ -139,6 +144,7 @@ object ChatTranscriptCodec {
         if (m.pinned) put("pinned", true)
         m.reasoning?.let { put("reasoning", it) }
         if (m.toolRounds.isNotEmpty()) put("toolRounds", com.vibe.agent.providers.ToolRounds.toJson(m.toolRounds))
+        m.responses?.let { put("responses", it.toStored()) }
         if (m.images.isNotEmpty()) put("images", JsonArray(m.images.map { img ->
           buildJsonObject {
             put("name", img.name)
@@ -175,6 +181,7 @@ object ChatTranscriptCodec {
         pinned = (m["pinned"] as? kotlinx.serialization.json.JsonPrimitive)?.content == "true",
         reasoning = m.str("reasoning"),
         toolRounds = com.vibe.agent.providers.ToolRounds.fromJson(m["toolRounds"]),
+        responses = com.vibe.agent.providers.ResponsesReplay.fromStored(m["responses"]),
       )
     }
     return ChatThread(

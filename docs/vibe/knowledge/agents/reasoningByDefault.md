@@ -16,7 +16,7 @@
 | Claude Opus 5.5, Fable 5 / 5.1, Mythos 5 / 5.1 | адаптивное мышление на `medium` (Opus 5.5) или `high` | никак: `thinking.type: "disabled"` — 400; честно — самый низкий уровень `low` |
 | Claude Opus 5, Sonnet 5 | адаптивное мышление | `thinking: {"type": "disabled"}` (у Opus 5 — при усилии не выше `high`) |
 | Claude Opus 4.7 / 4.8 | мышления нет | не присылать ничего |
-| GPT-6 Sol, Luna | `reasoning_effort: "medium"` | `reasoning_effort: "none"` |
+| GPT-6 Sol, Luna | `reasoning_effort: "medium"` | `reasoning_effort: "none"`; на проводе Responses — `reasoning: {"effort": "none"}` |
 | GPT-6 Astra | рассуждение на умолчании (его значение страница модели не называет) | никак: `"none"` — 400 |
 | MiMo v2.6 | мышление включено | `thinking: {"type": "disabled"}`; уровней у модели нет |
 
@@ -26,7 +26,7 @@
   `THINKING_ALWAYS_ON`, `OFF_THINKING_DISABLED`, `OFF_EFFORT_NONE`, `NO_REASONING_LEVELS`.
   Одних сидов мало: модели из каталога вендора (`fetch: true`) приходят без объявления `reasoning`.
 - `ModelQuirks.reasoningOf(id, wire)` отдаёт выключатель **только на своём проводе**: `thinking` — на
-  Anthropic, `reasoning_effort` — на chat/completions. Та же модель за роутером говорит на диалекте
+  Anthropic, `reasoning_effort` — на chat/completions, `reasoning.effort` — на Responses ([responsesWire.md](responsesWire.md)). Та же модель за роутером говорит на диалекте
   роутера, и поле, которого он не знает, было бы нашей догадкой.
 - Объявление в записи модели сильнее каталога поле за полем (`ReasoningMode.merged`). Так объявлен
   выключатель MiMo: вендор документирует `thinking` и на chat/completions, а каталог шлёт `thinking` только

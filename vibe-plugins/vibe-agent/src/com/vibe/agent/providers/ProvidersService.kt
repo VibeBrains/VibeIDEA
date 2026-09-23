@@ -156,6 +156,7 @@ object ProvidersService {
     when (modelProtocol ?: providerProtocol) {
       "anthropic" -> "anthropic"
       "gemini" -> "gemini"
+      ModelQuirks.WIRE_OPENAI_RESPONSES -> ModelQuirks.WIRE_OPENAI_RESPONSES
       else -> "openai"
     }
 

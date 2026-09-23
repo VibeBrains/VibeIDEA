@@ -200,6 +200,12 @@ object ReasoningMode {
           put("thinkingConfig", buildJsonObject { put("thinkingBudget", budgetTokens(level)!!) })
         })
       }
+      // No `summary`: the vendor may require a verified organization for reasoning summaries
+      // (developers.openai.com/api/docs/guides/reasoning, checked 2026-09-23), and asking for one there fails the whole
+      // request rather than just the summary.
+      ModelQuirks.WIRE_OPENAI_RESPONSES -> buildJsonObject {
+        put("reasoning", buildJsonObject { put("effort", effortWord(level, support)!!) })
+      }
       else -> buildJsonObject { put("reasoning_effort", effortWord(level, support)!!) }
     }
   }

@@ -4,7 +4,9 @@ package com.vibe.agent.acp
 import com.vibe.agent.i18n.VibeI18n.t
 
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonArray
@@ -27,7 +29,18 @@ data class AgentServerConfig(
   val dir: String? = null,
   /** Spending ceilings from the project entry's `limits`; null — none declared (see [com.vibe.agent.budget.AgentLimits]). */
   val limits: com.vibe.agent.budget.AgentLimits? = null,
+  /** Where the record came from in the ACP registry, when an importer wrote it; null for a record written by hand. */
+  val registry: RegistryRef? = null,
 )
+
+/**
+ * The `registry` field of a record: the agent's id in the ACP registry and the version the record runs.
+ *
+ * Written by an importer from the registry and part of the shared `.vibe/agents.json` format. The id is the one exact
+ * answer to «is this catalog agent configured already»: the record's name is the person's, and a binary agent has no
+ * package to compare.
+ */
+data class RegistryRef(val id: String, val version: String?)
 
 /**
  * Реестр внешних агентов из ДВУХ мест, и это не удвоение, а две разные области.
@@ -52,7 +65,8 @@ object AcpConfig {
       // «Claude Agent»: Agent SDK branding allows it and forbids «Claude Code» in other products (decision №94).
       name = "Claude Agent",
       command = "npx",
-      args = listOf("-y", "@agentclientprotocol/claude-agent-acp"),
+      // No `-y`: npm assumes it whenever stdin is not a terminal, and an agent's stdin is the protocol pipe.
+      args = listOf("@agentclientprotocol/claude-agent-acp"),
       env = emptyMap(),
     ),
   )
@@ -118,9 +132,21 @@ object AcpConfig {
   private fun loadProject(projectBase: String, onWarning: (String) -> Unit): List<AgentServerConfig> {
     val path = projectPath(projectBase)
     if (!Files.isRegularFile(path)) return emptyList()
+    val text = try {
+      Files.readString(path)
+    }
+    catch (e: Exception) {
+      onWarning(t("acp.config.unparsed", "reason" to e.message))
+      return emptyList()
+    }
+    return parseProject(text, onWarning)
+  }
+
+  /** The records of a project `.vibe/agents.json`; pure over the text, so the parsing is tested without a disk. */
+  internal fun parseProject(text: String, onWarning: (String) -> Unit): List<AgentServerConfig> {
     val result = ArrayList<AgentServerConfig>()
     try {
-      val root = json.parseToJsonElement(com.vibe.agent.util.VibeJsonc.strip(Files.readString(path))).jsonObject
+      val root = json.parseToJsonElement(com.vibe.agent.util.VibeJsonc.strip(text)).jsonObject
       for (el in root["agents"]?.jsonArray ?: return emptyList()) {
         val o = el as? JsonObject ?: continue
         // Запись, адресованная другому продукту, пропускается МОЛЧА: набор общий, и запись для
@@ -139,6 +165,7 @@ object AcpConfig {
             env = o["env"]?.jsonObject?.mapValues { it.value.jsonPrimitive.content } ?: emptyMap(),
             dir = o["dir"]?.jsonPrimitive?.contentOrNull?.takeIf { it.isNotBlank() },
             limits = com.vibe.agent.budget.AgentLimits.parse(o["limits"]),
+            registry = registryOf(o["registry"]),
           ))
         }
         catch (e: Exception) {
@@ -151,5 +178,12 @@ object AcpConfig {
       return emptyList()
     }
     return result
+  }
+
+  /** `registry: {id, version}` as an importer wrote it; null when absent or without an id — a partial note says nothing. */
+  internal fun registryOf(element: JsonElement?): RegistryRef? {
+    val o = element as? JsonObject ?: return null
+    val id = (o["id"] as? JsonPrimitive)?.contentOrNull?.takeIf { it.isNotBlank() } ?: return null
+    return RegistryRef(id, (o["version"] as? JsonPrimitive)?.contentOrNull?.takeIf { it.isNotBlank() })
   }
 }

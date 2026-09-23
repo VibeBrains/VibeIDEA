@@ -86,7 +86,10 @@ object ModelQuirks {
      */
     OFF_THINKING_DISABLED,
 
-    /** «Off» is `reasoning_effort: "none"` (chat/completions wire only): without it the model reasons at its default. */
+    /**
+     * «Off» is effort `none`: without it the model reasons at its default. Spelled per wire — `reasoning_effort` on
+     * chat/completions, `reasoning.effort` on the Responses wire.
+     */
     OFF_EFFORT_NONE,
 
     /**
@@ -105,8 +108,8 @@ object ModelQuirks {
     NO_STOP,
 
     /**
-     * The assistant's reasoning goes back with its answer: every earlier assistant message carries its
-     * `reasoning_content` in the next request (openai wire only).
+     * The assistant's reasoning goes back with its answer: every earlier assistant message carries its reasoning in the
+     * next request — `reasoning_content` on the openai wire, its thinking blocks on the anthropic one ([ThinkingReplay]).
      *
      * The one quirk that ADDS to a request rather than taking away. Kimi documents it for K3: in a
      * multi-turn conversation the assistant's reply is returned whole, `reasoning_content` included
@@ -122,6 +125,21 @@ object ModelQuirks {
      * calling would otherwise lose every turn to an HTTP 400, not just the tools.
      */
     NO_TOOLS,
+
+    /**
+     * Tools are accepted on the Responses wire only; on chat/completions a request carrying `tools` is refused.
+     *
+     * Not [NO_TOOLS]: the model does call functions, the endpoint decides. The same entry declared
+     * `"protocol": "openai-responses"` gets its tools, and the chat says so to whoever calls it over chat/completions.
+     */
+    TOOLS_ONLY_ON_RESPONSES,
+
+    /**
+     * On chat/completions the model calls functions only with reasoning off: a request with tools and any effort but
+     * `none` is refused. There a turn with tools goes out at `none`, and the chat says once why the dial was not
+     * honoured; the Responses wire takes both together.
+     */
+    TOOLS_NEED_NO_REASONING,
   }
 
   /**
@@ -193,26 +211,24 @@ object ModelQuirks {
     Rule(
       // GPT-6 Astra, documented by the vendor on the day it shipped: `temperature`, `top_p` and
       // `logprobs` must be dropped, and the answer limit is named `max_completion_tokens` on
-      // chat/completions. Tool calling on this model lives only in the Responses API, which this
-      // client does not speak — no quirk can express that, so the seed says it in words instead.
-      // Source: developers.openai.com/api/docs/guides/latest-model (checked 2026-09-08).
+      // chat/completions. Source: developers.openai.com/api/docs/guides/latest-model (checked 2026-09-08).
       Regex("^gpt-6"),
       setOf(Quirk.NO_SAMPLING, Quirk.MAX_COMPLETION_TOKENS),
       "gpt-6: the model sets its own sampling, and the answer limit is named differently",
     ),
     Rule(
-      // Astra refuses `reasoning_effort: "none"` with 400, and chat/completions does not support function calling with
-      // it at all (developers.openai.com/api/docs/guides/reasoning, checked 2026-09-23).
+      // Astra refuses `reasoning_effort: "none"` with 400, and «Chat Completions does not support function calling with
+      // GPT-6 Astra» — the Responses API does (developers.openai.com/api/docs/guides/reasoning, checked 2026-09-23).
       Regex("^gpt-6-astra"),
-      setOf(Quirk.THINKING_ALWAYS_ON, Quirk.NO_TOOLS),
-      "gpt-6 astra: reasoning cannot be switched off, and chat/completions takes no tools with it",
+      setOf(Quirk.THINKING_ALWAYS_ON, Quirk.TOOLS_ONLY_ON_RESPONSES),
+      "gpt-6 astra: reasoning cannot be switched off, and tools work on the Responses wire only",
     ),
     Rule(
       // Sol and Luna reason at `medium` unless told `none`, and on chat/completions they call functions ONLY at `none`
       // (developers.openai.com/api/docs/models/gpt-6-sol and /gpt-6-luna, checked 2026-09-23).
       Regex("^gpt-6-(sol|luna)"),
-      setOf(Quirk.OFF_EFFORT_NONE),
-      "gpt-6 sol, luna: reasoning is on by default; «off» sends reasoning_effort none",
+      setOf(Quirk.OFF_EFFORT_NONE, Quirk.TOOLS_NEED_NO_REASONING),
+      "gpt-6 sol, luna: reasoning is on by default; «off» sends effort none, and chat/completions takes tools only at none",
     ),
     Rule(
       Regex("^gpt-5"),
@@ -314,6 +330,7 @@ object ModelQuirks {
       Quirk.THINKING_ALWAYS_ON in quirks -> ReasoningMode.Support(canTurnOff = false)
       Quirk.OFF_THINKING_DISABLED in quirks && wire == WIRE_ANTHROPIC -> ReasoningMode.Support(off = THINKING_DISABLED)
       Quirk.OFF_EFFORT_NONE in quirks && wire == WIRE_OPENAI -> ReasoningMode.Support(off = EFFORT_NONE)
+      Quirk.OFF_EFFORT_NONE in quirks && wire == WIRE_OPENAI_RESPONSES -> ReasoningMode.Support(off = RESPONSES_EFFORT_NONE)
       else -> null
     }
   }
@@ -321,6 +338,32 @@ object ModelQuirks {
   private val THINKING_DISABLED: JsonObject = buildJsonObject { put("thinking", buildJsonObject { put("type", "disabled") }) }
 
   private val EFFORT_NONE: JsonObject = buildJsonObject { put("reasoning_effort", "none") }
+
+  private val RESPONSES_EFFORT_NONE: JsonObject = buildJsonObject { put("reasoning", buildJsonObject { put("effort", "none") }) }
+
+  /** Whether a request to this model on this wire may carry tools. */
+  enum class ToolSupport {
+    YES,
+
+    /** The model takes no tools on any wire we speak. */
+    NO,
+
+    /** The model takes tools, but only on the Responses wire ([Quirk.TOOLS_ONLY_ON_RESPONSES]). */
+    ONLY_ON_RESPONSES,
+  }
+
+  fun toolSupport(modelId: String, wire: String, overrides: List<Rule> = emptyList()): ToolSupport {
+    val quirks = quirksOf(modelId, overrides)
+    return when {
+      Quirk.NO_TOOLS in quirks -> ToolSupport.NO
+      Quirk.TOOLS_ONLY_ON_RESPONSES in quirks && wire != WIRE_OPENAI_RESPONSES -> ToolSupport.ONLY_ON_RESPONSES
+      else -> ToolSupport.YES
+    }
+  }
+
+  /** True when a request with tools must go with reasoning off on this wire ([Quirk.TOOLS_NEED_NO_REASONING]). */
+  fun reasoningYieldsToTools(modelId: String, wire: String, overrides: List<Rule> = emptyList()): Boolean =
+    wire == WIRE_OPENAI && has(modelId, Quirk.TOOLS_NEED_NO_REASONING, overrides)
 
   fun supportsStreaming(modelId: String, overrides: List<Rule> = emptyList()): Boolean =
     !has(modelId, Quirk.NO_STREAMING, overrides)
@@ -356,8 +399,8 @@ object ModelQuirks {
       fields.remove(if (anthropic) "stop_sequences" else "stop")
     }
     // Anthropic's own field IS `max_tokens` and it is required — renaming it there would produce a
-    // request without an answer limit at all.
-    if (Quirk.MAX_COMPLETION_TOKENS in quirks && !anthropic) {
+    // request without an answer limit at all. The Responses wire names its limit `max_output_tokens` for every model.
+    if (Quirk.MAX_COMPLETION_TOKENS in quirks && wire == WIRE_OPENAI) {
       fields.remove("max_tokens")?.let { fields["max_completion_tokens"] = it }
     }
     if (Quirk.NO_STREAMING in quirks) {
@@ -368,6 +411,9 @@ object ModelQuirks {
 
   const val WIRE_OPENAI = "openai"
   const val WIRE_ANTHROPIC = "anthropic"
+
+  /** OpenAI's `/v1/responses` ([ResponsesWire]): its own endpoint, not a dialect of chat/completions. */
+  const val WIRE_OPENAI_RESPONSES = "openai-responses"
 
   /**
    * The messages, rewritten the same way.

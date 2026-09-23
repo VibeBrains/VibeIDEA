@@ -4,12 +4,14 @@ package com.vibe.agent.acp
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.ui.DialogWrapper
 import com.intellij.ui.CheckBoxList
+import com.intellij.ui.components.BrowserLink
 import com.intellij.ui.components.JBTextArea
 import com.intellij.util.ui.JBUI
 import com.vibe.agent.i18n.VibeI18n.t
 import com.vibe.agent.ui.VibeScroll
 import java.awt.BorderLayout
 import java.awt.Dimension
+import java.awt.FlowLayout
 import java.awt.GridLayout
 import javax.swing.Action
 import javax.swing.JComponent
@@ -32,6 +34,7 @@ class AgentRegistryDialog(
   private val list = CheckBoxList<AgentRegistry.Entry>()
   private val upgradeList = CheckBoxList<AgentRegistry.Upgrade>()
   private val details = text("")
+  private val links = JPanel(FlowLayout(FlowLayout.LEFT, JBUI.scale(GAP), 0))
 
   /** Something to act on: an agent to add or a pinned one to move. Without it the dialog is a report. */
   private val actionable: Boolean get() = addable.isNotEmpty() || upgrades.isNotEmpty()
@@ -77,7 +80,10 @@ class AgentRegistryDialog(
     if (addable.isNotEmpty()) {
       val middle = JPanel(GridLayout(1, 2, JBUI.scale(GAP), 0))
       middle.add(VibeScroll.pane(list))
-      middle.add(VibeScroll.pane(details))
+      val right = JPanel(BorderLayout(0, JBUI.scale(GAP / 2)))
+      right.add(VibeScroll.pane(details), BorderLayout.CENTER)
+      right.add(links, BorderLayout.SOUTH)
+      middle.add(right)
       panel.add(middle, BorderLayout.CENTER)
     }
     if (notAddable.isNotEmpty()) {
@@ -94,8 +100,26 @@ class AgentRegistryDialog(
 
   private fun showDetails() {
     val index = list.selectedIndex
-    details.text = if (index >= 0) list.getItemAt(index)?.let { describe(it) }.orEmpty() else ""
+    val entry = if (index >= 0) list.getItemAt(index) else null
+    details.text = entry?.let { describe(it) }.orEmpty()
     details.caretPosition = 0
+    showLinks(entry)
+  }
+
+  /**
+   * The addresses the registry gave, as links to open: the license text first — the one address the registry requires,
+   * and the one a person should read before running someone else's program. Only web addresses become links: the
+   * registry is third-party data, and a link is a click away from whatever scheme it names.
+   */
+  private fun showLinks(entry: AgentRegistry.Entry?) {
+    links.removeAll()
+    if (entry != null) {
+      entry.licenseUrl?.takeIf { AgentRegistry.isWebAddress(it) }?.let { links.add(BrowserLink(t("registry.link.license"), it)) }
+      entry.repository?.takeIf { AgentRegistry.isWebAddress(it) }?.let { links.add(BrowserLink(t("registry.link.repository"), it)) }
+      entry.website?.takeIf { AgentRegistry.isWebAddress(it) }?.let { links.add(BrowserLink(t("registry.link.website"), it)) }
+    }
+    links.revalidate()
+    links.repaint()
   }
 
   private fun describe(entry: AgentRegistry.Entry): String {

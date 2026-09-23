@@ -77,7 +77,41 @@ class VibeDoctorAction : AnAction({ t("doctor.action") }) {
         else t("doctor.detail.quirks", "model" to quirkModel,
                "list" to quirks.joinToString(", ") { it.name }, "source" to (source ?: "built-in")),
       ))
+      // What the reasoning dial becomes for this model right now: «off» is not «nothing» on a model that reasons by
+      // default, and the only way to see which of the two it is here is to look at the fields themselves.
+      val provider = providers.first { p -> p.models.any { it.id == quirkModel } }
+      val model = provider.models.first { it.id == quirkModel }
+      val wire = ProvidersService.protocolFor(provider.protocol, model.protocol)
+      val level = com.vibe.agent.providers.ReasoningMode.levelOf(com.vibe.agent.settings.VibeAgentSettings.reasoningLevel)
+      val fields = com.vibe.agent.providers.LlmClient.reasoningFields(
+        wire, level, quirkModel, model.reasoning,
+        model.maxOutputTokens ?: com.vibe.agent.providers.LlmClient.DEFAULT_MAX_OUTPUT_TOKENS, overrides)
+      lines.add(VibeDiagnosis.Line(
+        t("doctor.line.reasoning"),
+        VibeDiagnosis.State.OK,
+        if (fields.isEmpty()) t("doctor.detail.reasoningNothing", "model" to quirkModel, "level" to level.name.lowercase())
+        else t("doctor.detail.reasoning", "model" to quirkModel, "level" to level.name.lowercase(), "fields" to fields.toString()),
+      ))
     }
+
+    // extraBody wins over the quirk catalogue on purpose, so a field the model refuses goes out as written; the doctor is
+    // where that is said before the vendor's 400 says it.
+    val quirkRules = com.vibe.agent.providers.ModelQuirksRegistry.rulesFor(base)
+    val withExtra = providers.flatMap { p -> p.models.filter { !it.extraBody.isNullOrEmpty() }.map { p to it } }
+    val conflicts = withExtra.flatMap { (p, m) ->
+      com.vibe.agent.providers.ExtraBodyConflicts.of(m.id, ProvidersService.protocolFor(p.protocol, m.protocol), m.extraBody, quirkRules)
+        .map { conflict -> t("doctor.detail.extraBodyConflict", "model" to "${p.id}/${m.id}", "field" to conflict.field,
+                             "reason" to when (conflict.reason) {
+                               com.vibe.agent.providers.ExtraBodyConflicts.Reason.SAMPLING -> t("doctor.extraBody.sampling")
+                               com.vibe.agent.providers.ExtraBodyConflicts.Reason.BUDGET -> t("doctor.extraBody.budget")
+                               com.vibe.agent.providers.ExtraBodyConflicts.Reason.SWITCH -> t("doctor.extraBody.switch")
+                             }) }
+    }
+    lines.add(VibeDiagnosis.Line(
+      t("doctor.line.extraBody"),
+      if (conflicts.isEmpty()) VibeDiagnosis.State.OK else VibeDiagnosis.State.WARN,
+      if (conflicts.isEmpty()) t("doctor.detail.extraBodyNone", "count" to withExtra.size) else conflicts.joinToString("; "),
+    ))
 
     // A ceiling one cannot see the distance to is a ceiling one only meets by hitting it.
     val spendLimits = com.vibe.agent.settings.VibeChatSettings.spendLimits()

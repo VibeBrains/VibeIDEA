@@ -22,6 +22,14 @@ class ModelProtocolTest {
   }
 
   @Test
+  fun `the responses wire is its own protocol, for the model and for the provider`() {
+    // A different endpoint, not a dialect: before it was recognised, such a model went to /chat/completions.
+    assertEquals("openai-responses", ProvidersService.protocolFor("openai", "openai-responses"))
+    assertEquals("openai-responses", ProvidersService.protocolFor("openai-responses"))
+    assertEquals("openai", ProvidersService.protocolFor("openai-responses", "openai"))
+  }
+
+  @Test
   fun `an unrecognised name falls back instead of failing`() {
     // A file written for a newer IDE must not take the registry down; a wrong protocol fails
     // loudly on the first request anyway, naming the endpoint.

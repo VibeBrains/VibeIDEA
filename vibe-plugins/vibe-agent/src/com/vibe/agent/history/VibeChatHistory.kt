@@ -113,6 +113,8 @@ internal class HistoryStore(val now: () -> String = { Instant.now().toString() }
           wireText = m.wireText,
           pinned = m.pinned,
           reasoning = m.reasoning,
+          toolRounds = m.toolRounds,
+          responses = m.responses,
         )
       },
       state = ThreadState(targetId = source.state.targetId),
@@ -151,7 +153,7 @@ internal class HistoryStore(val now: () -> String = { Instant.now().toString() }
       workspaceLabel = source.workspaceLabel,
       messages = kept.map { m ->
         ChatMessageRecord(m.role, m.text, m.images.map { StoredImage(it.name, it.mimeType, it.base64) },
-                          m.at, m.wireText, m.pinned, m.reasoning)
+                          m.at, m.wireText, m.pinned, m.reasoning, m.toolRounds, m.responses)
       },
       state = ThreadState(targetId = source.state.targetId),
     )

@@ -64,6 +64,21 @@ object ReasoningStream {
     return null
   }
 
+  /**
+   * A piece of reasoning from an event of the Responses stream: the summary the vendor writes, or the reasoning text
+   * itself where a server streams it. A new summary part starts a new paragraph — glued together, two summaries read
+   * as one broken sentence.
+   */
+  fun fromResponsesEvent(event: JsonObject): String? = when (event["type"]?.jsonPrimitive?.contentOrNull) {
+    "response.reasoning_summary_text.delta", "response.reasoning_text.delta" ->
+      event["delta"]?.jsonPrimitive?.contentOrNull?.takeIf { it.isNotEmpty() }
+    "response.reasoning_summary_part.added" ->
+      if ((event["summary_index"]?.jsonPrimitive?.contentOrNull?.toIntOrNull() ?: 0) > 0) PARAGRAPH else null
+    else -> null
+  }
+
+  private const val PARAGRAPH = "\n\n"
+
   /** Текст ответа Gemini — то же место, но БЕЗ пометки `thought`: иначе мысль уедет в ответ. */
   fun answerFromGeminiEvent(event: JsonObject): String? {
     val parts = event["candidates"].arr()?.firstOrNull().obj()

@@ -109,10 +109,14 @@ object ToolCalls {
     }
   }
 
-  /** anthropic: the assistant's text (if any) followed by its `tool_use` blocks. */
-  fun anthropicAssistant(m: ChatMessage): JsonObject = buildJsonObject {
+  /**
+   * anthropic: the assistant's thinking blocks when [withThinking], then its text (if any), then its `tool_use` blocks —
+   * the order the answer came in, which is the order the wire checks.
+   */
+  fun anthropicAssistant(m: ChatMessage, withThinking: Boolean = false): JsonObject = buildJsonObject {
     put("role", "assistant")
     put("content", JsonArray(buildList {
+      if (withThinking) m.thinking.forEach { add(it.toWire()) }
       if (m.text.isNotBlank()) add(buildJsonObject { put("type", "text"); put("text", m.text) })
       m.toolCalls.forEach { call ->
         add(buildJsonObject {
@@ -177,13 +181,15 @@ object ToolCalls {
  * Collects the calls of one answer as the stream delivers them.
  *
  * openai and anthropic send a call in pieces — the name first, the arguments as fragments of JSON text —
- * keyed by the position of the call in the answer; gemini sends each call whole. One collector per request.
+ * keyed by the position of the call in the answer; gemini sends each call whole, and the Responses wire settles each
+ * one in a finished output item. One collector per request.
  */
 class ToolCallAccumulator {
   private class Pending(var id: String? = null, var name: String? = null, val arguments: StringBuilder = StringBuilder(), var signature: String? = null)
 
   private val byIndex = java.util.TreeMap<Int, Pending>()
   private var geminiCount = 0
+  private var responsesCount = 0
 
   fun openAiChunk(chunk: JsonObject) {
     val delta = chunk["choices"].arr()?.firstOrNull().obj()?.get("delta").obj() ?: return
@@ -238,6 +244,21 @@ class ToolCallAccumulator {
     }
   }
 
+  /**
+   * A complete output item of the Responses wire; a `function_call` becomes a call, anything else is not one.
+   *
+   * Taken from `response.output_item.done` rather than assembled from argument deltas: the done item is the call as
+   * the vendor settled it, and its `call_id` is what the result has to name.
+   */
+  fun responsesItem(item: JsonObject) {
+    if (item["type"]?.jsonPrimitive?.contentOrNull != ResponsesWire.FUNCTION_CALL) return
+    val position = responsesCount++
+    byIndex[position] = Pending(
+      id = item["call_id"]?.jsonPrimitive?.contentOrNull,
+      name = item["name"]?.jsonPrimitive?.contentOrNull,
+    ).also { it.arguments.append(item["arguments"]?.jsonPrimitive?.contentOrNull.orEmpty()) }
+  }
+
   /** Complete calls in answer order; a fragment without a name is not a call. */
   fun calls(): List<ToolCall> = byIndex.entries.mapNotNull { (index, pending) ->
     val name = pending.name?.takeIf { it.isNotBlank() } ?: return@mapNotNull null
@@ -251,7 +272,16 @@ class ToolCallAccumulator {
  * assistant message with tool calls, not only on the last answer: Kimi answers 400 «reasoning_content is missing in
  * assistant tool call message», DeepSeek with tools the same (found 17.09.2026, decision №83).
  */
-data class ToolRound(val text: String, val calls: List<ToolCall>, val results: List<ToolResult>, val reasoning: String? = null)
+data class ToolRound(
+  val text: String,
+  val calls: List<ToolCall>,
+  val results: List<ToolResult>,
+  val reasoning: String? = null,
+  /** The round's thinking blocks on Anthropic's wire, kept for the models that require them back ([ThinkingBlock]). */
+  val thinking: List<ThinkingBlock> = emptyList(),
+  /** The round's output items on the Responses wire, sent back as they came to the same model ([ResponsesReplay]). */
+  val responses: ResponsesReplay? = null,
+)
 
 /**
  * Tool rounds in the thread history.
@@ -315,7 +345,8 @@ object ToolRounds {
       ?.ifEmpty { null }
     m.toolRounds.flatMap { round ->
       listOf(
-        ChatMessage("assistant", round.text, reasoning = round.reasoning, toolCalls = round.calls),
+        ChatMessage("assistant", round.text, reasoning = round.reasoning, toolCalls = round.calls, thinking = round.thinking,
+                    responses = round.responses),
         ChatMessage(ToolCalls.ROLE, "", toolResults = round.results),
       )
     } + m.copy(text = answer, reasoning = answerReasoning, toolRounds = emptyList())
@@ -325,6 +356,8 @@ object ToolRounds {
     buildJsonObject {
       put("text", round.text)
       round.reasoning?.let { put("reasoning", it) }
+      if (round.thinking.isNotEmpty()) put("thinking", JsonArray(round.thinking.map { it.toStored() }))
+      round.responses?.let { put("responses", it.toStored()) }
       put("calls", JsonArray(round.calls.map { buildJsonObject { put("id", it.id); put("name", it.name); put("arguments", it.arguments); it.signature?.let { s -> put("signature", s) } } }))
       put("results", JsonArray(round.results.map {
         buildJsonObject {
@@ -349,6 +382,8 @@ object ToolRounds {
       val ro = r as? JsonObject ?: return@mapNotNull null
       ToolResult(ro.s("callId") ?: return@mapNotNull null, ro.s("name").orEmpty(), ro.s("text").orEmpty(), ro.s("isError") == "true")
     }
-    if (calls.isEmpty()) null else ToolRound(o.s("text").orEmpty(), calls, results, o.s("reasoning"))
+    val thinking = (o["thinking"] as? JsonArray).orEmpty().mapNotNull { ThinkingBlock.fromStored(it) }
+    if (calls.isEmpty()) null
+    else ToolRound(o.s("text").orEmpty(), calls, results, o.s("reasoning"), thinking, ResponsesReplay.fromStored(o["responses"]))
   }
 }

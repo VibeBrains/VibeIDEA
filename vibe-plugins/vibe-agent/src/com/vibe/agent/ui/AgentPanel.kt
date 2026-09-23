@@ -205,6 +205,8 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
 
   /** Why the direct chat goes without tools is said once per panel: a line on every turn stops being read. */
   @Volatile private var directToolsNoted = false
+  /** Why a turn with tools went without reasoning is said once per panel, for the same reason. */
+  @Volatile private var reasoningYieldNoted = false
   /** Targets already tried in this turn: a chain must never send the turn back where it just failed. */
   private val failoverTried = java.util.Collections.synchronizedSet(HashSet<com.vibe.agent.resilience.FailoverPlan.Target>())
 
@@ -3634,6 +3636,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
           images = if (index in imageBearing) r.images.map { ImagePart(it.mimeType, it.base64) } else emptyList(),
           reasoning = r.reasoning,
           toolRounds = r.toolRounds,
+          responses = r.responses,
         )
       }
       // A model declared non-vision must not receive images lingering in the history either.
@@ -3673,6 +3676,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
       var request = wire
       var usage = com.vibe.agent.providers.TokenUsage.NONE
       var rounds = 0
+      turns.chat.responses = null
       // The tool loop: an answer that calls tools gets their results and is asked again, until the model
       // answers in words, the person stops, or the ceiling is reached. Without tools it is one pass, as before.
       while (true) {
@@ -3698,6 +3702,10 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
         usage = usage.merge(llmClient.lastUsage())
         llmClient.lastStopReason()?.takeIf { it.abnormal }?.let { turnNote(stopNote(it)) }
         val calls = llmClient.lastToolCalls()
+        // On the Responses wire the answer's own output items go back with it; an answer that ends the turn on calls
+        // without results is not kept that way — the vendor refuses a call that has no output after it.
+        val replay = llmClient.lastResponses()
+        if (calls.isEmpty()) turns.chat.responses = replay
         if (calls.isEmpty() || llmCancel.get()) break
         if (rounds++ >= VibeAgentSettings.directToolMaxRounds) {
           turnNote(t("directTools.roundsLimit", "limit" to VibeAgentSettings.directToolMaxRounds))
@@ -3712,9 +3720,14 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
         }
         // A search may have loaded tools: the next round offers them.
         tools = com.vibe.agent.mcp.ToolSearch.offered(allTools, loaded, VibeAgentSettings.toolSearchThreshold)
-        turns.chat.toolRounds.add(com.vibe.agent.providers.ToolRound(roundText.toString(), calls, results, roundReasoning.toString().ifEmpty { null }))
+        // The round's thinking blocks travel with it: a model that requires its reasoning back gets them in the next
+        // request, and Claude keeps its reasoning through the loop (ThinkingReplay decides which).
+        val thinking = llmClient.lastThinking()
+        turns.chat.toolRounds.add(com.vibe.agent.providers.ToolRound(roundText.toString(), calls, results,
+                                                                     roundReasoning.toString().ifEmpty { null }, thinking, replay))
         request = request +
-          ChatMessage("assistant", roundText.toString(), reasoning = roundReasoning.toString().ifEmpty { null }, toolCalls = calls) +
+          ChatMessage("assistant", roundText.toString(), reasoning = roundReasoning.toString().ifEmpty { null }, toolCalls = calls,
+                      thinking = thinking, thinkingKey = llmClient.lastThinkingKey(), responses = replay) +
           ChatMessage(com.vibe.agent.providers.ToolCalls.ROLE, "", toolResults = results)
       }
       // What the provider itself reported, and the price the owner of the key wrote down. Both may
@@ -3771,19 +3784,32 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
 
   private fun directToolSpecs(target: ChatTarget.Model): List<com.vibe.agent.providers.ToolSpec> {
     if (!VibeAgentSettings.directToolsEnabled) return emptyList()
-    if (!llmClient.supportsTools(target.model)) {
+    val wire = ProvidersService.protocolFor(target.provider.protocol, target.model.protocol)
+    val support = llmClient.toolSupport(target.model, wire)
+    if (support != com.vibe.agent.providers.ModelQuirks.ToolSupport.YES) {
       if (!directToolsNoted) {
         directToolsNoted = true
-        systemLine(t("directTools.noToolsModel", "model" to target.model.id))
+        systemLine(
+          if (support == com.vibe.agent.providers.ModelQuirks.ToolSupport.ONLY_ON_RESPONSES) t("directTools.responsesOnly", "model" to target.model.id)
+          else t("directTools.noToolsModel", "model" to target.model.id))
       }
       return emptyList()
     }
-    return directTools.specs { e ->
+    val specs = directTools.specs { e ->
       if (!directToolsNoted) {
         directToolsNoted = true
         systemLine(t("directTools.unavailable", "reason" to (e.message ?: "")))
       }
     }
+    // The client takes the reasoning off for such a turn; the dial still shows a level, so the chat says why it did not
+    // apply and how to have both.
+    val asked = com.vibe.agent.providers.ReasoningMode.levelOf(VibeAgentSettings.reasoningLevel)
+    if (specs.isNotEmpty() && asked != com.vibe.agent.providers.ReasoningMode.Level.OFF && !reasoningYieldNoted &&
+        llmClient.reasoningYieldsToTools(target.model, wire)) {
+      reasoningYieldNoted = true
+      systemLine(t("directTools.reasoningYields", "model" to target.model.id))
+    }
+    return specs
   }
 
   /**
@@ -5769,6 +5795,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     val toolRounds = synchronized(turn.toolRounds) {
       com.vibe.agent.providers.ToolRounds.forStorage(turn.toolRounds.toList()).also { turn.toolRounds.clear() }
     }
+    val responses = turn.responses.also { turn.responses = null }
     // A turn that produced no words used to leave NOTHING in the thread — the question alone, and
     // the reason shown once in the feed and never written down. Reopening the IDE then showed a
     // conversation where the agent had simply not answered (eight such threads in the owner's store,
@@ -5778,7 +5805,8 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
       history.append(threadId, ChatMessageRecord(Role.OTHER, note, at = nowIso(), toolRounds = toolRounds))
     }
     if (threadId != null && fullText.isNotBlank()) {
-      history.append(threadId, ChatMessageRecord(Role.ASSISTANT, fullText, at = nowIso(), reasoning = reasoning, toolRounds = toolRounds))
+      history.append(threadId, ChatMessageRecord(Role.ASSISTANT, fullText, at = nowIso(), reasoning = reasoning, toolRounds = toolRounds,
+                                                 responses = responses))
       // The provider's own numbers when it reported them; the old length-based guess only when it
       // did not. The guess counted the ANSWER and nothing else, so a request carrying two hundred
       // thousand tokens of context cost, in the report, as much as the sentence it produced —
