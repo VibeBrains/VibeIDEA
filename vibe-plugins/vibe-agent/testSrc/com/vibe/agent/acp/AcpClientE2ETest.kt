@@ -336,9 +336,7 @@ class AcpClientE2ETest {
     assertTrue(isolated != chat, "новая сессия — новый идентификатор")
     assertEquals(chat, c.sessionId, "текущей остаётся сессия чата")
 
-    c.turnSession = isolated
-    c.prompt("проверь работу").get(30, TimeUnit.SECONDS)
-    c.turnSession = null
+    c.prompt(isolated, "проверь работу").get(30, TimeUnit.SECONDS)
     await { texts().contains("session=$isolated") }
     // The isolated session switching its own mode must not repaint the chat's pickers.
     assertEquals("default", c.modes?.currentModeId)
@@ -407,13 +405,32 @@ class AcpClientE2ETest {
     val c = start("cancelSession", TestHandler())
     c.initializeAndOpenSession().get(30, TimeUnit.SECONDS)
     val isolated = c.openIsolatedSession().get(30, TimeUnit.SECONDS)
-    c.turnSession = isolated
-    val turn = c.prompt("долгая проверка")
+    val turn = c.prompt(isolated, "долгая проверка")
     await { texts().contains("работаю…") }
 
-    c.cancel()
+    c.cancel(isolated)
     assertEquals("cancelled", turn.get(30, TimeUnit.SECONDS).jsonObject["stopReason"]?.jsonPrimitive?.content)
     await { texts().contains("отменена сессия $isolated") }
+  }
+
+  @Test
+  fun `turns in two isolated sessions run at once, and a cancel stops only its own`() {
+    val c = start("parallel", TestHandler())
+    c.initializeAndOpenSession().get(30, TimeUnit.SECONDS)
+    val first = c.openIsolatedSession().get(30, TimeUnit.SECONDS)
+    val second = c.openIsolatedSession().get(30, TimeUnit.SECONDS)
+    val one = c.prompt(first, "бэкенд")
+    val two = c.prompt(second, "фронтенд")
+    // Both are working at the same time: neither waits for the other to finish.
+    await { texts().contains("работаю в $first") && texts().contains("работаю в $second") }
+    // Every update names its session: that is what the panel routes a step's stream by.
+    assertTrue(updates.all { it["sessionId"]?.jsonPrimitive?.content in setOf(first, second) })
+
+    c.cancel(first)
+    assertEquals("cancelled", one.get(30, TimeUnit.SECONDS).jsonObject["stopReason"]?.jsonPrimitive?.content)
+    assertFalse(two.isDone, "cancelling one step's session must not stop its neighbour")
+    c.cancel(second)
+    assertEquals("cancelled", two.get(30, TimeUnit.SECONDS).jsonObject["stopReason"]?.jsonPrimitive?.content)
   }
 
   @Test

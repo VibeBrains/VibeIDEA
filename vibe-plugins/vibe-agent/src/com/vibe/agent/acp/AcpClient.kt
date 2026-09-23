@@ -180,8 +180,6 @@ class AcpClient(
     process = null
     sessionId = null
     promptedSession = null
-    // An isolated session dies with the process; a stale id here would route the next prompt nowhere.
-    turnSession = null
     capabilities = null
     authMethods = emptyList()
     // Тумблеры и режимы принадлежат сессиям: у мёртвого клиента их нет.
@@ -365,13 +363,6 @@ class AcpClient(
   @Volatile private var sessionParams: JsonObject? = null
 
   /**
-   * The session the running turn goes to when it is not the chat's own — set around a pipeline step
-   * with a fresh context, so that the prompt, «Стоп» and the step's ceilings all reach the turn that
-   * is actually running. Null — the chat's session.
-   */
-  @Volatile var turnSession: String? = null
-
-  /**
    * A second session on the same connection, for a step that must not see the conversation.
    *
    * Not made current and not remembered: the chat's session stays what it was, and the next turn
@@ -387,14 +378,27 @@ class AcpClient(
 
   fun prompt(text: String): CompletableFuture<JsonElement> = prompt(listOf(ContentBlock.Text(text)))
 
+  /** A turn of the chat, in its current session; «Стоп» reaches it through [cancel]. */
   fun prompt(blocks: List<ContentBlock>): CompletableFuture<JsonElement> {
-    val sid = turnSession ?: checkNotNull(sessionId) { "no session" }
+    val sid = checkNotNull(sessionId) { "no session" }
     promptedSession = sid
-    return request("session/prompt", buildJsonObject {
-      put("sessionId", sid)
+    return prompt(sid, blocks)
+  }
+
+  fun prompt(sessionId: String, text: String): CompletableFuture<JsonElement> = prompt(sessionId, listOf(ContentBlock.Text(text)))
+
+  /**
+   * A turn in the session the caller names — an isolated session of a pipeline step.
+   *
+   * Several of them run at once on one connection: every update, permission request and file write names its session,
+   * and the caller routes them by it. Each is stopped by [cancel] with the same id — the chat's «Стоп» would reach
+   * only the chat's own session.
+   */
+  fun prompt(sessionId: String, blocks: List<ContentBlock>): CompletableFuture<JsonElement> =
+    request("session/prompt", buildJsonObject {
+      put("sessionId", sessionId)
       put("prompt", JsonArray(blocks.map { it.toJson() }))
     })
-  }
 
   /**
    * Configuration options of the session, as the agent last reported them.
@@ -513,10 +517,14 @@ class AcpClient(
    */
   @Volatile private var promptedSession: String? = null
 
-  /** Cancels the running turn — in [turnSession] while a step with a fresh context runs, else where it was prompted. */
+  /** Cancels the chat's running turn, in the session it was prompted in. */
   fun cancel() {
-    val sid = turnSession ?: promptedSession ?: sessionId ?: return
-    notify("session/cancel", buildJsonObject { put("sessionId", sid) })
+    cancel(promptedSession ?: sessionId ?: return)
+  }
+
+  /** Cancels the turn running in [sessionId]. */
+  fun cancel(sessionId: String) {
+    notify("session/cancel", buildJsonObject { put("sessionId", sessionId) })
   }
 
   private fun request(method: String, params: JsonObject): CompletableFuture<JsonElement> {

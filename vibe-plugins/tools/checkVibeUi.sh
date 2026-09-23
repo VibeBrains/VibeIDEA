@@ -288,6 +288,12 @@ done < <(grep -rl 'com.intellij.openapi.options.Configurable\|: Configurable' "
 echo "  подсказка настроек: перенос проверяется замером"
 HINT_OUT=$(cd "$root" && ./bazel.cmd test //vibe-plugins/vibe-agent:vibe-agent_test --test_filter=SettingsHintWidth 2>&1) || true
 case "$HINT_OUT" in
+  # A test target that did not compile prints FAILED too, and it was read as a verdict on the hint: a compile
+  # error elsewhere in the test sources sent people to fix a hint that wraps fine.
+  *"FAILED TO BUILD"*|*"fails to build"*|*"failed to build"*)
+    echo "ОШИБКА: замер переноса НЕ ВЫПОЛНЕН — тесты не собрались; это не приговор подсказке"
+    printf '%s\n' "$HINT_OUT" | grep -E 'Error:|error:' | head -3 | sed 's/^/    /'
+    status=1 ;;
   *"tests pass"*|*"test passes"*)
     : ;;
   *"FAILED"*|*"failing"*)

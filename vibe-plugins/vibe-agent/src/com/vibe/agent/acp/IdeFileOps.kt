@@ -31,16 +31,6 @@ internal class IdeFileOps(
   private val seen: com.vibe.agent.edits.WriteGuard.Seen = com.vibe.agent.edits.WriteGuard.Seen(),
   /** One line into the feed: conflicts and applied editor fixes are told, never silent. */
   private val onNotice: (String) -> Unit = {},
-  /** The pipeline role in force right now; a judging role is refused the write. */
-  private val roleNow: () -> String? = { null },
-  /**
-   * Куда шагу разрешено писать сейчас. Пустая область — ограничения нет.
-   *
-   * Функцией, а не значением, по той же причине, что и роль: шаги сменяются в течение прогона, а
-   * объект файловых операций живёт весь разговор.
-   */
-  private val scopeNow: () -> com.vibe.agent.pipelines.RolePaths.Scope =
-    { com.vibe.agent.pipelines.RolePaths.Scope() },
   /** Reports what the context guard found in a file the agent read; the panel turns it into a line. */
   private val onFinding: (String, List<com.vibe.agent.security.ContextSanitizer.Finding>) -> Unit = { _, _ -> },
 ) {
@@ -102,13 +92,16 @@ internal class IdeFileOps(
     return buildJsonObject { put("content", clean.text) }
   }
 
-  fun writeTextFile(params: JsonObject): JsonElement {
+  /**
+   * Writes a file for the turn that asked — [role] and [scope] are that turn's, found by the session the request came
+   * from: with steps running at once, the boundary in force «right now» is not one boundary.
+   */
+  fun writeTextFile(params: JsonObject, role: String?, scope: com.vibe.agent.pipelines.RolePaths.Scope): JsonElement {
     val target = resolvePath(params.getValue("path").jsonPrimitive.content)
     val path = target.normalized
     // A reviewer told «только отчёт» obeys most of the time, and «most of the time» is the whole
     // problem: the one run where it "just fixes" what it found is the run where the review and the
     // fix are the same act, and nobody reviewed the fix.
-    val role = roleNow()
     if (!com.vibe.agent.pipelines.RoleRights.mayWrite(role)) {
       throw IllegalStateException(t("role.writeDenied", "role" to role))
     }
@@ -119,14 +112,13 @@ internal class IdeFileOps(
       throw IllegalStateException(t("access.writeDenied", "path" to target.canonical))
     }
     // Область шага: «пишет только тесты» — обещание ровно до тех пор, пока его кто-то проверяет.
-    val scope = scopeNow()
     if (scope.stated) {
       // A scope is written relative to the project root, so a place outside the project has no
       // answer in it and is refused. The former fallback matched the absolute path as if it were
       // relative, and a scope of `**` let it through.
       val relative = roots.projectBase?.let { com.vibe.agent.context.AccessPolicy.relativeTo(target.canonical.toString(), it) }
       if (relative == null || !com.vibe.agent.pipelines.RolePaths.mayWrite(relative, scope)) {
-        throw IllegalStateException(t("role.pathDenied", "role" to (roleNow() ?: "-"), "path" to (relative ?: target.canonical)))
+        throw IllegalStateException(t("role.pathDenied", "role" to (role ?: "-"), "path" to (relative ?: target.canonical)))
       }
     }
     val content = params.getValue("content").jsonPrimitive.contentOrNull ?: ""
