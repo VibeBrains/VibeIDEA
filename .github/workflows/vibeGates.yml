@@ -38,3 +38,6 @@ jobs:
 
       - name: Целостность документации
         run: ./vibe-plugins/tools/checkVibeDocs.sh
+
+      - name: Язык комментариев — храповик
+        run: ./vibe-plugins/tools/checkVibeComments.sh
