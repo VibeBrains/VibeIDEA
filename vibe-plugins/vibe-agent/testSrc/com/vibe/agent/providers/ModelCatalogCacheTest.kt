@@ -37,6 +37,27 @@ class ModelCatalogCacheTest {
   }
 
   @Test
+  fun `the catalog's output ceiling reaches fetched models and fills an unstated one`() {
+    val anthropic = ProviderEntry(id = "anthropic", baseURL = "https://api.anthropic.com/v1",
+                                  models = listOf(ModelEntry("claude-opus-5"), ModelEntry("claude-sonnet-5", maxOutputTokens = 16_000)))
+    val cached = ModelCatalogCache.Entry(ModelCatalogCache.fingerprint(anthropic), listOf("claude-opus-5", "claude-sonnet-5", "claude-opus-5-5"), 0L,
+                                         maxOutput = mapOf("claude-opus-5" to 128_000, "claude-sonnet-5" to 128_000, "claude-opus-5-5" to 128_000))
+    val models = ModelCatalogCache.merge(listOf(anthropic), mapOf("anthropic" to cached)).single().models.associateBy { it.id }
+    assertEquals(128_000, models["claude-opus-5"]!!.maxOutputTokens)
+    // What a person wrote wins over what the catalog says.
+    assertEquals(16_000, models["claude-sonnet-5"]!!.maxOutputTokens)
+    assertEquals(128_000, models["claude-opus-5-5"]!!.maxOutputTokens)
+  }
+
+  @Test
+  fun `the output ceiling survives the round trip, and a cache written before it reads as unstated`() {
+    val cache = mapOf("anthropic" to ModelCatalogCache.Entry("fp", listOf("a"), 1L, maxOutput = mapOf("a" to 64_000)))
+    assertEquals(cache, ModelCatalogCache.decode(ModelCatalogCache.encode(cache)))
+    val old = """{"version":1,"providers":{"anthropic":{"fingerprint":"fp","fetchedAt":1,"models":["a"]}}}"""
+    assertTrue(ModelCatalogCache.decode(old)["anthropic"]!!.maxOutput.isEmpty())
+  }
+
+  @Test
   fun `encode-decode round trip keeps ids, fingerprint and time`() {
     val cache = mapOf("zai" to entry("a", "b", at = 1_700_000_000_000L))
     assertEquals(cache, ModelCatalogCache.decode(ModelCatalogCache.encode(cache)))

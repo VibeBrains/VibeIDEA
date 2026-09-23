@@ -186,6 +186,17 @@ class LlmClient(
   /** The model of the last completed request as the provider named it, or null when it named none. */
   fun lastAnsweredModel(): String? = lastAnsweredModel
 
+  /**
+   * Why the provider said the last answer ended, filled in as the stream reports it.
+   *
+   * Beside the usage for the same reason: the stream says it once, at the very end.
+   */
+  @Volatile
+  private var lastStopReason: StopReason? = null
+
+  /** Why the last completed request's answer ended, as the provider named it; null when it named nothing. */
+  fun lastStopReason(): StopReason? = lastStopReason
+
   @Volatile private var offeredTools: List<ToolSpec> = emptyList()
   @Volatile private var toolCalls = ToolCallAccumulator()
 
@@ -255,6 +266,7 @@ class LlmClient(
     this.cacheKey = promptCacheKey
     lastUsage = TokenUsage.NONE
     lastAnsweredModel = null
+    lastStopReason = null
     offeredTools = if (tools.isEmpty() || !supportsTools(model)) emptyList() else tools
     toolCalls = ToolCallAccumulator()
     // The offline promise is kept HERE, at the single door out: a check in the UI would be a
@@ -268,6 +280,7 @@ class LlmClient(
       try {
         // A retry starts a new answer: calls half-collected from the failed stream are not calls.
         toolCalls = ToolCallAccumulator()
+        lastStopReason = null
         // Мысль, приехавшая тегами внутри ответа, снимается ОДИН раз на все три провода: модель,
         // пишущая `<think>`, может стоять на любом из них, и три копии правила разошлись бы.
         // Свой разделитель на попытку: оборванный поток мог остаться внутри незакрытого тега.
@@ -404,6 +417,7 @@ class LlmClient(
     streamSse(request) { data ->
       val event = eventObject(data) ?: return@streamSse
       ModelEcho.fromGeminiEvent(event)?.let { lastAnsweredModel = it }
+      StopReason.fromGeminiEvent(event)?.let { lastStopReason = it }
       // У Gemini мысль и ответ лежат в одном массиве частей и различаются пометкой `thought`:
       // раньше бралась ПЕРВАЯ часть, то есть при включённых рассуждениях мысль уезжала в ответ.
       ReasoningStream.fromGeminiEvent(event)?.let { thought(it) }
@@ -456,6 +470,7 @@ class LlmClient(
       val chunk = eventObject(data) ?: return@streamSse
       TokenUsage.fromOpenAiChunk(chunk)?.let { lastUsage = lastUsage.merge(it) }
       ModelEcho.fromOpenAiChunk(chunk)?.let { lastAnsweredModel = it }
+      StopReason.fromOpenAiChunk(chunk)?.let { lastStopReason = it }
       // reasoning_content — как его называют китайские OpenAI-совместимые эндпоинты (DeepSeek, GLM).
       ReasoningStream.fromOpenAiChunk(chunk)?.let { thought(it) }
       toolCalls.openAiChunk(chunk)
@@ -513,6 +528,7 @@ class LlmClient(
       // `message_delta`. One reader for both, because both put it under `usage`.
       TokenUsage.fromAnthropicEvent(obj)?.let { lastUsage = lastUsage.merge(it) }
       ModelEcho.fromAnthropicEvent(obj)?.let { lastAnsweredModel = it }
+      StopReason.fromAnthropicEvent(obj)?.let { lastStopReason = it }
       // Рассуждение приезжает тем же событием, но другой дельтой: без этой ветки модель молчала
       // ровно столько, сколько думала, и это выглядело как зависание.
       ReasoningStream.fromAnthropicEvent(obj)?.let { thought(it) }
@@ -560,15 +576,9 @@ class LlmClient(
   private var thought: (String) -> Unit = {}
 
   private fun withReasoning(body: JsonObject, protocol: String, model: ModelEntry): JsonObject {
-    // Ползунок один на приложение, наборы уровней у моделей разные: просимое приводится к тому,
-    // что модель объявила принимать. Ничего не объявила — идёт как есть.
     val asked = ReasoningMode.levelOf(com.vibe.agent.settings.VibeAgentSettings.reasoningLevel)
-    val level = ReasoningMode.clamp(asked, model.reasoning)
-    // Какое написание мышления принимает эта модель — свойство модели, а не наше умолчание:
-    // оба написания отвергаются с 400 на «не своих» моделях (ModelQuirks.ADAPTIVE_THINKING).
-    val adaptive = ModelQuirks.has(quirkIdOf(model), ModelQuirks.Quirk.ADAPTIVE_THINKING, quirks())
-    val fields = ReasoningMode.bodyFields(protocol, level, model.maxOutputTokens ?: DEFAULT_MAX_OUTPUT_TOKENS,
-                                             model.reasoning, adaptive)
+    val fields = reasoningFields(protocol, asked, quirkIdOf(model), model.reasoning,
+                                 model.maxOutputTokens ?: DEFAULT_MAX_OUTPUT_TOKENS, quirks())
     return if (fields.isEmpty()) body else JsonObject(body + fields)
   }
 
@@ -587,6 +597,7 @@ class LlmClient(
     }
     val answer = json.parseToJsonElement(response.body()).jsonObject
     ModelEcho.fromOpenAiChunk(answer)?.let { lastAnsweredModel = it }
+    StopReason.fromOpenAiChunk(answer)?.let { lastStopReason = it }
     answer["choices"].arr()?.firstOrNull().obj()?.get("message").obj()?.let { toolCalls.openAiMessage(it) }
     return answer["choices"].arr()?.firstOrNull()
       .obj()?.get("message").obj()?.get("content")?.jsonPrimitive?.contentOrNull ?: ""
@@ -636,6 +647,33 @@ class LlmClient(
   internal companion object {
     /** Waking up this often makes a stop during a wait feel immediate without busy-waiting. */
     const val SLEEP_STEP_MS = 250L
+
+    /**
+     * The reasoning fields of one request: the person's level, brought to what this model accepts.
+     *
+     * Pure — the setting and the quirk rules come in as arguments — so the whole decision is testable, not only its
+     * parts: the declaration, the catalogue's answer, the clamp and the dialect meet here and nowhere else.
+     */
+    fun reasoningFields(
+      protocol: String,
+      asked: ReasoningMode.Level,
+      modelId: String,
+      declared: ReasoningMode.Support?,
+      maxOutputTokens: Int,
+      overrides: List<ModelQuirks.Rule> = emptyList(),
+    ): JsonObject {
+      // What the entry leaves unsaid comes from the quirk catalogue: a model fetched from the vendor's list carries no
+      // declaration at all, and «off» must still be off on a model that reasons by default.
+      val support = ReasoningMode.merged(declared, ModelQuirks.reasoningOf(modelId, protocol, overrides))
+      // Ползунок один на приложение, наборы уровней у моделей разные: просимое приводится к тому,
+      // что модель объявила принимать. Ничего не объявила — идёт как есть.
+      val level = ReasoningMode.clamp(asked, support)
+      // Какое написание мышления принимает эта модель — свойство модели, а не наше умолчание:
+      // оба написания отвергаются с 400 на «не своих» моделях (ModelQuirks.ADAPTIVE_THINKING).
+      val adaptive = ModelQuirks.has(modelId, ModelQuirks.Quirk.ADAPTIVE_THINKING, overrides)
+      val levels = !ModelQuirks.has(modelId, ModelQuirks.Quirk.NO_REASONING_LEVELS, overrides)
+      return ReasoningMode.bodyFields(protocol, level, maxOutputTokens, support, adaptive, levels)
+    }
 
     /**
      * Model traffic gets its own proxy, separate from the IDE's: people routinely need one and not

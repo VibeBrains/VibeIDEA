@@ -6,6 +6,7 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.intOrNull
 
 /**
  * One model of a provider's catalog, with what the catalog itself says the model accepts.
@@ -18,9 +19,11 @@ import kotlinx.serialization.json.contentOrNull
  * The catalog also says, where it can, that an id is a floating alias — OpenRouter's `alias_target`. Every other
  * catalog stays silent, and there the flag is written by hand in `providers.json`.
  *
+ * And, where it can, how long an answer the model may give ([maxOutputOf]).
+ *
  * Pure: the catalog's JSON in, models out.
  */
-data class CatalogModel(val id: String, val vision: Boolean? = null, val floating: Boolean? = null) {
+data class CatalogModel(val id: String, val vision: Boolean? = null, val floating: Boolean? = null, val maxOutput: Int? = null) {
   companion object {
     private const val IMAGE = "image"
 
@@ -32,7 +35,7 @@ data class CatalogModel(val id: String, val vision: Boolean? = null, val floatin
         val id = (model["id"] as? JsonPrimitive)?.contentOrNull
           ?: (model["name"] as? JsonPrimitive)?.contentOrNull?.removePrefix("models/")
           ?: return@mapNotNull null
-        CatalogModel(id, visionOf(model), floatingOf(model, id))
+        CatalogModel(id, visionOf(model), floatingOf(model, id), maxOutputOf(model))
       }
     }
 
@@ -47,6 +50,19 @@ data class CatalogModel(val id: String, val vision: Boolean? = null, val floatin
       val alias = (model["alias_target"] as? JsonObject)?.get("slug") as? JsonPrimitive ?: return null
       val slug = alias.contentOrNull?.takeIf { it.isNotBlank() } ?: return null
       return if (slug != id) true else null
+    }
+
+    /**
+     * The model's own output ceiling where the catalog states it in Anthropic's shape; null when it does not.
+     *
+     * Anthropic's `/v1/models` gives `max_tokens` beside `max_input_tokens`, the window. Without it a fetched model went
+     * out with our default of 8192 — and on a model that cannot stop reasoning, the reasoning and the answer share that
+     * limit. The pair is the evidence: `max_tokens` alone is a name another catalog could use for something else, and
+     * a window taken for the output limit would ask for an answer the model cannot give.
+     */
+    fun maxOutputOf(model: JsonObject): Int? {
+      if (model["max_input_tokens"] == null) return null
+      return (model["max_tokens"] as? JsonPrimitive)?.intOrNull?.takeIf { it > 0 }
     }
 
     /** Whether the catalog says the model takes images; null when it does not say. */

@@ -10,6 +10,7 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
@@ -38,6 +39,7 @@ object ModelCatalogCache {
    *
    * @property vision what the catalog said about images, for the models it said it about ([CatalogModel]).
    * @property floating ids the catalog called aliases of other models ([CatalogModel.floatingOf]).
+   * @property maxOutput the output ceiling the catalog stated, for the models it stated it for ([CatalogModel.maxOutputOf]).
    */
   data class Entry(
     val fingerprint: String,
@@ -45,6 +47,7 @@ object ModelCatalogCache {
     val fetchedAtMs: Long,
     val vision: Map<String, Boolean> = emptyMap(),
     val floating: Set<String> = emptySet(),
+    val maxOutput: Map<String, Int> = emptyMap(),
   )
 
   private val json = Json { ignoreUnknownKeys = true; prettyPrint = true }
@@ -63,7 +66,8 @@ object ModelCatalogCache {
   fun entryOf(provider: ProviderEntry, models: List<CatalogModel>, fetchedAtMs: Long): Entry =
     Entry(fingerprint(provider), models.map { it.id }, fetchedAtMs,
           models.mapNotNull { m -> m.vision?.let { m.id to it } }.toMap(),
-          models.filter { it.floating == true }.map { it.id }.toSet())
+          models.filter { it.floating == true }.map { it.id }.toSet(),
+          models.mapNotNull { m -> m.maxOutput?.let { m.id to it } }.toMap())
 
   /**
    * Adds cached model ids as [ModelEntry] to providers that do not declare them, leaving
@@ -79,10 +83,15 @@ object ModelCatalogCache {
       // What a person wrote wins; «not stated» is exactly what the catalog's word is for.
       val declared = p.models.map { m ->
         val withVision = if (m.vision == null) entry.vision[m.id]?.let { m.copy(vision = it) } ?: m else m
-        if (withVision.floating == null && m.id in entry.floating) withVision.copy(floating = true) else withVision
+        val withFloating = if (withVision.floating == null && m.id in entry.floating) withVision.copy(floating = true) else withVision
+        if (withFloating.maxOutputTokens == null) entry.maxOutput[m.id]?.let { withFloating.copy(maxOutputTokens = it) } ?: withFloating
+        else withFloating
       }
       val extra = entry.modelIds.filter { it !in known }
-        .map { ModelEntry(id = it, vision = entry.vision[it], floating = true.takeIf { _ -> it in entry.floating }) }
+        .map {
+          ModelEntry(id = it, vision = entry.vision[it], floating = true.takeIf { _ -> it in entry.floating },
+                     maxOutputTokens = entry.maxOutput[it])
+        }
       if (extra.isEmpty() && declared == p.models) p else p.copy(models = declared + extra)
     }
 
@@ -152,7 +161,9 @@ object ModelCatalogCache {
       val vision = (o["vision"] as? JsonObject).orEmpty()
         .mapNotNull { (model, flag) -> (flag as? JsonPrimitive)?.booleanOrNull?.let { model to it } }.toMap()
       val floating = (o["floating"] as? JsonArray).orEmpty().mapNotNull { (it as? JsonPrimitive)?.contentOrNull }.toSet()
-      id to Entry(fingerprint, ids, at, vision, floating)
+      val maxOutput = (o["maxOutput"] as? JsonObject).orEmpty()
+        .mapNotNull { (model, limit) -> (limit as? JsonPrimitive)?.intOrNull?.let { model to it } }.toMap()
+      id to Entry(fingerprint, ids, at, vision, floating, maxOutput)
     }.toMap()
   }
 
@@ -167,6 +178,7 @@ object ModelCatalogCache {
           put("models", JsonArray(e.modelIds.map { JsonPrimitive(it) }))
           if (e.vision.isNotEmpty()) put("vision", JsonObject(e.vision.mapValues { JsonPrimitive(it.value) }))
           if (e.floating.isNotEmpty()) put("floating", JsonArray(e.floating.sorted().map { JsonPrimitive(it) }))
+          if (e.maxOutput.isNotEmpty()) put("maxOutput", JsonObject(e.maxOutput.mapValues { JsonPrimitive(it.value) }))
         }
       }))
     },

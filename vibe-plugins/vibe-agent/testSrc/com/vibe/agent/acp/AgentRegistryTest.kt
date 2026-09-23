@@ -46,7 +46,8 @@ class AgentRegistryTest {
     val entries = AgentRegistry.parse(catalog).associateBy { it.id }
     val claude = AgentRegistry.toAgentEntry(entries["claude-acp"]!!)!!
     assertEquals("npx", claude.command)
-    assertEquals(listOf("-y", "@agentclientprotocol/claude-agent-acp@2.1.0", "--acp"), claude.args)
+    // Without `-y`: npm assumes it when stdin is not a terminal, and an agent's stdin never is.
+    assertEquals(listOf("@agentclientprotocol/claude-agent-acp@2.1.0", "--acp"), claude.args)
     assertEquals("uvx", AgentRegistry.toAgentEntry(entries["some-uv"]!!)!!.command)
     // Двоичная поставка не превращается в команду: придуманный путь к чужому бинарю — это
     // запуск неизвестно чего.

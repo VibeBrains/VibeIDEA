@@ -19,6 +19,18 @@ class CatalogModelTest {
   }
 
   @Test
+  fun `anthropic states the output ceiling beside the window`() {
+    assertEquals(listOf(CatalogModel("claude-opus-5-5", maxOutput = 128_000)), parse("""
+      { "data": [ { "id": "claude-opus-5-5", "max_input_tokens": 1000000, "max_tokens": 128000 } ] }
+    """))
+  }
+
+  @Test
+  fun `max_tokens without the window beside it is not read as the output ceiling`() {
+    assertNull(parse("""{ "data": [ { "id": "x", "max_tokens": 32768 } ] }""").single().maxOutput)
+  }
+
+  @Test
   fun `openrouter lists input modalities`() {
     assertEquals(listOf(CatalogModel("a/vision", true), CatalogModel("b/text", false)), parse("""
       { "data": [

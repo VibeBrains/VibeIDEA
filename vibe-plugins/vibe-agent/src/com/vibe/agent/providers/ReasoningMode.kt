@@ -60,6 +60,22 @@ object ReasoningMode {
     val stated: Boolean get() = canTurnOff != null || levels.isNotEmpty() || words.isNotEmpty() || off != null
   }
 
+  /**
+   * The entry's own declaration, with what it leaves unsaid filled in from [known] — the quirk catalogue's answer.
+   *
+   * Field by field, the declaration first: the person who wrote the entry knows their route, and the catalogue knows
+   * only the model's name. Without the catalogue a model fetched from a vendor's list — which never carries a
+   * declaration — would keep «off» as «send nothing», which on a model that reasons by default is not off at all.
+   */
+  fun merged(declared: Support?, known: Support?): Support? {
+    if (known == null) return declared
+    if (declared == null || !declared.stated) return known
+    return declared.copy(
+      canTurnOff = declared.canTurnOff ?: known.canTurnOff,
+      off = declared.off ?: known.off,
+    )
+  }
+
   fun levelOf(name: String?): Level = when (name?.trim()?.lowercase()) {
     "low", "низкий" -> Level.LOW
     "medium", "средний" -> Level.MEDIUM
@@ -148,14 +164,26 @@ object ReasoningMode {
      * умолчание оставляет прежнее поведение тем, у кого всё работало.
      */
     adaptive: Boolean = false,
+    /**
+     * False for a model that takes no level at all ([ModelQuirks.Quirk.NO_REASONING_LEVELS]): reasoning there is a
+     * switch, on by default, so every position above «off» sends nothing rather than a field the vendor never named.
+     */
+    levels: Boolean = true,
   ): JsonObject {
     if (level == Level.OFF) return support?.off ?: JsonObject(emptyMap())
+    if (!levels) return JsonObject(emptyMap())
     return when (protocol.lowercase()) {
       "anthropic" -> buildJsonObject {
         if (adaptive) {
-          put("thinking", buildJsonObject { put("type", "adaptive") })
-          // Уровень усилия словом вендора: `adaptive` уровнем усилия не бывает, а умолчание API —
-          // `high`, поэтому отправляем ровно то, что просил человек.
+          // `summarized` because the adaptive models default to `omitted`: the thinking blocks stream with empty text,
+          // the chat's reasoning block stays blank, and on Opus 5.5 the notes between tool calls vanish with it —
+          // they travel in thinking blocks there (platform.claude.com/docs/en/models/opus-5-5/migration-guide).
+          put("thinking", buildJsonObject {
+            put("type", "adaptive")
+            put("display", "summarized")
+          })
+          // The effort always goes explicitly, in the vendor's word: the API default differs by model (`high` on most,
+          // `medium` on Opus 5.5), and a level left to the default is a level nobody chose.
           put("output_config", buildJsonObject { put("effort", effortWord(level, support)!!) })
           return@buildJsonObject
         }

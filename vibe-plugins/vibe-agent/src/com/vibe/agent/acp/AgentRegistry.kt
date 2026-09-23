@@ -167,8 +167,11 @@ object AgentRegistry {
    * подставить, а придуманный путь к чужому бинарю — это запуск неизвестно чего.
    */
   fun toAgentEntry(entry: Entry): AgentServerConfig? = when (entry.delivery) {
+    // No `-y`: npm assumes `--yes` whenever stdin is not a terminal, and an ACP agent's stdin is always the protocol
+    // pipe (docs.npmjs.com/cli/v11/commands/npm-exec). The flag changed nothing and read as «installs without asking»
+    // to anyone auditing the command.
     Delivery.NPX -> entry.pkg?.let {
-      AgentServerConfig(entry.name, "npx", listOf("-y", it) + entry.args, emptyMap())
+      AgentServerConfig(entry.name, "npx", listOf(it) + entry.args, emptyMap())
     }
     Delivery.UVX -> entry.pkg?.let { AgentServerConfig(entry.name, "uvx", listOf(it) + entry.args, emptyMap()) }
     Delivery.BINARY, Delivery.UNKNOWN -> null

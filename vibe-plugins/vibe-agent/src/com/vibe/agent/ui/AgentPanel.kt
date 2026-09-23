@@ -3696,6 +3696,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
           promptCacheKey = com.vibe.agent.providers.PromptCacheKey.of(turnThreadId ?: currentThreadId, "agent"),
         ) { delta -> noteActivity(); roundText.append(delta); appendAgentText(delta) }
         usage = usage.merge(llmClient.lastUsage())
+        llmClient.lastStopReason()?.takeIf { it.abnormal }?.let { turnNote(stopNote(it)) }
         val calls = llmClient.lastToolCalls()
         if (calls.isEmpty() || llmCancel.get()) break
         if (rounds++ >= VibeAgentSettings.directToolMaxRounds) {
@@ -4702,6 +4703,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
       appendAgentText(delta, turn)
     }
     turn.usage = llm.lastUsage()
+    llm.lastStopReason()?.takeIf { it.abnormal }?.let { systemLine(stopNote(it)) }
     noteModelSubstitution(model.id, llm.lastAnsweredModel())
     turn.pricing = com.vibe.agent.providers.PriceValidity.effective(model, java.time.LocalDate.now())
   }
@@ -5894,6 +5896,20 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     systemLine(text)
     val threadId = turnThreadId ?: currentThreadId
     if (threadId.isNotEmpty()) history.append(threadId, ChatMessageRecord(Role.OTHER, text, at = nowIso()))
+  }
+
+  /**
+   * Why an answer ended when it did not simply finish. The vendor's own word stays visible for a reason we do not know:
+   * a line that names it is a lead, a line that guesses is a false one.
+   */
+  private fun stopNote(reason: com.vibe.agent.providers.StopReason): String = when (reason.kind) {
+    com.vibe.agent.providers.StopReason.Kind.LENGTH -> t("chat.stop.length")
+    com.vibe.agent.providers.StopReason.Kind.REFUSAL ->
+      (reason.category?.let { t("chat.stop.refusal", "category" to it) } ?: t("chat.stop.refusalUncategorized")) +
+        (reason.explanation?.let { " " + t("chat.stop.vendorSays", "text" to it) } ?: "")
+    com.vibe.agent.providers.StopReason.Kind.CONTENT_FILTER -> t("chat.stop.contentFilter")
+    com.vibe.agent.providers.StopReason.Kind.REPETITION -> t("chat.stop.repetition")
+    else -> t("chat.stop.other", "reason" to reason.raw)
   }
 
   private fun systemLine(text: String) {

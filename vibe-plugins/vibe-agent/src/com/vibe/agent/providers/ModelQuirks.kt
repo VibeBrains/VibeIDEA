@@ -2,6 +2,8 @@
 package com.vibe.agent.providers
 
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
 
 /**
  * What a particular model refuses to be asked, and how to ask it differently.
@@ -52,20 +54,46 @@ object ModelQuirks {
     MAX_COMPLETION_TOKENS,
 
     /**
-     * Мышление задаётся адаптивным режимом и уровнем усилия, а не бюджетом токенов.
+     * Thinking is set by the adaptive mode and an effort level, not by a token budget.
      *
-     * Вендор развёл два несовместимых написания по моделям, и ошибаются ОБА направления:
-     * `thinking: {"type": "enabled", "budget_tokens": N}` возвращает 400 на Opus 4.7, 4.8 и всей
-     * линейке 5 (Opus 5, Sonnet 5, Fable 5/5.1, Mythos 5/5.1), а `{"type": "adaptive"}` возвращает
-     * 400 на Sonnet 4.5, Opus 4.5, Haiku 4.5 и более ранних. Поэтому это не умолчание клиента, а
-     * свойство модели: правило по имени, которое можно переопределить своим `modelQuirks.json`.
+     * The vendor split the two spellings by model, and BOTH directions fail: `thinking: {"type": "enabled",
+     * "budget_tokens": N}` is a 400 on Opus 4.7, 4.8 and the whole 5 line, and `{"type": "adaptive"}` is a 400 on
+     * Sonnet 4.5, Opus 4.5, Haiku 4.5 and earlier. So it is not a client default but a property of the model: a rule by
+     * name, which a `modelQuirks.json` of one's own can override.
      *
-     * Новое написание: `thinking: {"type": "adaptive"}` плюс `output_config: {"effort": …}` со
-     * значениями `low`, `medium`, `high`, `xhigh`, `max` (умолчание вендора — `high`; `adaptive`
-     * уровнем усилия не бывает). Источники: platform.claude.com/docs/en/build-with-claude/extended-thinking
-     * и /effort, сверено 18.09.2026.
+     * The new spelling is `thinking: {"type": "adaptive"}` plus `output_config: {"effort": …}` with `low`, `medium`,
+     * `high`, `xhigh`, `max`; the vendor's default differs by model (`high` on most, `medium` on Opus 5.5), and
+     * `adaptive` is not an effort level. Sources: platform.claude.com/docs/en/build-with-claude/extended-thinking and
+     * /effort, checked 2026-09-18; /about-claude/models/overview for the defaults, checked 2026-09-23.
      */
     ADAPTIVE_THINKING,
+
+    /**
+     * Reasoning cannot be switched off: the «off» position sends the model's lowest level instead.
+     *
+     * On these models an omitted field is not «no reasoning» but the vendor's default level, and the explicit switch is
+     * refused: Claude Opus 5.5 and the Fable and Mythos 5 lines answer 400 to `thinking: {"type": "disabled"}` and
+     * think at `medium` or `high` when nothing is sent; GPT-6 Astra answers 400 to `reasoning_effort: "none"`. Sending
+     * nothing keeps the promise of «off» on the screen only — the person pays for a level they switched off.
+     */
+    THINKING_ALWAYS_ON,
+
+    /**
+     * «Off» is `thinking: {"type": "disabled"}`, Anthropic's switch: without it the model reasons by default.
+     *
+     * Sent on the Anthropic wire only — a router speaking chat/completions has its own spelling, and a field it does not
+     * know is a guess. A vendor that documents this field on chat/completions declares it in its `providers.json` entry.
+     */
+    OFF_THINKING_DISABLED,
+
+    /** «Off» is `reasoning_effort: "none"` (chat/completions wire only): without it the model reasons at its default. */
+    OFF_EFFORT_NONE,
+
+    /**
+     * The model takes no reasoning level: reasoning is a switch, on by default, and the dial's positions above «off»
+     * send nothing. The only level field we could send would be one the vendor does not document.
+     */
+    NO_REASONING_LEVELS,
 
     /** The system role is not accepted; the instruction has to travel as the first user message. */
     NO_SYSTEM_ROLE,
@@ -132,18 +160,35 @@ object ModelQuirks {
       "minimax: top_k and stop_sequences are ignored by the Anthropic-compatible endpoint",
     ),
     Rule(
-      // Линейка 5 и Opus 4.7/4.8: бюджет токенов отвергается с 400, нужен адаптивный режим с
-      // уровнем усилия. Регулярка покрывает fable-5, fable-5-1, mythos-5, mythos-5-1, opus-5,
-      // sonnet-5 — и НЕ покрывает 4.5/4.6, где адаптивного режима нет вовсе.
-      // platform.claude.com/docs/en/build-with-claude/extended-thinking, сверено 18.09.2026.
+      // The 5 line and Opus 4.7/4.8 reject a token budget with 400 and take the adaptive mode with an effort level;
+      // the pattern covers fable-5, fable-5-1, mythos-5, mythos-5-1, opus-5, opus-5-5 and sonnet-5, and stops short of
+      // 4.5/4.6, which reject the adaptive mode instead (platform.claude.com/docs/en/build-with-claude/extended-thinking,
+      // checked 2026-09-18). The same models reject `temperature`, `top_p` and `top_k` with 400
+      // (platform.claude.com/docs/en/models/opus-5-5/migration-guide, checked 2026-09-23).
       Regex("^claude-(opus|sonnet|fable|mythos)-5"),
-      setOf(Quirk.ADAPTIVE_THINKING),
-      "claude 5: thinking is adaptive plus output_config.effort; a token budget is rejected",
+      setOf(Quirk.ADAPTIVE_THINKING, Quirk.NO_SAMPLING),
+      "claude 5: thinking is adaptive plus output_config.effort; a token budget and sampling knobs are rejected",
     ),
     Rule(
       Regex("^claude-opus-4-(7|8)"),
-      setOf(Quirk.ADAPTIVE_THINKING),
-      "claude opus 4.7/4.8: thinking is adaptive plus output_config.effort; a token budget is rejected",
+      setOf(Quirk.ADAPTIVE_THINKING, Quirk.NO_SAMPLING),
+      "claude opus 4.7/4.8: thinking is adaptive plus output_config.effort; a token budget and sampling knobs are rejected",
+    ),
+    Rule(
+      // Thinking is always on: `{"type": "disabled"}` is a 400, and an omitted field runs the default level — `medium`
+      // on Opus 5.5, `high` on Fable and Mythos (platform.claude.com/docs/en/about-claude/models/overview and
+      // /models/opus-5-5/migration-guide, checked 2026-09-23).
+      Regex("^claude-(opus-5-5|fable-5|mythos-5)"),
+      setOf(Quirk.THINKING_ALWAYS_ON),
+      "claude opus 5.5, fable 5, mythos 5: thinking cannot be switched off; «off» sends the lowest effort",
+    ),
+    Rule(
+      // Thinking is on by default here too, but the switch is accepted: Opus 5 takes `{"type": "disabled"}` at effort
+      // `high` or below, which is where «off» leaves it, and Sonnet 5 always (the thinking pages of
+      // platform.claude.com, checked 2026-09-23). Exact ids: a later model of the line has to be read, not assumed.
+      Regex("^claude-(opus|sonnet)-5$"),
+      setOf(Quirk.OFF_THINKING_DISABLED),
+      "claude opus 5, sonnet 5: thinking is on by default; «off» sends thinking.type disabled",
     ),
     Rule(
       // GPT-6 Astra, documented by the vendor on the day it shipped: `temperature`, `top_p` and
@@ -154,6 +199,20 @@ object ModelQuirks {
       Regex("^gpt-6"),
       setOf(Quirk.NO_SAMPLING, Quirk.MAX_COMPLETION_TOKENS),
       "gpt-6: the model sets its own sampling, and the answer limit is named differently",
+    ),
+    Rule(
+      // Astra refuses `reasoning_effort: "none"` with 400, and chat/completions does not support function calling with
+      // it at all (developers.openai.com/api/docs/guides/reasoning, checked 2026-09-23).
+      Regex("^gpt-6-astra"),
+      setOf(Quirk.THINKING_ALWAYS_ON, Quirk.NO_TOOLS),
+      "gpt-6 astra: reasoning cannot be switched off, and chat/completions takes no tools with it",
+    ),
+    Rule(
+      // Sol and Luna reason at `medium` unless told `none`, and on chat/completions they call functions ONLY at `none`
+      // (developers.openai.com/api/docs/models/gpt-6-sol and /gpt-6-luna, checked 2026-09-23).
+      Regex("^gpt-6-(sol|luna)"),
+      setOf(Quirk.OFF_EFFORT_NONE),
+      "gpt-6 sol, luna: reasoning is on by default; «off» sends reasoning_effort none",
     ),
     Rule(
       Regex("^gpt-5"),
@@ -195,6 +254,14 @@ object ModelQuirks {
       "mimo v2.6: in thinking mode the vendor overrides temperature and top_p, so we do not send them",
     ),
     Rule(
+      // MiMo's thinking is a switch, `thinking: {"type": "enabled" | "disabled"}`, on by default; its chat/completions
+      // reference lists no effort field at all (mimo.mi.com/docs, api/chat/openai-api, checked 2026-09-23). The «off»
+      // spelling travels in the providers.json entry: this vendor documents `thinking` on both wires.
+      Regex("^mimo-v2\\.6"),
+      setOf(Quirk.NO_REASONING_LEVELS),
+      "mimo v2.6: reasoning has no levels, only on and off",
+    ),
+    Rule(
       // DeepSeek ставит то же условие и ровно так же обусловливает его инструментами: «with `tools`,
       // the `reasoning_content` of all previous turns should be passed back», без инструментов
       // возвращать не нужно и присланное будет проигнорировано
@@ -234,6 +301,26 @@ object ModelQuirks {
 
   fun has(modelId: String, quirk: Quirk, overrides: List<Rule> = emptyList()): Boolean =
     quirk in quirksOf(modelId, overrides)
+
+  /**
+   * What the catalogue knows about switching this model's reasoning off, in the shape a `providers.json` entry declares
+   * it; null when it knows nothing. An entry's own declaration wins field by field ([ReasoningMode.merged]).
+   *
+   * A spelling is offered only on the wire it belongs to: the same model behind a router speaks the router's dialect.
+   */
+  fun reasoningOf(modelId: String, wire: String, overrides: List<Rule> = emptyList()): ReasoningMode.Support? {
+    val quirks = quirksOf(modelId, overrides)
+    return when {
+      Quirk.THINKING_ALWAYS_ON in quirks -> ReasoningMode.Support(canTurnOff = false)
+      Quirk.OFF_THINKING_DISABLED in quirks && wire == WIRE_ANTHROPIC -> ReasoningMode.Support(off = THINKING_DISABLED)
+      Quirk.OFF_EFFORT_NONE in quirks && wire == WIRE_OPENAI -> ReasoningMode.Support(off = EFFORT_NONE)
+      else -> null
+    }
+  }
+
+  private val THINKING_DISABLED: JsonObject = buildJsonObject { put("thinking", buildJsonObject { put("type", "disabled") }) }
+
+  private val EFFORT_NONE: JsonObject = buildJsonObject { put("reasoning_effort", "none") }
 
   fun supportsStreaming(modelId: String, overrides: List<Rule> = emptyList()): Boolean =
     !has(modelId, Quirk.NO_STREAMING, overrides)
