@@ -19,6 +19,7 @@ manuals/httpClientSpec.md
 manuals/inboxSpec.md
 manuals/langFileSpec.md
 manuals/languageServers.md
+manuals/liveCheck.md
 manuals/mcpServersSpec.md
 manuals/mcpSpec.md
 manuals/modelQuirksSpec.md

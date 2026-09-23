@@ -26,6 +26,7 @@
 - [manuals/httpClientSpec.md](manuals/httpClientSpec.md) — спека формата `.http` и окружений: как писать запросы и чем они выполняются (самодостаточная, для LLM).
 - [manuals/dataSourcesSpec.md](manuals/dataSourcesSpec.md) — спека `.vibe/dataSources.json`: подключения к БД, драйверы, пределы панели (самодостаточная, для LLM).
 - [manuals/acpSmoke.md](manuals/acpSmoke.md) — ручной чек-лист живого прогона ACP (12 шагов): то, что подделкой агента не проверить.
+- [manuals/liveCheck.md](manuals/liveCheck.md) — очередь проверок руками по сборкам: что тесты и гейты увидеть не могут; проверенное вычёркивается, итог — строкой в roadmap.
 - [manuals/languageServers.md](manuals/languageServers.md) — как поставить vtsls/Phpactor для TS/PHP.
 - [manuals/acpAgentsSpec.md](manuals/acpAgentsSpec.md) — спека реестра ACP-агентов `~/.jetbrains/acp.json` (самодостаточная, для LLM).
 - [manuals/providersSpec.md](manuals/providersSpec.md) — спека `providers.json`: свои LLM-провайдеры для прямого чата (самодостаточная, для LLM).
