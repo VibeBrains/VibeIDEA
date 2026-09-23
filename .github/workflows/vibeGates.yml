@@ -1,20 +1,23 @@
-# Гейты форка VibeIDEA. Это НАШ workflow, апстримовские рядом не трогаются.
+# Gates of the VibeIDEA fork. This is OUR workflow; the upstream ones next to it are left alone.
 #
-# Сюда попадает только то, что честно проходит на бесплатном раннере за минуты: проверки
-# исходников на bash и python. Сборка инсталлятора требует около сотни гигабайт диска и часа
-# времени — она остаётся локальной, и обещать её в CI было бы обманом.
+# CI runs every gate that reads sources only: bash and python, a couple of minutes on a free runner.
+#
+# What needs a Bazel build of vibe-agent runs locally only, where it is mandatory before every commit: the hint wrap
+# measurement (block 8б of checkVibeUi.sh, which --no-build skips here and says so in the log), the seeds smoke
+# (checkVibeSeeds.sh), the docs slop ratchet (checkVibeSlop.sh) and the unit tests. On this runner no Bazel target
+# gets past analysis: the project model reads the android/ clone, which lives outside this repository. A build here
+# would need that clone at the matching upstream tag, a cold build of about 1160 actions and the external
+# dependencies fetched again on every run; upstream's own workflow frees disk, adds 30 GB of swap and builds in
+# Docker for that. It is the machinery of the installer build, and this workflow does not promise it.
+#
+# There is no path filter on push: the gates read more than vibe-plugins and docs (the platform patches, the
+# installer background and the version under vibeidea-customization), and a list of paths would be a second account
+# of their inputs, one that drifts without a sound.
 name: Vibe gates
 
 on:
   push:
     branches: [main, next]
-    paths:
-      - 'vibe-plugins/**'
-      - 'docs/vibe/**'
-      - 'README.md'
-      - 'CLAUDE.md'
-      - 'FORK_CHANGES.md'
-      - '.github/workflows/vibeGates.yml'
   pull_request:
     branches: [main, next]
   workflow_dispatch:
@@ -26,14 +29,14 @@ jobs:
       - uses: actions/checkout@v5
         id: checkout
         with:
-          # Сабмодуль с общими сидами: гейт манифеста сверяет его содержимое со списком в коде.
+          # The shared seeds submodule: the config fields gate checks that every key in the seeds has a consumer.
           submodules: true
 
       # Every gate runs even after an earlier one failed, and the job is still red if any of them did: a failing
       # step must not hide the verdicts behind it. Only a failed checkout stops them, since there is nothing to read.
-      - name: Тонкие скроллы
+      - name: Интерфейс — скроллы, настройки, темы (без замера сборкой)
         if: ${{ !cancelled() && steps.checkout.outcome == 'success' }}
-        run: ./vibe-plugins/tools/checkVibeUi.sh
+        run: ./vibe-plugins/tools/checkVibeUi.sh --no-build
 
       - name: Каталог строк и храповик
         if: ${{ !cancelled() && steps.checkout.outcome == 'success' }}
@@ -46,6 +49,18 @@ jobs:
       - name: Целостность документации
         if: ${{ !cancelled() && steps.checkout.outcome == 'success' }}
         run: ./vibe-plugins/tools/checkVibeDocs.sh
+
+      - name: Мёртвые поля конфигов
+        if: ${{ !cancelled() && steps.checkout.outcome == 'success' }}
+        run: ./vibe-plugins/tools/checkVibeConfigFields.sh
+
+      - name: Мёртвые импорты
+        if: ${{ !cancelled() && steps.checkout.outcome == 'success' }}
+        run: ./vibe-plugins/tools/checkVibeImports.sh
+
+      - name: Модель проекта — .iml и BUILD.bazel
+        if: ${{ !cancelled() && steps.checkout.outcome == 'success' }}
+        run: ./vibe-plugins/tools/checkVibeModules.sh
 
       - name: Язык комментариев — храповик
         if: ${{ !cancelled() && steps.checkout.outcome == 'success' }}
