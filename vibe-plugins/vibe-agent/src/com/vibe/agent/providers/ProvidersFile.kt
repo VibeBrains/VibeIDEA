@@ -156,6 +156,12 @@ data class ProviderEntry(
   val note: String? = null,
   val origin: ProviderOrigin? = null,
   val quota: QuotaSpec? = null,
+  /**
+   * The endpoint accepts `prompt_cache_key` (OpenAI, xAI): the chat sends a key that stays the same over one
+   * conversation ([PromptCacheKey]). Null — not declared, and nothing is sent: strict OpenAI-compatible vendors answer
+   * 400 to a field they do not know. Tri-state so that a layer which does not mention it keeps the base's word.
+   */
+  val promptCacheKey: Boolean? = null,
 )
 
 object ProvidersFile {
@@ -345,6 +351,7 @@ object ProvidersFile {
       models = models,
       note = o["note"]?.jsonPrimitive?.contentOrNull,
       quota = parseQuota(o["quota"] as? JsonObject, id, onWarning),
+      promptCacheKey = o["promptCacheKey"]?.jsonPrimitive?.booleanOrNull,
     )
   }
 
@@ -480,6 +487,7 @@ object ProvidersFile {
       models = mergedModels.values.toList(),
       note = over.note ?: base.note,
       quota = over.quota ?: base.quota,
+      promptCacheKey = over.promptCacheKey ?: base.promptCacheKey,
     )
   }
 }
