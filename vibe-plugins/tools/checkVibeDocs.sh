@@ -5,11 +5,14 @@
 # строкой в дерево docs/vibe/README.md». Правило без проверки живёт до первой спешки, а находят
 # такую пропажу через месяцы: файл лежит, его никто не читает, и вопрос решается второй раз с нуля.
 #
-# Четыре проверки, каждая падает на реальном нарушении:
+# Семь проверок, каждая падает на реальном нарушении:
 #   1. запись базы знаний без строки в индексе knowledge/README.md;
 #   2. строка индекса, ведущая на несуществующий файл;
 #   3. мануал, не упомянутый в дереве docs/vibe/README.md;
-#   4. битая относительная ссылка на .md внутри docs/vibe.
+#   4. битая относительная ссылка на .md внутри docs/vibe;
+#   5. список возможностей зовёт к действию, которого нет;
+#   6. справка в сборке разошлась с docs/vibe;
+#   7. число правил дизайн-детектора в документах разошлось с каталогом в коде.
 set -euo pipefail
 cd "$(dirname "$0")/../.."
 . vibe-plugins/tools/pythonBin.sh
@@ -124,6 +127,8 @@ if missing:
 print("  список возможностей: упомянуто действий %d, все объявлены" % len(mentioned))
 PYTOUR
 
+# --- 6: справка в сборке против docs/vibe ---
+#
 # Справка ВНУТРИ сборки — копия docs/vibe (симлинк в дистрибутиве стал бы битой ссылкой). Копия
 # расходится молча: тест HelpBundleTest проверял наличие файлов и длину, но не совпадение, и
 # 08.09.2026 пользователь читал бы в собранной IDE, что потолки шага «пока не применяются», хотя
@@ -155,6 +160,59 @@ if drifted:
     sys.exit(1)
 print("  справка в сборке: %d файлов, все совпадают с docs/vibe" % len(pairs))
 PYHELP
+
+# --- 7: число правил дизайн-детектора в документах против каталога в коде ---
+#
+# Число правил называют README, каталог возможностей, сверка с VibeIDE и список возможностей в IDE. Оно
+# уже расходилось дважды: README держал 81, когда правил стало 85, а каталог возможностей записал 86 —
+# сложив пять изменений коммита, из которых новых правил было четыре. Считать надо id каталога, а не
+# правки. Другие документы число не повторяют, а ссылаются на эти или на «проверку дизайн-контура».
+"$PYTHON" - <<'PYRULES' || fail=1
+import io, re, sys
+
+CATALOG = 'vibe-plugins/vibe-agent/src/com/vibe/agent/design/DesignRuleCatalog.kt'
+# Where each document states the number. An anchor that finds nothing fails the gate: a document rewritten
+# without the number must not quietly switch the check off.
+CLAIMS = [
+    ('README.md', r'\*\*Дизайн-детектор\.\*\* (\d+) правил\w*'),
+    ('docs/vibe/functional.md', r'проверяется (\d+) детерминированн\w* правил\w*'),
+    ('docs/vibe/parityVibeIde.md', r'\| Детекторы качества \| ✅ \| \*\*(\d+) правил\w*'),
+    ('vibe-plugins/vibe-agent/resources/features/tour.md', r'измерение страницы по (\d+) правил\w*'),
+]
+
+source = io.open(CATALOG, encoding='utf-8').read()
+declared = set(re.findall(r'^\s*const val ([A-Z][A-Z0-9_]*) = "[^"]+"', source, re.M))
+listed = re.search(r'val ALL: List<String> = listOf\((.*?)\n\s*\)', source, re.S)
+if not listed:
+    print('✖ не разобран список DesignRuleCatalog.ALL в ' + CATALOG + ' — разбор в этом гейте надо поправить вместе с кодом')
+    sys.exit(1)
+names = [n.strip() for n in re.sub(r'//[^\n]*', '', listed.group(1)).split(',') if n.strip()]
+# Every entry must be a declared id: anything else means the parse no longer matches the code, and a
+# count taken from it would be a guess.
+unknown = [n for n in names if n not in declared]
+repeated = sorted({n for n in names if names.count(n) > 1})
+if unknown or repeated:
+    if unknown:
+        print('✖ в списке ALL не id правил (разбор разошёлся с кодом): ' + ', '.join(unknown))
+    if repeated:
+        print('✖ правило дважды в списке ALL: ' + ', '.join(repeated))
+    sys.exit(1)
+total = len(names)
+
+problems = []
+for path, pattern in CLAIMS:
+    found = re.findall(pattern, io.open(path, encoding='utf-8').read())
+    if len(found) != 1:
+        problems.append(f'{path}: число правил не найдено по якорю (совпадений {len(found)}) — документ переписан? поправьте якорь в этом гейте')
+    elif int(found[0]) != total:
+        problems.append(f'{path}: {found[0]}, а в каталоге кода {total}')
+if problems:
+    print('✖ число правил дизайн-детектора в документах разошлось с DesignRuleCatalog.ALL:')
+    for problem in problems:
+        print('   ', problem)
+    sys.exit(1)
+print(f'  число правил дизайн-детектора: {total} в коде и во всех {len(CLAIMS)} документах')
+PYRULES
 
 if [ "$fail" -ne 0 ]; then
   say "Гейт документации: ПРОВАЛЕН"

@@ -11,6 +11,7 @@ on:
     paths:
       - 'vibe-plugins/**'
       - 'docs/vibe/**'
+      - 'README.md'
       - 'CLAUDE.md'
       - 'FORK_CHANGES.md'
       - '.github/workflows/vibeGates.yml'
