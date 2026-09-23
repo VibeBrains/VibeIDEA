@@ -34,6 +34,9 @@ object RolePaths {
     val stated: Boolean get() = allow.isNotEmpty() || deny.isNotEmpty()
   }
 
+  /** A boundary that refuses every write, for a turn that must not change the project. */
+  val NOTHING: Scope = Scope(deny = listOf(ANY))
+
   /**
    * Можно ли шагу писать в [relativePath] (путь от корня проекта, разделители `/`).
    *

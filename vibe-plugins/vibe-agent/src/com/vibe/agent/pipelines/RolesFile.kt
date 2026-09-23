@@ -30,7 +30,6 @@ object RolesFile {
   fun path(projectBase: String): Path = Path.of(projectBase, ".vibe", "roles.json")
 
   private val BUILT_IN = RolePaths.Scope(allow = RolePaths.TEST_PATHS)
-  private val NOTHING = RolePaths.Scope(deny = listOf("**"))
 
   /** The scope `qa` gets by default in this project. Pure over the text; [load] adds the disk. */
   fun qaScope(text: String?, onWarning: (String) -> Unit): RolePaths.Scope {
@@ -48,7 +47,7 @@ object RolesFile {
     }
     if (list.isEmpty()) {
       onWarning(t("roles.warn.emptyWritePaths"))
-      return NOTHING
+      return RolePaths.NOTHING
     }
     return RolePaths.Scope(allow = list)
   }

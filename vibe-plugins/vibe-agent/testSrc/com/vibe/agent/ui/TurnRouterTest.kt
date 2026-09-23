@@ -3,6 +3,7 @@ package com.vibe.agent.ui
 
 import com.vibe.agent.pipelines.RolePaths
 import java.awt.Component
+import java.util.concurrent.ConcurrentHashMap
 import javax.swing.JComponent
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -54,6 +55,16 @@ class TurnRouterTest {
     router.register(first)
     router.register(second)
     assertSame(second, router.of("chat-session"))
+  }
+
+  @Test
+  fun `during a run a write from a session no step owns is refused`() {
+    val router = TurnRouter(TurnState.whileRunning(ConcurrentHashMap.newKeySet(), nowhere))
+    router.register(step("backend-dev", "s-backend", "server/**"))
+    // The step's own session writes under its boundary; any other session — the chat's included — writes nowhere.
+    assertTrue(RolePaths.mayWrite("server/api.ts", router.of("s-backend").scope))
+    assertFalse(RolePaths.mayWrite("server/api.ts", router.of("chat-session").scope))
+    assertFalse(RolePaths.mayWrite("README.md", router.of(null).scope))
   }
 
   @Test

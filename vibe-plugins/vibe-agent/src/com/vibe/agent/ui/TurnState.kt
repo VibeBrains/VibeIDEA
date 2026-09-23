@@ -79,6 +79,18 @@ internal class TurnState(
   @Volatile var llm: LlmClient? = null
   @Volatile var usage: TokenUsage = TokenUsage.NONE
   @Volatile var pricing: ModelPricing? = null
+
+  companion object {
+    /**
+     * The chat's turn while a pipeline runs: it writes nothing.
+     *
+     * Every step writes through its own registered session, a shared step included, so a write that reaches the chat's
+     * turn during a run comes from a session no step owns. Were the chat's turn unrestricted, such a write would escape
+     * the boundary of the step that is running.
+     */
+    fun whileRunning(signals: MutableSet<Trifecta.Signal>, feed: TurnFeed): TurnState =
+      TurnState(role = null, scope = RolePaths.NOTHING, signals = signals, feed = feed)
+  }
 }
 
 /** Where the rows of a turn go. The UI thread only. */

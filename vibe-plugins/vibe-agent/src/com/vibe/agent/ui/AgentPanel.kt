@@ -348,6 +348,9 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
   /** A fresh turn of the chat in [threadId]; its trifecta signals are the thread's, which add up over its turns. */
   private fun chatTurn(threadId: String): TurnState = TurnState(role = null, signals = threadSignals(threadId), feed = mainFeed)
 
+  /** The chat's turn while a pipeline runs; see [TurnState.whileRunning]. */
+  private fun pipelineChatTurn(threadId: String): TurnState = TurnState.whileRunning(threadSignals(threadId), mainFeed)
+
   private val composer = ComposerPanel(project, this, object : ComposerPanel.Listener {
     override fun onSend(message: ComposedMessage): Boolean = run {
       // The person spoke: the autopilot's stretch of unattended turns starts counting again, and
@@ -4845,12 +4848,12 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     composer.busy = true
     showWorking(WorkingLine.Kind.THINKING)
     turnThreadId = currentThreadId
-    turns.chat = chatTurn(currentThreadId)
+    turns.chat = pipelineChatTurn(currentThreadId)
     ApplicationManager.getApplication().executeOnPooledThread {
       var planned: List<com.vibe.agent.pipelines.PipelineStep>? = null
       val turn = TurnState(
         role = drafting.role,
-        scope = com.vibe.agent.pipelines.RolePaths.Scope(deny = listOf("**")),
+        scope = com.vibe.agent.pipelines.RolePaths.NOTHING,
         label = t("pipeline.plan.title"),
         signals = untrustedSignals(),
         feed = mainFeed,
@@ -4945,7 +4948,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     composer.busy = true
     showWorking(WorkingLine.Kind.THINKING)
     turnThreadId = currentThreadId
-    turns.chat = chatTurn(currentThreadId)
+    turns.chat = pipelineChatTurn(currentThreadId)
     markConversationStarted()
     history.append(currentThreadId, ChatMessageRecord(Role.USER, t("pipeline.userLine", "name" to pipeline.name, "count" to pipeline.steps.size), at = nowIso()))
     ApplicationManager.getApplication().executeOnPooledThread {
