@@ -2,29 +2,27 @@
 package com.vibe.lsp
 
 /**
- * Кого трогать после смены ветки — чистое решение, отдельно от самой работы.
+ * Which servers to touch after a branch switch — a pure decision, apart from the work itself.
  *
- * Зачем правило, а не «перезапустить всё». Языковой сервер держит СВОЮ модель проекта, собранную
- * при старте: разобранные файлы, зависимости, конфигурацию. `git checkout` меняет файлы под ним
- * массово и молча, и сервер продолжает отвечать по прежнему миру — подсказки из другой ветки,
- * ошибки на строках, которых уже нет. PhpStorm на этом месте честно показывает переиндексацию
- * (скриншот владельца, 21.09.2026), а у нас не было ни переиндексации, ни уведомления.
+ * A language server keeps ITS OWN model of the project, built at start: parsed files, dependencies, configuration.
+ * `git checkout` changes the files under it massively and silently, and the server keeps answering for the old
+ * world — completions from another branch, errors on lines that no longer exist.
  *
- * Но перезапуск не бесплатен: на большом проекте это десятки секунд, в которые нет ни подсказок,
- * ни перехода. Поэтому трогаем **только уже запущенные** серверы: не запущенный сервер ничего не
- * помнит и соберёт свою модель сам, когда понадобится, — перезапускать нечего.
+ * A restart is not free, though: on a large project it means tens of seconds without completion or navigation. So
+ * **only running** servers are touched: a server that is not running remembers nothing and builds its model on its
+ * own when needed.
  */
 object BranchSwitchRefresh {
-  /** Наши серверы: идентификаторы ровно те, под которыми они зарегистрированы у LSP4IJ. */
+  /** Our servers, by the exact ids they are registered under in LSP4IJ. */
   val SERVER_IDS: List<String> = listOf(
     "vibeVtsls", "vibeAngular", "vibePhp", "vibeCss", "vibeStylus", "vibeSomeSass",
     "vibeVue", "vibeSvelte", "vibeAstro", "vibeTailwind", "vibeEslint",
   )
 
   /**
-   * Кого перезапускать.
+   * Which servers to restart.
    *
-   * @param running какие из наших серверов сейчас работают
+   * @param running which of our servers are running now
    */
   fun toRestart(running: Set<String>): List<String> = SERVER_IDS.filter { it in running }
 }

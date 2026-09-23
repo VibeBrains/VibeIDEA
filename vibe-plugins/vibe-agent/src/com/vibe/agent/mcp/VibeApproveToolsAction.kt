@@ -10,17 +10,16 @@ import com.vibe.agent.i18n.VibeI18n.t
 import com.vibe.agent.providers.ToolSpec
 
 /**
- * «Подтвердить инструменты MCP-сервера» — принять изменившийся набор осознанно.
+ * "Confirm MCP server tools" — accept a changed tool set deliberately.
  *
- * Без этого действия защита от подмены описаний ([ToolFingerprint]) стала бы ловушкой: сервер,
- * честно обновивший свои инструменты, остался бы без них навсегда, и единственным выходом было бы
- * удалить его из файла и завести заново.
+ * Without this action the description-swap guard ([ToolFingerprint]) would become a trap: a server that updated its
+ * tools honestly would lose them for good, and the only way out would be removing it from the file and adding it back.
  *
- * Действие, а не кнопка в ленте: подтверждать приходят после того, как ПОСМОТРЕЛИ изменения, и это
- * отдельный шаг во времени, а не реакция на строку.
+ * An action rather than a button in the feed: people confirm after they have LOOKED at the changes, which is a separate
+ * step in time, not a reflex to a line of text.
  *
- * Набор перечитывается здесь заново, а не берётся из памяти панели: подтверждать надо то, что
- * сервер отдаёт сейчас, иначе человек соглашается с прошлым снимком.
+ * The set is re-read from the server here rather than taken from the panel's memory: what gets confirmed must be what
+ * the server returns now, otherwise the person agrees to a stale snapshot.
  */
 class VibeApproveToolsAction : DumbAwareAction() {
   override fun getActionUpdateThread(): ActionUpdateThread = ActionUpdateThread.BGT
@@ -58,7 +57,7 @@ class VibeApproveToolsAction : DumbAwareAction() {
     }
   }
 
-  /** Спросить у сервера его нынешний набор — отдельным коротким подключением. */
+  /** Ask the server for its current set over a separate short-lived connection. */
   private fun read(entry: McpServersFile.Entry, base: String?): List<ToolSpec> {
     val dir = base?.let { java.nio.file.Path.of(it) }
     val version = com.intellij.openapi.application.ApplicationInfo.getInstance().fullVersion

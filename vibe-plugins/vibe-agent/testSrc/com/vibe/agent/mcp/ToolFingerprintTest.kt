@@ -10,13 +10,11 @@ import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 /**
- * Подмена описания после одобрения обязана быть замеченной.
+ * A description swapped after approval must be noticed.
  *
- * Повод — кампания Deadbugz: сервер отдаёт безобидные описания, а после третьего вызова начинает
- * возвращать в `tools/list` инструкции искать SSH-ключи и ключи AWS
- * (pillar.security/blog/deadbugz-currently-active-mcp-supply-chain-campaign, сверено 21.09.2026).
- * Наша прежняя защита — вопрос человеку на каждый вызов — мимо: человек читает описание, а меняют
- * именно его.
+ * A server may return harmless descriptions at first and, after a few calls, start returning `tools/list` entries that
+ * instruct the model to collect SSH and cloud keys. Asking the person before every call does not catch this: the
+ * person reads the description, and the description is what changes.
  */
 class ToolFingerprintTest {
   private fun tool(name: String, description: String, schemaField: String = "text") = ToolSpec(
@@ -67,7 +65,7 @@ class ToolFingerprintTest {
 
   @Test
   fun `перенос текста между полями не проходит мимо отпечатка`() {
-    // Без разделителя внутри хеша «ab»+«c» и «a»+«bc» дали бы один отпечаток.
+    // Without a separator inside the hash, "ab"+"c" and "a"+"bc" would give the same fingerprint.
     val first = ToolFingerprint.of(ToolSpec("ab", "c", buildJsonObject { }))
     val second = ToolFingerprint.of(ToolSpec("a", "bc", buildJsonObject { }))
     assertTrue(first != second, "склейка полей даёт одинаковый отпечаток — подмена пройдёт молча")

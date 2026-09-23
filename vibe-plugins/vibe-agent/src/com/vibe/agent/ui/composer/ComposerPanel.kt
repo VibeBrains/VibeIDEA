@@ -8,12 +8,12 @@ import com.intellij.ide.PasteProvider
 import com.intellij.openapi.Disposable
 import com.intellij.openapi.actionSystem.ActionUpdateThread
 import com.intellij.openapi.actionSystem.AnActionEvent
+import com.intellij.openapi.actionSystem.CustomShortcutSet
 import com.intellij.openapi.actionSystem.DataContext
 import com.intellij.openapi.actionSystem.DataSink
 import com.intellij.openapi.actionSystem.PlatformDataKeys
 import com.intellij.openapi.actionSystem.UiDataProvider
 import com.intellij.openapi.ide.CopyPasteManager
-import com.intellij.openapi.actionSystem.CustomShortcutSet
 import com.intellij.openapi.project.DumbAwareAction
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.vfs.LocalFileSystem
@@ -124,12 +124,10 @@ class ComposerPanel(
   private val statusDot = StatusDot()
 
   /**
-   * Командная полоска НАД вводом: что агент изменил, кнопки работы с разговором и состояние.
+   * The command strip ABOVE the input: what the agent changed and the conversation buttons.
    *
-   * Так у VibeIDE, и причина у места простая: ряд пилюль под вводом — это «чем и как идёт ход»
-   * (модель, права, микрофон), а «что уже сделано и как это забрать» — другая мысль, и мешать их
-   * в одну строку значит получить строку, которая переносится на вторую (владелец поймал перенос
-   * «Готово» на скриншоте 0.6.7).
+   * The pill row under the input answers "how the turn runs" (model, permissions, microphone), while "what is done
+   * and how to take it" is a different thought; mixing them in one row produces a row that wraps onto a second line.
    */
   private val changedFilesLabel = javax.swing.JLabel().apply {
     font = com.intellij.util.ui.JBFont.label().deriveFont(java.awt.Font.PLAIN, 11f)
@@ -206,10 +204,10 @@ class ComposerPanel(
   fun usageAnchor(): javax.swing.JComponent = contextRing
 
   /**
-   * Полоска над вводом: что изменено и кнопки работы с разговором.
+   * The strip above the input: what changed and the conversation buttons.
    *
-   * Собственной строкой, а не частью ряда пилюль: у ряда пилюль перенос по ширине, и полоска
-   * уезжала на вторую строку, отрываясь от всего остального.
+   * A line of its own rather than part of the pill row: the pill row wraps by width, and the strip used to drop to a
+   * second line, torn away from everything else.
    */
   private fun commandStrip(): JPanel = JPanel(FlowLayout(FlowLayout.LEFT, JBUI.scale(PILL_GAP), 0)).apply {
     isOpaque = false
@@ -224,15 +222,14 @@ class ComposerPanel(
   }
 
   /**
-   * Состояние — СВОЕЙ строкой над полоской действий, на всю ширину панели.
+   * The status on a line of ITS OWN above the action strip, across the full panel width.
    *
-   * Раньше оно жило в `BorderLayout.EAST` той же строки, и у длинного имени инструмента не было
-   * выбора: `BorderLayout` при нехватке ширины не сжимает и не переносит — он кладёт восточного
-   * соседа поверх западного. «Готово» помещалось, «Инструмент: Выполнить команду — npm install -g
-   * @vtsls/language-server» — нет, и человек видел две строки поверх друг друга (21.09.2026).
+   * In `BorderLayout.EAST` of the action strip a long tool name had nowhere to go: when width runs out, `BorderLayout`
+   * neither shrinks nor wraps — it draws the eastern neighbour over the western one. A short "Ready" fits; a command
+   * line as a tool name does not, and the two strips end up on top of each other.
    *
-   * Своя строка снимает соревнование за ширину, а усечение в [StatusDot] закрывает остаток: даже
-   * в одиночку длинная фраза не вылезет за край, а скажет многоточием, что сказано не всё.
+   * A line of its own removes the competition for width, and truncation in [StatusDot] covers the rest: even alone,
+   * a long phrase does not run past the edge but ends with an ellipsis.
    */
   private fun statusStrip(): JPanel = JPanel(BorderLayout()).apply {
     isOpaque = false
@@ -646,10 +643,10 @@ class ComposerPanel(
   private val composerPaste = ComposerPaste()
 
   /**
-   * Взять на себя содержимое буфера (или перетаскивания), если оно наше. EDT.
+   * Take the clipboard (or drop) contents if they are ours. EDT.
    *
-   * Общий вход для обоих путей вставки — обработчика Swing и действия вставки IDE. Возвращает
-   * `false`, когда в буфере нет ничего нашего: тогда вставку делает поле ввода своим порядком.
+   * The shared entry for both paste paths — the Swing handler and the IDE paste action. Returns `false` when there is
+   * nothing of ours, and the input field then pastes the usual way.
    */
   private fun acceptClipboard(transferable: Transferable?): Boolean =
     when (val kind = ClipboardContent.of(transferable)) {
@@ -673,24 +670,23 @@ class ComposerPanel(
     }
 
   /**
-   * Отдать платформе наш обработчик вставки: через него приходит действие `${'$'}Paste` IDE.
+   * Give the platform our paste provider: the IDE's `$Paste` action comes through it.
    *
-   * Панель отдаёт его за всё своё поддерево, поэтому нажатие в поле ввода находит его снизу вверх.
+   * The panel provides it for its whole subtree, so a keystroke in the input field finds it walking up the hierarchy.
    */
   override fun uiDataSnapshot(sink: DataSink) {
     sink[PlatformDataKeys.PASTE_PROVIDER] = composerPaste
   }
 
   /**
-   * Второй вход вставки: действие IDE.
+   * The second paste entry: the IDE action.
    *
-   * `Cmd+V`/`Ctrl+V` над полем ввода может не дойти до Swing — платформа раздаёт сочетания через
-   * свой диспетчер, и что именно перехватит нажатие, зависит от контекста. Пока вставка картинки
-   * жила только в обработчике Swing, у владельца не работал ни скриншот, ни копирование из
-   * браузера: снаружи это ровно одно и то же — «нажал и ничего».
+   * `Cmd+V`/`Ctrl+V` over the input field may never reach Swing — the platform dispatches shortcuts itself, and what
+   * handles the keystroke depends on context. With image paste living only in the Swing handler, neither a screenshot
+   * nor a browser copy worked, and from outside both look the same: pressed, nothing happened.
    *
-   * Поэтому панель отдаёт собственный обработчик вставки. Он берёт на себя только наше (картинку
-   * и файлы) и честно отвечает «не моё» на текст — тогда работает обычная текстовая вставка.
+   * So the panel provides its own paste handler. It takes only what is ours (images and files) and honestly answers
+   * "not mine" for text, so plain text paste keeps working as usual.
    */
   private inner class ComposerPaste : PasteProvider {
     override fun getActionUpdateThread(): ActionUpdateThread = ActionUpdateThread.EDT

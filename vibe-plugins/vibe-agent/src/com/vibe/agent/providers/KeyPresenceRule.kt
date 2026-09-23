@@ -2,25 +2,24 @@
 package com.vibe.agent.providers
 
 /**
- * Как отвечать на вопрос «есть ли сохранённый ключ» — чистое правило, отдельно от хранилищ.
+ * How to answer "is there a stored key" — a pure rule, apart from any storage.
  *
- * Вынесено ради измеримости: ветка «не macOS» на машине разработчика иначе недостижима, а именно
- * она и была сломана. Прежний код сворачивал «спросить не удалось» в «ключа нет», а проба отвечает
- * «не удалось» всюду, кроме macOS, — то есть **на Windows ответ «ключа нет» выдавался всегда**,
- * при любом сохранённом ключе (скриншот владельца, 21.09.2026).
+ * Extracted so it can be tested: the non-macOS branch is unreachable on a developer's Mac, and that branch is exactly
+ * the one that used to be wrong. Folding "could not ask" into "no key" meant that outside macOS, where the keychain
+ * probe always answers "could not ask", every stored key was reported missing.
  *
- * Правило целиком: диалог с паролем вызывает только чтение значения и только у связки macOS.
- * Значит там, где связки нет, читать можно свободно, а там, где есть, — сперва проба.
+ * The rule in full: a password dialog comes only from reading a VALUE, and only from the macOS keychain. So where
+ * there is no such keychain the value is read freely, and where there is one the probe goes first.
  */
 object KeyPresenceRule {
-  /** Нужно ли читать значение, чтобы ответить. */
+  /** Whether the value has to be read to answer. */
   fun mustReadValue(onMac: Boolean, knownInThisRun: Boolean): Boolean = !knownInThisRun && !onMac
 
   /**
-   * Ответ по тому, что удалось узнать.
+   * The answer, from what could be learned.
    *
-   * @param probe ответ пробы связки; для не-macOS он не спрашивается вовсе
-   * @param valueFound удалось ли прочитать значение (там, где чтение разрешено)
+   * @param probe the keychain probe's answer; not asked at all outside macOS
+   * @param valueFound whether the value was read (where reading is allowed)
    */
   fun decide(
     onMac: Boolean,
@@ -32,9 +31,8 @@ object KeyPresenceRule {
     !onMac -> if (valueFound) ApiKeyResolver.Presence.PRESENT else ApiKeyResolver.Presence.ABSENT
     probe == KeychainProbe.State.PRESENT -> ApiKeyResolver.Presence.PRESENT
     probe == KeychainProbe.State.ABSENT -> ApiKeyResolver.Presence.ABSENT
-    // Связка не ответила. Читать значение здесь нельзя — это вернёт те самые диалоги с паролем,
-    // ради устранения которых проба и появилась. Поэтому говорим «не знаю», а не «нет»:
-    // человек, которому сказали «ключа нет», идёт вводить ключ заново.
+    // The keychain did not answer. Reading the value here would bring back the password dialogs the probe exists to
+    // avoid, so the answer is "unknown" rather than "no": told "no key", a person goes to re-enter a key that may be fine.
     else -> ApiKeyResolver.Presence.UNKNOWN
   }
 }

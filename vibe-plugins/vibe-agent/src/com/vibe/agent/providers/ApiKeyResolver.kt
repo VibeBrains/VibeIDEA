@@ -99,28 +99,24 @@ object ApiKeyResolver {
    */
   private val attempted = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
 
-  /** Ответ про ключ: он есть, его нет, или спросить не удалось. Третье — не синоним второго. */
+  /** A key is present, absent, or could not be asked about. The third is not a synonym of the second. */
   enum class Presence { PRESENT, ABSENT, UNKNOWN }
 
   fun hasStoredKey(provider: ProviderEntry): Boolean = keyPresence(provider) == Presence.PRESENT
 
   /**
-   * Есть ли ключ — тремя ответами, а не двумя.
+   * Whether a key is stored — in three answers, not two.
    *
-   * Диалог связки вызывает ЧТЕНИЕ ЗНАЧЕНИЯ, и только на macOS: там список доступа охраняет данные
-   * записи ([KeychainProbe]). Поэтому порядок такой:
+   * A keychain dialog comes from reading a VALUE, and only on macOS, where the access list guards the item's data
+   * ([KeychainProbe]). Hence the order:
    *
-   * - на macOS сперва спрашиваем пробой, без чтения;
-   * - **на остальных системах читаем значение сразу**: хранилище там не связка Apple, диалога нет
-   *   вовсе, и отвечать «не знаю» было бы выдумкой;
-   * - на macOS, когда проба не ответила, так и говорим — `UNKNOWN`.
+   * - on macOS the probe goes first, without reading;
+   * - **elsewhere the value is read right away**: the store is not Apple's keychain, there is no dialog at all, and
+   *   answering "unknown" there would be made up;
+   * - on macOS, when the probe does not answer, the answer says so — `UNKNOWN`.
    *
-   * Почему это переписано. Прежняя версия возвращала `Boolean` и сворачивала «не удалось спросить»
-   * в `false`, а проба первой строкой отвечает `UNKNOWN` всюду, кроме macOS. Значит **на Windows
-   * ответ «ключа нет» выдавался всегда**, при любом сохранённом ключе: страница, доктор и каталоги
-   * моделей хором сообщали владельцу, что ключей у него нет (скриншот с Windows, 21.09.2026).
-   * В комментарии при этом было написано, что «не знаю» честнее ложного «нет», — а код делал
-   * ровно обратное.
+   * A two-valued answer folds "could not ask" into "no", and outside macOS the probe always answers "could not ask":
+   * every stored key would then be reported missing — on the settings page, in the doctor and in catalog refresh.
    */
   fun keyPresence(provider: ProviderEntry): Presence {
     val ref = provider.apiKeyRef ?: provider.id
@@ -133,20 +129,18 @@ object ApiKeyResolver {
   }
 
   /**
-   * Прочитать запись хранилища вместе со страховкой прерванной перезаписи.
+   * Read a store entry, falling back to the backup left by an interrupted rewrite.
    *
-   * Страховка проверяется здесь, а не только в действии по кнопке: [restoreKey] удаляет запись
-   * перед тем, как создать её заново, и в окно между этими шагами помещается и перезапуск IDE, и
-   * отказ связки. Ключ тогда цел, но лежит в записи `(backup)`, а человек видит пустое поле и
-   * знает лишь то, что провайдер перестал работать. Подбор обязан происходить там, где ключ
-   * читают, а не там, где о нём вспомнили.
+   * The backup is checked here and not only in the manual action: [restoreKey] deletes the entry before creating it
+   * again, and an IDE restart or a keychain refusal fits into the gap between the two steps. The key is then intact
+   * but sits in the `(backup)` entry, while the person sees an empty field and only knows the provider stopped
+   * working. Recovery has to happen where the key is read, not where someone remembers to press a button.
    */
   private fun readStored(ref: String): String? {
     rawStored(ref)?.let { return it }
     val backup = runCatching { PasswordSafe.instance.getPassword(attributes(ref + BACKUP_SUFFIX)) }
       .getOrNull()?.takeIf { it.isNotBlank() } ?: return null
-    // Нашли страховку — возвращаем ключ на место сразу: следующий запуск не должен зависеть от
-    // того, вспомнит ли кто-то нажать кнопку.
+    // Found a backup: put the key back right away, so the next start does not depend on anyone pressing a button.
     runCatching {
       PasswordSafe.instance.setPassword(attributes(ref), backup)
       PasswordSafe.instance.setPassword(attributes(ref + BACKUP_SUFFIX), null)
@@ -156,11 +150,10 @@ object ApiKeyResolver {
   }
 
   /**
-   * Только основная запись, без подбора страховки.
+   * Only the main entry, without backup recovery.
    *
-   * Нужна [restoreKey]: он проверяет, ИСЧЕЗЛА ли запись после удаления, и подбор страховки там
-   * вернул бы ключ, который он сам минуту назад туда и положил, — проверка стала бы всегда
-   * ложно-положительной, а перезапись всегда «неудачной».
+   * [restoreKey] needs it: it checks whether the entry is GONE after the delete, and recovery there would return the
+   * very key it had just put into the backup — the check would always fail and every rewrite would look unsuccessful.
    */
   private fun rawStored(ref: String): String? =
     PasswordSafe.instance.getPassword(attributes(ref))?.takeIf { it.isNotBlank() }

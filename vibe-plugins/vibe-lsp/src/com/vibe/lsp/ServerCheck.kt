@@ -4,47 +4,45 @@ package com.vibe.lsp
 import java.util.concurrent.TimeUnit
 
 /**
- * «Проверить» для языкового сервера: запустить его и посмотреть, что он ответит.
+ * "Check" for a language server: start it and see what it answers.
  *
- * Почему запуск, а не проверка файла на диске: исполняемый файл не той архитектуры, оборванный
- * симлинк и пакет, установленный наполовину, на диске выглядят совершенно здоровыми. Ровно этот
- * довод уже записан у кнопки «Проверить» интерпретатора Node — здесь он тот же.
+ * Why start it rather than look at the file: an executable of the wrong architecture, a dangling symlink and a
+ * half-installed package all look perfectly healthy on disk. The same reasoning stands behind the Node "Check" button.
  *
- * Отдельная тонкость языкового сервера, которой нет у ноды: **сервер, запущенный без аргументов,
- * не отвечает, а ЖДЁТ** — он говорит по stdio и молча стоит, пока в него не пришлют `initialize`.
- * Поэтому спрашиваем версию и держим таймаут: молчание здесь не отказ, а нормальное поведение
- * программы, которую спросили не на её языке.
+ * A twist Node does not have: **a language server started without arguments does not answer, it WAITS** — it speaks
+ * over stdio and stays silent until it receives `initialize`. Hence the version flag and a timeout: silence here is
+ * not a failure but the normal behaviour of a program asked in a language it does not speak.
  */
 object ServerCheck {
-  /** Сколько ждём ответа: сервер на ноде стартует не мгновенно, а вечности ждать нельзя. */
+  /** How long to wait for an answer: a Node-based server does not start instantly, and forever is too long. */
   const val TIMEOUT_SECONDS = 10L
 
-  /** Что вышло из проверки. Сообщение человеку собирает страница настроек — здесь только факты. */
+  /** What the check found. The settings page builds the message; this is only the facts. */
   sealed interface Outcome {
-    /** Сервер запустился и назвал версию. */
+    /** The server started and reported its version. */
     data class Works(val path: String, val version: String) : Outcome
 
     /**
-     * Сервер найден и запустился, но версию не назвал.
+     * The server was found and started but reported no version.
      *
-     * Это НЕ поломка: часть серверов не знает ключа `--version` и просто ждёт протокола. Файл на
-     * месте и исполняется — для страницы настроек этого достаточно, и врать «не работает» нельзя.
+     * This is NOT a failure: some servers do not know `--version` and simply wait for the protocol. The file is there
+     * and runs — enough for the settings page, and calling it broken would be false.
      */
     data class NoVersion(val path: String) : Outcome
 
-    /** Файла нет ни в настройке, ни в поиске. */
+    /** No file, neither in the setting nor anywhere the search looks. */
     data object Missing : Outcome
 
-    /** Запустить не удалось: не та архитектура, нет прав, оборванный симлинк. */
+    /** Could not start: wrong architecture, no permission, a dangling symlink. */
     data class Failed(val path: String, val reason: String) : Outcome
   }
 
   /**
-   * Выбрать версию из вывода: серверы печатают её по-разному.
+   * Pick the version out of the output: servers print it differently.
    *
-   * `vtsls` отвечает голым `0.2.9`, `phpactor` — строкой `Phpactor 2026.06.23.0`, часть пакетов
-   * добавляет имя и путь. Берём первую непустую строку и вырезаем из неё номер, если он там есть:
-   * показать человеку `2026.06.23.0` полезнее, чем целую строку, но целая строка лучше пустоты.
+   * `vtsls` answers a bare `0.2.9`, `phpactor` a line `Phpactor 2026.06.23.0`, some packages add a name and a path. The
+   * first non-empty line is taken and the number cut out of it when present: a bare number is more useful to show, but
+   * the whole line beats nothing.
    */
   fun versionFrom(output: String): String? {
     val line = output.lineSequence().map { it.trim() }.firstOrNull { it.isNotEmpty() } ?: return null
@@ -53,9 +51,9 @@ object ServerCheck {
   }
 
   /**
-   * Запустить [path] и спросить версию.
+   * Start [path] and ask for its version.
    *
-   * @param run подмена запуска для замеров: настоящий процесс в тесте не нужен
+   * @param run a replacement for the launch in tests, where a real process is not needed
    */
   fun of(
     path: String?,
@@ -67,12 +65,12 @@ object ServerCheck {
     return when {
       result.timedOut -> Outcome.NoVersion(path)
       result.exitCode == 0 -> versionFrom(result.output)?.let { Outcome.Works(path, it) } ?: Outcome.NoVersion(path)
-      // Ненулевой код с внятным текстом — отказ; без текста это опять же «не знает такого ключа».
+      // A non-zero code with readable text is a failure; without text it is again "does not know the flag".
       else -> versionFrom(result.output)?.let { Outcome.Failed(path, it) } ?: Outcome.NoVersion(path)
     }
   }
 
-  /** Чем кончился запуск: код, вывод и «не дождались». */
+  /** How the launch ended: exit code, output, and whether the wait timed out. */
   data class ProcessResult(val exitCode: Int, val output: String, val timedOut: Boolean)
 
   private fun runVersion(path: String): ProcessResult {

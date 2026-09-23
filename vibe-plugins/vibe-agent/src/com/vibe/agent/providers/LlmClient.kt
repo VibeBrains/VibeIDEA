@@ -652,22 +652,19 @@ class LlmClient(
     }
 
     /**
-     * Доверие и авторизация — те же, что у самой IDE: сертификаты и аутентификатор прокси.
+     * Trust and authentication taken from the IDE itself: its certificates and its proxy authenticator.
      *
-     * Чего не хватало. Клиент собирался с нуля, и потому НЕ знал двух вещей, которые человек уже
-     * настроил в IDE: (1) хранилища сертификатов — корпоративный корневой сертификат, добавленный
-     * в настройках, на запросы к провайдерам не действовал, и за таким прокси чат падал на
-     * рукопожатии TLS; (2) логина и пароля прокси — прокси с авторизацией мы не проходили вовсе.
-     * Платформа отдаёт и то, и другое (`PlatformHttpClient`, 2026.3), и это ровно та часть, которую
-     * незачем писать самим.
+     * A client built from scratch inherits none of what the person configured in the IDE: a corporate root
+     * certificate added in settings would not apply to provider requests (the chat fails at the TLS handshake behind
+     * such a proxy), and a proxy that asks for a login would not be passed at all. The platform provides both
+     * (`PlatformHttpClient`, 2026.3) — exactly the part not worth writing ourselves.
      *
-     * МАРШРУТ при этом остаётся НАШ. Трафик моделей ходит своим прокси намеренно — человеку
-     * регулярно нужен один туннель и не нужен другой, — поэтому здесь берутся только доверие и
-     * авторизация, а выбор прокси делает [BypassingProxySelector] ниже. Аутентификатор без прокси
-     * ничего не делает: он срабатывает, лишь когда прокси реально ответил «нужен пароль».
+     * The ROUTE stays ours. Model traffic uses its own proxy on purpose — people often need one tunnel and not the
+     * other — so only trust and authentication are taken here, and [BypassingProxySelector] below picks the proxy.
+     * The authenticator alone changes nothing: it fires only when a proxy actually asks for credentials.
      *
-     * Под `runCatching` и с проверкой стадии запуска: до инициализации приложения сервисов ещё
-     * нет, а падать из-за украшения клиента нельзя — без него запрос просто пойдёт как раньше.
+     * Wrapped in `runCatching` and gated on the application state: before the application is up there are no
+     * services yet, and a missing embellishment must not fail the client — the request just goes as before.
      */
     private fun applyIdeTrust(builder: HttpClient.Builder) {
       runCatching {

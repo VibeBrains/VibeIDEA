@@ -5,34 +5,28 @@ import com.intellij.ide.util.PropertiesComponent
 import com.vibe.agent.providers.ToolSpec
 
 /**
- * Набор инструментов MCP-сервера, на который человек согласился, — между запусками IDE.
+ * The tool set of an MCP server that the person accepted, kept across IDE restarts.
  *
- * Хранится в настройках, а не в памяти: подмена описаний рассчитана на то, что её увидят нескоро
- * ([ToolFingerprint]), и защита, забывающая одобрение при перезапуске, отличалась бы от отсутствия
- * защиты только тем, что о ней написано в заметках.
+ * Stored in settings rather than in memory: a description swap is designed to surface late ([ToolFingerprint]),
+ * and a guard that forgets the approval on restart would differ from no guard only on paper.
  *
- * Ключ включает рабочую папку: один и тот же по имени сервер в разных проектах — разные серверы,
- * и согласие, данное в своём проекте, не должно распространяться на чужой клон.
+ * The key includes the working directory: a server with the same name in another project is another server, and
+ * consent given in one's own project must not carry over to a foreign clone.
  */
 object ApprovedTools {
-  /** Первое подключение согласия не требует: одобрять нечего, набор ещё никто не видел. */
+  /** The first connection needs no consent: there is nothing to approve yet, nobody has seen the set. */
   fun isFirstSight(project: String?, server: String): Boolean = read(project, server) == null
 
-  /** Что изменилось с момента одобрения. Пустой дрейф — и когда всё совпало, и при первой встрече. */
+  /** What changed since approval. The drift is empty both when nothing changed and on first sight. */
   fun drift(project: String?, server: String, specs: List<ToolSpec>): ToolFingerprint.Drift {
     val approved = read(project, server) ?: return ToolFingerprint.Drift(emptyList(), emptyList(), emptyList())
     return ToolFingerprint.compare(approved, ToolFingerprint.map(specs))
   }
 
-  /** Запомнить нынешний набор как одобренный. */
+  /** Remember the current set as approved. */
   fun approve(project: String?, server: String, specs: List<ToolSpec>) {
     val value = ToolFingerprint.map(specs).entries.joinToString(SEPARATOR) { "${it.key}=${it.value}" }
     PropertiesComponent.getInstance().setValue(key(project, server), value)
-  }
-
-  /** Забыть одобрение: сервер убрали из файла, и согласие на него не должно пережить возвращение. */
-  fun forget(project: String?, server: String) {
-    PropertiesComponent.getInstance().unsetValue(key(project, server))
   }
 
   private fun read(project: String?, server: String): Map<String, String>? {
@@ -46,6 +40,6 @@ object ApprovedTools {
   private fun key(project: String?, server: String): String = "$PREFIX${project.orEmpty()}|$server"
 
   private const val PREFIX = "vibe.mcp.approvedTools."
-  /** Перевод строки: в именах инструментов он невозможен, а запятая и точка с запятой — вполне. */
+  /** A newline cannot occur in a tool name, while a comma or a semicolon can. */
   private const val SEPARATOR = "\n"
 }

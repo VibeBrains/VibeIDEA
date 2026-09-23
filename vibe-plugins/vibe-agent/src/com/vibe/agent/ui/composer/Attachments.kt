@@ -81,17 +81,16 @@ object Attachments {
   fun fromTransferable(t: Transferable): ImageAttachment? = runCatching { readImage(t) }.getOrNull()
 
   /**
-   * Чтение картинки из буфера. Бросает — обёртка выше превращает это в «картинки нет».
+   * Read an image from the clipboard. Throws; the wrapper above turns that into "no image".
    *
-   * Молчать тут правильнее, чем падать: неудачный разбор означает лишь, что вставку надо отдать
-   * тексту, а не что нажатие потеряно.
+   * Staying quiet is right here: a failed decode only means the paste goes to text, not that the keystroke is lost.
    */
   private fun readImage(t: Transferable): ImageAttachment? {
     if (!t.isDataFlavorSupported(DataFlavor.imageFlavor)) return null
     val image = t.getTransferData(DataFlavor.imageFlavor) as? Image ?: return null
     val buffered = image as? BufferedImage ?: run {
-      // У ещё не загруженной картинки размеры приходят -1, и `BufferedImage(-1, -1, …)` падает.
-      // `ImageIcon` дожидается загрузки (внутри MediaTracker) и отвечает настоящими размерами.
+      // An image that is not loaded yet reports -1 as its size, and `BufferedImage(-1, -1, …)` throws.
+      // `ImageIcon` waits for loading (MediaTracker inside) and answers with the real size.
       val ready = javax.swing.ImageIcon(image)
       val width = ready.iconWidth
       val height = ready.iconHeight

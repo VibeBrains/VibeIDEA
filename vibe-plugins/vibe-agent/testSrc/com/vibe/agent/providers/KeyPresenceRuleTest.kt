@@ -7,14 +7,13 @@ import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 /**
- * «Спросить не удалось» не равно «ключа нет» — и особенно на Windows.
+ * "Could not ask" is not "no key" — especially on Windows.
  *
- * Повод: владелец на Windows видел «Ключа нет» у каждого провайдера при сохранённых ключах
- * (21.09.2026). Проба связки первой строкой отвечает «не знаю» всюду, кроме macOS, а код
- * сворачивал это в «нет» — то есть на Windows ответ был ложным ВСЕГДА, при любом ключе.
+ * The keychain probe answers "unknown" everywhere except macOS; folding that into "no" reports every stored key as
+ * missing outside macOS.
  *
- * Ветку «не macOS» на машине разработчика иначе не проверить: `SystemInfo.isMac` там всегда
- * истинно, поэтому правило и вынесено в чистую функцию.
+ * The non-macOS branch cannot be exercised on a developer's Mac otherwise (`SystemInfo.isMac` is always true there),
+ * which is why the rule is a pure function.
  */
 class KeyPresenceRuleTest {
   @Test
@@ -24,7 +23,7 @@ class KeyPresenceRuleTest {
     assertEquals(ApiKeyResolver.Presence.PRESENT,
                  KeyPresenceRule.decide(onMac = false, knownInThisRun = false,
                                         probe = KeychainProbe.State.UNKNOWN, valueFound = true),
-                 "ключ на Windows прочитан, а ответ не «есть» — ровно дефект владельца")
+                 "ключ на Windows прочитан, а ответ не «есть»")
   }
 
   @Test

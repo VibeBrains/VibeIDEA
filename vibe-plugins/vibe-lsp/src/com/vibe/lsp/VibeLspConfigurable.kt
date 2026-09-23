@@ -29,7 +29,7 @@ class VibeLspConfigurable : Configurable, Configurable.NoScroll {
   private val nodePath = TextFieldWithBrowseButton()
   private val nodeStatus = JBLabel()
 
-  /** Строка под полем сервера: что ответила проверка или установка. Пустая, пока не спросили. */
+  /** The line under a server field: what the check or the install answered. Empty until asked. */
   private val serverStatus = LinkedHashMap<String, JBLabel>()
 
   override fun getDisplayName(): String = t("settings.lsp.title")
@@ -102,12 +102,11 @@ class VibeLspConfigurable : Configurable, Configurable.NoScroll {
   }
 
   /**
-   * Ряд сервера: поле пути и две кнопки — «Проверить» и «Установить последнее».
+   * A server row: the path field and two buttons — "Check" and "Install latest".
    *
-   * Кнопки нужны рядом с полем, а не в отдельном месте: человек приходит сюда именно тогда, когда
-   * сервер не работает, и оба вопроса у него про ЭТОТ сервер — «что у меня стоит» и «поставь
-   * свежее». Гонять его за этим в терминал значит отдать три шага там, где хватает одного
-   * ([ServerInstall]).
+   * The buttons sit next to the field because people come here exactly when a server does not work, and both of their
+   * questions are about THIS server: "what do I have" and "get me the latest". Sending them to a terminal turns one
+   * step into three ([ServerInstall]).
    */
   private fun serverRow(spec: LspDoctor.ServerSpec, field: TextFieldWithBrowseButton, status: JBLabel): JComponent {
     val buttons = javax.swing.JPanel(java.awt.FlowLayout(java.awt.FlowLayout.RIGHT, com.intellij.util.ui.JBUI.scale(4), 0)).apply {
@@ -127,10 +126,10 @@ class VibeLspConfigurable : Configurable, Configurable.NoScroll {
   }
 
   /**
-   * «Проверить»: запустить сам сервер и напечатать, что он ответил.
+   * "Check": start the server itself and print what it answered.
    *
-   * Путь берётся из поля, а если оно пусто — из обычного поиска: страница обязана проверять то,
-   * что реально запустится, а не то, что набрано.
+   * The path comes from the field, or from the usual search when the field is empty: the page must check what will
+   * actually be launched, not what is typed.
    */
   private fun checkServer(spec: LspDoctor.ServerSpec, field: TextFieldWithBrowseButton, status: JBLabel) {
     val typed = field.text.trim()
@@ -138,7 +137,7 @@ class VibeLspConfigurable : Configurable, Configurable.NoScroll {
     status.text = "<html>" + describe(spec, ServerCheck.of(path)) + "</html>"
   }
 
-  /** Ответ проверки человеческой строкой. */
+  /** The check's answer as a human-readable line. */
   private fun describe(spec: LspDoctor.ServerSpec, outcome: ServerCheck.Outcome): String = when (outcome) {
     is ServerCheck.Outcome.Works -> t("settings.lsp.server.works", "path" to outcome.path, "version" to outcome.version)
     is ServerCheck.Outcome.NoVersion -> t("settings.lsp.server.noVersion", "path" to outcome.path)
@@ -147,11 +146,11 @@ class VibeLspConfigurable : Configurable, Configurable.NoScroll {
   }
 
   /**
-   * «Установить последнее»: выполнить команду установки из каталога, показав её и её вывод.
+   * "Install latest": run the install command from the catalogue, showing the command and its output.
    *
-   * В фоне с прогрессом, потому что `npm install -g` идёт десятки секунд и ходит в сеть: страница,
-   * замершая без объяснений, читается как сломанная. Вывод показывается и при удаче, и при отказе
-   * — за корпоративным прокси причина видна только там.
+   * In the background with progress, because `npm install -g` takes tens of seconds and goes to the network: a page
+   * that freezes without explanation reads as broken. The output is shown on success and on failure alike — behind a
+   * corporate proxy that is the only place the reason is visible.
    */
   private fun installServer(spec: LspDoctor.ServerSpec, status: JBLabel) {
     val command = if (com.vibe.agent.util.ExecutableNames.isWindows()) spec.installCommandWindows ?: spec.installCommand

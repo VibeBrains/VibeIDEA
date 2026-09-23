@@ -83,16 +83,14 @@ class StatusDot : JComponent() {
   }
 
   /**
-   * Минимум НЕ равен предпочтительному: иначе строка не сжимается никогда.
+   * The minimum is NOT the preferred size: otherwise the line can never shrink.
    *
-   * Цена равенства измерена: у имени инструмента длины нет («Инструмент: Выполнить команду —
-   * npm install -g @vtsls/language-server»), а несжимаемый компонент в `BorderLayout.EAST`
-   * не переносится и не усекается — он НАКЛАДЫВАЕТСЯ на западного соседа, и человек видит кашу
-   * из двух строк поверх друг друга (снимок владельца 21.09.2026). Тот же класс дефекта, что
-   * трижды обрезал страницы настроек: несжимаемый минимум плюс раскладка, которая при нехватке
-   * места не сжимает, а кладёт одно на другое.
+   * A tool name has no length limit, and a component that cannot shrink inside `BorderLayout.EAST` is neither wrapped
+   * nor truncated — it is drawn OVER its western neighbour, two lines on top of each other. It is the same kind of
+   * defect as a settings page cut off at the right edge: an unshrinkable minimum plus a layout that overlaps instead
+   * of shrinking when space runs out.
    *
-   * Минимум — точка и несколько символов: меньше нечего показывать, больше — повод для наложения.
+   * The minimum is the dot and a few characters: less shows nothing, more invites overlapping.
    */
   override fun getMinimumSize(): Dimension {
     val metrics = getFontMetrics(font)
@@ -108,8 +106,8 @@ class StatusDot : JComponent() {
       g2.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING, RenderingHints.VALUE_TEXT_ANTIALIAS_ON)
       g2.font = font
       val metrics = g2.fontMetrics
-      // Усечение, а не выход за край: обрезанный молча текст неотличим от короткого, а многоточие
-      // называет, что сказано не всё. Полная фраза остаётся в подсказке — её ставит setState.
+      // Truncate rather than overflow: silently clipped text looks like short text, while an ellipsis says something
+      // was left out. The full phrase stays in the tooltip, which setState sets.
       val label = fit(text(), metrics, width - JBUI.scale(DOT + GAP * 2))
       g2.color = LABEL
       g2.drawString(label, 0, metrics.ascent)
@@ -130,10 +128,10 @@ class StatusDot : JComponent() {
 
   internal companion object {
     /**
-     * Уместить [text] в [available] пикселей, при нехватке — обрезать и закончить многоточием.
+     * Fit [text] into [available] pixels; when it does not fit, cut it and end with an ellipsis.
      *
-     * Чистая функция на метриках, а не метод компонента: её итог мерится тестом без окна и
-     * шрифтов экрана — ровно то, чего не умел прежний гейт, зеленевший на наложенных строках.
+     * A pure function over font metrics rather than a component method, so its result can be measured by a test
+     * without a window or screen fonts.
      */
     fun fit(text: String, metrics: java.awt.FontMetrics, available: Int): String {
       if (available <= 0) return ""
@@ -147,7 +145,7 @@ class StatusDot : JComponent() {
 
     const val DOT = 7
     const val GAP = 5
-    /** Сколько символов строка обязана показать даже в самой узкой панели. */
+    /** How many characters the line must show even in the narrowest panel. */
     const val MIN_CHARS = 3
     const val ELLIPSIS = "…"
     const val PULSE_MS = 60

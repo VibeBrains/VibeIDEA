@@ -14,27 +14,24 @@ import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 /**
- * Строка состояния не имеет права наложиться на соседей и не имеет права уехать за край.
+ * The status line must neither overlap its neighbours nor run past the edge.
  *
- * Повод — снимок владельца 21.09.2026: «Инструмент: Выполнить команду — npm install -g
- * @vtsls/language-server» лежал поверх шапки композера с «Нет файлов с изменениями» и иконками.
- * Причина не во вкусе и не в отступах: `StatusDot.minimumSize` был равен предпочтительному, а
- * предпочтительный растёт с длиной текста; `BorderLayout` при нехватке ширины не сжимает и не
- * переносит — он кладёт `EAST` поверх `WEST`.
+ * With `StatusDot.minimumSize` equal to its preferred size — which grows with the text — the component cannot shrink,
+ * and `BorderLayout` does not shrink or wrap when width runs out: it draws `EAST` over `WEST`. A long tool name then
+ * lands on top of the composer header.
  *
- * Тот же класс дефекта трижды обрезал страницы настроек, и урок оттуда же: **мерить итог, а не
- * свойство компонента**. Поэтому ниже меряется строка, которая реально будет нарисована.
+ * The lesson from the settings pages applies: **measure the outcome, not a component property**. So what is measured
+ * below is the string that will actually be painted.
  *
- * Что здесь меряется и чего здесь НЕ меряется — сказано прямо, иначе тест обещает больше, чем
- * делает. Настоящая защита от наложения — сжимаемый минимум и усечение: они делают кашу
- * невозможной при ЛЮБОЙ раскладке, и их ловят замеры «сжимается» и «усекается» (проверено
- * возвратом старого минимума — первый замер падает). Замер про две строки описывает схему
- * композера, но собирает её сам: `ComposerPanel` требует `Project`, и поднимать платформенную
- * фикстуру ради одного положения строки дороже пользы. Если схему когда-нибудь сложат обратно в
- * один ряд, этот замер о том не узнает — узнает замер про сжатие, и его достаточно.
+ * What is and is NOT measured here, stated plainly so the test does not promise more than it does. The real guard
+ * against overlapping is the shrinkable minimum plus truncation: together they rule it out for ANY layout, and the
+ * "shrinks" and "truncates" checks catch a regression (restoring the old minimum makes the first one fail). The
+ * two-line check describes the composer layout but builds it itself: `ComposerPanel` needs a `Project`, and a
+ * platform fixture for one line position costs more than it gives. If the layout ever folds back into one row, that
+ * check will not notice — the shrink check will, and that is enough.
  */
 class StatusStripLayoutTest {
-  /** Метрики без экрана: тест обязан идти в headless, как и остальные. */
+  /** Font metrics without a screen: the test must run headless like the others. */
   private fun metrics() = BufferedImage(1, 1, BufferedImage.TYPE_INT_ARGB).createGraphics()
     .also { it.font = JLabel().font }
     .fontMetrics
@@ -42,8 +39,8 @@ class StatusStripLayoutTest {
   private val longText = "Инструмент: Выполнить команду — npm install -g @vtsls/language-server"
 
   /**
-   * Состояние с живым таймером: `TOOL` пульсирует, и оставленный таймер держит панель после теста
-   * (платформа валит на этом `afterEach`). Поэтому каждый замер отпускает его сам.
+   * A state with a live timer: `TOOL` pulses, and a timer left running outlives the test (the platform fails it in
+   * `afterEach`). So every check releases the timer itself.
    */
   private fun withToolState(body: (StatusDot) -> Unit) {
     val dot = StatusDot()
@@ -72,7 +69,7 @@ class StatusStripLayoutTest {
       add(JLabel("[]"))
       add(JLabel("[]"))
     }
-    // Две СТРОКИ, как в композере: состояние над полоской действий.
+    // Two LINES, as in the composer: the status above the action strip.
     val column = JPanel().apply {
       layout = BoxLayout(this, BoxLayout.Y_AXIS)
       add(status)
@@ -118,7 +115,7 @@ class StatusStripLayoutTest {
   }
 
   private companion object {
-    /** Панель агента у владельца ужимается примерно до этого — на этой ширине и была каша. */
+    /** A narrow agent panel: at about this width the two strips used to overlap. */
     const val NARROW = 320
   }
 }

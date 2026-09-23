@@ -200,8 +200,8 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
       workingDir = project.basePath?.let { java.nio.file.Path.of(it) },
       clientVersion = com.intellij.openapi.application.ApplicationInfo.getInstance().fullVersion,
       onFailure = { failures -> failures.forEach { systemLine(t("mcp.servers.problem", "text" to it)) } },
-      // Дрейф описаний — событие безопасности, и оно называется в ленте, а не в логе: человек
-      // соглашался на другие описания, и решение принимать ему (Deadbugz, разбор в ToolFingerprint).
+      // Description drift is a security event, so it is named in the feed rather than the log: the person agreed to
+      // other descriptions, and the decision is theirs (see ToolFingerprint).
       onDrift = { server, drift -> systemLine(com.vibe.agent.mcp.DriftMessage.of(server, drift)) },
     ),
   ))

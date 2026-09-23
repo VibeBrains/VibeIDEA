@@ -7,37 +7,35 @@ import java.awt.datatransfer.Transferable
 import java.io.File
 
 /**
- * Что в буфере обмена и что с этим делать — одно решение на все входы.
+ * What the clipboard holds and what to do with it — one decision for every entry point.
  *
- * Входов у вставки ДВА: обработчик передачи данных Swing (`TransferHandler`, он же обслуживает
- * перетаскивание) и действие вставки самой IDE (`$Paste` через `PasteProvider`). Пока решение жило
- * только в первом, картинка терялась всюду, где до него не доходило, — а снаружи это выглядело
- * как «вставка не работает» без единого сообщения (владелец, 21.09.2026).
+ * Paste has TWO entry points: the Swing `TransferHandler` (which also serves drag and drop) and the IDE's own paste
+ * action (`$Paste` through `PasteProvider`). With the decision living in the first one only, an image was lost wherever
+ * the keystroke did not reach it — and from outside that looks like "paste does nothing", without a single message.
  *
- * Поэтому решение вынесено сюда чистой функцией: оба входа спрашивают её, и разойтись в поведении
- * им негде. Заодно оно стало измеримым без окна, буфера и клавиатуры.
+ * So the decision is a pure function here: both entry points ask it and cannot drift apart. It is also testable
+ * without a window, a clipboard or a keyboard.
  */
 object ClipboardContent {
-  /** Что несёт буфер. Порядок разбора — от самого конкретного к самому общему. */
+  /** What the clipboard carries. Checked from the most specific kind to the most general one. */
   sealed interface Kind {
-    /** Файлы: картинки станут вложениями, PDF — текстом, остальное — ссылками на файлы проекта. */
+    /** Files: images become attachments, PDFs become text, anything else becomes a project file reference. */
     data class Files(val files: List<File>) : Kind
 
-    /** Готовая картинка (скриншот, копирование из браузера). */
+    /** A ready image (a screenshot, a copy from a browser). */
     data class Picture(val image: ImageAttachment) : Kind
 
-    /** Ничего нашего: обычная текстовая вставка, её делает поле ввода. */
+    /** Nothing of ours: plain text paste, done by the input field itself. */
     data object Text : Kind
   }
 
   /**
-   * Разобрать содержимое буфера.
+   * Classify the clipboard contents.
    *
-   * Правило приоритета названо здесь один раз: **картинка сильнее текста рядом с ней**. Прежде
-   * стояло обратное условие — картинка принималась, только если текста в буфере НЕТ, — и это
-   * ломало ровно те случаи, где картинку копируют чаще всего: браузер и мессенджер кладут рядом
-   * с картинкой её адрес или подпись. Человек, копирующий картинку, хочет картинку; служебный
-   * текст рядом — не выбор, а особенность источника.
+   * The priority rule is stated here once: **an image wins over text next to it**. Accepting an image only when
+   * there is NO text would break the most common cases, since browsers and messengers put the image's address or
+   * caption next to it. Someone copying an image wants the image; the text beside it is a trait of the source, not
+   * a choice.
    */
   fun of(transferable: Transferable?): Kind {
     if (transferable == null) return Kind.Text
@@ -46,19 +44,19 @@ object ClipboardContent {
       if (files.isNotEmpty()) return Kind.Files(files)
     }
     if (runCatching { transferable.isDataFlavorSupported(DataFlavor.imageFlavor) }.getOrDefault(false)) {
-      // Разбор может не удаться (чужой формат, битые данные): тогда честнее отдать вставку тексту,
-      // чем проглотить нажатие и не показать ничего.
+      // Decoding may fail (a foreign format, broken data): then handing the paste to text is more honest than
+      // swallowing the keystroke and showing nothing.
       Attachments.fromTransferable(transferable)?.let { return Kind.Picture(it) }
     }
     return Kind.Text
   }
 
   /**
-   * Похоже ли содержимое на наше — ПО ВИДАМ ДАННЫХ, без чтения самих данных.
+   * Whether the contents look like ours — BY DATA FLAVORS, without reading the data itself.
    *
-   * Дешёвая проверка нужна отдельно от [of]: её зовут на каждое движение мыши при перетаскивании
-   * и на каждое обновление действия вставки, а [of] ради ответа собирает PNG. Ошибиться в плюс
-   * здесь безопасно: разбор всё равно случится, и не удавшийся вернёт вставку тексту.
+   * A cheap check separate from [of]: it runs on every mouse move during a drag and on every update of the paste
+   * action, while [of] encodes a PNG to answer. Erring towards "yes" is safe here: the real decoding happens anyway,
+   * and a failed one hands the paste back to text.
    */
   fun carriesOurs(transferable: Transferable?): Boolean {
     if (transferable == null) return false

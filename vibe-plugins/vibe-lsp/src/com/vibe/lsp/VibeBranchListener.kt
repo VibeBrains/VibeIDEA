@@ -11,17 +11,16 @@ import com.redhat.devtools.lsp4ij.ServerStatus
 import com.vibe.agent.i18n.VibeI18n.t
 
 /**
- * Смена ветки — повод пересобрать модель языковых серверов, и человек это видит.
+ * A branch switch is a reason to rebuild the language servers' model, and the person sees it happen.
  *
- * Почему это нужно: `git checkout` меняет файлы массово, а языковой сервер держит собственную
- * модель проекта, собранную при старте. Без перезапуска он отвечает по прежней ветке — подсказки
- * из другого кода, ошибки на исчезнувших строках, переход в файл, которого больше нет. Своего кода
- * на этот счёт у нас не было вовсе; LSP4IJ шлёт серверу события файлов, но только по тем шаблонам,
- * которые сервер у себя зарегистрировал, — а внутренний индекс это не пересобирает.
+ * `git checkout` changes files massively, while a language server keeps its own project model built at start. Without
+ * a restart it answers for the previous branch — completions from other code, errors on vanished lines, navigation
+ * into a file that is gone. LSP4IJ does forward file events, but only for the patterns a server registered itself,
+ * and that does not rebuild a server's internal index.
  *
- * Почему с прогрессом и сам, без вопроса: так это делает PhpStorm, и так попросил владелец
- * (21.09.2026). Работа идёт в фоне, её видно в «Background Tasks», её можно отменить — а молча
- * съеденные полминуты выглядели бы как «IDE задумалась».
+ * Why on its own and with progress rather than asking: that is how IntelliJ-based IDEs treat reindexing after a
+ * checkout. The work runs in the background, shows in "Background Tasks" and can be cancelled — half a minute eaten
+ * silently would read as the IDE hanging.
  */
 internal class VibeBranchListener(private val project: Project) : BranchChangeListener {
   override fun branchWillChange(branchName: String) = Unit
@@ -32,8 +31,7 @@ internal class VibeBranchListener(private val project: Project) : BranchChangeLi
       .filter { runCatching { manager.getServerStatus(it) == ServerStatus.started }.getOrDefault(false) }
       .toSet()
     val targets = BranchSwitchRefresh.toRestart(running)
-    // Ни один сервер не работает — перезапускать нечего: свою модель они соберут при первом
-    // открытии файла, уже по новой ветке.
+    // No server is running, so nothing to restart: they build their model on the first file open, from the new branch.
     if (targets.isEmpty()) return
 
     ProgressManager.getInstance().run(object : Task.Backgroundable(
@@ -43,8 +41,7 @@ internal class VibeBranchListener(private val project: Project) : BranchChangeLi
         indicator.isIndeterminate = false
         targets.forEachIndexed { index, id ->
           if (indicator.isCanceled) return
-          // Имя сервера в строке прогресса: «Updating indexes» без имени не отвечает на вопрос
-          // «почему так долго», а с именем отвечает.
+          // The server name in the progress text: without it, the line does not answer "why is this taking so long".
           indicator.text = t("lsp.branch.server", "server" to id)
           indicator.fraction = index.toDouble() / targets.size
           runCatching {

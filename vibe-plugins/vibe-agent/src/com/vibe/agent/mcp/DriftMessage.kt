@@ -4,13 +4,13 @@ package com.vibe.agent.mcp
 import com.vibe.agent.i18n.VibeI18n.t
 
 /**
- * Строка человеку о том, что сервер поменял инструменты после одобрения.
+ * The line that tells a person a server changed its tools after approval.
  *
- * Отдельно от места показа, потому что фраза собирается из трёх необязательных частей и её надо
- * мерить: сообщение об угрозе, в котором не сказано ЧТО изменилось, человек закроет не читая.
+ * Kept apart from where it is shown because the phrase is built from three optional parts and has to be testable:
+ * a warning that does not say WHAT changed gets dismissed unread.
  */
 object DriftMessage {
-  /** Сколько имён перечислять: полный список на двадцать инструментов — это не сообщение, а стена. */
+  /** How many names to list: twenty tool names is a wall, not a message. */
   const val NAMES_SHOWN = 3
 
   fun of(server: String, drift: ToolFingerprint.Drift): String {
@@ -22,7 +22,7 @@ object DriftMessage {
     return t("mcp.servers.drift", "server" to server, "what" to parts.joinToString("; "))
   }
 
-  /** Изменившиеся идут первыми и всегда: именно подмена описания — суть атаки, а не состав набора. */
+  /** Changed tools come first: a swapped description is the attack itself, a changed membership is not. */
   private fun names(all: List<String>): String {
     val shown = all.take(NAMES_SHOWN).joinToString(", ")
     return if (all.size <= NAMES_SHOWN) shown else "$shown … (+${all.size - NAMES_SHOWN})"

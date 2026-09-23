@@ -10,18 +10,16 @@ import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 /**
- * Что делать с содержимым буфера — решение одно на оба входа вставки, и оно меряется здесь.
+ * What to do with clipboard contents — one decision for both paste entry points, measured here.
  *
- * Повод — владелец 21.09.2026: картинка не вставлялась ни скриншотом, ни из браузера, ни из
- * скриншотера. Причин было две, и обе видны отсюда:
+ * Two ways an image paste gets lost, both visible from here:
  *
- * 1. Картинка принималась, ТОЛЬКО если в буфере не было текста, — а браузер и мессенджер кладут
- *    рядом с картинкой её адрес или подпись, и вставлялся текст.
- * 2. Решение жило в одном входе (обработчик Swing), и там, где нажатие до него не доходило,
- *    не происходило ничего.
+ * 1. Accepting an image only when there is NO text: browsers and messengers put the image's address or caption next
+ *    to it, and text would be pasted instead.
+ * 2. Deciding in one entry point only (the Swing handler): wherever the keystroke does not reach it, nothing happens.
  *
- * Здесь проверяется правило приоритета и устойчивость разбора. Что нажатие доходит до нас обоими
- * путями, этот замер не проверяет — это видно только в собранной IDE.
+ * These checks cover the priority rule and robust decoding. Whether the keystroke reaches us through both paths is
+ * not checked here — that is only visible in a built IDE.
  */
 class ClipboardContentTest {
   private class Clip(
@@ -61,7 +59,7 @@ class ClipboardContentTest {
   fun `картинка рядом с текстом — всё равно картинка`() {
     val kind = ClipboardContent.of(Clip(image = picture(), text = "https://example.com/pic.png"))
     assertTrue(kind is ClipboardContent.Kind.Picture,
-               "картинка отброшена из-за текста рядом — ровно жалоба владельца: $kind")
+               "картинка отброшена из-за текста рядом с ней: $kind")
   }
 
   @Test

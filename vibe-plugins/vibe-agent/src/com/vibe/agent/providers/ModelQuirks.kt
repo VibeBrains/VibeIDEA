@@ -173,25 +173,23 @@ object ModelQuirks {
       "kimi: the assistant's reasoning_content goes back with its answer and its tool calls in the history",
     ),
     Rule(
-      // Xiaomi MiMo: «during multi-turn tool calls in thinking mode the model returns a `thinking`
-      // content block alongside `tool_use`», и прошлые блоки вендор рекомендует возвращать обратно
-      // (mimo.mi.com/docs/en-US/api/chat/anthropic-api, сверено 22.09.2026) — то же условие, что у
-      // Kimi и DeepSeek. Проверено по документации, не живым ключом.
+      // Xiaomi MiMo: "during multi-turn tool calls in thinking mode the model returns a `thinking` content block
+      // alongside `tool_use`", and the vendor recommends sending previous blocks back
+      // (mimo.mi.com/docs/en-US/api/chat/anthropic-api, checked 2026-09-22) — the same condition as Kimi and
+      // DeepSeek. Verified against the documentation, not with a live key.
       Regex("^mimo-"),
       setOf(Quirk.ECHO_REASONING),
       "mimo: the thinking block comes back with the answer and its tool calls in the history",
     ),
     Rule(
-      // MiMo v2.6 в режиме размышления ФОРСИРУЕТ temperature 1.0 и top_p 0.95: «the actual
-      // effective values will be forcibly set by the model» — переданное значение не даёт ошибки,
-      // оно молча игнорируется (mimo.mi.com/docs/en-US/api/chat/anthropic-api, сверено 22.09.2026).
+      // MiMo v2.6 in thinking mode FORCES temperature 1.0 and top_p 0.95: "the actual effective values will be
+      // forcibly set by the model" — a value sent is not an error, it is silently ignored
+      // (mimo.mi.com/docs/en-US/api/chat/anthropic-api, checked 2026-09-22).
       //
-      // Цена этого правила названа честно: оно снимает обе ручки у ВСЕЙ линейки v2.6, включая
-      // случай, когда размышление выключено и вендор их принял бы. Выбрано так потому, что
-      // противоположная ошибка хуже: ползунок, который двигают и который ничего не меняет, —
-      // это молчание, а с молчанием мы и боремся. Режима запроса каталог причуд не знает, а
-      // заводить его ради одного вендора дороже, чем потеря температуры у flash.
-      // Тот же вывод независимо сделан в VibeIDE (записка 22.09.2026).
+      // The cost of this rule, stated plainly: it removes both knobs from the WHOLE v2.6 line, including requests
+      // with thinking off, where the vendor would honour them. The opposite mistake is worse: a slider that moves
+      // and changes nothing is silence. The quirk catalog does not know the request mode, and adding a mode just
+      // for one vendor costs more than losing temperature on flash.
       Regex("^mimo-v2\\.6"),
       setOf(Quirk.NO_SAMPLING),
       "mimo v2.6: in thinking mode the vendor overrides temperature and top_p, so we do not send them",

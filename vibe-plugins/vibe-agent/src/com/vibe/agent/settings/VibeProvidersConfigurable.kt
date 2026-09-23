@@ -124,8 +124,7 @@ class VibeProvidersConfigurable(private val project: Project) : Configurable, Co
       presence == ApiKeyResolver.Presence.PRESENT -> t("settings.providers.keyStored")
       dotenv -> t("settings.providers.keyFromEnvFile")
       osEnv -> t("settings.providers.keyFromEnv", "name" to envName)
-      // «Спросить не удалось» — не «ключа нет»: человек, которому сказали «ключа нет», идёт
-      // вводить его заново, а ключ может быть на месте (владелец на Windows, 21.09.2026).
+      // "Could not ask" is not "no key": told there is no key, a person goes to re-enter one that may well be there.
       presence == ApiKeyResolver.Presence.UNKNOWN -> t("settings.providers.keyUnknown")
       else -> t("settings.providers.keyMissing")
     }

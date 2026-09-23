@@ -6,12 +6,11 @@ import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
 /**
- * «Проверить» обязана отличать четыре разных ответа, а не два.
+ * "Check" must tell four answers apart, not two.
  *
- * Разница между «не запускается» и «запускается, но версию не говорит» — это разница между
- * «чините» и «всё в порядке». Часть языковых серверов не знает ключа `--version` вовсе: они
- * говорят по stdio и молча ждут протокола, а ожидание снаружи выглядит как зависание. Назвать это
- * поломкой значит отправить человека чинить то, что работает.
+ * "Does not start" and "starts but does not report a version" mean "fix it" and "all is fine". Some language servers do
+ * not know `--version` at all: they speak over stdio and silently wait for the protocol, which from outside looks like
+ * a hang. Calling that broken would send a person to fix something that works.
  */
 class ServerCheckTest {
   private fun answer(exit: Int, output: String, timedOut: Boolean = false) =

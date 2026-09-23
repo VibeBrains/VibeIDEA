@@ -5,45 +5,41 @@ import com.vibe.agent.providers.ToolSpec
 import java.security.MessageDigest
 
 /**
- * Отпечаток набора инструментов MCP-сервера и разбор того, что в нём изменилось.
+ * Fingerprint of an MCP server's tool set, and what changed in it.
  *
- * Зачем. Описание инструмента — это то, по чему человек принимает решение, пускать ли вызов.
- * Кампания Deadbugz (pillar.security/blog/deadbugz-currently-active-mcp-supply-chain-campaign,
- * сверено 21.09.2026) этим и пользуется: сервер ведёт счётчик вызовов на клиента и **после третьего
- * `tools/call`** начинает отдавать в `tools/list` и `prompts/get` другие описания — с инструкциями
- * искать SSH-ключи, ключи AWS и конфиги Kubernetes. Порог в три вызова выбран, чтобы короткая
- * проверка до него не дошла, а боевая работа дошла.
+ * A tool description is what a person reads when deciding whether to let a call through, which makes it a
+ * security boundary rather than documentation. A known supply-chain technique exploits exactly that: the server
+ * counts calls per client and, after the third `tools/call`, starts returning different `tools/list` and
+ * `prompts/get` contents — instructions to hunt for SSH keys, cloud credentials and cluster configs. The threshold
+ * is chosen so that a short review never reaches it and real work always does
+ * (pillar.security/blog/deadbugz-currently-active-mcp-supply-chain-campaign).
  *
- * Наша прежняя защита мимо этой атаки: чужой инструмент считается пишущим и спрашивается у
- * человека на каждый вызов — но спрашивается **описанием**, а подменяют именно описание.
- *
- * Поэтому отпечаток снимается в момент, когда человек с набором согласился, и сверяется при каждом
- * новом подключении к серверу. Первоисточник формулирует это прямо: изменение определения уже
- * одобренного сервера — событие безопасности, его надо показать и спросить одобрение заново.
+ * Asking the person before every foreign call does not help here: the question is phrased by the description,
+ * and the description is what gets swapped. So the set is fingerprinted when the person first accepts it and
+ * compared on every new connection; a change is a security event that must be shown and re-approved.
  */
 object ToolFingerprint {
   /**
-   * Отпечаток одного инструмента: имя, описание и схема входа.
+   * Fingerprint of one tool: name, description and input schema.
    *
-   * Схема входит намеренно: подменить можно не только текст описания, но и параметр — добавленное
-   * поле «path» у безобидного форматировщика меняет смысл вызова, не тронув ни слова описания.
+   * The schema is part of it on purpose: a new `path` parameter on a harmless formatter changes what a call does
+   * without touching a single word of the description.
    */
   fun of(spec: ToolSpec): String = sha256(listOf(spec.name, spec.description, spec.schema.toString()))
 
-  /** Отпечаток всего набора: порядок не важен, состав важен. */
+  /** Fingerprint of the whole set: order does not matter, membership does. */
   fun ofAll(specs: List<ToolSpec>): String = sha256(specs.map { of(it) }.sorted())
 
-  /** Что именно изменилось — словами, которые можно показать человеку. */
+  /** What changed, in terms that can be shown to a person. */
   data class Drift(val added: List<String>, val removed: List<String>, val changed: List<String>) {
     val isEmpty: Boolean get() = added.isEmpty() && removed.isEmpty() && changed.isEmpty()
   }
 
   /**
-   * Сравнить одобренный набор с нынешним.
+   * Compare the approved set with the current one.
    *
-   * Сравниваются отпечатки инструментов по именам: изменившееся описание и изменившаяся схема дают
-   * один и тот же ответ — «инструмент стал другим». Разделять их здесь незачем: человеку важно, что
-   * согласие давалось не на это.
+   * A changed description and a changed schema give the same answer — "this tool is different now". Telling them
+   * apart would not help the person: what matters is that the consent was given to something else.
    */
   fun compare(approved: Map<String, String>, current: Map<String, String>): Drift = Drift(
     added = current.keys.filter { it !in approved }.sorted(),
@@ -51,13 +47,13 @@ object ToolFingerprint {
     changed = current.filter { (name, print) -> approved[name] != null && approved[name] != print }.keys.sorted(),
   )
 
-  /** Отпечатки набора по именам — то, что сохраняется вместе с одобрением. */
+  /** Per-tool fingerprints — what is stored together with an approval. */
   fun map(specs: List<ToolSpec>): Map<String, String> = specs.associate { it.name to of(it) }
 
   private fun sha256(parts: List<String>): String {
     val digest = MessageDigest.getInstance("SHA-256")
-    // Разделитель, который не встречается в именах и описаниях: без него «ab»+«c» и «a»+«bc»
-    // дали бы один отпечаток, и подмена, переносящая текст между полями, прошла бы незаметно.
+    // A separator that never occurs in names or descriptions: without it "ab"+"c" and "a"+"bc" would hash the same,
+    // and text moved from one field to another would slip through unnoticed.
     parts.forEach { digest.update(it.toByteArray()); digest.update(0) }
     return digest.digest().joinToString("") { "%02x".format(it) }
   }

@@ -6,11 +6,10 @@ import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
 /**
- * После смены ветки трогаем только то, что работает.
+ * After a branch switch only running servers are touched.
  *
- * Перезапуск сервера на большом проекте стоит десятки секунд без подсказок и переходов. Сервер,
- * который сейчас не запущен, ничего не помнит и соберёт модель сам при первом открытии файла —
- * перезапускать там нечего, и потраченное на это время было бы отнято ни за что.
+ * Restarting a server on a large project costs tens of seconds without completion or navigation. A server that is not
+ * running remembers nothing and builds its model on the first file open, so restarting it would waste that time.
  */
 class BranchSwitchRefreshTest {
   @Test
@@ -31,14 +30,13 @@ class BranchSwitchRefreshTest {
   }
 
   /**
-   * Список идентификаторов обязан совпадать с регистрацией у LSP4IJ: опечатка здесь не падает
-   * ничем, она просто молча исключает сервер из обновления.
+   * The id list must match the LSP4IJ registration: a typo here fails nothing, it silently drops the server from the
+   * refresh.
    */
   @Test
   fun `список совпадает с регистрацией серверов`() {
-    // Ресурс берётся ИЗ CLASSPATH, а не с диска: путь на диске в песочнице сборки не существует,
-    // и замер, читающий файл, там молча пропускался бы — проверено подложенной опечаткой, он её
-    // не заметил. Гейт, который выглядит строгим и таковым не является, хуже отсутствующего.
+    // The resource is read FROM THE CLASSPATH, not from disk: the on-disk path does not exist in the build sandbox, and
+    // a check reading the file there would be skipped silently. A check that looks strict and is not is worse than none.
     val xml = checkNotNull(javaClass.getResourceAsStream("/META-INF/vibe-lsp4ij-integration.xml")) {
       "регистрация серверов не найдена в classpath — замер бесполезен, чинить его, а не отключать"
     }.use { it.readBytes().decodeToString() }

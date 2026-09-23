@@ -30,10 +30,10 @@ class ConfiguredServersSource(
    */
   private val onFailure: (List<String>) -> Unit = {},
   /**
-   * Куда сказать, что сервер изменил описания инструментов после одобрения.
+   * Where to report that a server changed its tool descriptions after approval.
    *
-   * Отдельным каналом от неудач запуска: это не поломка, а событие безопасности, и читается оно
-   * иначе — «сервер работает, но обещает уже не то, на что вы соглашались».
+   * A separate channel from start failures: this is not a breakage but a security event, and it reads differently —
+   * "the server works, but it no longer promises what you agreed to".
    */
   private val onDrift: (String, ToolFingerprint.Drift) -> Unit = { _, _ -> },
   private val timeoutMs: Long = DirectChatTools.CALL_TIMEOUT_MS,
@@ -65,14 +65,14 @@ class ConfiguredServersSource(
           client.initialize(clientVersion, timeoutMs)
           val tools = client.listTools(timeoutMs)
           val specs = tools.map { ToolSpec(it.name, it.description, it.inputSchema) }
-          // Сверка с тем, на что человек соглашался. Набор, изменившийся после одобрения, модели
-          // НЕ отдаётся: согласие давалось на другие описания, а решает человек по ним.
+          // Compare with what the person agreed to. A set that changed after approval is NOT given to the model:
+          // the consent covered other descriptions, and descriptions are what the person decides by.
           val project = workingDir?.toString()
           val drift = ApprovedTools.drift(project, entry.name, specs)
           when {
             ApprovedTools.isFirstSight(project, entry.name) -> {
-              // Первая встреча: одобрять нечего, набор запоминается как отправная точка. Права
-              // при этом прежние — чужой инструмент спрашивается на каждый вызов ([riskOf]).
+              // First sight: nothing to approve yet, so the set becomes the baseline. Permissions do not change —
+              // every call of a foreign tool is still asked about ([riskOf]).
               ApprovedTools.approve(project, entry.name, specs)
               running[entry.name] = Running(entry, client, tools.map { it.name }, specs)
               specs
@@ -83,7 +83,7 @@ class ConfiguredServersSource(
             }
             else -> {
               onDrift(entry.name, drift)
-              // Сервер остаётся запущенным (его ещё подтвердят), но инструментов не даёт.
+              // The server keeps running (it may still be confirmed), but it contributes no tools.
               running[entry.name] = Running(entry, client, emptyList(), emptyList())
               emptyList()
             }
