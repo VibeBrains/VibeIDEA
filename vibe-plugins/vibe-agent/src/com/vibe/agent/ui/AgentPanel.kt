@@ -3689,6 +3689,8 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
           // in the next request.
           onThought = { noteActivity(); turns.chat.reasoning.append(it); roundReasoning.append(it); appendThought(it) },
           tools = tools,
+          // The same key on every turn of the thread: the provider routes the conversation to the server with its cache.
+          promptCacheKey = com.vibe.agent.providers.PromptCacheKey.of(turnThreadId ?: currentThreadId, "agent"),
         ) { delta -> noteActivity(); roundText.append(delta); appendAgentText(delta) }
         usage = usage.merge(llmClient.lastUsage())
         val calls = llmClient.lastToolCalls()

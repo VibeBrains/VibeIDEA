@@ -209,6 +209,8 @@ class LlmClient(
 
   private val json = Json { ignoreUnknownKeys = true }
   @Volatile private var cancelled: () -> Boolean = { false }
+  /** The `prompt_cache_key` of the request in flight; see [chat]. */
+  @Volatile private var cacheKey: String? = null
   @Volatile private var activeBody: java.io.InputStream? = null
 
   /** `Retry-After` of the last response, if the provider sent one. */
@@ -241,10 +243,16 @@ class LlmClient(
      * are read after the request with [lastToolCalls]; running them is the caller's business.
      */
     tools: List<ToolSpec> = emptyList(),
+    /**
+     * The conversation's `prompt_cache_key` ([PromptCacheKey]); sent only to a provider that declared it accepts one.
+     * Null — a request outside a conversation, which has no cache worth routing to.
+     */
+    promptCacheKey: String? = null,
     onDelta: (String) -> Unit,
   ) {
     this.thought = onThought
     this.cancelled = isCancelled
+    this.cacheKey = promptCacheKey
     lastUsage = TokenUsage.NONE
     lastAnsweredModel = null
     offeredTools = if (tools.isEmpty() || !supportsTools(model)) emptyList() else tools
@@ -428,6 +436,7 @@ class LlmClient(
         if (it.role == ToolCalls.ROLE) ToolCalls.openAiResults(it) else listOf(LlmMessages.openAi(it, echo))
       }))
       if (offeredTools.isNotEmpty()) put("tools", ToolCalls.openAiTools(offeredTools))
+      PromptCacheKey.sent(provider.entry.promptCacheKey, cacheKey)?.let { put("prompt_cache_key", it) }
     }.let { withReasoning(it, "openai", model) }), model.extraBody)
     if (ModelQuirks.quirksOf(quirkId, overrides).isNotEmpty()) {
       logger<LlmClient>().info("Model quirks applied for " + quirkId + ": " + ModelQuirks.noteOf(quirkId, overrides))
