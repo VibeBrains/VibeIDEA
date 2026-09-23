@@ -11,23 +11,20 @@ import com.intellij.usageView.UsageViewTypeLocation
 import com.redhat.devtools.lsp4ij.features.LSPPsiElement
 
 /**
- * Как называется то, на что человек навёл курсор с Cmd в файле, обслуживаемом языковым сервером.
+ * What to call a symbol of a file a language server serves, wherever the platform names an element — usages, lists,
+ * and the Ctrl+hover hint when the server has not said more.
  *
- * LSP4IJ отвечает на этот вопрос строкой `LSP Symbol` — одинаковой для функции, типа, переменной и
- * импорта. Всплывашка `LSP Symbol "encodeURIComponent" [interceptor.ts]` не говорит ничего сверх
- * того, что человек и так видит на экране, и именно по ней складывается впечатление, что языки в
- * этой IDE поддержаны поверхностно (владелец, 18.09.2026).
+ * LSP4IJ answers `LSP Symbol` for a function, a type, a variable and an import alike, and a hint reading
+ * `LSP Symbol "encodeURIComponent" [interceptor.ts]` says nothing beyond what is already on the screen. The language
+ * of the file is known from the same mapping that picks its server, and «символ TypeScript» at least says whose
+ * symbol it is.
  *
- * Сказать больше мы можем честно: ЯЗЫК файла известен нам из сопоставления шаблонов имён серверам,
- * и «символ TypeScript» — это уже ответ на вопрос «чей это символ и кто про него знает».
+ * The signature itself is not here: it comes from the server by request, and a description is asked for in places
+ * that cannot wait for one. It lives in the documentation target instead ([com.vibe.lsp.nav.LspSignatureDocumentation]),
+ * which the Ctrl+hover hint asks first; this description is what remains when the server has not answered yet.
  *
- * Чего здесь СОЗНАТЕЛЬНО нет: сигнатуры из `textDocument/hover`. Она приходит от сервера запросом,
- * а описание элемента платформа спрашивает синхронно на EDT — ждать сервер в этот момент значит
- * подвесить редактор на каждое наведение мыши. Правильное место для сигнатуры — документация, и
- * это отдельная задача.
- *
- * Регистрируется ПЕРЕД провайдером LSP4IJ (`order="first"`): их провайдер отвечает всегда, и
- * встать после него значит не отвечать никогда.
+ * Registered before LSP4IJ's provider (`order="first"`): theirs answers for everything, and a provider after it never
+ * gets asked.
  */
 class VibeLspSymbolDescription : ElementDescriptionProvider {
   override fun getElementDescription(element: PsiElement, location: ElementDescriptionLocation): String? {

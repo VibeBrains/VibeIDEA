@@ -108,4 +108,21 @@
       <description>Debug adapter for PHP over Xdebug (vscode-php-debug, MIT)</description>
     </debugAdapterServer>
   </extensions>
+
+  <!-- Everything below talks to the servers through LSP4IJ's classes, so it is registered only when LSP4IJ is
+       there: from the main descriptor, a disabled LSP4IJ would turn each of these into a class-loading error. -->
+  <extensions defaultExtensionNs="com.intellij">
+    <!-- Before LSP4IJ's provider: theirs answers «LSP Symbol» for everything, and a provider after it is never asked. -->
+    <elementDescriptionProvider order="first" implementation="com.vibe.lsp.VibeLspSymbolDescription"/>
+    <!-- Our go-to, active only while the vibe.lsp.precise.navigation key is on. First, like LSP4IJ's own handler:
+         the platform takes the targets of the first handler that returns any. -->
+    <gotoDeclarationHandler order="first" implementation="com.vibe.lsp.nav.VibeLspGotoDeclarationHandler"/>
+    <!-- The Ctrl+hover hint: the signature from textDocument/hover instead of «символ TypeScript». -->
+    <platform.backend.documentation.psiTargetProvider implementation="com.vibe.lsp.nav.LspSignatureDocumentation"/>
+  </extensions>
+
+  <extensions defaultExtensionNs="com.vibe.agent">
+    <!-- The agent's trace resolves names through the servers, not only through the text. -->
+    <symbolLookup implementation="com.vibe.lsp.nav.LspSymbolLookup"/>
+  </extensions>
 </idea-plugin>

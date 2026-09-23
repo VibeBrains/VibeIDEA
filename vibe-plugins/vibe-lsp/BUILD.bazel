@@ -40,11 +40,15 @@ jvm_library(
         "@lib//vibe/lsp4ij:vibe-lsp4ij",
         "//libraries/gson",
         "//libraries/lsp4j",
+        # Definition answers come as lsp4j's Either of locations and links, which lives in the JSON-RPC jar.
+        "//libraries/lsp4j/jsonrpc",
         # Индекс объявлений Ext JS и обработчик перехода.
         "//platform/indexing-api:indexing",
         # Подпись символа под курсором: UsageView*Location, по которым платформа спрашивает описание.
         "//platform/usageView",
         "//platform/lang-api:lang",
+        # The Ctrl+hover hint: DocumentationTarget and the psiTargetProvider extension point live in lang-impl.
+        "//platform/lang-impl",
         # Точка расширения подсветки: свои TextMate-грамматики для языков, которых в платформе нет.
         "//plugins/textmate",
     ],

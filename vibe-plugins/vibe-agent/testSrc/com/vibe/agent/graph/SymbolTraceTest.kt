@@ -68,4 +68,22 @@ class SymbolTraceTest {
   fun `a line without a module says so instead of inventing one`() {
     assertNull(SymbolTrace.moduleOf("const x = 1;"))
   }
+
+  @Test
+  fun `occurrences are whole identifiers only`() {
+    val text = "import { Mailer } from './mailer'; const m = new Mailer(); MailerFactory; \$Mailer; mailer"
+    val found = SymbolTrace.occurrences(text, "Mailer")
+    // The import and the `new`, not the longer name, not the PHP-style variable, not the lower-case module.
+    assertEquals(listOf(text.indexOf("Mailer"), text.indexOf("new Mailer") + 4), found)
+  }
+
+  @Test
+  fun `occurrences at the edges of the text count`() {
+    assertEquals(listOf(0, 7), SymbolTrace.occurrences("Mailer Mailer", "Mailer"))
+  }
+
+  @Test
+  fun `an empty name occurs nowhere`() {
+    assertTrue(SymbolTrace.occurrences("anything", "").isEmpty())
+  }
 }

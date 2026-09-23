@@ -24,9 +24,6 @@
 
   <extensions defaultExtensionNs="com.intellij">
     <notificationGroup id="Vibe Languages" displayType="BALLOON"/>
-    <!-- Раньше провайдера LSP4IJ: он отвечает «LSP Symbol» на что угодно, и встать после него
-         значит не ответить никогда. -->
-    <elementDescriptionProvider order="first" implementation="com.vibe.lsp.VibeLspSymbolDescription"/>
     <!-- Под общим корнем настроек VibeIDEA, который объявляет vibe-agent. -->
     <applicationConfigurable parentId="com.vibe.settings" displayName="Языковые серверы"
                              id="com.vibe.lsp.paths" instance="com.vibe.lsp.VibeLspConfigurable"/>
@@ -38,12 +35,10 @@
     <fileBasedIndex implementation="com.vibe.lsp.extjs.ExtMemberIndexExtension"/>
     <fileBasedIndex implementation="com.vibe.lsp.extjs.ExtEventIndexExtension"/>
     <gotoDeclarationHandler implementation="com.vibe.lsp.extjs.ExtGotoDeclarationHandler"/>
-    <!-- Точная навигация: подчёркиваем только то, что сервер действительно резолвит.
-         Первым — как и наш ElementDescriptionProvider: обработчик LSP4IJ отвечает на что угодно,
-         и встать после него значит не ответить никогда. Выключена ключом реестра по умолчанию. -->
-    <gotoDeclarationHandler order="first" implementation="com.vibe.lsp.nav.VibeLspGotoDeclarationHandler"/>
+    <!-- The switch of our own go-to (PreciseNavigation); the handler itself is registered with LSP4IJ's
+         integration, since it talks to the servers through LSP4IJ. -->
     <registryKey key="vibe.lsp.precise.navigation" defaultValue="false"
-                 description="VibeIDEA: подчёркивать под курсором только то, что языковой сервер резолвит (опытный режим)"/>
+                 description="VibeIDEA: свой переход по коду вместо перехода LSP4IJ — ждёт сервер с потолком и помнит ответы по позиции (опытный режим)"/>
   </extensions>
 
   <projectListeners>

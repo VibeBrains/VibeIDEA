@@ -399,6 +399,14 @@ class VibeMcpTools(private val projectProvider: () -> Project? = { ProjectManage
       ?: return McpServer.Tools.Result("в редакторе ничего не открыто — назовите путь файла", isError = true)
     val hops = (arguments["hops"]?.jsonPrimitive?.contentOrNull?.toIntOrNull() ?: DEFAULT_TRACE_HOPS).coerceIn(1, MAX_TRACE_HOPS)
     val roots = ProjectContextService.getInstance(project).roots()
+    if (!readable(start, roots)) return McpServer.Tools.Result("читать нельзя: " + start, isError = true)
+    // The language server first: it resolves imports, re-exports and aliases as the compiler does. The text reading
+    // below is the fallback, and its answer starts by saying why it had to be used.
+    val note = when (val precise = VibeSymbolLookup.lookup(project, start, name)) {
+      is VibeSymbolLookup.Result.Found ->
+        return McpServer.Tools.Result(preciseTrace(precise) { readable(it, roots) }.joinToString("\n"))
+      is VibeSymbolLookup.Result.Missed -> textTraceNote(precise.reason)
+    }
     val lines = ArrayList<String>()
     var current: String? = start
     val seen = HashSet<String>()
@@ -416,9 +424,9 @@ class VibeMcpTools(private val projectProvider: () -> Project? = { ProjectManage
       current = next?.let { resolveModule(project, current!!, it) }
       hop++
     }
-    if (lines.isEmpty()) return McpServer.Tools.Result("не нашлось, откуда приходит " + name)
+    if (lines.isEmpty()) return McpServer.Tools.Result(note + "\nне нашлось, откуда приходит " + name)
     if (current != null && hop >= hops) lines += "… цепочка оборвана по потолку в " + hops + " файлов"
-    return McpServer.Tools.Result(lines.joinToString("\n"))
+    return McpServer.Tools.Result((listOf(note) + lines).joinToString("\n"))
   }
 
   /** Путь модуля → файл: сперва относительно текущего, потом по графу импортов. */
@@ -537,6 +545,34 @@ class VibeMcpTools(private val projectProvider: () -> Project? = { ProjectManage
     internal fun readable(path: String, roots: AccessPolicy.Roots): Boolean {
       val resolved = AgentPaths.resolve(path) as? AgentPaths.Result.Resolved ?: return false
       return AccessPolicy.mayRead(resolved.path.canonical.toString(), roots)
+    }
+
+    /**
+     * The trace answered by a language server: where the name is declared, and its signature.
+     *
+     * A declaration in a file the agent may not read is named but not described: a hover over a constant shows its
+     * value, and the access rule would leak through the signature.
+     */
+    internal fun preciseTrace(found: VibeSymbolLookup.Result.Found, readable: (String) -> Boolean): List<String> {
+      val servers = found.places.map { it.server }.distinct().joinToString()
+      val lines = arrayListOf("точно, по языковому серверу $servers: импорты, реэкспорты и псевдонимы уже пройдены")
+      var closed = false
+      for (place in found.places) {
+        val open = readable(place.path)
+        closed = closed || !open
+        lines += place.path + ":" + place.line + " [LSP]" + if (open) "" else " файл закрыт правилами доступа"
+      }
+      if (!closed) found.signature?.let { lines += "сигнатура: $it" }
+      return lines
+    }
+
+    /** Why the answer is the text reading: the model decides by it whether asking again later is worth it. */
+    internal fun textTraceNote(reason: VibeSymbolLookup.Reason): String = when (reason) {
+      VibeSymbolLookup.Reason.NOT_SERVED -> "разбор текстовый: языковой сервер этот файл не обслуживает"
+      VibeSymbolLookup.Reason.NOT_IN_FILE -> "разбор текстовый: имени нет в тексте файла целым словом"
+      VibeSymbolLookup.Reason.NO_ANSWER ->
+        "разбор текстовый: языковой сервер не ответил вовремя, скорее всего ещё загружает проект — спросите позже, ответ будет точным"
+      VibeSymbolLookup.Reason.NOTHING_FOUND -> "разбор текстовый: языковой сервер не знает объявления этого имени"
     }
   }
 }

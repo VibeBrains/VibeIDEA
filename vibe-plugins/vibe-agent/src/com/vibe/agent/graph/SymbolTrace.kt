@@ -69,6 +69,28 @@ object SymbolTrace {
   }
 
   /**
+   * Where [name] occurs in [text] as a whole identifier: start offsets, in order.
+   *
+   * The precise trace asks the language server about these places one by one until one resolves: the first
+   * occurrence may sit in a comment or a string, about which the server knows nothing.
+   */
+  fun occurrences(text: CharSequence, name: String): List<Int> {
+    if (name.isEmpty()) return emptyList()
+    val found = ArrayList<Int>()
+    var at = text.indexOf(name)
+    while (at >= 0) {
+      val end = at + name.length
+      val whole = (at == 0 || !isNamePart(text[at - 1])) && (end >= text.length || !isNamePart(text[end]))
+      if (whole) found += at
+      at = text.indexOf(name, at + 1)
+    }
+    return found
+  }
+
+  // `$` belongs to an identifier in JavaScript and to a variable in PHP, so `$user` is not an occurrence of `user`.
+  private fun isNamePart(c: Char): Boolean = c.isLetterOrDigit() || c == '_' || c == '$'
+
+  /**
    * Откуда именно импортировано — путь модуля из строки импорта.
    *
    * Без него шаг «пришло импортом» отвечает «не отсюда» и не отвечает «а откуда»: цепочка

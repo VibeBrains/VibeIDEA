@@ -24,6 +24,10 @@
          ради одного списка серверов была бы циклом. -->
     <extensionPoint qualifiedName="com.vibe.agent.ideFacts" interface="com.vibe.agent.mcp.VibeIdeFacts"
                     dynamic="true"/>
+    <!-- Where a name is declared, by the language server that serves the file: the servers live in vibe-lsp,
+         and asking them from here directly would be a dependency cycle. -->
+    <extensionPoint qualifiedName="com.vibe.agent.symbolLookup" interface="com.vibe.agent.mcp.VibeSymbolLookup"
+                    dynamic="true"/>
   </extensionPoints>
 
   <extensions defaultExtensionNs="com.intellij">
