@@ -16,6 +16,7 @@
 set -euo pipefail
 root="$(cd "$(dirname "$0")/../.."; pwd)"
 . "$root/vibe-plugins/tools/pythonBin.sh"
+. "$root/vibe-plugins/tools/bazelTest.sh"
 status=0
 
 thin_class="$root/platform/platform-api/src/com/intellij/ui/components/JBThinOverlappingScrollBar.kt"
@@ -285,25 +286,21 @@ done < <(grep -rl 'com.intellij.openapi.options.Configurable\|: Configurable' "
 # общее сообщение об одной врёт про другую. Гейт, который на сбой сборки говорит «подсказка не
 # переносится», отправляет человека чинить работающее — ровно та ошибка, за которую этот файл уже
 # ругал сам себя выше.
+#
+# Which of the three answers came back is decided by bazelTest.sh from Bazel's exit code and its test-case summary.
 echo "  подсказка настроек: перенос проверяется замером"
-HINT_OUT=$(cd "$root" && ./bazel.cmd test //vibe-plugins/vibe-agent:vibe-agent_test --test_filter=SettingsHintWidth 2>&1) || true
-case "$HINT_OUT" in
-  # A test target that did not compile prints FAILED too, and it was read as a verdict on the hint: a compile
-  # error elsewhere in the test sources sent people to fix a hint that wraps fine.
-  *"FAILED TO BUILD"*|*"fails to build"*|*"failed to build"*)
-    echo "ОШИБКА: замер переноса НЕ ВЫПОЛНЕН — тесты не собрались; это не приговор подсказке"
-    printf '%s\n' "$HINT_OUT" | grep -E 'Error:|error:' | head -3 | sed 's/^/    /'
-    status=1 ;;
-  *"tests pass"*|*"test passes"*)
-    : ;;
-  *"FAILED"*|*"failing"*)
+bazel_test_verdict //vibe-plugins/vibe-agent:vibe-agent_test SettingsHintWidth
+case "$BAZEL_TEST_VERDICT" in
+  pass)
+    echo "  подсказка настроек: переносится, замер прошёл — случаев: $BAZEL_TEST_PASSED" ;;
+  fail)
     echo "ОШИБКА: подсказка настроек не переносится по ширине — страница обрежет текст по правому краю"
-    printf '%s\n' "$HINT_OUT" | grep -F 'AssertionFailedError' | head -3 | sed 's/^/    /'
+    bazel_test_evidence
     echo "  Прогоните: ./bazel.cmd test //vibe-plugins/vibe-agent:vibe-agent_test --test_filter=SettingsHintWidth"
     status=1 ;;
   *)
-    echo "ОШИБКА: замер переноса НЕ ВЫПОЛНЕН — это не приговор подсказке, а невозможность её проверить"
-    printf '%s\n' "$HINT_OUT" | tail -3 | sed 's/^/    /'
+    echo "ОШИБКА: замер переноса НЕ ВЫПОЛНЕН — $BAZEL_TEST_REASON; это не приговор подсказке"
+    bazel_test_evidence
     status=1 ;;
 esac
 

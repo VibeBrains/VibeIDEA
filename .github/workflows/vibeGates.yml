@@ -24,21 +24,29 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
+        id: checkout
         with:
           # Сабмодуль с общими сидами: гейт манифеста сверяет его содержимое со списком в коде.
           submodules: true
 
+      # Every gate runs even after an earlier one failed, and the job is still red if any of them did: a failing
+      # step must not hide the verdicts behind it. Only a failed checkout stops them, since there is nothing to read.
       - name: Тонкие скроллы
+        if: ${{ !cancelled() && steps.checkout.outcome == 'success' }}
         run: ./vibe-plugins/tools/checkVibeUi.sh
 
       - name: Каталог строк и храповик
+        if: ${{ !cancelled() && steps.checkout.outcome == 'success' }}
         run: ./vibe-plugins/tools/checkVibeI18n.sh
 
       - name: Чужой брендинг
+        if: ${{ !cancelled() && steps.checkout.outcome == 'success' }}
         run: ./vibe-plugins/tools/checkVibeBranding.sh
 
       - name: Целостность документации
+        if: ${{ !cancelled() && steps.checkout.outcome == 'success' }}
         run: ./vibe-plugins/tools/checkVibeDocs.sh
 
       - name: Язык комментариев — храповик
+        if: ${{ !cancelled() && steps.checkout.outcome == 'success' }}
         run: ./vibe-plugins/tools/checkVibeComments.sh

@@ -14,25 +14,24 @@
 # второй правдой — она разошлась бы с загрузчиком на первом же новом поле, и разошлась бы молча.
 set -euo pipefail
 cd "$(dirname "$0")/../.."
+. vibe-plugins/tools/bazelTest.sh
 
 TARGET=//vibe-plugins/vibe-agent:vibe-agent_test
 FILTER='com.vibe.agent.defaults.SeedsSmokeTest'
 
-# Код выхода берётся из отчёта, а не из хвоста конвейера: `bazel … | tail` возвращает код `tail`,
-# и гейт был бы зелёным всегда (грабля записана в базе знаний).
-OUT=$(./bazel.cmd test "$TARGET" --test_filter="$FILTER" 2>&1) || true
-printf '%s\n' "$OUT" | grep -E "Test cases:" || true
+bazel_test_verdict "$TARGET" "$FILTER"
+printf '%s\n' "$BAZEL_TEST_OUT" | grep -E "Test cases:" || true
 
-if printf '%s\n' "$OUT" | grep -q "and 0 failing"; then
-  say_ok=1
-else
-  say_ok=0
-fi
-
-if [ "$say_ok" = "1" ]; then
-  echo "Гейт сидов: навыки проходят валидатор, пайплайны читаются загрузчиком, храповик эвалов держит"
-else
-  printf '%s\n' "$OUT" | grep -E "FAILED|навык|пайплайн|эвал" | head -20
-  echo "Гейт сидов: ПРОВАЛЕН"
-  exit 1
-fi
+case "$BAZEL_TEST_VERDICT" in
+  pass)
+    echo "Гейт сидов: навыки проходят валидатор, пайплайны читаются загрузчиком, храповик эвалов держит" ;;
+  fail)
+    printf '%s\n' "$BAZEL_TEST_OUT" | grep -E "FAILED|навык|пайплайн|эвал" | head -20 || true
+    echo "Гейт сидов: ПРОВАЛЕН"
+    exit 1 ;;
+  *)
+    echo "ОШИБКА: смоук набора НЕ ВЫПОЛНЕН — $BAZEL_TEST_REASON; это не приговор набору"
+    bazel_test_evidence
+    echo "Гейт сидов: ПРОВАЛЕН"
+    exit 1 ;;
+esac
