@@ -82,6 +82,20 @@ object VibeAgentSettings {
   const val MAX_DESIGN_MAX_ATTEMPTS = 5
   const val DESIGN_MEASURE_TIMEOUT_MS = 20_000L
 
+  // --- text-slop gate ---
+  const val SLOP_OFF = "off"
+  const val SLOP_NOTIFY = "notify"
+  const val SLOP_ENFORCE = "enforce"
+  val SLOP_MODES = listOf(SLOP_OFF, SLOP_NOTIFY, SLOP_ENFORCE)
+  /**
+   * Notify by default: the check needs nothing running and costs nothing, so unlike the design gate it can be on from
+   * the start; sending the agent back is the person's choice, because the rewrite is another turn they pay for.
+   */
+  const val DEFAULT_SLOP_MODE = SLOP_NOTIFY
+  const val DEFAULT_SLOP_MAX_ATTEMPTS = 2
+  const val MIN_SLOP_MAX_ATTEMPTS = 1
+  const val MAX_SLOP_MAX_ATTEMPTS = 5
+
   // --- FIM autocomplete ---
   const val DEFAULT_FIM_ENABLED = true
   const val DEFAULT_FIM_DEBOUNCE_MS = 250
@@ -213,6 +227,8 @@ object VibeAgentSettings {
   private const val KEY_WATCH_SUB_LANGS = "vibe.agent.watch.subtitleLanguages"
   private const val KEY_DESIGN_MODE = "vibe.agent.design.mode"
   private const val KEY_DESIGN_MAX_ATTEMPTS = "vibe.agent.design.maxAttempts"
+  private const val KEY_SLOP_MODE = "vibe.agent.slop.mode"
+  private const val KEY_SLOP_MAX_ATTEMPTS = "vibe.agent.slop.maxAttempts"
   private const val KEY_FIM_ENABLED = "vibe.agent.fim.enabled"
   private const val KEY_FIM_DEBOUNCE_MS = "vibe.agent.fim.debounceMs"
   private const val KEY_FIM_CACHE_SIZE = "vibe.agent.fim.cacheSize"
@@ -412,6 +428,14 @@ object VibeAgentSettings {
   var designMaxAttempts: Int
     get() = props.getInt(KEY_DESIGN_MAX_ATTEMPTS, DEFAULT_DESIGN_MAX_ATTEMPTS).coerceIn(MIN_DESIGN_MAX_ATTEMPTS, MAX_DESIGN_MAX_ATTEMPTS)
     set(value) = props.setValue(KEY_DESIGN_MAX_ATTEMPTS, value.coerceIn(MIN_DESIGN_MAX_ATTEMPTS, MAX_DESIGN_MAX_ATTEMPTS), DEFAULT_DESIGN_MAX_ATTEMPTS)
+
+  var slopMode: String
+    get() = props.getValue(KEY_SLOP_MODE, DEFAULT_SLOP_MODE).let { if (it in SLOP_MODES) it else DEFAULT_SLOP_MODE }
+    set(value) = props.setValue(KEY_SLOP_MODE, if (value in SLOP_MODES) value else DEFAULT_SLOP_MODE, DEFAULT_SLOP_MODE)
+
+  var slopMaxAttempts: Int
+    get() = props.getInt(KEY_SLOP_MAX_ATTEMPTS, DEFAULT_SLOP_MAX_ATTEMPTS).coerceIn(MIN_SLOP_MAX_ATTEMPTS, MAX_SLOP_MAX_ATTEMPTS)
+    set(value) = props.setValue(KEY_SLOP_MAX_ATTEMPTS, value.coerceIn(MIN_SLOP_MAX_ATTEMPTS, MAX_SLOP_MAX_ATTEMPTS), DEFAULT_SLOP_MAX_ATTEMPTS)
 
   var watchSceneThreshold: Double
     get() = props.getValue(KEY_WATCH_SCENE_THRESHOLD)?.toDoubleOrNull()?.coerceIn(0.05, 0.9) ?: DEFAULT_WATCH_SCENE_THRESHOLD

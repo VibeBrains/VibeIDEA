@@ -54,7 +54,17 @@ object DesignRuleCatalog {
   const val OVERSHOOT_ANIMATION = "overshoot-animation"
   const val HANGING_PREPOSITION = "hanging-preposition"
   const val ORPHAN_WORD = "orphan-word"
-  const val MARKETING_PROMISE = "marketing-promise"
+  /** Stock copy on the page, found by the text-slop catalogue ([com.vibe.agent.slop.TextSlop]). */
+  const val COPY_SLOP = "copy-slop"
+
+  /**
+   * Ids a rule used to have → its id now. A drift a project accepted under the old id stays accepted: the file is the
+   * person's, and a renamed rule must not undo a decision written in it.
+   */
+  val LEGACY: Map<String, String> = mapOf("marketing-promise" to COPY_SLOP)
+
+  /** The current id for an id read from a project's file. */
+  fun canonical(ruleId: String): String = LEGACY[ruleId] ?: ruleId
 
   // Findability: the only category invisible both on a screenshot and in a preview — a page can be
   // perfect to look at and impossible to find.
@@ -152,7 +162,7 @@ object DesignRuleCatalog {
     REQUIRED_ONLY_VISUAL, HEADING_LEVEL_SKIPPED, REDUCED_MOTION_HIDES, DEAD_STATE_CONTRACT, INVISIBLE_STATE,
     NO_HOVER_RESPONSE, GRADIENT_TEXT, GLOW_INSTEAD_OF_SHADOW, GLASSMORPHISM, PURPLE_PALETTE,
     EYEBROW_CHIP, CLONED_CARDS, RADIUS_SCALE_DRIFT, EXTREME_RADIUS, ANIMATED_LAYOUT_PROPERTY,
-    OVERSHOOT_ANIMATION, HANGING_PREPOSITION, ORPHAN_WORD, MARKETING_PROMISE,
+    OVERSHOOT_ANIMATION, HANGING_PREPOSITION, ORPHAN_WORD, COPY_SLOP,
     TITLE_MISSING, TITLE_TOO_SHORT, TITLE_TOO_LONG, H1_MISSING, H1_MULTIPLE,
     DESCRIPTION_MISSING, DESCRIPTION_TOO_SHORT, DESCRIPTION_TOO_LONG, LANG_MISSING,
     VIEWPORT_MISSING, VIEWPORT_BLOCKS_ZOOM, CANONICAL_MISSING, CANONICAL_RELATIVE,

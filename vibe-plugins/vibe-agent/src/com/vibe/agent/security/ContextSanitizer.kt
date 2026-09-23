@@ -75,6 +75,38 @@ object ContextSanitizer {
     val isClean: Boolean get() = findings.isEmpty()
   }
 
+  /** One character [sanitize] takes out of the text: where it stands, what it is, and why it goes. */
+  data class Removed(val index: Int, val codePoint: Int, val kind: Kind)
+
+  /**
+   * The characters [sanitize] removes, in text order: the invisible ones and the bidi controls, minus the honest uses
+   * of both.
+   *
+   * The one definition of «a character nobody can see» in the product. The text-slop detector reports the same
+   * characters in text an agent wrote, and a second list there would disagree with this one on the first new case.
+   */
+  fun removable(text: String): List<Removed> {
+    val out = ArrayList<Removed>()
+    var index = 0
+    while (index < text.length) {
+      val codePoint = text.codePointAt(index)
+      // A subdivision flag is the one honest use of the tag block, so it is skipped whole: a per-character check would
+      // break the sequence, and 🏴󠁧󠁢󠁳󠁣󠁴󠁿 would reach the model as a bare black flag and the person as seven invisible
+      // characters.
+      val flag = flagSequenceLength(text, index)
+      if (flag > 0) {
+        index += flag
+        continue
+      }
+      when {
+        isInvisible(codePoint) && !isJoinerInScript(text, index) -> out.add(Removed(index, codePoint, Kind.INVISIBLE))
+        isBidiControl(codePoint) -> out.add(Removed(index, codePoint, Kind.BIDI))
+      }
+      index += Character.charCount(codePoint)
+    }
+    return out
+  }
+
   /**
    * @param maskSecrets replace credential-shaped substrings with a marker in the returned text.
    *                    The file on disk is never touched — this only affects what we transmit.
@@ -87,34 +119,28 @@ object ContextSanitizer {
     var bidi = 0
     var run = 0
     var longestRun = 0
+    // The end of the last invisible character: a run continues only while nothing kept and no bidi control stands
+    // between two of them.
+    var runEnd = -1
     val cleaned = buildString(text.length) {
-      var index = 0
-      while (index < text.length) {
-        val codePoint = text.codePointAt(index)
-        val width = Character.charCount(codePoint)
-
-        // Флаг подразделения — единственное честное применение тегового блока. Пропускаем его
-        // целиком одним куском: посимвольная проверка разорвала бы последовательность, и
-        // 🏴󠁧󠁢󠁳󠁣󠁴󠁿 уехал бы модели как голый чёрный флаг, а человеку — как «7 невидимых символов».
-        val flag = flagSequenceLength(text, index)
-        if (flag > 0) {
-          append(text, index, index + flag)
-          index += flag
+      var from = 0
+      for (removed in removable(text)) {
+        append(text, from, removed.index)
+        val width = Character.charCount(removed.codePoint)
+        if (removed.kind == Kind.INVISIBLE) {
+          invisible++
+          run = if (removed.index == runEnd) run + 1 else 1
+          if (run > longestRun) longestRun = run
+          runEnd = removed.index + width
+        }
+        else {
+          bidi++
           run = 0
-          continue
+          runEnd = -1
         }
-
-        when {
-          isInvisible(codePoint) && !isJoinerInScript(text, index) -> {
-            invisible++
-            run++
-            if (run > longestRun) longestRun = run
-          }
-          isBidiControl(codePoint) -> { bidi++; run = 0 }
-          else -> { appendCodePoint(codePoint); run = 0 }
-        }
-        index += width
+        from = removed.index + width
       }
+      append(text, from, text.length)
     }
     if (invisible > 0) {
       findings.add(Finding(Kind.INVISIBLE, t("sanitizer.invisible"), invisible,

@@ -1,4 +1,5 @@
 load("@community//build:tests-options.bzl", "jps_test")
+load("@rules_java//java:defs.bzl", "java_binary")
 load("@rules_jvm//:jvm.bzl", "jvm_library")
 
 jvm_library(
@@ -88,6 +89,13 @@ jvm_library(
 jps_test(
     name = "vibe-agent_test",
     runtime_deps = [":vibe-agent_test_lib"],
+)
+
+# The text-slop detector for the repository's gates (release notes, docs ratchet): the same code the IDE runs.
+java_binary(
+    name = "textSlopCli",
+    main_class = "com.vibe.agent.slop.TextSlopCli",
+    runtime_deps = [":vibe-agent"],
 )
 
 exports_files(

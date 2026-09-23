@@ -105,6 +105,7 @@ object McpProtocol {
   const val TOOL_RUN_COMMAND = "vibe_run_command"
   const val TOOL_COMMAND_OUTPUT = "vibe_command_output"
   const val TOOL_COMMAND_STOP = "vibe_command_stop"
+  const val TOOL_TEXT_SLOP = "vibe_text_slop_check"
 
   /**
    * Что инструмент делает с машиной человека.
@@ -145,6 +146,7 @@ object McpProtocol {
     TOOL_COMMAND_OUTPUT to Risk.READ,
     TOOL_COMMAND_STOP to Risk.EXECUTE,
     TOOL_RUN to Risk.EXECUTE,
+    TOOL_TEXT_SLOP to Risk.READ,
   )
 
   /**
@@ -266,6 +268,26 @@ object McpProtocol {
           putJsonObject("limit") { put("type", "integer"); put("description", "Сколько разделов вернуть, по умолчанию 5") }
         }
         putJsonArray("required") { add(kotlinx.serialization.json.JsonPrimitive("query")) }
+      },
+    ),
+    Tool(
+      name = TOOL_TEXT_SLOP,
+      title = "Проверить текст на нейрослоп",
+      description = "Детерминированная проверка текста на приметы машинного письма: штампы («бесшовный», «раскрыть " +
+                    "потенциал»), пустые обороты, шаблоны вроде «это не X — это Y», голос ассистента, безымянные " +
+                    "«исследования показывают», ритм и оформление. Русский и английский; код, цитаты и ссылки прозой " +
+                    "не считаются.\n" +
+                    "Звать ПОСЛЕ того, как написал текст для людей — документацию, README, заметки к релизу, тексты " +
+                    "интерфейса, — и ДО того, как отдать его. Ответ называет строку, найденный кусок и как исправить, " +
+                    "плюс счёт по фиксированной арифметике: проход — от 90 и без тяжёлых находок.\n" +
+                    "Счёт — пол, а не вердикт: выдуманный факт и сдвинутый смысл он не видит. Порядок правки и проверку " +
+                    "свежим рецензентом описывает навык anti-slop; правила проекта — .vibe/slop.json.",
+      schema = buildJsonObject {
+        put("type", "object")
+        putJsonObject("properties") {
+          putJsonObject("path") { put("type", "string"); put("description", "Файл относительно корня проекта, например docs/guide.md") }
+          putJsonObject("text") { put("type", "string"); put("description", "Сам текст — когда он ещё не записан в файл") }
+        }
       },
     ),
     Tool(

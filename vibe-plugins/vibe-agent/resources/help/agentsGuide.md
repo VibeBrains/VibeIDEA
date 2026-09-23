@@ -36,6 +36,7 @@
 ./vibe-plugins/tools/checkVibeSeeds.sh     # общий набор .vibe: навыки, пайплайны, храповик эвалов
 ./vibe-plugins/tools/checkVibeImports.sh   # мёртвые импорты
 ./vibe-plugins/tools/checkVibeComments.sh  # храповик по комментариям на русском: число не растёт
+./vibe-plugins/tools/checkVibeSlop.sh      # храповик по нейрослопу в docs/vibe и README: число находок не растёт
 ./bazel.cmd test //vibe-plugins/vibe-agent:vibe-agent_test
 ./vibe-plugins/tools/checkVibeDist.sh      # ПОСЛЕ сборки инсталлятора: плагины в индексе, классы видны, серверы запускаются
 ./vibe-plugins/tools/checkUpstreamLag.sh   # отставание базы от upstream/master (в CI — раз в неделю)

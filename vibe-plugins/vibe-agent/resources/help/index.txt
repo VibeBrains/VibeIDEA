@@ -32,4 +32,5 @@ manuals/rolesSpec.md
 manuals/serversSpec.md
 manuals/skillEvalsSpec.md
 manuals/skillsSpec.md
+manuals/slopSpec.md
 manuals/telegramBridge.md

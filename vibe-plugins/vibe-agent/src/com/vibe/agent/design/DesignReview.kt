@@ -27,9 +27,17 @@ object DesignReview {
     val isClean: Boolean get() = findings.none { it.acceptedReason == null }
   }
 
-  fun run(doc: DocumentSnapshot, accepted: List<Accepted> = emptyList()): Report {
-    val byRule = accepted.associate { it.rule to it.reason }
-    val raw = DesignFloorRules.all(doc) + DesignMarkupRules.all(doc) + DesignStyleRules.all(doc) +
+  /**
+   * @param copy the text-slop catalogue for the page's copy, with the project's `.vibe/slop.json` applied; the shipped
+   *   one when the caller has no project
+   */
+  fun run(
+    doc: DocumentSnapshot,
+    accepted: List<Accepted> = emptyList(),
+    copy: com.vibe.agent.slop.CompiledCatalog? = com.vibe.agent.slop.SlopCheck.builtIn,
+  ): Report {
+    val byRule = accepted.associate { DesignRuleCatalog.canonical(it.rule) to it.reason }
+    val raw = DesignFloorRules.all(doc) + DesignMarkupRules.all(doc) + DesignStyleRules.all(doc, copy) +
       // Findability runs once per page rather than per element, so it lands here rather than in a
       // per-element pass: a title is not a property of a div.
       DesignFindabilityRules.all(doc) + DesignRhythmRules.all(doc) +

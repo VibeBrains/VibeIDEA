@@ -3281,7 +3281,8 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
    * VERIFY-GATE/TURN-CHECKS enforce "not done until green" in the ACP model,
    * where there is no `vibe_complete` tool to hang them on.
    */
-  private fun promptAcpTurn(c: AcpClient, blocks: List<ContentBlock>, t: ChatTarget.Agent, startedAt: Long, verifyAttempt: Int, checkAttempt: Int, designAttempt: Int = 0) {
+  private fun promptAcpTurn(c: AcpClient, blocks: List<ContentBlock>, t: ChatTarget.Agent, startedAt: Long, verifyAttempt: Int, checkAttempt: Int,
+                            designAttempt: Int = 0, slopAttempt: Int = 0) {
     c.prompt(blocks).whenComplete { result, error ->
       // Any throw here (a non-object result, a re-prompt failing) must still END the turn — otherwise
       // turnInFlight/history.activeTurns stay stuck and the panel wedges app-wide until restart.
@@ -3309,11 +3310,12 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
         ApplicationManager.getApplication().executeOnPooledThread {
           try {
             status.set(VibeAgentStatusService.State.GATE)
-            val bounce = evaluateGates(verifyAttempt, checkAttempt, designAttempt)
+            val bounce = evaluateGates(verifyAttempt, checkAttempt, designAttempt, slopAttempt)
             if (bounce == null) status.set(VibeAgentStatusService.State.RUNNING)
             if (bounce != null && !llmCancel.get() && !disposed && c.isAlive) {
               finishAgentBubble(secs, t("chat.checkBounceLabel"))
-              promptAcpTurn(c, listOf(ContentBlock.Text(bounce.message)), t, startedAt, bounce.verifyAttempt, bounce.checkAttempt, bounce.designAttempt)
+              promptAcpTurn(c, listOf(ContentBlock.Text(bounce.message)), t, startedAt, bounce.verifyAttempt, bounce.checkAttempt,
+                            bounce.designAttempt, bounce.slopAttempt)
             }
             else {
               finishAgentBubble(secs, stop)
@@ -3338,13 +3340,14 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     }
   }
 
-  private data class GateBounce(val message: String, val verifyAttempt: Int, val checkAttempt: Int, val designAttempt: Int = 0)
+  private data class GateBounce(val message: String, val verifyAttempt: Int, val checkAttempt: Int, val designAttempt: Int = 0,
+                                val slopAttempt: Int = 0)
 
   /**
    * Post-turn gates over the files this turn changed. Returns a bounce (synthetic
    * follow-up prompt) or null to complete. Only runs when the turn mutated files.
    */
-  private fun evaluateGates(verifyAttempt: Int, checkAttempt: Int, designAttempt: Int = 0): GateBounce? {
+  private fun evaluateGates(verifyAttempt: Int, checkAttempt: Int, designAttempt: Int = 0, slopAttempt: Int = 0): GateBounce? {
     // Stop pressed → the user is done with this turn; do not launch a minutes-long verify build.
     if (llmCancel.get() || disposed) return null
     // A Bash/edit tool may have changed files the client never saw as fs/write, so the gate runs on
@@ -3397,7 +3400,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
             "command" to VibeAgentSettings.verifyCommand, "code" to (res.exitCode ?: "timeout"),
             "attempt" to (verifyAttempt + 1), "max" to maxOf(1, VibeAgentSettings.verifyMaxAttempts),
             "output" to res.outputTail),
-          verifyAttempt + 1, checkAttempt, designAttempt)
+          verifyAttempt + 1, checkAttempt, designAttempt, slopAttempt)
         VerifyGateDecision.STOP -> {
           // Terminal: giving up hands control to the user — do not then bounce on turn checks.
           systemLine(t("chat.verify.stop", "max" to maxOf(1, VibeAgentSettings.verifyMaxAttempts)))
@@ -3415,7 +3418,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     when (TurnChecks.decide(cMode, findings, checkAttempt, VibeAgentSettings.checksMaxAttempts)) {
       TurnChecksDecision.BOUNCE -> return GateBounce(
         TurnChecks.renderCorrective(findings, checkAttempt + 1, maxOf(1, VibeAgentSettings.checksMaxAttempts)),
-        verifyAttempt, checkAttempt + 1, designAttempt)
+        verifyAttempt, checkAttempt + 1, designAttempt, slopAttempt)
       TurnChecksDecision.STOP ->
         systemLine(t("chat.checks.stop", "max" to maxOf(1, VibeAgentSettings.checksMaxAttempts)))
       TurnChecksDecision.NOTIFY_COMPLETE ->
@@ -3441,11 +3444,42 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
         when (DesignHookPolicy.decide(designMode, designFindings, designAttempt, VibeAgentSettings.designMaxAttempts)) {
           DesignHookPolicy.Decision.BOUNCE -> return GateBounce(
             DesignHookPolicy.corrective(designFindings, designAttempt + 1, VibeAgentSettings.designMaxAttempts),
-            verifyAttempt, checkAttempt, designAttempt + 1)
+            verifyAttempt, checkAttempt, designAttempt + 1, slopAttempt)
           DesignHookPolicy.Decision.STOP ->
             systemLine(t("chat.design.stop", "max" to VibeAgentSettings.designMaxAttempts))
           DesignHookPolicy.Decision.REPORT -> systemLine("🎨 " + DesignReview.summary(designFindings))
           DesignHookPolicy.Decision.SKIP -> {}
+        }
+      }
+    }
+
+    // --- TEXT-SLOP GATE: read the prose this turn wrote for people ---
+    val slopMode = when (VibeAgentSettings.slopMode) {
+      VibeAgentSettings.SLOP_NOTIFY -> com.vibe.agent.slop.SlopGatePolicy.Mode.NOTIFY
+      VibeAgentSettings.SLOP_ENFORCE -> com.vibe.agent.slop.SlopGatePolicy.Mode.ENFORCE
+      else -> com.vibe.agent.slop.SlopGatePolicy.Mode.OFF
+    }
+    val prose = com.vibe.agent.slop.SlopGatePolicy.prosePaths(paths)
+    if (slopMode != com.vibe.agent.slop.SlopGatePolicy.Mode.OFF && prose.isNotEmpty()) {
+      val catalog = com.vibe.agent.slop.SlopCheck.catalog(project.basePath) { systemLine(t("slop.cli.warning", "text" to it)) }
+      if (catalog == null) {
+        // Silence would read as «the text is clean»; a build without its catalogue says so.
+        systemLine(t("slop.gate.noCatalog", "reason" to com.vibe.agent.slop.SlopCheck.builtInWarnings.joinToString("; ")))
+      }
+      else {
+        val reports = prose.mapNotNull { path ->
+          readFileForScan(path)?.let { com.vibe.agent.slop.SlopGatePolicy.FileReport(path, com.vibe.agent.slop.TextSlop.analyze(it, catalog)) }
+        }
+        val maxAttempts = VibeAgentSettings.slopMaxAttempts
+        when (com.vibe.agent.slop.SlopGatePolicy.decide(slopMode, reports, slopAttempt, maxAttempts)) {
+          com.vibe.agent.slop.SlopGatePolicy.Decision.BOUNCE -> return GateBounce(
+            com.vibe.agent.slop.SlopGatePolicy.corrective(reports, slopAttempt + 1, maxAttempts),
+            verifyAttempt, checkAttempt, designAttempt, slopAttempt + 1)
+          com.vibe.agent.slop.SlopGatePolicy.Decision.STOP ->
+            systemLine(t("slop.gate.stop", "max" to maxAttempts, "files" to com.vibe.agent.slop.SlopGatePolicy.summary(reports)))
+          com.vibe.agent.slop.SlopGatePolicy.Decision.REPORT ->
+            systemLine(t("slop.gate.notify", "files" to com.vibe.agent.slop.SlopGatePolicy.summary(reports)))
+          com.vibe.agent.slop.SlopGatePolicy.Decision.SKIP -> {}
         }
       }
     }

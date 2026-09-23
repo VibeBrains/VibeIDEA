@@ -31,6 +31,13 @@ class DesignReviewTest {
   }
 
   @Test
+  fun `an acceptance written under the retired marketing-promise id still covers stock copy`() {
+    val slogan = ElementSnapshot(selector = "h1", tag = "h1", text = "Бесшовная платформа выводит работу на новый уровень")
+    val report = DesignReview.run(doc(slogan), listOf(DesignReview.Accepted("marketing-promise", "слоган бренда")))
+    assertEquals("слоган бренда", report.findings.single { it.rule == DesignRuleCatalog.COPY_SLOP }.acceptedReason)
+  }
+
+  @Test
   fun `the floor cannot be accepted away — unreadable text is not an identity`() {
     val accepted = listOf(DesignReview.Accepted(DesignRuleCatalog.CONTRAST_TEXT, "у нас так принято"))
     val report = DesignReview.run(doc(unreadable), accepted)

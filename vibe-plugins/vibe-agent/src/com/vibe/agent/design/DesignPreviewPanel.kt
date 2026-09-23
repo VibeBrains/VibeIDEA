@@ -412,6 +412,12 @@ class DesignPreviewPanel(private val project: Project) : JPanel(BorderLayout()),
     }
   }
 
+  /** The text-slop catalogue for the page's copy, as this project sees it; a broken `.vibe/slop.json` goes to the log. */
+  private fun copyCatalog(): com.vibe.agent.slop.CompiledCatalog? =
+    com.vibe.agent.slop.SlopCheck.catalog(project.basePath) {
+      com.intellij.openapi.diagnostic.logger<DesignPreviewPanel>().warn("slop.json: $it")
+    }
+
   private fun report(snapshots: List<DocumentSnapshot>) {
     if (snapshots.isEmpty()) {
       SwingUtilities.invokeLater { status.text = t("design.status.noAnswer") }
@@ -420,7 +426,7 @@ class DesignPreviewPanel(private val project: Project) : JPanel(BorderLayout()),
     // Accepted drifts come from the project's own design context — the same file the agent reads.
     val accepted = DesignContextFile.load(project.basePath)?.acceptedDrift.orEmpty()
       .map { DesignReview.Accepted(it.ruleId, it.reason) }
-    val reports = snapshots.map { DesignReview.run(it, accepted) }
+    val reports = snapshots.map { DesignReview.run(it, accepted, copyCatalog()) }
     val findings = DesignReview.merge(reports)
     // «Что сейчас плохо» перестают спрашивать после третьего раза: ответ — длинный список, с
     // которым уже решили жить. Спрашивают «что я только что сломал», и на это нужен прошлый замер.
@@ -468,7 +474,7 @@ class DesignPreviewPanel(private val project: Project) : JPanel(BorderLayout()),
     if (snapshots.isEmpty()) return null
     val accepted = DesignContextFile.load(project.basePath)?.acceptedDrift.orEmpty()
       .map { DesignReview.Accepted(it.ruleId, it.reason) }
-    val findings = DesignReview.merge(snapshots.map { DesignReview.run(it, accepted) })
+    val findings = DesignReview.merge(snapshots.map { DesignReview.run(it, accepted, copyCatalog()) })
     SwingUtilities.invokeLater {
       lastFindings = findings
       status.text = DesignReview.summary(findings)

@@ -220,6 +220,12 @@
               text="Журнал аудита агента" description="Показать последние записи .vibe/audit.jsonl, экспортировать или очистить"/>
       <action id="Vibe.Breakers" class="com.vibe.agent.gates.VibeBreakersAction"
               text="Предохранители агента" description="Показать и снять сработавшие защитные предохранители"/>
+      <!-- Text slop: the detector on the selection, or on the whole file when it is prose. In the editor menu the
+           action shows only where it has something to read. -->
+      <action id="Vibe.TextSlop" class="com.vibe.agent.slop.VibeTextSlopAction"
+              text="Нейрослоп в тексте" description="Приметы машинного письма в выделенном тексте или в файле: строка, находка и как исправить">
+        <add-to-group group-id="EditorPopupMenu" anchor="last"/>
+      </action>
     </group>
   </actions>
 </idea-plugin>

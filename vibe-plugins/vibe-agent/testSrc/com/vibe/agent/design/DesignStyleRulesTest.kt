@@ -3,6 +3,7 @@ package com.vibe.agent.design
 
 import org.junit.jupiter.api.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
 class DesignStyleRulesTest {
@@ -75,5 +76,18 @@ class DesignStyleRulesTest {
     val button = ElementSnapshot(selector = "button", tag = "button", interactive = true, hasHoverRule = false)
     assertEquals(Severity.HINT, DesignStyleRules.hoverResponse(doc(button)).single().severity)
     assertTrue(DesignStyleRules.hoverResponse(doc(button.copy(styleRulesUnreadable = true))).isEmpty())
+  }
+
+  @Test
+  fun `stock copy is one hint per element from the text-slop catalogue, plain copy is silent`() {
+    val catalog = assertNotNull(com.vibe.agent.slop.SlopCheck.builtIn, "the build carries no text-slop catalogue")
+    val hero = ElementSnapshot(selector = "h1", tag = "h1",
+                               text = "Бесшовная инновационная платформа выводит командную работу на новый уровень")
+    val plain = ElementSnapshot(selector = "p", tag = "p", text = "Скрипт ставит инструменты за одиннадцать минут")
+    val findings = DesignStyleRules.copySlop(doc(hero, plain), catalog)
+    assertEquals(listOf("h1"), findings.map { it.selector }, "three tells in one headline are one headline to rewrite")
+    assertEquals(DesignRuleCatalog.COPY_SLOP, findings.single().rule)
+    assertEquals(Severity.HINT, findings.single().severity)
+    assertTrue(DesignStyleRules.copySlop(doc(hero), null).isEmpty(), "without a catalogue the rule says nothing")
   }
 }

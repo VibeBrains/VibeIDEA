@@ -65,6 +65,7 @@ class VibeMcpTools(private val projectProvider: () -> Project? = { ProjectManage
       McpProtocol.TOOL_RUN_COMMAND -> runCommand(project, arguments)
       McpProtocol.TOOL_COMMAND_OUTPUT -> commandOutput(project, arguments)
       McpProtocol.TOOL_COMMAND_STOP -> commandStop(project, arguments)
+      McpProtocol.TOOL_TEXT_SLOP -> textSlop(project, arguments)
       else -> McpServer.Tools.Result("неизвестный инструмент: $name", isError = true)
     }
   }
@@ -321,6 +322,56 @@ class VibeMcpTools(private val projectProvider: () -> Project? = { ProjectManage
       return McpServer.Tools.Result("не удалось прочитать " + raw + ": " + (e.message ?: ""), isError = true)
     }
     return McpServer.Tools.Result(raw + ":\n" + clip(text, limit))
+  }
+
+  /**
+   * The text-slop report exactly as the turn gate would see it.
+   *
+   * The text comes from the argument or from a file under the same access rules as reading a file: a check must not
+   * become a way round what may not be read.
+   */
+  private fun textSlop(project: Project, arguments: JsonObject): McpServer.Tools.Result {
+    val inline = arguments["text"]?.jsonPrimitive?.contentOrNull?.takeIf { it.isNotBlank() }
+    val text = inline ?: run {
+      val raw = string(arguments, "path") ?: return McpServer.Tools.Result("нужен аргумент text или path", isError = true)
+      val base = project.basePath
+      val resolved = if (java.io.File(raw).isAbsolute || base == null) raw else java.io.File(base, raw).path
+      if (!readable(resolved, ProjectContextService.getInstance(project).roots())) {
+        return McpServer.Tools.Result("читать нельзя: " + raw, isError = true)
+      }
+      val file = java.io.File(resolved)
+      if (!file.isFile) return McpServer.Tools.Result("файла нет: " + raw, isError = true)
+      try {
+        file.readText()
+      }
+      catch (e: Exception) {
+        return McpServer.Tools.Result("не удалось прочитать " + raw + ": " + (e.message ?: ""), isError = true)
+      }
+    }
+    val warnings = ArrayList<String>()
+    val report = com.vibe.agent.slop.SlopCheck.check(text, project.basePath) { warnings.add(it) }
+      ?: return McpServer.Tools.Result("каталог нейрослопа в сборке не читается: " +
+                                       com.vibe.agent.slop.SlopCheck.builtInWarnings.joinToString("; "), isError = true)
+    val body = com.vibe.agent.slop.SlopRender.render(report, SLOP_LABELS)
+    val notes = if (warnings.isEmpty()) "" else "\n.vibe/slop.json: " + warnings.joinToString("; ")
+    return McpServer.Tools.Result(body + notes)
+  }
+
+  /** A report for the model: like every answer of the protocol, its language is fixed, not the interface's. */
+  private val SLOP_LABELS = object : com.vibe.agent.slop.SlopRender.Labels {
+    override fun verdict(score: String, passScore: String, passed: Boolean, findings: Int): String =
+      "Нейрослоп: $score/100 (проход — от $passScore), " + (if (passed) "проходит" else "не проходит") + ", находок: $findings"
+
+    override fun finding(finding: com.vibe.agent.slop.SlopFinding): String {
+      val head = "- строка ${finding.line}:${finding.column} [${finding.rule}] ${finding.name} (${finding.severity.id}): "
+      val density = finding.density ?: return head + "«${finding.match}» → ${finding.fix}"
+      return head + "${density.count} раз, ${com.vibe.agent.slop.SlopRender.number(density.perThousand)} на 1000 слов, " +
+             "строки ${density.lines.joinToString(", ")} → ${finding.fix}"
+    }
+
+    override fun blocking(rules: List<String>): String = "Не пропускают: " + rules.joinToString(", ")
+
+    override fun more(count: Int): String = "…и ещё $count"
   }
 
   private fun writeFile(project: Project, arguments: JsonObject): McpServer.Tools.Result {

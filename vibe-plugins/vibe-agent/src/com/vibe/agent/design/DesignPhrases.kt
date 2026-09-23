@@ -11,23 +11,12 @@ package com.vibe.agent.design
  * exemption, which is what happened before this split.
  */
 object DesignPhrases {
-  /** Words that promise everything and say nothing — the copy a generator reaches for. */
-  val MARKETING: List<Regex> = listOf(
-    Regex("(?iU)революцион"),
-    Regex("(?iU)непревзойд"),
-    Regex("(?iU)лучш(ий|ая|ее) в мире"),
-    Regex("(?i)game.?chang"),
-    Regex("(?i)revolutionar"),
-    Regex("(?i)seamless"),
-    Regex("(?i)cutting.?edge"),
-  )
-
   /**
    * Field names that name a value the browser already knows, keyed by the autocomplete token.
    *
-   * Matched against somebody else's markup in both languages — detection data, exactly like the
-   * marketing patterns above, and for the same reason kept out of the string catalogue: translating
-   * a search pattern breaks the search instead of localising it.
+   * Matched against somebody else's markup in both languages — detection data, and for that reason kept out of the
+   * string catalogue: translating a search pattern breaks the search instead of localising it. Stock copy is not here:
+   * the page's text goes through the text-slop catalogue of the shared `.vibe` set.
    */
   val AUTOFILLABLE: Map<String, Regex> = mapOf(
     "email" to Regex("(?iU)(e-?mail|почт|мейл)"),

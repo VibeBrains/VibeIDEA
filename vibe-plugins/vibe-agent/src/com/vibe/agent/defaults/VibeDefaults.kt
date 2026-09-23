@@ -103,6 +103,15 @@ object VibeDefaults {
     "rules/verification.mdc" to "rules/verification.mdc",
     "rules/versioning.mdc" to "rules/versioning.mdc",
     "servers.json" to "servers.json",
+    "slop.json" to "slop.json",
+    "skills/anti-slop/SKILL.md" to "skills/anti-slop/SKILL.md",
+    "skills/anti-slop/references/reviewer.md" to "skills/anti-slop/references/reviewer.md",
+    "skills/anti-slop/references/voice.md" to "skills/anti-slop/references/voice.md",
+    // The skill's cases: a rewrite without invented facts, an audit without a verdict on authorship, a light hand on a
+    // person's own draft.
+    "skills/anti-slop/evals/evals.json" to "skills/anti-slop/evals/evals.json",
+    "skills/anti-slop/evals/draft.md" to "skills/anti-slop/evals/draft.md",
+    "skills/anti-slop/evals/human-post.md" to "skills/anti-slop/evals/human-post.md",
     "skills/design-vocabulary/SKILL.md" to "skills/design-vocabulary/SKILL.md",
     "skills/example/SKILL.md" to "skills/example/SKILL.md",
     // Образец эвалов: случаи проверяют ровно то, что обещает SKILL.md примера.
@@ -159,6 +168,12 @@ object VibeDefaults {
 
   /** The set's revision registry, for anyone who needs to know which release a file came from. */
   fun versionsContent(): String? = readResource(VERSIONS)
+
+  /**
+   * A file of the set as the build carries it — for the files read from the build and never seeded, which
+   * `products.json` addresses to no product (the text-slop catalogue, the shared test vectors).
+   */
+  fun setFile(name: String): String? = readResource(name)
 
   /** Set files that serve the set itself (registries, its bump script) and are never seeded. */
   internal val SET_METADATA = setOf(DEPRECATED, VERSIONS, TARGETING, "bump.mjs")

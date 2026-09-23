@@ -34,10 +34,10 @@ object DesignStyleRules {
   private val LAYOUT_PROPERTIES = listOf("width", "height", "top", "left", "right", "bottom", "margin", "padding")
 
 
-  fun all(doc: DocumentSnapshot): List<Finding> =
+  fun all(doc: DocumentSnapshot, copy: com.vibe.agent.slop.CompiledCatalog? = null): List<Finding> =
     gradientText(doc) + glow(doc) + glass(doc) + purple(doc) + eyebrow(doc) + clones(doc) +
     radiusDrift(doc) + extremeRadius(doc) + animatedLayout(doc) + overshoot(doc) +
-    hangingPreposition(doc) + orphanWord(doc) + marketing(doc) + hoverResponse(doc)
+    hangingPreposition(doc) + orphanWord(doc) + copySlop(doc, copy) + hoverResponse(doc)
 
   fun gradientText(doc: DocumentSnapshot): List<Finding> = doc.elements.mapNotNull { element ->
     if (element.text.isBlank()) return@mapNotNull null
@@ -191,15 +191,25 @@ object DesignStyleRules {
     )
   }
 
-  fun marketing(doc: DocumentSnapshot): List<Finding> = doc.elements.mapNotNull { element ->
-    if (element.text.isBlank()) return@mapNotNull null
-    val hit = DesignPhrases.MARKETING.firstOrNull { it.containsMatchIn(element.text) } ?: return@mapNotNull null
-    DesignFloorRules.finding(
-      DesignRuleCatalog.MARKETING_PROMISE, Severity.HINT, element, doc,
-      message = t("design.rule.marketing.message"),
-      why = t("design.rule.marketing.why"),
-      evidence = "«" + hit.find(element.text)?.value.orEmpty() + "»",
-    )
+  /**
+   * Stock copy on the page: the text-slop catalogue over every text the page shows — the same lists the prose check
+   * uses, so a headline and a README are held to one standard. One finding per element, for its heaviest tell: a
+   * headline with three tells is one headline to rewrite. Only the list and template rules apply; rhythm and layout
+   * rules read documents, not a button.
+   */
+  fun copySlop(doc: DocumentSnapshot, catalog: com.vibe.agent.slop.CompiledCatalog?): List<Finding> {
+    val copy = catalog?.lexical() ?: return emptyList()
+    return doc.elements.mapNotNull { element ->
+      if (element.text.isBlank()) return@mapNotNull null
+      val hit = com.vibe.agent.slop.TextSlop.analyze(element.text, copy).findings.maxByOrNull { it.severity.ordinal }
+        ?: return@mapNotNull null
+      DesignFloorRules.finding(
+        DesignRuleCatalog.COPY_SLOP, Severity.HINT, element, doc,
+        message = t("design.rule.copySlop.message", "name" to hit.name),
+        why = t("design.rule.copySlop.why"),
+        evidence = "«" + hit.match + "» — " + hit.fix,
+      )
+    }
   }
 
   fun hoverResponse(doc: DocumentSnapshot): List<Finding> = doc.elements.mapNotNull { element ->

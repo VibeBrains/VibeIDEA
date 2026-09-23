@@ -15,6 +15,9 @@
 #      история — гард от повтора, и запись в неё обязана существовать до публикации.
 #   6. Ссылка на QR абсолютная (raw.githubusercontent.com): относительные пути работают в README
 #      и не работают в теле релиза.
+#   7. Текст проходит детектор нейрослопа — тот же, что в IDE (textSlopCli), с правками дома
+#      vibe-plugins/tools/slopHouseStyle.json. Заметки — первое, что человек читает о выпуске, и
+#      штамп в них виден раньше любой возможности.
 #
 # Использование: ./vibe-plugins/tools/checkVibeReleaseNotes.sh vX.Y.Z <файл-заметок>
 set -euo pipefail
@@ -27,6 +30,8 @@ NOTES="${2:-}"
 [ -f "$NOTES" ] || { echo "✖ нет файла заметок: $NOTES"; exit 1; }
 PHRASES=docs/vibe/releaseDonationPhrases.md
 
+# Обе проверки отчитываются полностью: упавшая первая не прячет находки второй.
+set +e
 "$PYTHON" - "$VERSION" "$NOTES" "$PHRASES" <<'PY'
 import io, re, sys
 version, notes_path, phrases_path = sys.argv[1], sys.argv[2], sys.argv[3]
@@ -77,3 +82,18 @@ if not problems:
     print(f'  заметки {version}: блок поддержки на месте, подпись записана в историю, QR абсолютный')
 sys.exit(1 if problems else 0)
 PY
+FORMAT=$?
+
+# `bazel run` запускает команду из своего каталога, поэтому путь к заметкам — абсолютный.
+NOTES_ABS="$(cd "$(dirname "$NOTES")" && pwd)/$(basename "$NOTES")"
+SLOP_OUT=$(./bazel.cmd run //vibe-plugins/vibe-agent:textSlopCli -- --overrides "$PWD/vibe-plugins/tools/slopHouseStyle.json" "$NOTES_ABS" 2>&1)
+SLOP=$?
+set -e
+case "$SLOP" in
+  0) echo "  заметки $VERSION: нейрослопа не больше, чем пропускает детектор" ;;
+  1) printf '%s\n' "$SLOP_OUT" | sed -n "\|^$NOTES_ABS\$|,\$p"
+     echo "✖ заметки не прошли детектор нейрослопа — порядок правки описывает навык anti-slop" ;;
+  *) printf '%s\n' "$SLOP_OUT" | tail -20
+     echo "✖ детектор нейрослопа не отработал (код $SLOP)" ;;
+esac
+[ "$FORMAT" -eq 0 ] && [ "$SLOP" -eq 0 ]

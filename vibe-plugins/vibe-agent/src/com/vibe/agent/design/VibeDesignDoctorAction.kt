@@ -43,7 +43,8 @@ class VibeDesignDoctorAction : AnAction({ t("designDoctor.action") }) {
       totalRules = DesignRuleCatalog.ALL.size,
       floorRules = DesignRuleCatalog.ALL.count { DesignRuleCatalog.isFloor(it) },
       acceptedDrift = accepted,
-      unknownDrift = DesignDoctor.unknownDrift(accepted, DesignRuleCatalog.ALL.toSet()),
+      // A drift accepted under a rule's former id still applies, so it is not a typo either.
+      unknownDrift = DesignDoctor.unknownDrift(accepted, DesignRuleCatalog.ALL.toSet() + DesignRuleCatalog.LEGACY.keys),
       hookMode = VibeAgentSettings.designMode,
     )
   }
