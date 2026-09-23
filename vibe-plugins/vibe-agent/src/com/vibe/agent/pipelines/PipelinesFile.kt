@@ -71,6 +71,13 @@ data class PipelineStep(
    * согласован сам с собой. Разрешено только ролям, которые ничего не пишут.
    */
   val againstBrief: Boolean = false,
+  /**
+   * The wave the step belongs to: steps that follow each other with the same label run at once ([PipelineWaves]).
+   *
+   * A label rather than a nested array, so the file stays readable by VibeIDE: it skips a field it does not know and
+   * runs the same steps one after another, which is a valid order for steps that do not depend on each other.
+   */
+  val wave: String? = null,
 )
 
 /**
@@ -151,7 +158,11 @@ object PipelinesFile {
    * the last `}`. An orchestrator step inside a plan is refused: a plan that drafts plans has no end.
    * Nothing here runs anything — the caller shows the plan and waits for consent.
    */
-  fun planFromAnswer(answer: String, onWarning: (String) -> Unit = {}): Plan {
+  fun planFromAnswer(
+    answer: String,
+    qa: RolePaths.Scope = RolePaths.Scope(allow = RolePaths.TEST_PATHS),
+    onWarning: (String) -> Unit = {},
+  ): Plan {
     val start = answer.indexOf('{')
     val end = answer.lastIndexOf('}')
     if (start < 0 || end <= start) return Plan.Refused(t("pipeline.plan.noJson"))
@@ -164,7 +175,11 @@ object PipelinesFile {
         steps.isEmpty() -> Plan.Refused(t("pipeline.plan.invalid", "reason" to t("pipeline.warn.noSteps", "id" to "plan")))
         steps.size > MAX_STEPS -> Plan.Refused(t("pipeline.plan.invalid", "reason" to t("pipeline.warn.tooManySteps", "id" to "plan", "max" to MAX_STEPS)))
         steps.any { it.role == ORCHESTRATOR } -> Plan.Refused(t("pipeline.plan.nestedOrchestrator"))
-        else -> Plan.Ok(steps)
+        else -> {
+          val waves = PipelineWaves.check(steps, qa)
+          waves.warnings.forEach(onWarning)
+          waves.problems.firstOrNull()?.let { Plan.Refused(t("pipeline.plan.invalid", "reason" to it)) } ?: Plan.Ok(steps)
+        }
       }
     }
     catch (e: Exception) {
@@ -235,6 +250,11 @@ object PipelinesFile {
       throw IllegalArgumentException(t("pipeline.warn.writingRoleOnOwnModel", "role" to role))
     }
     val contextWire = so["context"]?.jsonPrimitive?.contentOrNull?.trim()?.ifEmpty { null }
+    val wave = so["wave"]?.jsonPrimitive?.contentOrNull?.trim()?.ifEmpty { null }
+    // The chat's session answers one prompt at a time, so a step of a wave cannot share it with a neighbour.
+    if (wave != null && model == null && contextWire == StepContext.SHARED.wire) {
+      throw IllegalArgumentException(t("pipeline.warn.waveShared", "wave" to wave, "role" to role))
+    }
     // Настройка, мёртвая В КОНТЕКСТЕ: поле разбирается, потребитель у него есть — но не на
     // ЭТОМ шаге. Гейт мёртвых полей такое не видит по построению, он отвечает «есть ли
     // потребитель», а не «работает ли он здесь». Снаружи неотличимо от работающей
@@ -255,11 +275,13 @@ object PipelinesFile {
     }
     // An unknown value is a typo, and a typo falls back to the role's default out loud
     // rather than dropping a working pipeline.
+    // In a wave every step of the agent starts in its own session, whatever its role would default to.
+    val defaultContext = if (wave != null) StepContext.FRESH else StepContext.defaultFor(role)
     val context = contextWire?.let { wire ->
-      StepContext.parse(wire) ?: StepContext.defaultFor(role).also {
+      StepContext.parse(wire) ?: defaultContext.also {
         onWarning(t("pipeline.warn.unknownContext", "role" to role, "value" to wire, "default" to it.wire))
       }
-    } ?: StepContext.defaultFor(role)
+    } ?: defaultContext
     val offPeak = so["offPeak"]?.jsonPrimitive?.booleanOrNull ?: false
     if (offPeak && own.second == null) {
       throw IllegalArgumentException(t("pipeline.warn.offPeakNeedsModel", "role" to role))
@@ -286,6 +308,7 @@ object PipelinesFile {
       offPeak = offPeak,
       pack = pack,
       againstBrief = againstBrief,
+      wave = wave,
     )
   }
 
@@ -312,6 +335,9 @@ object PipelinesFile {
     // Логические имена читаются провайдерами и живут в реестре этого проекта: шаг вправе назвать
     // `@fast` вместо адреса, и разрешается он тем же слоем, что виден чату и правилам.
     val routes = com.vibe.agent.providers.ModelRoutesRegistry.of(projectBase)
+    // The qa boundary decides whether a qa step may share a wave with another writer. Its own problems are told by the
+    // run that reads it; here they would only repeat.
+    val qa = RolesFile.load(projectBase) {}
     try {
       val root = json.parseToJsonElement(com.vibe.agent.util.VibeJsonc.strip(Files.readString(file))).jsonObject
       for (el in root["pipelines"]?.jsonArray ?: return emptyList()) {
@@ -328,6 +354,9 @@ object PipelinesFile {
             onWarning(t("pipeline.warn.dynamicShape", "id" to id)); continue
           }
           if (steps.size > MAX_STEPS) { onWarning(t("pipeline.warn.tooManySteps", "id" to id, "max" to MAX_STEPS)); continue }
+          val waves = PipelineWaves.check(steps, qa)
+          waves.warnings.forEach { onWarning(t("pipeline.warn.inPipeline", "id" to id, "warning" to it)) }
+          waves.problems.firstOrNull()?.let { throw IllegalArgumentException(t("pipeline.warn.inPipeline", "id" to id, "warning" to it)) }
           result.add(Pipeline(
             id = id,
             name = o["name"]?.jsonPrimitive?.contentOrNull ?: id,

@@ -71,8 +71,19 @@ object AgentRunLedger {
      * text would resume the wrong one the day two pipelines share a name.
      */
     val pipelineId: String? = null,
+    /**
+     * Finished steps by index, when they are not simply the first [steps] ones.
+     *
+     * Steps of a wave finish in any order: «three done» of a run interrupted mid-wave may be steps 1, 2 and 4, and
+     * resuming from step 4 would run step 3 never and step 4 twice. Empty — the first [steps] steps are done, as before
+     * waves existed; old records read the same way.
+     */
+    val done: List<Int> = emptyList(),
   ) {
     val isFinished: Boolean get() = status != Status.RUNNING
+
+    /** The finished steps, whichever way the record states them. */
+    val doneSteps: Set<Int> get() = if (done.isNotEmpty()) done.toSet() else (0 until steps).toSet()
     val needsAttention: Boolean get() = status == Status.ORPHANED || status == Status.FAILED
   }
 
@@ -108,6 +119,11 @@ object AgentRunLedger {
     // whole point is being readable by a human with `tail`.
     run.idempotencyKey?.let { put("idempotencyKey", it) }
     run.pipelineId?.let { put("pipelineId", it) }
+    // Only when the finished steps are not the first ones: every ordinary record would otherwise carry a list that
+    // repeats its own count.
+    if (run.done.isNotEmpty() && run.done.sorted() != (0 until run.steps).toList()) {
+      put("done", kotlinx.serialization.json.JsonArray(run.done.sorted().map { kotlinx.serialization.json.JsonPrimitive(it) }))
+    }
   }.toString()
 
   /** A broken line is skipped, never fatal: one bad write must not cost the whole history. */
@@ -131,6 +147,7 @@ object AgentRunLedger {
       outcome = obj.str("outcome"),
       idempotencyKey = obj.str("idempotencyKey"),
       pipelineId = obj.str("pipelineId"),
+      done = (obj["done"] as? kotlinx.serialization.json.JsonArray)?.mapNotNull { it.jsonPrimitive.intOrNull }.orEmpty(),
     )
   }
 

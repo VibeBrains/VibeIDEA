@@ -86,8 +86,9 @@ class VibeAgentRunService(private val project: Project) : Disposable {
     return TerritoryGuess.conflicts(runs(), runId, prefixes)
   }
 
-  fun progress(runId: String?, steps: Int, changedFiles: Int) {
-    update(runId) { it.copy(steps = steps, changedFiles = changedFiles, heartbeatAtMs = System.currentTimeMillis()) }
+  /** [done] — the finished steps by index, for a run whose steps may finish out of order ([AgentRunLedger.Run.done]). */
+  fun progress(runId: String?, steps: Int, changedFiles: Int, done: List<Int> = emptyList()) {
+    update(runId) { it.copy(steps = steps, changedFiles = changedFiles, done = done, heartbeatAtMs = System.currentTimeMillis()) }
   }
 
   fun finished(runId: String?, status: AgentRunLedger.Status, outcome: String) {

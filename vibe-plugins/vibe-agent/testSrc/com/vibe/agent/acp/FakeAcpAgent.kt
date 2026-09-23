@@ -42,6 +42,9 @@ object FakeAcpAgent {
   /** The session a `session/cancel` named — so a test can see which turn the client stopped. */
   @Volatile private var cancelledSession: String? = null
 
+  /** Scenario `parallel`: each session's turn waits for a cancel of ITS OWN session, as a real agent's would. */
+  private val sessionCancels = ConcurrentHashMap<String, CountDownLatch>()
+
   /** What the client announced about itself in `initialize` — replayed on demand so tests can assert it. */
   @Volatile private var clientCapabilities: JsonObject = JsonObject(emptyMap())
 
@@ -61,6 +64,7 @@ object FakeAcpAgent {
         method == null && id != null -> agentRequests[id]?.offer(msg)
         method == "session/cancel" -> {
           cancelledSession = (params["sessionId"] as? JsonPrimitive)?.contentOrNull
+          cancelledSession?.let { sid -> sessionCancels.computeIfAbsent(sid) { CountDownLatch(1) }.countDown() }
           cancelled.countDown()
         }
         method != null && id != null -> handleRequest(scenario, id, method, params)
@@ -229,6 +233,13 @@ object FakeAcpAgent {
           }, session)
         }
         send(result(id, stop("end_turn")))
+      }
+      "parallel" -> {
+        // Turns in different sessions run at once, and a cancel stops only the session it names.
+        notifyUpdate(chunk("работаю в $session"), session)
+        val got = sessionCancels.computeIfAbsent(session) { CountDownLatch(1) }.await(10, TimeUnit.SECONDS)
+        notifyUpdate(chunk((if (got) "отменена " else "закончена ") + session), session)
+        send(result(id, stop(if (got) "cancelled" else "end_turn")))
       }
       "cancelSession" -> {
         notifyUpdate(chunk("работаю…"), session)

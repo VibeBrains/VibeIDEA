@@ -16,15 +16,22 @@ package com.vibe.agent.runs
  * Pure: records in, the step index out.
  */
 object PipelineResume {
-  data class Point(val run: AgentRunLedger.Run, val fromStep: Int)
+  /**
+   * Where to continue: [done] are the steps to skip, [fromStep] the first one that did not finish.
+   *
+   * A set rather than a count: steps of a wave finish in any order, and an interrupted wave may leave step 4 done and
+   * step 3 not.
+   */
+  data class Point(val run: AgentRunLedger.Run, val fromStep: Int, val done: Set<Int>)
 
   fun find(runs: List<AgentRunLedger.Run>, pipelineId: String, stepCount: Int): Point? {
     val latest = runs.filter { it.source == AgentRunLedger.Source.PIPELINE && it.pipelineId == pipelineId }
       .maxByOrNull { it.startedAtMs } ?: return null
     if (latest.status != AgentRunLedger.Status.ORPHANED && latest.status != AgentRunLedger.Status.FAILED) return null
     if (latest.maxSteps != stepCount) return null
-    val from = latest.steps
-    if (from <= 0 || from >= stepCount) return null
-    return Point(latest, from)
+    val done = latest.doneSteps.filter { it in 0 until stepCount }.toSet()
+    val from = (0 until stepCount).firstOrNull { it !in done } ?: return null
+    if (done.isEmpty()) return null
+    return Point(latest, from, done)
   }
 }

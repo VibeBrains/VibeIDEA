@@ -2,7 +2,9 @@
 package com.vibe.agent.pipelines
 
 import kotlin.test.Test
+import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 /**
@@ -107,5 +109,38 @@ class RolePathsTest {
   fun `разрешение сравнивается точно`() {
     // На диске, чувствительном к регистру, Tests/ — другая папка; точный промах ошибается в сторону отказа.
     assertFalse(RolePaths.mayWrite("Tests/FooTest.kt", RolePaths.Scope(allow = listOf("tests/**"))))
+  }
+
+  @Test
+  fun `a pattern is anchored by its leading literal directories`() {
+    assertEquals(listOf("src"), RolePaths.literalPrefix("src/**"))
+    assertEquals(listOf("web", "public"), RolePaths.literalPrefix("web/public/"))
+    assertEquals(listOf("src", "app.ts"), RolePaths.literalPrefix("/src/app.ts"))
+    assertEquals(listOf("src"), RolePaths.literalPrefix("Src/**"), "compared folded: on APFS Src is src")
+  }
+
+  @Test
+  fun `a pattern that applies at any depth has no anchor`() {
+    assertNull(RolePaths.literalPrefix("**/test/**"))
+    assertNull(RolePaths.literalPrefix("*.md"))
+    assertNull(RolePaths.literalPrefix("README.md"), "a bare name matches in every directory")
+    assertNull(RolePaths.literalPrefix("../outside/**"))
+  }
+
+  @Test
+  fun `separate directories are provably separate, nested ones are not`() {
+    assertTrue(RolePaths.provablyDisjoint(RolePaths.Scope(listOf("server/**")), RolePaths.Scope(listOf("web/**"))))
+    assertFalse(RolePaths.provablyDisjoint(RolePaths.Scope(listOf("src/**")), RolePaths.Scope(listOf("src/ui/**"))))
+    assertFalse(RolePaths.provablyDisjoint(RolePaths.Scope(listOf("Src/**")), RolePaths.Scope(listOf("src/**"))))
+    // A shared directory name deeper down is no overlap: `a/docs` and `b/docs` are different places.
+    assertTrue(RolePaths.provablyDisjoint(RolePaths.Scope(listOf("a/docs/**")), RolePaths.Scope(listOf("b/docs/**"))))
+  }
+
+  @Test
+  fun `no allow list, or one pattern without an anchor, proves nothing`() {
+    assertFalse(RolePaths.provablyDisjoint(none, RolePaths.Scope(listOf("web/**"))))
+    assertFalse(RolePaths.provablyDisjoint(RolePaths.Scope(listOf("server/**", "*.md")), RolePaths.Scope(listOf("web/**"))))
+    // A deny list only narrows: it is not counted, so it can only err towards refusing.
+    assertFalse(RolePaths.provablyDisjoint(RolePaths.Scope(listOf("src/**"), deny = listOf("src/ui/**")), RolePaths.Scope(listOf("src/ui/**"))))
   }
 }

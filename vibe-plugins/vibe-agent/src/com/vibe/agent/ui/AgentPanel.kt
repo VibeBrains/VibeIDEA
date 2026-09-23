@@ -21,7 +21,6 @@ import com.vibe.agent.acp.AgentServerConfig
 import com.vibe.agent.acp.ContentBlock
 import com.vibe.agent.acp.IdeFileOps
 import com.vibe.agent.acp.ToolCall
-import com.vibe.agent.acp.ToolCallRegistry
 import com.vibe.agent.audit.AuditEvent
 import com.vibe.agent.audit.AuditLog
 import com.vibe.agent.audit.ToolCallAudit
@@ -166,8 +165,6 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     project,
     onNotice = { message -> systemLine(message) },
     onFinding = { path, findings -> reportContextFindings(path, findings) },
-    roleNow = { currentRole },
-    scopeNow = { currentScope },
   )
   @Volatile private var client: AcpClient? = null
   @Volatile private var clientConfig: AgentServerConfig? = null
@@ -208,12 +205,6 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
 
   /** Why the direct chat goes without tools is said once per panel: a line on every turn stops being read. */
   @Volatile private var directToolsNoted = false
-  /** Tool-calls of the running turn, assembled from the session/update stream by id. */
-  private val toolCalls = ToolCallRegistry()
-
-  /** Shapes of this turn's tool calls — the loop detector reads nothing else. */
-  private val loopHistory = com.vibe.agent.safety.LoopDetector.History()
-
   /** Targets already tried in this turn: a chain must never send the turn back where it just failed. */
   private val failoverTried = java.util.Collections.synchronizedSet(HashSet<com.vibe.agent.resilience.FailoverPlan.Target>())
 
@@ -221,24 +212,6 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
   private val trace = com.vibe.agent.trace.TurnTrace.Recorder()
 
   @Volatile private var turnStartedAtMs = 0L
-
-  /** Start times of running tool calls, so a finished call can report how long it took. */
-  private val toolStarts = java.util.concurrent.ConcurrentHashMap<String, Long>()
-
-  /**
-   * The pipeline role running right now, or null in an ordinary chat.
-   *
-   * Volatile because it is set on the pipeline thread and read on the ACP reader thread: the whole
-   * value of the restriction is that it is in force at the moment the write arrives.
-   */
-  @Volatile private var currentRole: String? = null
-
-  /**
-   * Куда разрешено писать шагу, который идёт сейчас. Пусто вне пайплайна — обычный чат ничем не
-   * ограничен, и ограничение, взявшееся ниоткуда, хуже отсутствующего.
-   */
-  @Volatile private var currentScope: com.vibe.agent.pipelines.RolePaths.Scope =
-    com.vibe.agent.pipelines.RolePaths.Scope()
 
   /** Last sign of life in the current turn: a token, a tool call, any update. */
   private val lastActivityMs = java.util.concurrent.atomic.AtomicLong(0)
@@ -255,8 +228,6 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
   private val terminals = AgentTerminalService(project.basePath)
   /** Live terminal consoles by terminal id (Claude _meta.terminal_output stream). */
   private val terminalConsoles = java.util.concurrent.ConcurrentHashMap<String, TerminalConsole>()
-  /** The current turn's collapsible reasoning block (ACP agent_thought_chunk), created on first thought. */
-  @Volatile private var thoughtsBlock: ThoughtsBlock? = null
 
   /**
    * Часы, перечитывающие список живых процессов агента.
@@ -274,9 +245,6 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
   private val verifyRunner: VerifyGateRunner? = project.basePath?.let { VerifyGateRunner(it) }
   private val breakers = VibeBreakerService.getInstance(project)
   private val status = VibeAgentStatusService.getInstance(project)
-  @Volatile private var stepBuffer: StringBuilder? = null
-  @Volatile private var currentAgentMessage: AgentMessage? = null
-  private val changedPaths = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
 
   /** Full texts of outputs that were shrunk for the model — `/output <handle>` prints one back. */
   private val outputStore = com.vibe.agent.context.OutputCompressor.Store()
@@ -292,30 +260,6 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
 
   /** Thresholds already said out loud for this chat: a warning repeated every frame is noise. */
   private val announcedContextLevels = java.util.Collections.synchronizedSet(HashSet<String>())
-  /** Set when a turn ran an edit/command tool: its writes may be invisible to the client (agent-internal Bash). */
-  @Volatile private var turnHadMutatingTool = false
-
-  /** Потолки шага пайплайна, пока он идёт; null — идёт обычный ход, потолков нет. */
-  @Volatile private var stepLimits: com.vibe.agent.pipelines.PipelineStep? = null
-
-  /** Вызовы инструментов текущего шага — считаются, только когда у шага есть потолок. */
-  private val stepToolCalls = java.util.concurrent.atomic.AtomicInteger(0)
-
-  /**
-   * Заполнение окна на начало шага — точка отсчёта для его потолка токенов.
-   *
-   * ACP сообщает в `usage_update` заполнение окна ВСЕЙ сессии, а не расход шага. Сравнивать потолок
-   * шага прямо с этим числом значит срезать третий шаг за то, что наговорили первые два (и любой
-   * шаг сразу — если пайплайн запущен в уже поговорившем треде), причём в ленте это выглядело бы
-   * как честно сработавшее правило. Отсчёт берётся с первого сообщения окна внутри шага.
-   */
-  @Volatile private var stepTokensBase: Long = -1L
-
-  /** Шаг прекращён своим потолком: отличает его от остановки человеком и от отказа агента. */
-  @Volatile private var stepLimitHit: com.vibe.agent.pipelines.StepLimits.Verdict? = null
-
-  /** The last step's own report, parsed from its answer; null when it wrote none ([com.vibe.agent.pipelines.StepReport]). */
-  @Volatile private var stepReport: com.vibe.agent.pipelines.StepReport? = null
 
   /**
    * Threads whose agent session was opened new rather than resumed: the first turn in each carries
@@ -333,18 +277,18 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
    */
   private val sessionSignals = java.util.concurrent.ConcurrentHashMap<String, MutableSet<com.vibe.agent.guard.Trifecta.Signal>>()
 
-  /** The signals of the thread the turn runs in; a thread is a session, a new chat starts clean. */
-  private val turnSignals: MutableSet<com.vibe.agent.guard.Trifecta.Signal>
-    get() = sessionSignals.computeIfAbsent(turnThreadId ?: currentThreadId) { java.util.concurrent.ConcurrentHashMap.newKeySet() }
+  /** The signals of a thread; a thread is a session, a new chat starts clean. */
+  private fun threadSignals(threadId: String): MutableSet<com.vibe.agent.guard.Trifecta.Signal> =
+    sessionSignals.computeIfAbsent(threadId) { java.util.concurrent.ConcurrentHashMap.newKeySet() }
   /** Did the turn end in anything other than a normal finish? The autopilot refuses to resume such a turn. */
   @Volatile private var turnEndedBadly = false
   /** What travelled in this turn's context, for the per-file spend estimate. */
   @Volatile private var turnAttachments: List<com.vibe.agent.budget.FileSpend.Attachment> = emptyList()
   /** Outcomes of the recent tool calls, for the thrash and repeated-timeout breakers. */
   private val thrashHistory = ArrayList<com.vibe.agent.safety.ThrashDetector.Event>()
-  /** The agent as the journal names it: the role it plays and the target that runs it. */
-  private fun agentActor(): com.vibe.agent.audit.AuditActor =
-    com.vibe.agent.audit.AuditActor.agent(currentRole, target?.auditName())
+  /** The agent as the journal names it: the role it plays in [turn] and the target that runs it. */
+  private fun agentActor(turn: TurnState = turns.chat): com.vibe.agent.audit.AuditActor =
+    com.vibe.agent.audit.AuditActor.agent(turn.role, target?.auditName())
 
   /**
    * Whose turn this is, for the journal: the person by default, the autopilot when it continued
@@ -379,15 +323,30 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
   private val drafts = HashMap<String, ComposedMessage>()
   /** The thread the running turn appends to (the user may switch tabs meanwhile). */
   @Volatile private var turnThreadId: String? = null
-  /** Assistant text of the running turn (reader thread appends, EDT projects). */
-  private val turnText = StringBuffer()
 
   /** Последний вопрос человека — им предзаполняется заголовок решения: решение отвечает на вопрос. */
   private var lastUserText: String = ""
-  /** How much of [turnText] the live feed row already shows (EDT-only). */
-  private var uiConsumed = 0
   /** Row components aligned with the current thread's message indices (best effort during a live turn). */
   private val recordRows = ArrayList<JComponent>()
+
+  /** The feed itself, where the chat's turn and a step outside a wave put their rows. */
+  private val mainFeed = object : TurnFeed {
+    override fun addRecord(row: JComponent) {
+      messages.add(row)
+      recordRows.add(row)
+    }
+
+    override fun addExtra(row: JComponent, before: Component?) {
+      val index = before?.let { messages.components.indexOf(it) } ?: -1
+      if (index >= 0) messages.add(row, index) else messages.add(row)
+    }
+  }
+
+  /** The running turns: the chat's, and the steps of a pipeline by their sessions. */
+  private val turns = TurnRouter(chatTurn(""))
+
+  /** A fresh turn of the chat in [threadId]; its trifecta signals are the thread's, which add up over its turns. */
+  private fun chatTurn(threadId: String): TurnState = TurnState(role = null, signals = threadSignals(threadId), feed = mainFeed)
 
   private val composer = ComposerPanel(project, this, object : ComposerPanel.Listener {
     override fun onSend(message: ComposedMessage): Boolean = run {
@@ -1113,7 +1072,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
    * never renders in its head: empty, error, narrow screen.
    */
   private fun announceEyesChecklist() {
-    val visible = com.vibe.agent.handoff.EyesChecklist.visibleFiles(changedPaths.toList())
+    val visible = com.vibe.agent.handoff.EyesChecklist.visibleFiles(turns.chat.changedPaths.toList())
     if (visible.isEmpty()) return
     val text = com.vibe.agent.handoff.EyesChecklist.render(
       visible,
@@ -1141,7 +1100,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
       goal = note.ifEmpty { history.get(threadId ?: "")?.title.orEmpty() },
       done = plan?.steps?.filter { it.status == com.vibe.agent.plans.AgentPlan.Status.COMPLETED }?.map { it.content }.orEmpty(),
       remaining = plan?.steps?.filter { it.status != com.vibe.agent.plans.AgentPlan.Status.COMPLETED }?.map { it.content }.orEmpty(),
-      touchedFiles = changedPaths.toList().sorted(),
+      touchedFiles = turns.chat.changedPaths.toList().sorted(),
       howToVerify = VibeAgentSettings.verifyCommand.takeIf { it.isNotBlank() },
     )
     val rendered = com.vibe.agent.handoff.HandoffForm.render(handoff, handoffLabels())
@@ -1335,7 +1294,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
       }
       // Контекстный налог: во что разговору обошлось повторное напоминание контекста. Считается
       // по числам провайдера, поэтому появляется только там, где он их присылает.
-      val tax = com.vibe.agent.budget.ContextTax.of(threadUsages.toList(), lastTurnPricing)
+      val tax = com.vibe.agent.budget.ContextTax.of(threadUsages.toList(), turns.chat.pricing)
       if (tax.turns > 0) {
         console.append("\n\n" + t("trace.contextTax",
                                    "turns" to tax.turns,
@@ -1795,8 +1754,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     sessionTokens.set(0)
     announcedContextLevels.clear()
     metricBaseline = null
-    usedMeter.reset()
-    costMeter.reset()
+    sessionMeters.clear()
     // Контекстный налог — про ЭТОТ разговор: числа прошлого в новом чате отвечают на вопрос,
     // которого никто не задавал, и выглядят при этом достоверно.
     threadUsages.clear()
@@ -2722,8 +2680,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     composer.busy = true
     showWorking(WorkingLine.Kind.THINKING)
     turnThreadId = threadId
-    turnText.setLength(0)
-    uiConsumed = 0
+    turns.chat = chatTurn(threadId)
     // Persist first: the feed and the store must agree even if the turn dies during context resolution.
     val displayText = message.text.ifBlank { ContextSerializer.ATTACHMENTS_ONLY_TEXT }
     val storedImages = message.images.map { StoredImage(it.name, it.mimeType, Base64.getEncoder().encodeToString(it.bytes)) }
@@ -2836,7 +2793,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
   private fun noteProgressAndWarn(threadId: String?): Boolean {
     val plan = threadId?.let { id -> runCatching { com.vibe.agent.plans.PlanStore.getInstance(project).load(id) }.getOrNull() }
     val turn = com.vibe.agent.safety.StallDetector.Turn(
-      changedFiles = if (changedPaths.isNotEmpty()) changedPaths.size else if (turnHadMutatingTool) 1 else 0,
+      changedFiles = turns.chat.let { chat -> if (chat.changedPaths.isNotEmpty()) chat.changedPaths.size else if (chat.hadMutatingTool) 1 else 0 },
       planDone = plan?.done ?: 0,
       planTotal = plan?.total ?: 0,
     )
@@ -2888,7 +2845,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
         systemLine(t("autopilot.step", "index" to autopilotTurns,
                      "max" to VibeAgentSettings.autopilotMaxTurns, "remaining" to remaining))
         if (!startTurn(ComposedMessage(text = t("autopilot.continue")), id,
-                       com.vibe.agent.audit.AuditActor.agent(currentRole, target?.auditName()))) autopilotTurns = 0
+                       agentActor())) autopilotTurns = 0
       }
       com.vibe.agent.autopilot.AutopilotPolicy.Decision.CHECKPOINT -> {
         autopilotTurns = 0
@@ -3062,7 +3019,8 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     cancelTurn()
   }
 
-  private fun noteLoop(call: com.vibe.agent.acp.ToolCall) {
+  private fun noteLoop(call: com.vibe.agent.acp.ToolCall, turn: TurnState) {
+    val loopHistory = turn.loopHistory
     loopHistory.add(com.vibe.agent.safety.LoopDetector.fingerprint(call.toolName ?: call.kind, call.rawInput?.toString()))
     val finding = com.vibe.agent.safety.LoopDetector.check(loopHistory.snapshot())
     if (finding.verdict == com.vibe.agent.safety.LoopDetector.Verdict.OK) return
@@ -3072,7 +3030,10 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     turnNote("🔁 " + reason)
     breakers.trip(com.vibe.agent.safety.LoopDetector::class.java.simpleName.lowercase(), reason, System.currentTimeMillis())
     loopHistory.clear()
-    cancelTurn()
+    // A step that loops is stopped alone: its neighbours in the wave are not looping.
+    val stepSession = turn.sessionId
+    if (turn === turns.chat || stepSession == null) cancelTurn()
+    else client?.let { c -> ApplicationManager.getApplication().executeOnPooledThread { runCatching { c.cancel(stepSession) } } }
   }
 
   /** Any sign of life from the agent resets the silence clock. */
@@ -3110,6 +3071,10 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
   private fun cancelTurn() {
     llmCancel.set(true)
     llmClient.cancel()
+    // Steps on their own model talk through their own clients, and Stop reaches every one of them.
+    turns.all().forEach { turn -> turn.llm?.cancel() }
+    // Steps of a wave run in sessions of their own; the chat's cancel reaches only the chat's session.
+    val stepSessions = turns.all().filter { it !== turns.chat }.mapNotNull { it.sessionId }.distinct()
     // A /watch download runs before any turn exists — Стоп must reach it too, or a minutes-long
     // download would keep going after the user gave up on it.
     watchCancel?.set(true)
@@ -3125,7 +3090,10 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
           if (client === c) { client = null; clientConfig = null; threadSessions.clear() }
         }
       }
-      else c.cancel()
+      else {
+        c.cancel()
+        stepSessions.filter { it != c.sessionId }.forEach { c.cancel(it) }
+      }
     }
   }
 
@@ -3267,25 +3235,21 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     // and a session it could not resume gets the unfinished plan in front of the prompt.
     val c = ensureClient(t.config, turnThreadId ?: currentThreadId)
     val fullPrompt = prependMinimalism(prependProjectRules(prependKnowledge(prependCarriedPlan(designed), text), text, loaded))
-    // A fresh turn: tool-call ids and the changed-files set are per-turn.
-    toolCalls.reset()
-    loopHistory.clear()
+    // A fresh turn: its tool calls, changed files and ceilings started empty with its TurnState; what the panel keeps
+    // besides them is reset here.
     trace.clear()
-    toolStarts.clear()
     failoverTried.clear()
     turnStartedAtMs = System.currentTimeMillis()
     lastActivityMs.set(System.currentTimeMillis())
     staleAnnounced.set(false)
     terminalConsoles.clear()
-    changedPaths.clear()
-    turnHadMutatingTool = false
     // Signals are NOT cleared here: they live for the whole thread (see [sessionSignals]).
     // Ход, начатый не человеком за этой клавиатурой (входящий HTTP API, мост, дежурная проверка,
     // пайплайн), несёт текст, которого никто не читал глазами.
     if (turnActor != com.vibe.agent.audit.AuditActor.HUMAN) {
-      turnSignals.add(com.vibe.agent.guard.Trifecta.Signal.UNTRUSTED_CONTENT)
+      turns.chat.signals.add(com.vibe.agent.guard.Trifecta.Signal.UNTRUSTED_CONTENT)
     }
-    // thoughtsBlock is EDT-owned (created/read in appendThought's invokeLater) — reset it there, not here.
+    // The turn's reasoning block is EDT-owned (created in appendThought's invokeLater); a fresh turn has none yet.
     // Which recipes, in which version, took part in the turn: without it the chain an investigation
     // walks (prompt → skill → tool call) breaks right here. The digest is the approved one.
     val promptMeta = buildMap {
@@ -3379,9 +3343,10 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     // Stop pressed → the user is done with this turn; do not launch a minutes-long verify build.
     if (llmCancel.get() || disposed) return null
     // A Bash/edit tool may have changed files the client never saw as fs/write, so the gate runs on
-    // any mutating turn — not only when changedPaths is populated.
-    if (changedPaths.isEmpty() && !turnHadMutatingTool) return null
-    val paths = changedPaths.toList()
+    // any mutating turn — not only when the turn's changed paths are populated.
+    val chat = turns.chat
+    if (chat.changedPaths.isEmpty() && !chat.hadMutatingTool) return null
+    val paths = chat.changedPaths.toList()
     val cMode = VibeAgentSettings.checksMode
 
     // --- TURN-CHECKS: scan + trip FIRST, unconditionally. A leaked secret or a protected-path write
@@ -3539,9 +3504,10 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
   }
 
   private fun runTurnEndHooks() {
-    val decision = hooks.run(HookEvent.TURN_END, null, null, changedPaths.toList())
+    val changed = turns.chat.changedPaths.toList()
+    val decision = hooks.run(HookEvent.TURN_END, null, null, changed)
     audit?.append(AuditEvent(System.currentTimeMillis(), AuditEvent.Action.HOOK, ok = !decision.flagged, actor = com.vibe.agent.audit.AuditActor.IDE,
-      meta = mapOf("event" to HookEvent.TURN_END.wire, "changedFiles" to changedPaths.size.toString(),
+      meta = mapOf("event" to HookEvent.TURN_END.wire, "changedFiles" to changed.size.toString(),
         "broken" to decision.brokenHooks.size.toString())))
     decision.agentMessage?.let { systemLine(t("chat.projectCheck", "text" to it)) }
   }
@@ -3721,7 +3687,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
           // рассуждение выглядело молчанием, потому что показывать его было некуда.
           // It is also kept with the answer: a model that requires it back (ECHO_REASONING) gets it
           // in the next request.
-          onThought = { noteActivity(); turnReasoning.append(it); roundReasoning.append(it); appendThought(it) },
+          onThought = { noteActivity(); turns.chat.reasoning.append(it); roundReasoning.append(it); appendThought(it) },
           tools = tools,
           // The same key on every turn of the thread: the provider routes the conversation to the server with its cache.
           promptCacheKey = com.vibe.agent.providers.PromptCacheKey.of(turnThreadId ?: currentThreadId, "agent"),
@@ -3742,17 +3708,17 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
         }
         // A search may have loaded tools: the next round offers them.
         tools = com.vibe.agent.mcp.ToolSearch.offered(allTools, loaded, VibeAgentSettings.toolSearchThreshold)
-        turnToolRounds.add(com.vibe.agent.providers.ToolRound(roundText.toString(), calls, results, roundReasoning.toString().ifEmpty { null }))
+        turns.chat.toolRounds.add(com.vibe.agent.providers.ToolRound(roundText.toString(), calls, results, roundReasoning.toString().ifEmpty { null }))
         request = request +
           ChatMessage("assistant", roundText.toString(), reasoning = roundReasoning.toString().ifEmpty { null }, toolCalls = calls) +
           ChatMessage(com.vibe.agent.providers.ToolCalls.ROLE, "", toolResults = results)
       }
       // What the provider itself reported, and the price the owner of the key wrote down. Both may
       // be absent — then the accounting falls back to the old estimate, and says so by omission.
-      lastTurnUsage = usage
+      turns.chat.usage = usage
       noteModelSubstitution(t.model.id, llmClient.lastAnsweredModel())
       // Цена берётся с оглядкой на срок: у модели с истёкшей акцией считать надо по costAfter.
-      lastTurnPricing = com.vibe.agent.providers.PriceValidity.effective(t.model, java.time.LocalDate.now())
+      turns.chat.pricing = com.vibe.agent.providers.PriceValidity.effective(t.model, java.time.LocalDate.now())
       finishAgentBubble((System.currentTimeMillis() - startedAt) / 1000.0, t.model.id)
     }
     catch (e: java.io.InterruptedIOException) {
@@ -4365,8 +4331,9 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
   private fun renderTranscript(thread: ChatThread) {
     messages.removeAll()
     recordRows.clear()
-    currentAgentMessage = null
-    uiConsumed = 0
+    val chat = turns.chat
+    chat.message = null
+    chat.uiConsumed = 0
     for ((index, record) in thread.messages.withIndex()) {
       val row = when (record.role) {
         Role.USER -> buildUserRow(record.text, timeOf(record.at), index, record.pinned)
@@ -4381,18 +4348,30 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
       // removeAll() detached the live turn's transient surfaces — re-attach them so their ongoing
       // streams (appendThought / appendTerminalOutput) keep landing in the visible feed. Exact
       // interleaving with the text is lost on a mid-turn switch; that is acceptable.
-      thoughtsBlock?.let { messages.add(it) }
-      terminalConsoles.values.forEach { messages.add(it) }
+      chat.thoughts?.let { messages.add(it) }
+      // A console inside the block of a wave's step went away with that block; it comes back here, in the feed itself.
+      terminalConsoles.values.filter { it.parent?.parent == null }.forEach { messages.add(it) }
     }
-    val live = if (liveTurnHere) turnText.toString() else ""
+    val live = if (liveTurnHere) chat.text.toString() else ""
     if (live.isNotEmpty()) {
       // The stream continues into a fresh row; finished text is already a stored record.
       val m = AgentMessage()
       m.append(live)
-      uiConsumed = live.length
-      currentAgentMessage = m
+      chat.uiConsumed = live.length
+      chat.message = m
       messages.add(m.row)
       recordRows.add(m.row)
+    }
+    // Steps of a wave still running continue in fresh blocks: what they already said as tool cards is in the records
+    // above, and their answers are text not yet stored.
+    if (liveTurnHere) runningWave.filter { !it.done }.forEach { step ->
+      step.feed = WaveBlockFeed(step.label.orEmpty()).also { it.show() }
+      step.thoughts = null
+      val text = step.text.toString()
+      val m = if (text.isNotEmpty()) AgentMessage().also { it.append(text) } else null
+      step.message = m
+      step.uiConsumed = text.length
+      m?.let { step.feed.addRecord(it.row) }
     }
     conversationStarted = thread.messages.isNotEmpty() || liveTurnHere
     relayout()
@@ -4424,29 +4403,29 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
       runDynamicPipeline(chosen, runAgent)
       return
     }
-    runPipeline(chosen, runAgent, resumeStep(chosen) ?: return)
+    runPipeline(chosen, runAgent, resumeSkip(chosen) ?: return)
   }
 
   /**
-   * Where to start: 0 for a fresh run, the unfinished step of an interrupted run of the same pipeline
-   * when the person chooses to continue, null when they cancel.
+   * What to skip: nothing for a fresh run, the steps an interrupted run of the same pipeline finished when the person
+   * chooses to continue, null when they cancel.
    *
    * Asked, not decided: the files may have moved on since the interruption, and only the person knows
-   * whether steps 1..N still describe the working tree.
+   * whether the finished steps still describe the working tree.
    */
-  private fun resumeStep(pipeline: com.vibe.agent.pipelines.Pipeline): Int? {
-    val point = com.vibe.agent.runs.PipelineResume.find(runs.runs(), pipeline.id, pipeline.steps.size) ?: return 0
+  private fun resumeSkip(pipeline: com.vibe.agent.pipelines.Pipeline): Set<Int>? {
+    val point = com.vibe.agent.runs.PipelineResume.find(runs.runs(), pipeline.id, pipeline.steps.size) ?: return emptySet()
     val answer = Messages.showDialog(
       project,
-      t("pipeline.resume.prompt", "name" to pipeline.name, "done" to point.fromStep, "total" to pipeline.steps.size,
+      t("pipeline.resume.prompt", "name" to pipeline.name, "done" to point.done.size, "total" to pipeline.steps.size,
         "step" to (point.fromStep + 1)),
       t("pipeline.resume.title"),
       arrayOf(t("pipeline.resume.continue", "step" to (point.fromStep + 1)), t("pipeline.resume.restart"), t("common.cancel")),
       0, Messages.getQuestionIcon(),
     )
     return when (answer) {
-      0 -> point.fromStep
-      1 -> 0
+      0 -> point.done
+      1 -> emptySet()
       else -> null
     }
   }
@@ -4491,24 +4470,24 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
    * назвал: у остальных это была бы работа ради нуля на каждом кадре.
    *
    * Прекращение — это `session/cancel` агенту, тот же механизм, что у кнопки «Стоп». Отличает их
-   * [stepLimitHit]: иначе шаг, остановленный своим же потолком, отчитался бы как остановленный
+   * [TurnState.limitHit]: иначе шаг, остановленный своим же потолком, отчитался бы как остановленный
    * человеком, и в ленте это выглядело бы как чужое вмешательство.
    */
-  private fun enforceStepLimits(usedTokens: Long? = null, toolCalls: Int? = null) {
-    val step = stepLimits ?: return
-    if (stepLimitHit != null) return // потолок уже сработал, второй раз отменять нечего
+  private fun enforceStepLimits(turn: TurnState, usedTokens: Long? = null, toolCalls: Int? = null) {
+    val step = turn.limits ?: return
+    if (turn.limitHit != null) return // потолок уже сработал, второй раз отменять нечего
     // Первое сообщение окна внутри шага задаёт точку отсчёта: дальше считается ПРИРОСТ.
-    if (usedTokens != null && stepTokensBase < 0) stepTokensBase = usedTokens
-    val spentInStep = if (usedTokens == null || stepTokensBase < 0) 0L
-                      else (usedTokens - stepTokensBase).coerceAtLeast(0L)
+    if (usedTokens != null && turn.tokensBase < 0) turn.tokensBase = usedTokens
+    val spentInStep = if (usedTokens == null || turn.tokensBase < 0) 0L
+                      else (usedTokens - turn.tokensBase).coerceAtLeast(0L)
     val verdict = com.vibe.agent.pipelines.StepLimits.check(
       usedTokens = spentInStep,
-      toolCalls = toolCalls ?: stepToolCalls.get(),
+      toolCalls = toolCalls ?: turn.toolCallCount.get(),
       maxTokens = step.maxTokens,
       maxSteps = step.maxSteps,
     )
     if (verdict == com.vibe.agent.pipelines.StepLimits.Verdict.OK) return
-    stepLimitHit = verdict
+    turn.limitHit = verdict
     systemLine(when (verdict) {
       com.vibe.agent.pipelines.StepLimits.Verdict.TOKENS ->
         t("pipeline.limit.tokens", "role" to step.role, "limit" to "%,d".format(step.maxTokens ?: 0))
@@ -4516,11 +4495,13 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
         t("pipeline.limit.steps", "role" to step.role, "limit" to (step.maxSteps ?: 0))
     })
     audit?.append(AuditEvent(System.currentTimeMillis(), AuditEvent.Action.CIRCUIT_BREAKER_OPENED, ok = false,
-                             actor = agentActor(),
+                             actor = agentActor(turn),
                              meta = mapOf("reason" to verdict.name, "role" to step.role)))
     // Off the EDT по той же причине, что и у «Стоп»: send() синхронизирован и может ждать записи.
+    // The step's own session: a neighbour in its wave keeps working.
     val c = client ?: return
-    ApplicationManager.getApplication().executeOnPooledThread { runCatching { c.cancel() } }
+    val session = turn.sessionId ?: return
+    ApplicationManager.getApplication().executeOnPooledThread { runCatching { c.cancel(session) } }
   }
 
   /**
@@ -4532,19 +4513,26 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
    * nowhere on disk. Written to the run folder and handed to the next step in place of the answer's tail
    * (Autopilot's handoff, 17.09.2026).
    *
+   * Asked in the step's OWN session: the step's work is only there, and a step with a fresh context never showed it to
+   * the chat's session.
+   *
    * One handoff per step. The request itself is not capped by the step's ceiling — the ceiling has already fired — but
    * it is bounded by the handshake timeout, and a failure returns null, which means the old behaviour: the step failed.
    */
-  private fun askHandoff(step: com.vibe.agent.pipelines.PipelineStep, header: String, runId: String?, index: Int): String? {
+  private fun askHandoff(turn: TurnState, header: String, runId: String?, index: Int): String? {
     val c = synchronized(clientLock) { client } ?: return null
     if (!c.isAlive) return null
+    val session = turn.sessionId ?: return null
+    val buffer = turn.answer ?: return null
     systemLine(t("pipeline.handoff.asking", "header" to header))
-    val buffer = StringBuilder()
-    stepBuffer = buffer
+    // The handoff replaces the answer: what the step said before its ceiling is superseded by what it hands over.
+    buffer.setLength(0)
+    val startedAt = System.currentTimeMillis()
     val asked = runCatching {
-      c.prompt(com.vibe.agent.pipelines.PipelinesFile.HANDOFF_PROMPT)
+      c.prompt(session, com.vibe.agent.pipelines.PipelinesFile.HANDOFF_PROMPT)
         .get(VibeAgentSettings.handshakeTimeoutSec.toLong() * HANDOFF_TIMEOUT_FACTOR, TimeUnit.SECONDS)
     }
+    finishAgentBubble((System.currentTimeMillis() - startedAt) / 1000.0, header, turn)
     val text = buffer.toString().trim()
     if (asked.isFailure || text.isEmpty()) {
       systemLine(t("pipeline.handoff.failed", "header" to header,
@@ -4553,8 +4541,8 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     }
     val file = runId?.let { com.vibe.agent.pipelines.RunFolder.write(project.basePath, it, "handoff-${index + 1}.md", text) }
     systemLine(t("pipeline.handoff.written", "header" to header, "file" to (file?.toString() ?: "—")))
-    audit?.append(AuditEvent(System.currentTimeMillis(), AuditEvent.Action.STEP_HANDOFF, ok = true, actor = agentActor(),
-                             meta = mapOf("role" to step.role, "step" to (index + 1).toString())))
+    audit?.append(AuditEvent(System.currentTimeMillis(), AuditEvent.Action.STEP_HANDOFF, ok = true, actor = agentActor(turn),
+                             meta = mapOf("role" to (turn.role ?: ""), "step" to (index + 1).toString())))
     return text
   }
 
@@ -4570,31 +4558,33 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     step: com.vibe.agent.pipelines.PipelineStep,
     index: Int,
     answer: String,
+    turn: TurnState,
   ): Boolean? {
     val context = buildJsonObject {
       put("pipeline", pipeline.id)
       put("step", index + 1)
       put("role", step.role)
+      step.wave?.let { put("wave", it) }
       step.model?.let { put("model", it) }
       // What the step said about itself: a gate that judges only the diff cannot tell «could not» from «did».
-      stepReport?.let { report ->
+      turn.report?.let { report ->
         put("status", report.status.name)
         if (report.blockers.isNotEmpty()) put("blockers", JsonArray(report.blockers.map { JsonPrimitive(it) }))
         if (report.concerns.isNotEmpty()) put("concerns", JsonArray(report.concerns.map { JsonPrimitive(it) }))
       }
       // Что ответило на самом деле: гейт судит о полученном ответе, а не о заказанном.
-      if (step.model != null) llmClient.lastAnsweredModel()?.let { put("answeredModel", it) }
+      if (step.model != null) turn.llm?.lastAnsweredModel()?.let { put("answeredModel", it) }
       // Ответ шага, обрезанный: гейту нужен вердикт по содержанию, а не весь транскрипт в stdin.
       put("answer", answer.take(GATE_ANSWER_CHARS))
     }
     // Спрашивается ДО запуска: гейт, разрешивший шаг молча (код 0, пустой вывод), по одному лишь
     // решению неотличим от отсутствующего гейта — а это противоположные ответы.
     if (!hooks.has(HookEvent.PIPELINE_STEP_END)) return null
-    val decision = hooks.run(HookEvent.PIPELINE_STEP_END, null, null, changedPaths.toList(), context)
+    val decision = hooks.run(HookEvent.PIPELINE_STEP_END, null, null, turn.changedPaths.toList(), context)
     // Сломанный гейт (любой код кроме 0 и 2, таймаут) принять не может: считаем, что гейта не было.
     if (decision.brokenHooks.isNotEmpty() && !decision.flagged) return null
     audit?.append(AuditEvent(System.currentTimeMillis(), AuditEvent.Action.HOOK, ok = !decision.flagged,
-                             actor = agentActor(),
+                             actor = agentActor(turn),
                              meta = mapOf("event" to HookEvent.PIPELINE_STEP_END.wire,
                                           "pipeline" to pipeline.id, "step" to (index + 1).toString())))
     return if (decision.flagged) {
@@ -4662,7 +4652,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     }
   }
 
-  private fun runModelStep(providerId: String, modelId: String, stepPrompt: String, pack: com.vibe.agent.pipelines.PackSpec? = null) {
+  private fun runModelStep(turn: TurnState, providerId: String, modelId: String, stepPrompt: String, pack: com.vibe.agent.pipelines.PackSpec? = null) {
     val provider = providers.firstOrNull { it.id == providerId }
       ?: throw IllegalStateException(t("pipeline.step.noProvider", "id" to providerId))
     val model = provider.models.firstOrNull { it.id == modelId }
@@ -4682,16 +4672,19 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     // умеет ACP-ветка, и это сказано в спеке прямым текстом: потолок бережёт от убежавшего ответа,
     // а не отмеряет токены точно. Молчать о разнице нельзя — потолок, который «вроде есть»,
     // тратит деньги ровно там, где его поставили, чтобы не тратить.
-    val ceiling = stepLimits?.maxTokens?.takeIf { it > 0 }?.toLong()
+    val ceiling = turn.limits?.maxTokens?.takeIf { it > 0 }?.toLong()
     val spent = java.util.concurrent.atomic.AtomicLong(
       if (ceiling == null) 0L else com.vibe.agent.context.ContextBudget.estimateTokens(prompt))
-    llmClient.chat(
+    // The step's own client: its last usage, its answered model and its cancel are this step's, not a neighbour's.
+    val llm = LlmClient(projectBase = project.basePath)
+    turn.llm = llm
+    llm.chat(
       resolved, model, listOf(ChatMessage(role = "user", text = prompt)),
       {
         llmCancel.get() || (ceiling != null && spent.get() > ceiling).also {
-          if (it && stepLimitHit == null) {
-            stepLimitHit = com.vibe.agent.pipelines.StepLimits.Verdict.TOKENS
-            systemLine(t("pipeline.limit.tokensEstimated", "role" to (stepLimits?.role ?: ""),
+          if (it && turn.limitHit == null) {
+            turn.limitHit = com.vibe.agent.pipelines.StepLimits.Verdict.TOKENS
+            systemLine(t("pipeline.limit.tokensEstimated", "role" to (turn.limits?.role ?: ""),
                          "limit" to "%,d".format(ceiling)))
           }
         }
@@ -4699,14 +4692,15 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
       onWaiting = { attempt, delayMs, reason ->
         systemLine(t("retry.waiting", "attempt" to attempt, "seconds" to (delayMs / 1000), "reason" to (reason ?: "")))
       },
-      onThought = { appendThought(it) },
+      onThought = { appendThought(it, turn) },
     ) { delta ->
       if (ceiling != null) spent.addAndGet(com.vibe.agent.context.ContextBudget.estimateTokens(delta))
-      appendAgentText(delta)
+      turn.answer?.append(delta)
+      appendAgentText(delta, turn)
     }
-    lastTurnUsage = llmClient.lastUsage()
-    noteModelSubstitution(model.id, llmClient.lastAnsweredModel())
-    lastTurnPricing = com.vibe.agent.providers.PriceValidity.effective(model, java.time.LocalDate.now())
+    turn.usage = llm.lastUsage()
+    noteModelSubstitution(model.id, llm.lastAnsweredModel())
+    turn.pricing = com.vibe.agent.providers.PriceValidity.effective(model, java.time.LocalDate.now())
   }
 
   /**
@@ -4851,15 +4845,18 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     composer.busy = true
     showWorking(WorkingLine.Kind.THINKING)
     turnThreadId = currentThreadId
+    turns.chat = chatTurn(currentThreadId)
     ApplicationManager.getApplication().executeOnPooledThread {
       var planned: List<com.vibe.agent.pipelines.PipelineStep>? = null
+      val turn = TurnState(
+        role = drafting.role,
+        scope = com.vibe.agent.pipelines.RolePaths.Scope(deny = listOf("**")),
+        label = t("pipeline.plan.title"),
+        signals = untrustedSignals(),
+        feed = mainFeed,
+      )
       try {
         llmCancel.set(false)
-        currentRole = drafting.role
-        currentScope = com.vibe.agent.pipelines.RolePaths.Scope(deny = listOf("**"))
-        stepBuffer = StringBuilder()
-        turnSignals.clear()
-        turnSignals.add(com.vibe.agent.guard.Trifecta.Signal.UNTRUSTED_CONTENT)
         val prompt = buildString {
           appendLine(PipelinesFile.rolePreamble(drafting.role))
           appendLine(t("pipeline.step.task", "task" to drafting.task))
@@ -4867,15 +4864,14 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
         }
         val startedAt = System.currentTimeMillis()
         val c = ensureClient(agent, turnThreadId ?: currentThreadId)
-        c.turnSession = c.openIsolatedSession().get(VibeAgentSettings.handshakeTimeoutSec.toLong(), TimeUnit.SECONDS)
-        try {
-          c.prompt(prompt).get()
-        }
-        finally {
-          c.turnSession = null
-        }
-        finishAgentBubble((System.currentTimeMillis() - startedAt) / 1000.0, t("pipeline.plan.title"))
-        when (val plan = PipelinesFile.planFromAnswer(stepBuffer?.toString().orEmpty()) { systemLine("[pipelines] $it") }) {
+        val session = c.openIsolatedSession().get(VibeAgentSettings.handshakeTimeoutSec.toLong(), TimeUnit.SECONDS)
+        turn.sessionId = session
+        turns.register(turn)
+        c.prompt(session, prompt).get()
+        finishAgentBubble((System.currentTimeMillis() - startedAt) / 1000.0, t("pipeline.plan.title"), turn)
+        // A drafted wave passes the same check as one in the file, qa boundary included.
+        val qa = com.vibe.agent.pipelines.RolesFile.load(project.basePath) { systemLine("[roles] $it") }
+        when (val plan = PipelinesFile.planFromAnswer(turn.answer?.toString().orEmpty(), qa) { systemLine("[pipelines] $it") }) {
           is PipelinesFile.Plan.Refused -> systemLine(plan.reason)
           is PipelinesFile.Plan.Ok -> planned = plan.steps
         }
@@ -4884,9 +4880,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
         systemLine(t("pipeline.stepFailed", "header" to t("pipeline.plan.title"), "reason" to e.message))
       }
       finally {
-        stepBuffer = null
-        currentRole = null
-        currentScope = com.vibe.agent.pipelines.RolePaths.Scope()
+        turns.unregisterAll()
         finishTurn()
       }
       val steps = planned ?: return@executeOnPooledThread
@@ -4903,13 +4897,44 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     }
   }
 
-  private fun runPipeline(pipeline: com.vibe.agent.pipelines.Pipeline, agent: AgentServerConfig, fromStep: Int = 0) {
+  /** What a pipeline run carries from one step to the next; the pipeline thread only. */
+  private class PipelineRun(
+    val pipeline: com.vibe.agent.pipelines.Pipeline,
+    val agent: AgentServerConfig,
+    val runId: String?,
+    val brief: String,
+    /** Read once per run: a file edited mid-run must not move the boundary between two steps. */
+    val qaScope: com.vibe.agent.pipelines.RolePaths.Scope,
+    /** Steps an interrupted run already finished: a resumed run does not pay for them twice. */
+    val skip: Set<Int>,
+  ) {
+    val artifacts = LinkedHashSet<String>()
+    /** Швы между модулями, названные прошлыми шагами: накопительный контракт прогона. */
+    val seams = LinkedHashSet<String>()
+    var lastSummary: String? = null
+    /** The snapshot before the first step: a judge on its own model gets the run's diff against it. */
+    var runCheckpoint: com.vibe.agent.checkpoints.Checkpoint? = null
+    var failed = false
+    /** Отменён человеком, пока шаг ждал конца пика: дальше не идёт ни один шаг, даже continueOnFailure. */
+    var runCancelled = false
+    /**
+     * Принял ли гейт последний проверенный шаг. Null — гейта нет вовсе: тогда «эскалация»
+     * ничего не значит и шаг выполняется как обычный.
+     */
+    var lastGateAccepted: Boolean? = null
+    /** Finished steps by index: a wave finishes them out of order, and a count would not say which. */
+    val done = java.util.TreeSet<Int>()
+  }
+
+  /** How a step ended: what it hands to the next step, whether it failed, and its gate's verdict. */
+  private class StepResult(val header: String, val summary: String?, val failed: Boolean, val gate: Boolean?)
+
+  private fun runPipeline(pipeline: com.vibe.agent.pipelines.Pipeline, agent: AgentServerConfig, skip: Set<Int> = emptySet()) {
     if (!history.tryBeginTurn(currentThreadId)) {
       systemLine(t("chat.threadBusy"))
       return
     }
     systemLine(t("pipeline.header", "name" to pipeline.name, "count" to pipeline.steps.size))
-    // Read once per run: a file edited mid-run must not move the boundary between two steps.
     val qaScope = com.vibe.agent.pipelines.RolesFile.load(project.basePath) { systemLine("[roles] $it") }
     turnInFlight.set(true)
     status.set(VibeAgentStatusService.State.RUNNING)
@@ -4920,8 +4945,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     composer.busy = true
     showWorking(WorkingLine.Kind.THINKING)
     turnThreadId = currentThreadId
-    turnText.setLength(0)
-    uiConsumed = 0
+    turns.chat = chatTurn(currentThreadId)
     markConversationStarted()
     history.append(currentThreadId, ChatMessageRecord(Role.USER, t("pipeline.userLine", "name" to pipeline.name, "count" to pipeline.steps.size), at = nowIso()))
     ApplicationManager.getApplication().executeOnPooledThread {
@@ -4929,18 +4953,6 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
       // спрашивает его на каждом чанке: без сброса такой шаг умирал бы мгновенно, причём ТОЛЬКО
       // он — шаги через ACP работали бы, и отказ выглядел бы как «модель не отвечает».
       llmCancel.set(false)
-      val artifacts = LinkedHashSet<String>()
-      // Швы между модулями, названные прошлыми шагами: накопительный контракт прогона.
-      val seams = LinkedHashSet<String>()
-      var lastSummary: String? = null
-      // The snapshot before the first step: a judge on its own model gets the run's diff against it.
-      var runCheckpoint: com.vibe.agent.checkpoints.Checkpoint? = null
-      var failed = false
-      // Отменён человеком, пока шаг ждал конца пика: дальше не идёт ни один шаг, даже continueOnFailure.
-      var runCancelled = false
-      // Принял ли гейт последний проверенный шаг. Null — гейта нет вовсе: тогда «эскалация»
-      // ничего не значит и шаг выполняется как обычный.
-      var lastGateAccepted: Boolean? = null
       // Unattended work goes into the ledger: a pipeline runs for minutes with nobody watching,
       // and if the window dies mid-way the only trace left is this record.
       val territory = com.vibe.agent.runs.TerritoryGuess.prefixes(pipeline.steps.joinToString("\n") { it.task })
@@ -4958,176 +4970,12 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
       // спекой и не с пересказом предыдущего шага (решение по разбору Autopilot, 17.09.2026).
       val brief = com.vibe.agent.pipelines.PipelineBrief.of(pipeline)
       runId?.let { com.vibe.agent.pipelines.RunFolder.write(project.basePath, it, com.vibe.agent.pipelines.RunFolder.BRIEF, brief) }
+      val run = PipelineRun(pipeline, agent, runId, brief, qaScope, skip)
       try {
-        pipeline.steps.forEachIndexed { i, step ->
-          val header = t("pipeline.step", "index" to (i + 1), "total" to pipeline.steps.size, "role" to step.role)
-          // Resumed run: steps before the interruption already ran and are not paid for twice. Their
-          // artifacts are not known to this run, so the first resumed step starts without that list.
-          if (i < fromStep) {
-            systemLine(t("pipeline.stepAlreadyDone", "header" to header))
-            runs.progress(runId, steps = i + 1, changedFiles = artifacts.size)
-            return@forEachIndexed
-          }
-          if (runCancelled || (failed && !step.continueOnFailure)) {
-            systemLine(t("pipeline.stepSkipped", "header" to header))
-            return@forEachIndexed
-          }
-          // Шаг эскалации нужен ровно тогда, когда предыдущий черновик НЕ приняли.
-          val accepted = lastGateAccepted
-          // Ответ гейта относится к ОДНОМУ шагу — тому, который он проверил. Оставить его жить
-          // дальше значит однажды пропустить эскалацию из-за приёмки позапрошлого шага, между
-          // которыми был упавший: гасим сразу после использования, заново ставит только гейт.
-          lastGateAccepted = null
-          if (step.escalation && accepted == true) {
-            systemLine(t("pipeline.stepSkippedByGate", "header" to header))
-            // Пропуск пишется в журнал наравне с вердиктом гейта: без него окупаемость каскада
-            // нечем считать — видно «сколько раз приняли», но не «сколько дорогого не запустили».
-            audit?.append(AuditEvent(System.currentTimeMillis(), AuditEvent.Action.HOOK, ok = true,
-                                     actor = agentActor(),
-                                     meta = mapOf("event" to CASCADE_SKIP, "pipeline" to pipeline.id,
-                                                  "step" to (i + 1).toString(), "role" to step.role)))
-            return@forEachIndexed
-          }
-          if (roleBudgetExceeded(step.role)) {
-            failed = true
-            return@forEachIndexed
-          }
-          // A step on the pipeline's agent is its spend; a step on its own model is not the agent's.
-          if (step.model == null && agentLimitReached(agent, runId)) {
-            failed = true
-            return@forEachIndexed
-          }
-          if (step.offPeak && !waitForOffPeak(pipeline, i, step)) {
-            failed = true
-            runCancelled = true
-            systemLine(t("pipeline.offPeak.cancelled", "header" to header))
-            return@forEachIndexed
-          }
-          systemLine("$header ${step.task.take(80)}")
-          // A pipeline runs unattended: without a snapshot before each step, one bad step could be
-          // rolled back only together with everything before it — or not at all.
-          checkpoints?.create(t("pipeline.checkpointLabel", "name" to pipeline.name, "index" to (i + 1), "role" to step.role))?.let {
-            checkpointLine(it)
-            audit?.append(AuditEvent(System.currentTimeMillis(), AuditEvent.Action.CHECKPOINT, ok = true,
-                                     actor = com.vibe.agent.audit.AuditActor.IDE,
-                                     meta = mapOf("hash" to it.hash.take(12), "pipeline" to pipeline.id, "step" to (i + 1).toString())))
-            if (runCheckpoint == null) runCheckpoint = it
-          }
-          val prompt = buildString {
-            appendLine(PipelinesFile.rolePreamble(step.role))
-            appendLine(PipelinesFile.RETURN_CONTRACT)
-            appendLine(t("pipeline.step.task", "task" to step.task))
-            step.acceptance?.let { appendLine(t("pipeline.step.acceptance", "acceptance" to it)) }
-            if (step.againstBrief) {
-              // Судья видит только слова задачи: артефакты и резюме — это уже рассказ исполнителя о себе.
-              appendLine(t("pipeline.step.brief", "brief" to brief))
-            }
-            else if (!step.ignorePreviousArtifacts) {
-              if (seams.isNotEmpty()) appendLine(t("pipeline.step.seams", "seams" to seams.joinToString("\n") { "- $it" }))
-              if (artifacts.isNotEmpty()) appendLine(t("pipeline.step.artifacts", "files" to artifacts.joinToString()))
-              lastSummary?.let { appendLine(t("pipeline.step.summary", "summary" to it)) }
-              // A judge on its own model has no tools to read the files: it gets the run's diff.
-              if (step.model != null) judgeDiff(runCheckpoint, artifacts, step.maxTokens)?.let { appendLine(it) }
-            }
-          }
-          try {
-            currentRole = step.role
-            currentScope = com.vibe.agent.pipelines.RolePaths.effective(step.role, com.vibe.agent.pipelines.RolePaths.Scope(step.paths, step.denyPaths), qaScope)
-            changedPaths.clear()
-            stepBuffer = StringBuilder()
-            // Потолки ставятся ДО запроса и снимаются в finally: считать их у обычного хода
-            // было бы работой ради нуля на каждом кадре потока.
-            // Признаки трифекты живут по шагу: копиться сквозь весь прогон они не должны, а сам
-            // прогон недоверенный по определению — за клавиатурой никого, текст шага пишет файл.
-            // Обычный ход выставляет то же самое в startTurn, куда пайплайн не заходит.
-            turnSignals.clear()
-            turnSignals.add(com.vibe.agent.guard.Trifecta.Signal.UNTRUSTED_CONTENT)
-            stepLimits = step.takeIf { com.vibe.agent.pipelines.StepLimits.any(it) }
-            stepToolCalls.set(0)
-            stepLimitHit = null
-            stepReport = null
-            stepTokensBase = -1L
-            val startedAt = System.currentTimeMillis()
-            // Шаг со своей моделью идёт прямым запросом к провайдеру, мимо агента: у него нет
-            // инструментов, и он ни на что не влияет, кроме собственного ответа. Разбор — в
-            // [runModelStep]; загрузчик пайплайнов уже не пустил сюда пишущую роль.
-            val stop = if (step.model != null && step.provider != null) {
-              runModelStep(step.provider, step.model, prompt, step.pack)
-              null
-            }
-            else {
-              val c = ensureClient(agent, turnThreadId ?: currentThreadId)
-              // A judging step starts clean: a new session of the same agent, not remembered, while
-              // the chat's session stays current for the next turn (decision №80). An agent that
-              // cannot open one fails the step with the reason — judging in the chat's session
-              // instead would quietly break the very promise of the field.
-              if (step.context == com.vibe.agent.pipelines.StepContext.FRESH) {
-                c.turnSession = c.openIsolatedSession().get(VibeAgentSettings.handshakeTimeoutSec.toLong(), TimeUnit.SECONDS)
-                systemLine(t("pipeline.stepFresh", "header" to header))
-              }
-              try {
-                val result = c.prompt(prompt).get()
-                // Как и в обычном ходе: `{"result": null}` — не объект, и `.jsonObject` на JsonNull бросает.
-                (result as? JsonObject)?.get("stopReason")?.jsonPrimitive?.contentOrNull
-              }
-              finally {
-                c.turnSession = null
-              }
-            }
-            finishAgentBubble((System.currentTimeMillis() - startedAt) / 1000.0,
-                              step.model ?: t("pipeline.stepLabel", "index" to (i + 1)))
-            if (stop == STOP_CANCELLED) {
-              // Свой потолок и рука человека дают одинаковый stopReason, а значат разное: первое —
-              // сработавшее правило пайплайна, второе — чужое вмешательство в него.
-              val handoff = if (stepLimitHit != null && step.model == null) askHandoff(step, header, runId, i) else null
-              if (handoff != null) {
-                lastSummary = handoff
-                stepReport = null
-                artifacts.addAll(changedPaths)
-                runs.progress(runId, steps = i + 1, changedFiles = artifacts.size)
-                return@forEachIndexed
-              }
-              failed = true
-              systemLine(if (stepLimitHit != null) t("pipeline.stepCapped", "header" to header)
-                         else t("pipeline.stepStopped", "header" to header))
-              return@forEachIndexed
-            }
-            val summaryText = stepBuffer?.toString().orEmpty()
-            // The step's own report if it wrote one; the tail of the answer otherwise — a step that ignored the
-            // contract must not lose its say (see [StepReport]).
-            stepReport = com.vibe.agent.pipelines.StepReport.parse(summaryText)
-            lastSummary = stepReport?.summary() ?: summaryText.takeLast(2000).ifBlank { t("pipeline.noText") }
-            stepReport?.let { report ->
-              systemLine(t("pipeline.step.report", "header" to header, "status" to report.status.name,
-                           "blockers" to report.blockers.size, "concerns" to report.concerns.size))
-              // Швы, которые шаг назвал, копятся в одном файле прогона, и следующие шаги читают его
-              // первым делом. Ведёт его IDE, а не сами шаги: файл, который каждый дописывает сам,
-              // держится на дисциплине, которой у модели нет.
-              if (report.interfaces.isNotEmpty() && runId != null) {
-                val block = "## " + header + "\n" + report.interfaces.joinToString("\n") { "- $it" } + "\n\n"
-                com.vibe.agent.pipelines.RunFolder.append(project.basePath, runId, com.vibe.agent.pipelines.RunFolder.INTERFACES, block)
-                seams += report.interfaces
-              }
-            }
-            artifacts.addAll(changedPaths)
-            runs.progress(runId, steps = i + 1, changedFiles = artifacts.size)
-            systemLine(t("pipeline.stepDone", "header" to header, "files" to changedPaths.size))
-            lastGateAccepted = runStepGate(pipeline, step, i, summaryText)
-          }
-          catch (e: Exception) {
-            failed = true
-            systemLine(t("pipeline.stepFailed", "header" to header, "reason" to e.message))
-          }
-          finally {
-            stepBuffer = null
-            stepLimits = null
-            // The role dies with its step: an ordinary chat inheriting «ревьюер» rights would be a
-            // restriction appearing from nowhere, which is worse than no restriction at all.
-            currentRole = null
-            currentScope = com.vibe.agent.pipelines.RolePaths.Scope()
-          }
+        for (group in com.vibe.agent.pipelines.PipelineWaves.groups(pipeline.steps)) {
+          if (group.first == group.last) runStep(run, group.first) else runWave(run, group)
         }
-        systemLine(t("pipeline.finished", "name" to pipeline.name, "outcome" to (if (failed) t("pipeline.outcome.failed") else t("pipeline.outcome.done"))))
+        systemLine(t("pipeline.finished", "name" to pipeline.name, "outcome" to (if (run.failed) t("pipeline.outcome.failed") else t("pipeline.outcome.done"))))
         // The bill next to the outcome: the task is the unit a cascade or a council is compared by.
         runId?.let { id -> com.vibe.agent.budget.VibeSpendService.getInstance().ofRun(id) }?.let { bill ->
           systemLine(if (bill.currency != null) t("pipeline.bill.cost", "tokens" to bill.tokens, "cost" to "%.4f".format(bill.cost), "currency" to bill.currency)
@@ -5135,16 +4983,362 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
         }
         runs.finished(
           runId,
-          if (failed) com.vibe.agent.runs.AgentRunLedger.Status.FAILED else com.vibe.agent.runs.AgentRunLedger.Status.COMPLETED,
-          if (failed) t("pipeline.run.failed") else t("pipeline.run.completed", "count" to pipeline.steps.size),
+          if (run.failed) com.vibe.agent.runs.AgentRunLedger.Status.FAILED else com.vibe.agent.runs.AgentRunLedger.Status.COMPLETED,
+          if (run.failed) t("pipeline.run.failed") else t("pipeline.run.completed", "count" to pipeline.steps.size),
         )
       }
       finally {
-        currentRole = null
-        currentScope = com.vibe.agent.pipelines.RolePaths.Scope()
+        // What the run changed is what the turn changed: the checklist and the handoff after it read the chat's turn.
+        turns.chat.changedPaths.addAll(run.artifacts)
+        turns.unregisterAll()
         pipelineRunId = null
         finishTurn()
       }
+    }
+  }
+
+  /** One step on its own, in the order of the file. */
+  private fun runStep(run: PipelineRun, i: Int) {
+    val pipeline = run.pipeline
+    val step = pipeline.steps[i]
+    val header = t("pipeline.step", "index" to (i + 1), "total" to pipeline.steps.size, "role" to step.role)
+    // Resumed run: steps before the interruption already ran and are not paid for twice. Their
+    // artifacts are not known to this run, so the first resumed step starts without that list.
+    if (i in run.skip) {
+      systemLine(t("pipeline.stepAlreadyDone", "header" to header))
+      markDone(run, i)
+      return
+    }
+    if (run.runCancelled || (run.failed && !step.continueOnFailure)) {
+      systemLine(t("pipeline.stepSkipped", "header" to header))
+      return
+    }
+    // Шаг эскалации нужен ровно тогда, когда предыдущий черновик НЕ приняли.
+    val accepted = run.lastGateAccepted
+    // Ответ гейта относится к ОДНОМУ шагу — тому, который он проверил. Оставить его жить
+    // дальше значит однажды пропустить эскалацию из-за приёмки позапрошлого шага, между
+    // которыми был упавший: гасим сразу после использования, заново ставит только гейт.
+    run.lastGateAccepted = null
+    if (step.escalation && accepted == true) {
+      systemLine(t("pipeline.stepSkippedByGate", "header" to header))
+      // Пропуск пишется в журнал наравне с вердиктом гейта: без него окупаемость каскада
+      // нечем считать — видно «сколько раз приняли», но не «сколько дорогого не запустили».
+      audit?.append(AuditEvent(System.currentTimeMillis(), AuditEvent.Action.HOOK, ok = true,
+                               actor = agentActor(),
+                               meta = mapOf("event" to CASCADE_SKIP, "pipeline" to pipeline.id,
+                                            "step" to (i + 1).toString(), "role" to step.role)))
+      return
+    }
+    if (!mayStart(run, step)) {
+      run.failed = true
+      return
+    }
+    if (step.offPeak && !waitForOffPeak(pipeline, i, step)) {
+      run.failed = true
+      run.runCancelled = true
+      systemLine(t("pipeline.offPeak.cancelled", "header" to header))
+      return
+    }
+    systemLine("$header ${step.task.take(80)}")
+    checkpoint(run, t("pipeline.checkpointLabel", "name" to pipeline.name, "index" to (i + 1), "role" to step.role), (i + 1).toString())
+    val turn = stepTurn(run, step, stepName(pipeline, i), mainFeed)
+    val prompt = stepPrompt(run, step)
+    val startedAt = System.currentTimeMillis()
+    val (stop, error) = runCatching { launchStep(run, step, turn, header, prompt).get() }
+      .fold({ it to null }, { (it as? java.util.concurrent.ExecutionException)?.cause?.let { cause -> null to cause } ?: (null to it) })
+    finishAgentBubble((System.currentTimeMillis() - startedAt) / 1000.0, step.model ?: t("pipeline.stepLabel", "index" to (i + 1)), turn)
+    val result = finishStep(run, i, step, turn, header, stop, error)
+    result.summary?.let { run.lastSummary = it }
+    if (result.failed) run.failed = true
+    run.lastGateAccepted = result.gate
+  }
+
+  /**
+   * The steps of one wave, all at once.
+   *
+   * Each runs as a step on its own would — its own session, boundary, ceilings and block in the feed — and the run
+   * moves on when the last of them is done. What they found goes to the next step together, in the order of the file;
+   * a member that failed fails the wave as a step on its own would fail.
+   */
+  private fun runWave(run: PipelineRun, range: IntRange) {
+    val pipeline = run.pipeline
+    val wave = pipeline.steps[range.first].wave.orEmpty()
+    val headers = range.associateWith { i -> t("pipeline.step", "index" to (i + 1), "total" to pipeline.steps.size, "role" to pipeline.steps[i].role) }
+    // Resumed run: members that finished before the interruption are not paid for twice.
+    val pending = range.filter { i ->
+      if (i !in run.skip) return@filter true
+      systemLine(t("pipeline.stepAlreadyDone", "header" to headers.getValue(i)))
+      markDone(run, i)
+      false
+    }
+    val members = pending.filter { i ->
+      val goes = !run.runCancelled && (!run.failed || pipeline.steps[i].continueOnFailure)
+      if (!goes) systemLine(t("pipeline.stepSkipped", "header" to headers.getValue(i)))
+      goes
+    }
+    // An escalation needs the verdict on the step before it, and the loader keeps escalation out of waves: whatever
+    // verdict came before the wave lapses here.
+    run.lastGateAccepted = null
+    if (members.isEmpty()) return
+    // A wave starts whole or not at all: half a wave leaves half of what the next step expects.
+    if (members.any { !mayStart(run, pipeline.steps[it]) }) {
+      run.failed = true
+      return
+    }
+    systemLine(t("pipeline.wave.start", "wave" to wave, "steps" to members.joinToString { (it + 1).toString() }))
+    checkpoint(run, t("pipeline.wave.checkpointLabel", "name" to pipeline.name, "wave" to wave), members.joinToString(",") { (it + 1).toString() })
+    // Every member gets what was known before the wave: a neighbour's work is not there yet.
+    val prompts = members.associateWith { stepPrompt(run, pipeline.steps[it]) }
+    val stepTurns = members.associateWith { i ->
+      val name = stepName(pipeline, i)
+      stepTurn(run, pipeline.steps[i], name, WaveBlockFeed(name))
+    }
+    SwingUtilities.invokeLater {
+      runningWave = stepTurns.values.toList()
+      stepTurns.values.forEach { (it.feed as? WaveBlockFeed)?.show() }
+    }
+    val futures = members.associateWith { i ->
+      val step = pipeline.steps[i]
+      val turn = stepTurns.getValue(i)
+      val startedAt = System.currentTimeMillis()
+      // Launched one by one — a session opens in a moment — and then they run at once.
+      val launched = try {
+        launchStep(run, step, turn, headers.getValue(i), prompts.getValue(i))
+      }
+      catch (e: Exception) {
+        java.util.concurrent.CompletableFuture.failedFuture(e)
+      }
+      // A block's answer is finished when its own step ends, not when the slowest neighbour does.
+      launched.whenComplete { _, _ ->
+        finishAgentBubble((System.currentTimeMillis() - startedAt) / 1000.0, step.model ?: t("pipeline.stepLabel", "index" to (i + 1)), turn)
+        turn.done = true
+      }
+    }
+    val results = members.map { i ->
+      val (stop, error) = runCatching { futures.getValue(i).get() }
+        .fold({ it to null }, { (it as? java.util.concurrent.ExecutionException)?.cause?.let { cause -> null to cause } ?: (null to it) })
+      finishStep(run, i, pipeline.steps[i], stepTurns.getValue(i), headers.getValue(i), stop, error)
+    }
+    SwingUtilities.invokeLater { runningWave = emptyList() }
+    // The next step hears every member under its own name: one summary in place of three would drop two.
+    val summaries = results.filter { it.summary != null }
+    if (summaries.isNotEmpty()) run.lastSummary = summaries.joinToString("\n\n") { it.header + ":\n" + it.summary }
+    if (results.any { it.failed }) run.failed = true
+    // Accepted when every gated member was; no member gated — no verdict at all.
+    val verdicts = results.mapNotNull { it.gate }
+    run.lastGateAccepted = if (verdicts.isEmpty()) null else verdicts.all { it }
+  }
+
+  /** How a step is named in its block and in a permission dialog: «Шаг 2/5 [qa]». */
+  private fun stepName(pipeline: com.vibe.agent.pipelines.Pipeline, i: Int): String =
+    t("pipeline.stepName", "index" to (i + 1), "total" to pipeline.steps.size, "role" to pipeline.steps[i].role)
+
+  /** The step's own turn: its role, its boundary, its ceilings, and trifecta signals of its own. */
+  private fun stepTurn(run: PipelineRun, step: com.vibe.agent.pipelines.PipelineStep, name: String, feed: TurnFeed): TurnState =
+    TurnState(
+      role = step.role,
+      scope = com.vibe.agent.pipelines.RolePaths.effective(step.role,
+        com.vibe.agent.pipelines.RolePaths.Scope(step.paths, step.denyPaths), run.qaScope),
+      // Ceilings are counted only for a step that names them: for the others it would be work for nothing on every frame.
+      limits = step.takeIf { com.vibe.agent.pipelines.StepLimits.any(it) },
+      label = name,
+      signals = untrustedSignals(),
+      feed = feed,
+    )
+
+  /**
+   * Trifecta signals of a pipeline step: its own, not the thread's — and untrusted from the start, because nobody at the
+   * keyboard wrote the step's text; the pipeline file did.
+   */
+  private fun untrustedSignals(): MutableSet<com.vibe.agent.guard.Trifecta.Signal> =
+    java.util.concurrent.ConcurrentHashMap.newKeySet<com.vibe.agent.guard.Trifecta.Signal>().apply {
+      add(com.vibe.agent.guard.Trifecta.Signal.UNTRUSTED_CONTENT)
+    }
+
+  /** What a step must pass before it starts: its role's daily budget, and its agent's ceiling for an agent's step. */
+  private fun mayStart(run: PipelineRun, step: com.vibe.agent.pipelines.PipelineStep): Boolean {
+    if (roleBudgetExceeded(step.role)) return false
+    // A step on the pipeline's agent is its spend; a step on its own model is not the agent's.
+    return step.model != null || !agentLimitReached(run.agent, run.runId)
+  }
+
+  /**
+   * A snapshot before a step or a wave. A pipeline runs unattended: without one before each step, one bad step could be
+   * rolled back only together with everything before it — or not at all.
+   */
+  private fun checkpoint(run: PipelineRun, label: String, steps: String) {
+    checkpoints?.create(label)?.let {
+      checkpointLine(it)
+      audit?.append(AuditEvent(System.currentTimeMillis(), AuditEvent.Action.CHECKPOINT, ok = true,
+                               actor = com.vibe.agent.audit.AuditActor.IDE,
+                               meta = mapOf("hash" to it.hash.take(12), "pipeline" to run.pipeline.id, "step" to steps)))
+      if (run.runCheckpoint == null) run.runCheckpoint = it
+    }
+  }
+
+  /** The step's prompt from what the run knows so far. */
+  private fun stepPrompt(run: PipelineRun, step: com.vibe.agent.pipelines.PipelineStep): String = buildString {
+    appendLine(PipelinesFile.rolePreamble(step.role))
+    appendLine(PipelinesFile.RETURN_CONTRACT)
+    appendLine(t("pipeline.step.task", "task" to step.task))
+    step.acceptance?.let { appendLine(t("pipeline.step.acceptance", "acceptance" to it)) }
+    if (step.againstBrief) {
+      // Судья видит только слова задачи: артефакты и резюме — это уже рассказ исполнителя о себе.
+      appendLine(t("pipeline.step.brief", "brief" to run.brief))
+    }
+    else if (!step.ignorePreviousArtifacts) {
+      if (run.seams.isNotEmpty()) appendLine(t("pipeline.step.seams", "seams" to run.seams.joinToString("\n") { "- $it" }))
+      if (run.artifacts.isNotEmpty()) appendLine(t("pipeline.step.artifacts", "files" to run.artifacts.joinToString()))
+      run.lastSummary?.let { appendLine(t("pipeline.step.summary", "summary" to it)) }
+      // A judge on its own model has no tools to read the files: it gets the run's diff.
+      if (step.model != null) judgeDiff(run.runCheckpoint, run.artifacts, step.maxTokens)?.let { appendLine(it) }
+    }
+  }
+
+  /**
+   * Starts the step and ends with the agent's stop reason: a direct request for a step on its own model, a prompt to the
+   * agent otherwise — in a new session for a fresh context, in the chat's own for a shared one.
+   *
+   * Шаг со своей моделью идёт прямым запросом к провайдеру, мимо агента: у него нет инструментов, и он ни на что не
+   * влияет, кроме собственного ответа. Загрузчик пайплайнов уже не пустил сюда пишущую роль.
+   */
+  private fun launchStep(
+    run: PipelineRun,
+    step: com.vibe.agent.pipelines.PipelineStep,
+    turn: TurnState,
+    header: String,
+    prompt: String,
+  ): java.util.concurrent.CompletableFuture<String?> {
+    val provider = step.provider
+    val model = step.model
+    if (provider != null && model != null) {
+      return java.util.concurrent.CompletableFuture.supplyAsync({
+        runModelStep(turn, provider, model, prompt, step.pack)
+        null
+      }, com.intellij.util.concurrency.AppExecutorUtil.getAppExecutorService())
+    }
+    val c = ensureClient(run.agent, turnThreadId ?: currentThreadId)
+    // A judging step starts clean: a new session of the same agent, not remembered, while
+    // the chat's session stays current for the next turn (decision №80). An agent that
+    // cannot open one fails the step with the reason — judging in the chat's session
+    // instead would quietly break the very promise of the field.
+    val session = if (step.context == com.vibe.agent.pipelines.StepContext.FRESH) {
+      c.openIsolatedSession().get(VibeAgentSettings.handshakeTimeoutSec.toLong(), TimeUnit.SECONDS)
+        .also { systemLine(t("pipeline.stepFresh", "header" to header)) }
+    }
+    else checkNotNull(c.sessionId) { "no session" }
+    turn.sessionId = session
+    turns.register(turn)
+    return c.prompt(session, prompt).thenApply { result ->
+      // Как и в обычном ходе: `{"result": null}` — не объект, и `.jsonObject` на JsonNull бросает.
+      (result as? JsonObject)?.get("stopReason")?.jsonPrimitive?.contentOrNull
+    }
+  }
+
+  /**
+   * Reads what the step left: its report, its seams, its files, its gate's verdict — or the reason it failed.
+   *
+   * The step's answer is already finished in the feed when this runs; in a wave this runs member after member in the
+   * order of the file, whatever order they finished in.
+   */
+  private fun finishStep(
+    run: PipelineRun,
+    i: Int,
+    step: com.vibe.agent.pipelines.PipelineStep,
+    turn: TurnState,
+    header: String,
+    stop: String?,
+    error: Throwable?,
+  ): StepResult {
+    if (error != null) {
+      systemLine(t("pipeline.stepFailed", "header" to header, "reason" to error.message))
+      return StepResult(header, null, failed = true, gate = null)
+    }
+    if (stop == STOP_CANCELLED) {
+      // Свой потолок и рука человека дают одинаковый stopReason, а значат разное: первое —
+      // сработавшее правило пайплайна, второе — чужое вмешательство в него.
+      val handoff = if (turn.limitHit != null && step.model == null) askHandoff(turn, header, run.runId, i) else null
+      if (handoff != null) {
+        turn.report = null
+        run.artifacts.addAll(turn.changedPaths)
+        markDone(run, i)
+        return StepResult(header, handoff, failed = false, gate = null)
+      }
+      systemLine(if (turn.limitHit != null) t("pipeline.stepCapped", "header" to header)
+                 else t("pipeline.stepStopped", "header" to header))
+      return StepResult(header, null, failed = true, gate = null)
+    }
+    return try {
+      val summaryText = turn.answer?.toString().orEmpty()
+      // The step's own report if it wrote one; the tail of the answer otherwise — a step that ignored the
+      // contract must not lose its say (see [StepReport]).
+      val report = com.vibe.agent.pipelines.StepReport.parse(summaryText)
+      turn.report = report
+      val summary = report?.summary() ?: summaryText.takeLast(2000).ifBlank { t("pipeline.noText") }
+      report?.let {
+        systemLine(t("pipeline.step.report", "header" to header, "status" to it.status.name,
+                     "blockers" to it.blockers.size, "concerns" to it.concerns.size))
+        // Швы, которые шаг назвал, копятся в одном файле прогона, и следующие шаги читают его
+        // первым делом. Ведёт его IDE, а не сами шаги: файл, который каждый дописывает сам,
+        // держится на дисциплине, которой у модели нет.
+        if (it.interfaces.isNotEmpty() && run.runId != null) {
+          val block = "## " + header + "\n" + it.interfaces.joinToString("\n") { seam -> "- $seam" } + "\n\n"
+          com.vibe.agent.pipelines.RunFolder.append(project.basePath, run.runId, com.vibe.agent.pipelines.RunFolder.INTERFACES, block)
+          run.seams += it.interfaces
+        }
+      }
+      run.artifacts.addAll(turn.changedPaths)
+      markDone(run, i)
+      systemLine(t("pipeline.stepDone", "header" to header, "files" to turn.changedPaths.size))
+      StepResult(header, summary, failed = false, gate = runStepGate(run.pipeline, step, i, summaryText, turn))
+    }
+    catch (e: Exception) {
+      systemLine(t("pipeline.stepFailed", "header" to header, "reason" to e.message))
+      StepResult(header, null, failed = true, gate = null)
+    }
+  }
+
+  /** Marks the step finished in the run and in the ledger — by index, so a resumed run knows which ones. */
+  private fun markDone(run: PipelineRun, index: Int) {
+    run.done.add(index)
+    runs.progress(run.runId, steps = run.done.size, changedFiles = run.artifacts.size, done = run.done.toList())
+  }
+
+  /** The steps of the wave running now, for a feed redrawn mid-wave; empty outside a wave. The UI thread only. */
+  private var runningWave: List<TurnState> = emptyList()
+
+  /**
+   * The feed of a step running in a wave: a block of its own under its name, so answers streaming at once do not
+   * interleave line by line. The UI thread only; [show] puts the block into the feed before the step's first row.
+   */
+  private inner class WaveBlockFeed(private val header: String) : TurnFeed {
+    private var block: JPanel? = null
+
+    fun show() {
+      panel()
+    }
+
+    private fun panel(): JPanel = block ?: JPanel().apply {
+      layout = BoxLayout(this, BoxLayout.Y_AXIS)
+      isOpaque = false
+      alignmentX = Component.LEFT_ALIGNMENT
+      border = JBUI.Borders.compound(JBUI.Borders.customLineLeft(ChatTheme.TERMINAL_BORDER), JBUI.Borders.emptyLeft(6))
+      add(metaArea(header, Font.BOLD, 10f).apply { alignmentX = Component.LEFT_ALIGNMENT })
+      block = this
+      messages.add(this)
+      revalidateScroll()
+    }
+
+    override fun addRecord(row: JComponent) {
+      row.alignmentX = Component.LEFT_ALIGNMENT
+      panel().add(row)
+      recordRows.add(row)
+    }
+
+    override fun addExtra(row: JComponent, before: Component?) {
+      val block = panel()
+      val index = before?.let { block.components.indexOf(it) } ?: -1
+      if (index >= 0) block.add(row, index) else block.add(row)
     }
   }
 
@@ -5320,7 +5514,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     horizontalAlignment = if (right) JLabel.RIGHT else JLabel.LEFT
   }
 
-  private inner class AgentMessage {
+  internal inner class AgentMessage {
     /** Raw streamed text lives here; on finish it may be re-rendered into prose + code blocks. */
     val text = proseArea()
     private var fullText = ""
@@ -5526,57 +5720,49 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
       recordRows.add(row)
       revalidateScroll()
     }
-    currentAgentMessage = null
+    turns.chat.message = null
   }
 
-  /** Streams into the live row of the turn's thread; the store gets the full text at finish. */
-  private fun appendAgentText(text: String) {
-    turnText.append(text)
+  /** Streams into the live row of [turn]; the store gets the full text at finish. */
+  private fun appendAgentText(text: String, turn: TurnState = turns.chat) {
+    turn.text.append(text)
     SwingUtilities.invokeLater {
       if (turnThreadId != currentThreadId) return@invokeLater
-      var m = currentAgentMessage
+      var m = turn.message
       if (m == null) {
         // A stray delta after the turn finished must not spawn a ghost empty row.
         if (!turnInFlight.get()) return@invokeLater
         m = AgentMessage()
-        currentAgentMessage = m
-        messages.add(m.row)
-        recordRows.add(m.row)
+        turn.message = m
+        turn.feed.addRecord(m.row)
       }
-      // Project from the shared buffer: a tab switch mid-stream re-rendered the row from it already.
-      val full = turnText.toString()
-      if (uiConsumed < full.length) {
-        m.append(full.substring(uiConsumed))
-        uiConsumed = full.length
+      // Project from the turn's buffer: a tab switch mid-stream re-rendered the row from it already.
+      val full = turn.text.toString()
+      if (turn.uiConsumed < full.length) {
+        m.append(full.substring(turn.uiConsumed))
+        turn.uiConsumed = full.length
       }
       revalidateScroll()
     }
   }
 
-  /**
-   * The direct model's reasoning in this turn, kept with its answer: a model that requires it back
-   * (ECHO_REASONING) gets it in the next request. Filled only on the direct-model path — an ACP
-   * agent's thoughts have no next request of ours to go into.
-   */
-  private val turnReasoning = StringBuffer()
-  /** Tool rounds of the current direct-chat turn; stored with the answer by finishAgentBubble. */
-  private val turnToolRounds = java.util.Collections.synchronizedList(ArrayList<com.vibe.agent.providers.ToolRound>())
-
-  private fun finishAgentBubble(seconds: Double, suffix: String?) {
+  private fun finishAgentBubble(seconds: Double, suffix: String?, turn: TurnState = turns.chat) {
     val threadId = turnThreadId
     // Atomic capture+clear: queued per-delta projections then see an empty buffer and no-op.
-    val fullText = synchronized(turnText) {
-      val t = turnText.toString()
-      turnText.setLength(0)
+    val fullText = synchronized(turn.text) {
+      val t = turn.text.toString()
+      turn.text.setLength(0)
       t
     }
-    val reasoning = synchronized(turnReasoning) {
-      val r = turnReasoning.toString()
-      turnReasoning.setLength(0)
+    // The direct model's reasoning, kept with its answer: a model that requires it back (ECHO_REASONING) gets it in
+    // the next request. An ACP agent's thoughts have no next request of ours to go into.
+    val reasoning = synchronized(turn.reasoning) {
+      val r = turn.reasoning.toString()
+      turn.reasoning.setLength(0)
       r.ifBlank { null }
     }
-    val toolRounds = synchronized(turnToolRounds) {
-      com.vibe.agent.providers.ToolRounds.forStorage(turnToolRounds.toList()).also { turnToolRounds.clear() }
+    val toolRounds = synchronized(turn.toolRounds) {
+      com.vibe.agent.providers.ToolRounds.forStorage(turn.toolRounds.toList()).also { turn.toolRounds.clear() }
     }
     // A turn that produced no words used to leave NOTHING in the thread — the question alone, and
     // the reason shown once in the feed and never written down. Reopening the IDE then showed a
@@ -5592,13 +5778,16 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
       // did not. The guess counted the ANSWER and nothing else, so a request carrying two hundred
       // thousand tokens of context cost, in the report, as much as the sentence it produced —
       // which is why the spending ceiling never fired on this path.
-      val usage = lastTurnUsage
+      val usage = turn.usage
       val counted = if (usage.known) usage.total
                     else com.vibe.agent.context.ContextBudget.estimateTokens(fullText)
       // The moment of the turn, for the price by the hour: off-peak DeepSeek bills the same work at half.
       val finishedAt = java.time.Instant.now()
-      val cost = lastTurnPricing?.costOf(usage, finishedAt)
-      lastTurnPricing?.cacheSavingOf(usage, finishedAt)?.takeIf { it > 0 }?.let { saved ->
+      val pricing = turn.pricing
+      val cost = pricing?.costOf(usage, finishedAt)
+      // Taken before the reset below: read after it, every spend line went down in the default currency.
+      val currency = pricing?.currency ?: com.vibe.agent.providers.ModelPricing.DEFAULT_CURRENCY
+      pricing?.cacheSavingOf(usage, finishedAt)?.takeIf { it > 0 }?.let { saved ->
         systemLine(t("spend.cacheSaved", "saved" to "%.2f".format(saved),
                      "tokens" to "%,d".format(usage.cacheReadTokens)))
       }
@@ -5606,12 +5795,14 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
         threadUsages.add(usage)
         while (threadUsages.size > MAX_TRACKED_TURNS) threadUsages.removeAt(0)
       }
-      lastTurnUsage = com.vibe.agent.providers.TokenUsage.NONE
-      lastTurnPricing = null
+      turn.usage = com.vibe.agent.providers.TokenUsage.NONE
+      turn.pricing = null
       sessionTokens.addAndGet(counted)
+      // The chat's attached files belong to the chat's turn; a step's prompt carries none of them.
+      val attachments = if (turn.role == null) turnAttachments else emptyList()
       com.vibe.agent.budget.VibeSpendService.getInstance().record(
-        currentRole, targetLabel(), counted, cost, cost?.let { lastTurnCurrency },
-        com.vibe.agent.budget.FileSpend.attribute(counted, turnAttachments), threadId)
+        turn.role, targetLabel(), counted, cost, cost?.let { currency },
+        com.vibe.agent.budget.FileSpend.attribute(counted, attachments), threadId)
       stretchTokens.addAndGet(counted)
     }
     // Счётчик прямого провода: у ACP-агента окно считает он сам и присылает `usage_update`, а у
@@ -5628,34 +5819,32 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
         warn = percent != null && percent >= USAGE_WARN_PCT,
       )
     }
-    // currentAgentMessage is EDT-owned (appendAgentText also touches it on the EDT); read+clear it there.
+    // The turn's message is EDT-owned (appendAgentText also touches it on the EDT); read+clear it there.
     SwingUtilities.invokeLater {
-      val m = currentAgentMessage
-      currentAgentMessage = null
+      val m = turn.message
+      turn.message = null
       // Each response (turn or gate sub-turn) gets its own reasoning block; reset on the EDT.
       // Заголовок блока досказывается ДО сброса ссылки: иначе он навсегда остаётся на «думает…».
-      thoughtsBlock?.finish()
-      thoughtsBlock = null
+      turn.thoughts?.finish()
+      turn.thoughts = null
       if (m != null) {
         // Flush the tail the per-delta projections did not reach before the buffer was cleared.
-        if (uiConsumed < fullText.length) m.append(fullText.substring(uiConsumed))
+        if (turn.uiConsumed < fullText.length) m.append(fullText.substring(turn.uiConsumed))
         m.finish(seconds, suffix)
       }
-      uiConsumed = 0
+      turn.uiConsumed = 0
       revalidateScroll()
     }
   }
 
   /** Compact tool-call card, VibeIDE style: 4px radius, quiet border, 11px italic. */
-  private fun toolCard(title: String) {
+  private fun toolCard(title: String, turn: TurnState = turns.chat) {
     // Out-of-turn agent notifications land in the visible thread, not in a finished turn's one.
     val targetThread = (if (turnInFlight.get()) turnThreadId else null) ?: currentThreadId
     history.append(targetThread, ChatMessageRecord(Role.OTHER, title, at = nowIso()))
     SwingUtilities.invokeLater {
       if (targetThread != currentThreadId) return@invokeLater
-      val row = buildToolRow(title)
-      messages.add(row)
-      recordRows.add(row)
+      turn.feed.addRecord(buildToolRow(title))
       revalidateScroll()
     }
   }
@@ -5746,40 +5935,43 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
 
   override fun onSessionUpdate(update: JsonObject) {
     val u = update["update"] as? JsonObject ?: return
+    // Every update names its session, and a step of a wave runs in its own: the update belongs to that step's turn.
+    val sessionId = update["sessionId"]?.jsonPrimitive?.contentOrNull
+    val turn = turns.of(sessionId)
     // Any frame at all is a sign of life — including one we do not handle below.
     noteActivity()
     when (u["sessionUpdate"]?.jsonPrimitive?.contentOrNull) {
       "agent_message_chunk" -> {
         val text = (u["content"] as? JsonObject)?.get("text")?.jsonPrimitive?.contentOrNull ?: return
-        stepBuffer?.append(text)
-        appendAgentText(text)
+        turn.answer?.append(text)
+        appendAgentText(text, turn)
       }
       "agent_thought_chunk" -> {
         val text = (u["content"] as? JsonObject)?.get("text")?.jsonPrimitive?.contentOrNull ?: return
-        appendThought(text)
+        appendThought(text, turn)
       }
-      "usage_update" -> onUsageUpdate(u)
+      "usage_update" -> onUsageUpdate(u, turn, sessionId)
       "tool_call" -> {
-        enforceStepLimits(toolCalls = stepToolCalls.incrementAndGet())
-        val call = toolCalls.onToolCall(u)
+        enforceStepLimits(turn, toolCalls = turn.toolCallCount.incrementAndGet())
+        val call = turn.toolCalls.onToolCall(u)
         if (call != null) {
-          auditToolCall(AuditEvent.Action.TOOL_CALL_START, call); harvestMutation(call); noteLoop(call)
-          toolStarts[call.id] = System.currentTimeMillis()
+          auditToolCall(AuditEvent.Action.TOOL_CALL_START, call, turn); harvestMutation(call, turn); noteLoop(call, turn)
+          turn.toolStarts[call.id] = System.currentTimeMillis()
         }
-        toolCard(call?.title ?: u["title"]?.jsonPrimitive?.contentOrNull ?: u["kind"]?.jsonPrimitive?.contentOrNull ?: t("chat.tool"))
+        toolCard(call?.title ?: u["title"]?.jsonPrimitive?.contentOrNull ?: u["kind"]?.jsonPrimitive?.contentOrNull ?: t("chat.tool"), turn)
         // Claude adapter announces a terminal for this tool-call — open a live console.
-        terminalInfoId(u)?.let { openTerminalConsole(it, call?.title ?: t("chat.terminal")) }
+        terminalInfoId(u)?.let { openTerminalConsole(it, call?.title ?: t("chat.terminal"), turn) }
       }
       "tool_call_update" -> {
-        val call = toolCalls.onToolCallUpdate(u) ?: return
-        harvestMutation(call)
+        val call = turn.toolCalls.onToolCallUpdate(u) ?: return
+        harvestMutation(call, turn)
         // Stream Claude Bash output / exit into the console for this terminal.
         terminalOutputFrame(u)?.let { (id, data) -> appendTerminalOutput(id, data) }
         terminalExitFrame(u)?.let { (id, code, sig) -> markTerminalExit(id, code, sig) }
         if (call.isDone) {
-          auditToolCall(AuditEvent.Action.TOOL_CALL_DONE, call)
+          auditToolCall(AuditEvent.Action.TOOL_CALL_DONE, call, turn)
           noteOutcome(call)
-          val startedAt = toolStarts.remove(call.id)
+          val startedAt = turn.toolStarts.remove(call.id)
           trace.add(com.vibe.agent.trace.TurnTrace.Event(
             atMs = System.currentTimeMillis(),
             kind = com.vibe.agent.trace.TurnTrace.Kind.TOOL,
@@ -5794,7 +5986,9 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
           ApplicationManager.getApplication().executeOnPooledThread { runToolHook(HookEvent.POST_TOOL_USE, tool, params) }
         }
       }
-      "plan" -> onPlanUpdate(u)
+      // The plan panel follows one plan: the chat's, or a step's when the step runs alone. Steps of a wave would
+      // repaint it over each other.
+      "plan" -> if (turn.feed === mainFeed) onPlanUpdate(u)
       else -> {}
     }
   }
@@ -5815,14 +6009,14 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     return Triple(id, o["exit_code"]?.jsonPrimitive?.intOrNull, o["signal"]?.jsonPrimitive?.contentOrNull)
   }
 
-  private fun openTerminalConsole(terminalId: String, title: String) {
+  private fun openTerminalConsole(terminalId: String, title: String, turn: TurnState) {
     val targetThread = (if (turnInFlight.get()) turnThreadId else null) ?: currentThreadId
     SwingUtilities.invokeLater {
       if (targetThread != currentThreadId || terminalConsoles.containsKey(terminalId)) return@invokeLater
       val console = TerminalConsole(title)
       terminalConsoles[terminalId] = console
-      messages.add(console)
-      // Not added to recordRows: consoles are not history records, and would shift the reveal index.
+      // Not a record: consoles are not history records, and would shift the reveal index.
+      turn.feed.addExtra(console)
       revalidateScroll()
     }
   }
@@ -5833,10 +6027,16 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
   }
 
   /** ACP usage_update {used, size, cost?} → compact context chip in the composer. */
-  private fun onUsageUpdate(u: JsonObject) {
+  private fun onUsageUpdate(u: JsonObject, turn: TurnState, sessionId: String?) {
     val used = u["used"]?.jsonPrimitive?.longOrNull ?: return
     val size = u["size"]?.jsonPrimitive?.longOrNull ?: return
     if (size <= 0) return
+    // The window of a step's own session is that step's business: its ceiling reads it, the chat's ring does not.
+    if (turn !== turns.chat) {
+      enforceStepLimits(turn, usedTokens = used)
+      recordSessionSpend(u, turn, sessionId, used)
+      return
+    }
     val pct = (used * 100 / size).toInt().coerceIn(0, 100)
     val cost = (u["cost"] as? JsonObject)?.let { c ->
       val amount = c["amount"]?.jsonPrimitive?.contentOrNull?.toDoubleOrNull()
@@ -5850,25 +6050,38 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
         warn = pct >= USAGE_WARN_PCT,
       )
     }
-    enforceStepLimits(usedTokens = used)
+    enforceStepLimits(turn, usedTokens = used)
     noteWindowFill(used, size)
-    // Recorded per role: a single total says the month cost money, a split by role says WHICH
-    // role burned it, and only the second is something one can act on.
+    recordSessionSpend(u, turn, sessionId, used)
+  }
+
+  /**
+   * One usage report of a session, into the spend ledger.
+   *
+   * Recorded per role: a single total says the month cost money, a split by role says WHICH role burned it, and only
+   * the second is something one can act on.
+   */
+  private fun recordSessionSpend(u: JsonObject, turn: TurnState, sessionId: String?, used: Long) {
     val amount = (u["cost"] as? JsonObject)?.get("amount")?.jsonPrimitive?.contentOrNull?.toDoubleOrNull()
     val currency = (u["cost"] as? JsonObject)?.get("currency")?.jsonPrimitive?.contentOrNull
+    // Reports are cumulative per SESSION: a step's isolated session starts from zero while the chat's is at 80%. One
+    // meter for both read the step's first report as a drop and recorded nothing, and the chat's next report counted
+    // its whole total again.
+    val meters = sessionMeters.computeIfAbsent(sessionId ?: "") { SessionMeters() }
     // ACP reports the window total, and a new turn starts it lower again: without the floor the
     // difference goes negative and the day's spend silently shrinks.
-    val delta = usedMeter.advanceWhole(used)
+    val delta = meters.used.advanceWhole(used)
     // The COST is cumulative in the same object, and it used to be recorded whole on every update.
     // An update arrives many times per turn, so the ledger was adding the running total again and
     // again — the report exaggerated by as many times as the agent reported progress. It showed as
     // nothing while money was only a column in a report; it became a wall the moment a ceiling
     // started reading it.
-    val costDelta = costMeter.advance(amount)
+    val costDelta = meters.cost.advance(amount)
+    val attachments = if (turn.role == null) turnAttachments else emptyList()
     com.vibe.agent.budget.VibeSpendService.getInstance()
       // The split between the turn's files is an estimate by size — a request is billed whole.
-      .record(currentRole, targetLabel(), delta, costDelta, currency?.takeIf { costDelta != null },
-              com.vibe.agent.budget.FileSpend.attribute(delta, turnAttachments), currentThreadId, pipelineRunId)
+      .record(turn.role, targetLabel(), delta, costDelta, currency?.takeIf { costDelta != null },
+              com.vibe.agent.budget.FileSpend.attribute(delta, attachments), currentThreadId, pipelineRunId)
     stretchTokens.addAndGet(delta)
   }
 
@@ -5905,8 +6118,6 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
    */
   @Volatile private var lastLlmTurnStartedAtMs: Long = 0
 
-  @Volatile private var lastTurnUsage: com.vibe.agent.providers.TokenUsage = com.vibe.agent.providers.TokenUsage.NONE
-
   /**
    * Расход ходов текущего разговора — для «контекстного налога» в `/trace`.
    *
@@ -5914,12 +6125,15 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
    * задают по ходу дела, а на длинную дистанцию отвечает журнал расхода.
    */
   private val threadUsages = java.util.Collections.synchronizedList(ArrayList<com.vibe.agent.providers.TokenUsage>())
-  @Volatile private var lastTurnPricing: com.vibe.agent.providers.ModelPricing? = null
-  private val lastTurnCurrency: String get() = lastTurnPricing?.currency ?: com.vibe.agent.providers.ModelPricing.DEFAULT_CURRENCY
 
-  /** Cumulative reports from the agent, converted to increments — see [com.vibe.agent.budget.CumulativeMeter]. */
-  private val usedMeter = com.vibe.agent.budget.CumulativeMeter()
-  private val costMeter = com.vibe.agent.budget.CumulativeMeter()
+  /** Cumulative reports of one session, converted to increments — see [com.vibe.agent.budget.CumulativeMeter]. */
+  private class SessionMeters {
+    val used = com.vibe.agent.budget.CumulativeMeter()
+    val cost = com.vibe.agent.budget.CumulativeMeter()
+  }
+
+  /** Meters by session id: the chat's session and every isolated session of a step report their own totals. */
+  private val sessionMeters = java.util.concurrent.ConcurrentHashMap<String, SessionMeters>()
 
   private fun targetLabel(): String = when (val t = target) {
     is ChatTarget.Agent -> "acp/${t.config.name}"
@@ -5987,19 +6201,18 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
   }
 
   /** Stream the agent's reasoning into a collapsible block on the turn's thread. */
-  private fun appendThought(text: String) {
+  private fun appendThought(text: String, turn: TurnState = turns.chat) {
     val targetThread = (if (turnInFlight.get()) turnThreadId else null) ?: currentThreadId
     SwingUtilities.invokeLater {
       if (targetThread != currentThreadId) return@invokeLater
-      var block = thoughtsBlock
+      var block = turn.thoughts
       if (block == null) {
         if (!turnInFlight.get()) return@invokeLater
         block = ThoughtsBlock()
-        thoughtsBlock = block
+        turn.thoughts = block
         // Reasoning precedes the answer: when the answer row already streams, insert ABOVE it.
-        val answerIdx = currentAgentMessage?.row?.let { messages.components.indexOf(it as Component) } ?: -1
-        if (answerIdx >= 0) messages.add(block, answerIdx) else messages.add(block)
-        // Not added to recordRows: reasoning is not a history record (would shift the reveal index).
+        // Not a record: reasoning is not a history record (it would shift the reveal index).
+        turn.feed.addExtra(block, turn.message?.row)
       }
       block.append(text)
       revalidateScroll()
@@ -6007,29 +6220,30 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
   }
 
   private fun markTerminalExit(terminalId: String, exitCode: Int?, signal: String?) {
-    audit?.append(AuditEvent(System.currentTimeMillis(), AuditEvent.Action.TERMINAL, ok = exitCode == 0, actor = agentActor(),
+    val owner = turns.all().firstOrNull { turn -> turn.toolCalls.snapshot().any { it.terminalId == terminalId } } ?: turns.chat
+    audit?.append(AuditEvent(System.currentTimeMillis(), AuditEvent.Action.TERMINAL, ok = exitCode == 0, actor = agentActor(owner),
       callId = callIdOfTerminal(terminalId), turnId = turnId, sessionId = turnThreadId ?: currentThreadId,
       meta = mapOf("exit" to (exitCode?.toString() ?: "signal:${signal ?: "?"}"))))
     SwingUtilities.invokeLater { terminalConsoles[terminalId]?.markExit(exitCode, signal) }
   }
 
   /**
-   * Note that a turn touched files. Client-side writes reach [changedPaths] via fs/write, but an
+   * Note that a turn touched files. Client-side writes reach [TurnState.changedPaths] via fs/write, but an
    * agent's own edit tools and Bash do not — so mark the turn as mutating (so the gates still run)
    * and harvest any declared edit path so turn-checks can scan it.
    */
-  private fun harvestMutation(call: ToolCall) {
+  private fun harvestMutation(call: ToolCall, turn: TurnState) {
     val kind = call.kind
     val name = call.toolName
     val isNamedEdit = name != null && name in EDIT_TOOLS
     // execute-kind (a command) may change files invisibly → mark the turn mutating so the gate runs…
-    if (isNamedEdit || kind in MUTATING_KINDS) turnHadMutatingTool = true
+    if (isNamedEdit || kind in MUTATING_KINDS) turn.hadMutatingTool = true
     // …but only tools that actually WRITE contribute paths. ACP `locations` is read-inclusive, so
     // harvesting it for a command (`grep KEY .env`) would wrongly trip the protected-path breaker.
     val isWrite = isNamedEdit || kind == "edit" || kind == "delete" || kind == "move"
     if (isWrite) {
-      call.rawInput?.let { ri -> for (key in EDIT_PATH_KEYS) ri[key]?.jsonPrimitive?.contentOrNull?.let { changedPaths.add(it) } }
-      changedPaths.addAll(call.locations)
+      call.rawInput?.let { ri -> for (key in EDIT_PATH_KEYS) ri[key]?.jsonPrimitive?.contentOrNull?.let { turn.changedPaths.add(it) } }
+      turn.changedPaths.addAll(call.locations)
     }
   }
 
@@ -6044,16 +6258,16 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
 
   /** Вызов, создавший терминал: выход процесса — следствие именно его. */
   private fun callIdOfTerminal(terminalId: String): String? =
-    toolCalls.snapshot().firstOrNull { it.terminalId == terminalId }?.id
+    turns.all().firstNotNullOfOrNull { turn -> turn.toolCalls.snapshot().firstOrNull { it.terminalId == terminalId }?.id }
 
-  private fun auditToolCall(action: String, call: ToolCall) {
+  private fun auditToolCall(action: String, call: ToolCall, turn: TurnState) {
     val log = audit ?: return
     val tool = call.toolName ?: call.kind ?: "tool"
     val target = ToolCallAudit.safeTargetPath(tool, call.rawParamsFlat(), call.kind)
     log.append(AuditEvent(
       ts = System.currentTimeMillis(),
       action = action,
-      actor = agentActor(),
+      actor = agentActor(turn),
       ok = call.status != ToolCall.STATUS_FAILED,
       callId = call.id,
       turnId = turnId, sessionId = turnThreadId ?: currentThreadId,
@@ -6146,6 +6360,9 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
   }
 
   override fun onRequestPermission(params: JsonObject): JsonElement {
+    // Steps of a wave ask at once, each in its own session: the question is the asking step's, with its signals.
+    val turn = turns.of(params["sessionId"]?.jsonPrimitive?.contentOrNull)
+    val turnSignals = turn.signals
     // The most important of the three events: here a person is needed RIGHT NOW, and they left.
     com.vibe.agent.sound.VibeSoundService.getInstance()
       .play(com.vibe.agent.sound.SoundPolicy.Event.AWAITING_PERMISSION, project)
@@ -6178,7 +6395,9 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     else title
     // Три признака за один ход названы человеку словами: по отдельности каждый законен, и молча
     // разрешённое здесь — единственное место, где утечка выглядит как обычная работа.
-    val dialogText = if (trifecta) t("chat.permission.trifecta", "channel" to (outbound ?: ""), "title" to base) else base
+    val asked = if (trifecta) t("chat.permission.trifecta", "channel" to (outbound ?: ""), "title" to base) else base
+    // Two steps may ask at once: the dialog names the one that asks, or «разрешить» answers the wrong one.
+    val dialogText = turn.label?.let { t("chat.permission.fromStep", "step" to it, "text" to asked) } ?: asked
     val options = params["options"]?.jsonArray?.map { it.jsonObject } ?: emptyList()
     val chosen = askOnEdt {
       val names = options.map { it["name"]?.jsonPrimitive?.contentOrNull ?: it.getValue("optionId").jsonPrimitive.content }
@@ -6214,11 +6433,13 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
 
   override fun onReadTextFile(params: JsonObject): JsonElement {
     // Прочитанный файл проекта — приватные данные: один из трёх признаков трифекты.
-    turnSignals.add(com.vibe.agent.guard.Trifecta.Signal.PRIVATE_DATA)
+    turns.of(params["sessionId"]?.jsonPrimitive?.contentOrNull).signals.add(com.vibe.agent.guard.Trifecta.Signal.PRIVATE_DATA)
     return fileOps.readTextFile(params)
   }
 
   override fun onWriteTextFile(params: JsonObject): JsonElement {
+    // The boundary is the asking step's: with steps running at once, «the step in force» is not one step.
+    val turn = turns.of(params["sessionId"]?.jsonPrimitive?.contentOrNull)
     // The hook, the changed-files list and the audit get the path as it will be written: with the
     // agent's `..` left in, a hook's own path pattern could be walked around the same way.
     val path = params["path"]?.jsonPrimitive?.contentOrNull?.let { fileOps.resolvePath(it).normalized.toString() }
@@ -6231,9 +6452,9 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
       systemLine("🪝 ${preHook.agentMessage}")
       throw IllegalStateException(preHook.agentMessage ?: t("chat.write.rejectedByHook"))
     }
-    path?.let { changedPaths.add(it) }
-    val result = fileOps.writeTextFile(resolved)
-    audit?.append(AuditEvent(System.currentTimeMillis(), AuditEvent.Action.FS_WRITE, ok = true, actor = agentActor(),
+    path?.let { turn.changedPaths.add(it) }
+    val result = fileOps.writeTextFile(resolved, turn.role, turn.scope)
+    audit?.append(AuditEvent(System.currentTimeMillis(), AuditEvent.Action.FS_WRITE, ok = true, actor = agentActor(turn),
       turnId = turnId, sessionId = turnThreadId ?: currentThreadId, files = path?.let { listOf(it.take(ToolCallAudit.MAX_TARGET_LEN)) }))
     return result
   }
@@ -6243,8 +6464,9 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
   override fun onCreateTerminal(params: JsonObject): JsonElement {
     if (!VibeAgentSettings.terminalEnabled) throw IllegalStateException(t("chat.terminal.disabled"))
     // A role that only judges cannot run commands either: running a command is how a read-only
-    // role writes anyway.
-    val role = currentRole
+    // role writes anyway. The role is the asking step's.
+    val turn = turns.of(params["sessionId"]?.jsonPrimitive?.contentOrNull)
+    val role = turn.role
     if (!com.vibe.agent.pipelines.RoleRights.mayRunCommands(role)) {
       systemLine(t("role.commandDenied", "role" to role))
       throw IllegalStateException(t("role.commandDenied", "role" to role))
@@ -6262,7 +6484,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     // Канал наружу считается и здесь: агент, делегирующий запуск нам, открывает его тем же
     // способом, что и агент, запускающий команды сам.
     if (com.vibe.agent.guard.Trifecta.outboundReason(command, args) != null) {
-      turnSignals.add(com.vibe.agent.guard.Trifecta.Signal.OUTBOUND_CHANNEL)
+      turn.signals.add(com.vibe.agent.guard.Trifecta.Signal.OUTBOUND_CHANNEL)
     }
     // Destructive-command gate: same deterministic classifier as VibeIDE, asked before execution.
     val verdict = ShellSafetyAnalyzer.analyzeLine((listOf(command) + args).joinToString(" "))

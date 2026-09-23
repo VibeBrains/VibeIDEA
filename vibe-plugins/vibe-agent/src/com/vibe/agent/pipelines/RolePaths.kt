@@ -97,6 +97,45 @@ object RolePaths {
     else defaultScope(role, qa).let { it.copy(deny = it.deny + stated.deny) }
 
   /**
+   * Whether no path can be writable under both scopes — PROVABLY, not probably.
+   *
+   * Two steps that run at once and may write the same file race for it, and each one's edit is then checked against
+   * nothing but its own boundary. So the proof is conservative, and anything it cannot prove counts as overlap:
+   * - a scope without an allow list writes anywhere;
+   * - a pattern must start with a literal directory, read by the rules of [matches]: one that opens with a double
+   *   star or a wildcard, or a bare name like `*.md`, applies at any depth, and no prefix says where it ends;
+   * - two literal prefixes overlap when one is the other or lies inside it, compared with case folded — on APFS
+   *   and NTFS `Src/` is `src/`.
+   * Deny lists are not used: they only narrow, and ignoring them can only err towards refusing.
+   */
+  fun provablyDisjoint(a: Scope, b: Scope): Boolean {
+    val left = a.allow.map { literalPrefix(it) ?: return false }
+    val right = b.allow.map { literalPrefix(it) ?: return false }
+    if (left.isEmpty() || right.isEmpty()) return false
+    return left.none { l -> right.any { r -> nested(l, r) || nested(r, l) } }
+  }
+
+  /** Where [pattern] is anchored, by the rules of [matches]: its leading literal segments, or null when it has none. */
+  fun literalPrefix(pattern: String): List<String>? {
+    val clean = normalize(pattern.trim())
+    // A trailing slash means the directory and everything in it, anchored like any pattern with a slash.
+    val anchored = if (clean.endsWith("/")) clean.trimEnd('/') + "/" + ANY else clean
+    // No slash inside: the name matches at any depth.
+    if (anchored.isEmpty() || '/' !in anchored) return null
+    val literal = anchored.split('/').takeWhile { segment -> segment.isNotEmpty() && segment.none { it in WILDCARDS } }
+    if (literal.isEmpty() || literal.any { it == "." || it == ".." }) return null
+    return literal.map { com.vibe.agent.context.AccessPolicy.foldCase(it) }
+  }
+
+  private fun nested(outer: List<String>, inner: List<String>): Boolean =
+    outer.size <= inner.size && inner.subList(0, outer.size) == outer
+
+  /** The only wildcards [globToRegex] knows; everything else in a pattern is taken literally. */
+  private val WILDCARDS = setOf('*', '?')
+
+  private const val ANY = "**"
+
+  /**
    * Совпадение по правилу gitignore: `*` не переходит через `/`, `**` переходит, шаблон без `/`
    * внутри проверяется на любом уровне (как `node_modules` в .gitignore), шаблон, кончающийся на
    * `/`, означает каталог со всем содержимым.
