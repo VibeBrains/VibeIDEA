@@ -34,7 +34,8 @@ internal object ServerBinaries {
    * container folder, a checkout built from source. For those the rule silently did not apply.
    */
   fun find(binary: String): String? {
-    val dirs = System.getenv("PATH")?.split(java.io.File.pathSeparator).orEmpty().map { Path.of(it) } + EXTRA_DIRS
+    val dirs = System.getenv("PATH")?.split(java.io.File.pathSeparator).orEmpty().map { Path.of(it) } +
+               listOfNotNull(nodeBinDir()) + EXTRA_DIRS
     // Порядок ВНЕШНИЙ — по именам, а не по каталогам: на Windows в одной папке с `npx.cmd` лежит
     // `npx` для Git Bash, и обход «сначала все имена в первой папке» выбрал бы файл для чужой
     // оболочки. CreateProcess отвечает на это «error=193», не называя причины.
@@ -43,6 +44,15 @@ internal object ServerBinaries {
     }
     return null
   }
+
+  /**
+   * The folder of the Node interpreter the IDE runs servers with.
+   *
+   * `npm install -g` run by that interpreter puts the server's executable right next to it. A GUI application does not
+   * inherit the shell PATH, so without this folder a server installed through nvm, fnm, volta or asdf stays invisible:
+   * the IDE silently keeps using the bundled copy, and an install button would install something never used.
+   */
+  private fun nodeBinDir(): Path? = NodeRuntime.path(null)?.let { Path.of(it).parent }
 
   // Falls back to the bare name: the failure to start then names exactly what is missing.
   internal fun resolve(binary: String): String = find(binary) ?: binary
@@ -54,10 +64,19 @@ internal object ServerBinaries {
    * указавший `…/vtsls.js`, имел в виду ровно сервер — и прежде получал бы «Cannot run program».
    */
   internal fun overrideCommand(serverId: String, vararg args: String): List<String>? =
-    ServerPaths.overrideFor(serverId)?.let { path ->
-      if (NODE_SCRIPTS.any { path.endsWith(it, ignoreCase = true) }) NodeRuntime.command(null, path, *args)
-      else listOf(path) + args
-    }
+    ServerPaths.overrideFor(serverId)?.let { path -> runCommand(path, *args) }
+
+  /**
+   * How to run a server FILE — one rule for the launch and for the settings page "Check".
+   *
+   * A script is not an executable: `.js` runs under Node and `.phar` under PHP. A check that runs the file differently
+   * from the launch would test something else, so both ask here.
+   */
+  internal fun runCommand(path: String, vararg args: String): List<String> = when {
+    NODE_SCRIPTS.any { path.endsWith(it, ignoreCase = true) } -> NodeRuntime.command(null, path, *args)
+    path.endsWith(".phar", ignoreCase = true) -> listOf(resolve("php"), path) + args
+    else -> listOf(path) + args
+  }
 
   private val NODE_SCRIPTS = listOf(".js", ".cjs", ".mjs")
 

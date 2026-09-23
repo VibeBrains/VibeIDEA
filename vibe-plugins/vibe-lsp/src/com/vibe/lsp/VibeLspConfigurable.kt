@@ -133,8 +133,15 @@ class VibeLspConfigurable : Configurable, Configurable.NoScroll {
    */
   private fun checkServer(spec: LspDoctor.ServerSpec, field: TextFieldWithBrowseButton, status: JBLabel) {
     val typed = field.text.trim()
-    val path = typed.ifEmpty { ServerBinaries.find(spec.binary) ?: LspDoctor.bundledPath(spec) }
-    status.text = "<html>" + describe(spec, ServerCheck.of(path)) + "</html>"
+    status.text = "<html>" + t("settings.lsp.server.checking", "server" to spec.displayName) + "</html>"
+    // Off the EDT: a server that does not know `--version` holds the check for the whole timeout, and the settings
+    // dialog must not freeze for that long on every click.
+    val app = com.intellij.openapi.application.ApplicationManager.getApplication()
+    app.executeOnPooledThread {
+      val path = typed.ifEmpty { ServerBinaries.find(spec.binary) ?: LspDoctor.bundledPath(spec) }
+      val text = describe(spec, ServerCheck.of(path))
+      app.invokeLater({ status.text = "<html>$text</html>" }, com.intellij.openapi.application.ModalityState.any())
+    }
   }
 
   /** The check's answer as a human-readable line. */
@@ -165,26 +172,37 @@ class VibeLspConfigurable : Configurable, Configurable.NoScroll {
     ) {
       override fun run(indicator: com.intellij.openapi.progress.ProgressIndicator) {
         indicator.isIndeterminate = true
-        val result = runCatching {
-          val process = ProcessBuilder(ServerInstall.shellCommand(command)).redirectErrorStream(true).start()
-          val output = process.inputStream.readBytes().decodeToString()
-          process.waitFor()
-          process.exitValue() to output
+        val windows = com.vibe.agent.util.ExecutableNames.isWindows()
+        // npm commands go through the npm of the IDE's own Node, so the server lands where the IDE looks for it.
+        val plan = NpmInstall.plan(command, NodeRuntime.path(null), windows)
+        val text = when (plan) {
+          NpmInstall.Plan.NoNode -> t("settings.lsp.server.installNoNode")
+          else -> {
+            val argv = (plan as? NpmInstall.Plan.Run)?.argv ?: ServerInstall.shellCommand(command)
+            val result = runCatching {
+              val builder = ProcessBuilder(argv).redirectErrorStream(true)
+              if (plan is NpmInstall.Plan.Run) builder.environment().putAll(NodeRuntime.childEnvironment(null))
+              val process = builder.start()
+              val output = process.inputStream.readBytes().decodeToString()
+              process.waitFor()
+              process.exitValue() to output
+            }
+            result.fold(
+              onSuccess = { (code, output) ->
+                if (code == 0) {
+                  // The version is read here, in the background, before returning to the EDT: it starts a process.
+                  val version = (ServerCheck.of(ServerBinaries.find(spec.binary)) as? ServerCheck.Outcome.Works)?.version.orEmpty()
+                  t("settings.lsp.server.installed", "server" to spec.displayName, "version" to version)
+                }
+                else t("settings.lsp.server.installFailed", "reason" to ServerInstall.failureTail(output))
+              },
+              onFailure = { t("settings.lsp.server.installFailed", "reason" to (it.message ?: "")) },
+            )
+          }
         }
-        com.intellij.openapi.application.ApplicationManager.getApplication().invokeLater {
-          val text = result.fold(
-            onSuccess = { (code, output) ->
-              if (code == 0) {
-                val path = ServerBinaries.find(spec.binary)
-                val version = (ServerCheck.of(path) as? ServerCheck.Outcome.Works)?.version.orEmpty()
-                t("settings.lsp.server.installed", "server" to spec.displayName, "version" to version)
-              }
-              else t("settings.lsp.server.installFailed", "reason" to ServerInstall.failureTail(output))
-            },
-            onFailure = { t("settings.lsp.server.installFailed", "reason" to (it.message ?: "")) },
-          )
-          status.text = "<html>" + text + "</html>"
-        }
+        com.intellij.openapi.application.ApplicationManager.getApplication().invokeLater(
+          { status.text = "<html>$text</html>" }, com.intellij.openapi.application.ModalityState.any(),
+        )
       }
     }
     com.intellij.openapi.progress.ProgressManager.getInstance().run(task)

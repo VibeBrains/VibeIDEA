@@ -63,7 +63,12 @@ object NodeInterpreter {
   const val KEY = "vibe.lsp.node"
 
   /** The path the person named, or empty for «автоматически». */
-  fun stored(): String = PropertiesComponent.getInstance().getValue(KEY).orEmpty()
+  fun stored(): String {
+    // Without an application (unit tests, very early startup) there are no settings, hence nothing stored. Failing
+    // here would take the server search down with it: `ServerBinaries.find` asks where the IDE's Node lives.
+    if (com.intellij.openapi.application.ApplicationManager.getApplication() == null) return ""
+    return PropertiesComponent.getInstance().getValue(KEY).orEmpty()
+  }
 
   fun store(value: String) {
     val trimmed = value.trim()

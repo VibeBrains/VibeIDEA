@@ -73,8 +73,18 @@ object ServerCheck {
   /** How the launch ended: exit code, output, and whether the wait timed out. */
   data class ProcessResult(val exitCode: Int, val output: String, val timedOut: Boolean)
 
+  /**
+   * Run the server the way the IDE launches it: the same command rule ([ServerBinaries.runCommand]) and the same
+   * environment, with the IDE's Node first in PATH.
+   *
+   * Otherwise the check tests something else. An npm-installed server is a shim starting with `#!/usr/bin/env node`;
+   * a GUI application's PATH has no version-managed Node in it, so the shim fails with "env: node: No such file" —
+   * and a perfectly working server gets reported as broken.
+   */
   private fun runVersion(path: String): ProcessResult {
-    val process = ProcessBuilder(path, "--version").redirectErrorStream(true).start()
+    val builder = ProcessBuilder(ServerBinaries.runCommand(path, "--version")).redirectErrorStream(true)
+    builder.environment().putAll(NodeRuntime.childEnvironment(null))
+    val process = builder.start()
     if (!process.waitFor(TIMEOUT_SECONDS, TimeUnit.SECONDS)) {
       process.destroyForcibly()
       return ProcessResult(exitCode = -1, output = "", timedOut = true)
