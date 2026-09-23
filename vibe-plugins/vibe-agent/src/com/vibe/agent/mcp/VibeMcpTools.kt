@@ -556,7 +556,7 @@ class VibeMcpTools(private val projectProvider: () -> Project? = { ProjectManage
 
     internal const val GRAPH_BUILDING =
       "Граф импортов ещё не построен — я запустил построение в фоне. Спросите снова через минуту, " +
-      "или постройте его сразу действием «Экспорт графа кода»."
+      "или постройте его сразу: Tools → «Vibe: экспорт графа проекта»."
 
     private const val DEFAULT_USAGE_LIMIT = 50
 
