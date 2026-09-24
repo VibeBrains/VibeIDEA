@@ -31,6 +31,13 @@ class RepoPackTest {
   }
 
   @Test
+  fun `a directory with a slash only at the end is picked at any depth, one with a leading slash only at the root`() {
+    val tree = listOf("docs/readme.md", "src/docs/api.md", "src/a.kt")
+    assertEquals(listOf("docs/readme.md", "src/docs/api.md"), RepoPack.select(tree, PackSpec(listOf("docs/"), emptyList(), 1_000)))
+    assertEquals(listOf("docs/readme.md"), RepoPack.select(tree, PackSpec(listOf("/docs/"), emptyList(), 1_000)))
+  }
+
+  @Test
   fun `the pack holds each file in its own block, leaves out binaries and names files with secrets`() {
     val paths = RepoPack.select(files.keys.toList(), PackSpec(emptyList(), listOf("src/gen/"), 1_000))
     val packed = assertIs<RepoPack.Result.Packed>(RepoPack.build(paths, 1_000, read))

@@ -76,6 +76,27 @@ class RolePathsTest {
   }
 
   @Test
+  fun `a slash only at the end means a directory at any depth, as in gitignore and in VibeIDE`() {
+    val docs = RolePaths.Scope(allow = listOf("docs/"))
+    assertTrue(RolePaths.mayWrite("docs/guide.md", docs))
+    assertTrue(RolePaths.mayWrite("src/docs/guide.md", docs))
+    assertFalse(RolePaths.mayWrite("src/documents/guide.md", docs))
+    // A slash at the start or in the middle anchors the directory at the root.
+    assertFalse(RolePaths.mayWrite("src/docs/guide.md", RolePaths.Scope(allow = listOf("/docs/"))))
+    assertTrue(RolePaths.mayWrite("docs/guide.md", RolePaths.Scope(allow = listOf("/docs/"))))
+    assertFalse(RolePaths.mayWrite("app/web/docs/a.md", RolePaths.Scope(allow = listOf("web/docs/"))))
+    assertTrue(RolePaths.mayWrite("web/docs/a.md", RolePaths.Scope(allow = listOf("web/docs/"))))
+  }
+
+  @Test
+  fun `a directory deny with a slash only at the end closes it at any depth`() {
+    val scope = RolePaths.Scope(deny = listOf("secrets/"))
+    assertFalse(RolePaths.mayWrite("secrets/key.pem", scope))
+    assertFalse(RolePaths.mayWrite("app/config/secrets/key.pem", scope))
+    assertTrue(RolePaths.mayWrite("app/config/key.pem", scope))
+  }
+
+  @Test
   fun `разделители Windows приводятся к общему виду`() {
     val scope = RolePaths.Scope(allow = listOf("tests/**"))
     assertTrue(RolePaths.mayWrite("tests\\unit\\FooTest.kt", scope))
@@ -125,6 +146,10 @@ class RolePathsTest {
     assertNull(RolePaths.literalPrefix("*.md"))
     assertNull(RolePaths.literalPrefix("README.md"), "a bare name matches in every directory")
     assertNull(RolePaths.literalPrefix("../outside/**"))
+    assertNull(RolePaths.literalPrefix("docs/"), "a slash only at the end matches the directory at any depth")
+    assertEquals(listOf("docs"), RolePaths.literalPrefix("/docs/"), "a leading slash anchors it")
+    assertFalse(RolePaths.provablyDisjoint(RolePaths.Scope(listOf("docs/")), RolePaths.Scope(listOf("src/**"))),
+                "src/docs is inside both")
   }
 
   @Test

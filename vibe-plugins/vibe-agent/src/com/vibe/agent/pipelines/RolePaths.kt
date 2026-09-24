@@ -79,8 +79,8 @@ object RolePaths {
   }
 
   /** Where tests live across the stacks this IDE serves: JVM, TS/JS, PHP, Python, Go. The fallback of `roles.json` — keep equal to its seed. */
-  // Directories are written with explicit `**/` on both sides: a pattern like `tests/` is anchored at
-  // the project root by [matches], and tests live deep inside modules (`web/__tests__/`, `x/testSrc/`).
+  // Directories are spelled `**/name/**`, not `name/`: both match at any depth ([matches]), and the explicit form reads
+  // the same to someone who does not know the trailing-slash rule. Tests live deep inside modules (`web/__tests__/`).
   val TEST_PATHS: List<String> = listOf(
     "**/test/**", "**/tests/**", "**/testSrc/**", "**/testData/**", "**/__tests__/**", "**/spec/**",
     "*Test.kt", "*Test.java", "*Tests.kt", "*Test.php", "*.test.ts", "*.test.tsx", "*.test.js",
@@ -106,7 +106,8 @@ object RolePaths {
    * nothing but its own boundary. So the proof is conservative, and anything it cannot prove counts as overlap:
    * - a scope without an allow list writes anywhere;
    * - a pattern must start with a literal directory, read by the rules of [matches]: one that opens with a double
-   *   star or a wildcard, or a bare name like `*.md`, applies at any depth, and no prefix says where it ends;
+   *   star or a wildcard, a bare name like `*.md`, or a directory with a slash only at its end like `docs/` applies at
+   *   any depth, and no prefix says where it ends;
    * - two literal prefixes overlap when one is the other or lies inside it, compared with case folded — on APFS
    *   and NTFS `Src/` is `src/`.
    * Deny lists are not used: they only narrow, and ignoring them can only err towards refusing.
@@ -120,8 +121,11 @@ object RolePaths {
 
   /** Where [pattern] is anchored, by the rules of [matches]: its leading literal segments, or null when it has none. */
   fun literalPrefix(pattern: String): List<String>? {
-    val clean = normalize(pattern.trim())
-    // A trailing slash means the directory and everything in it, anchored like any pattern with a slash.
+    val raw = pattern.trim().replace('\\', '/')
+    // `docs/` is a directory at any depth, so it has no anchor; `/docs/` and `web/docs/` are anchored at the root.
+    // Read before [normalize], which drops the leading slash that anchors.
+    if (raw.endsWith("/") && !directoryAnchored(raw.trimEnd('/'))) return null
+    val clean = normalize(raw)
     val anchored = if (clean.endsWith("/")) clean.trimEnd('/') + "/" + ANY else clean
     // No slash inside: the name matches at any depth.
     if (anchored.isEmpty() || '/' !in anchored) return null
@@ -129,6 +133,9 @@ object RolePaths {
     if (literal.isEmpty() || literal.any { it == "." || it == ".." }) return null
     return literal.map { com.vibe.agent.context.AccessPolicy.foldCase(it) }
   }
+
+  /** A directory pattern, its trailing slash removed, is anchored at the root by a slash of its own; empty is the root. */
+  private fun directoryAnchored(directory: String): Boolean = directory.isEmpty() || '/' in directory
 
   private fun nested(outer: List<String>, inner: List<String>): Boolean =
     outer.size <= inner.size && inner.subList(0, outer.size) == outer
@@ -139,13 +146,17 @@ object RolePaths {
   private const val ANY = "**"
 
   /**
-   * Совпадение по правилу gitignore: `*` не переходит через `/`, `**` переходит, шаблон без `/`
-   * внутри проверяется на любом уровне (как `node_modules` в .gitignore), шаблон, кончающийся на
-   * `/`, означает каталог со всем содержимым.
+   * A match by the rules of .gitignore: `*` does not cross `/`, `**` does, and a pattern with no slash inside matches a
+   * name at any depth (like `node_modules`). A pattern ending in `/` is a directory with everything in it; as in
+   * .gitignore, the slash at the end only says «directory», so `docs/` matches `docs` at any depth, while a slash at the
+   * start or in the middle anchors it at the root (`/docs/`, `web/docs/`). VibeIDE and our own `.vibe/ignore` read it so.
    */
   fun matches(path: String, pattern: String): Boolean {
     val clean = pattern.trim().ifEmpty { return false }
-    if (clean.endsWith("/")) return matches(path, clean.trimEnd('/') + "/**")
+    if (clean.endsWith("/")) {
+      val directory = clean.trimEnd('/')
+      return matches(path, if (directoryAnchored(directory)) "$directory/**" else "**/$directory/**")
+    }
     // Шаблон без разделителя относится к имени на любой глубине — это правило .gitignore, и люди
     // пишут `*.md`, имея в виду именно его.
     if (!clean.contains('/')) {
