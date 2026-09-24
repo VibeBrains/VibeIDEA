@@ -162,6 +162,12 @@ data class ProviderEntry(
    * 400 to a field they do not know. Tri-state so that a layer which does not mention it keeps the base's word.
    */
   val promptCacheKey: Boolean? = null,
+  /**
+   * How this endpoint spells reasoning when it differs from its wire ([ReasoningMode.DIALECTS]). OpenRouter takes one
+   * `reasoning` object for every model behind it and switches reasoning off with `effort: "none"`, while the OpenAI wire
+   * says `reasoning_effort`, a field OpenRouter does not document. Null — the wire's own spelling.
+   */
+  val reasoningDialect: String? = null,
 )
 
 object ProvidersFile {
@@ -352,7 +358,16 @@ object ProvidersFile {
       note = o["note"]?.jsonPrimitive?.contentOrNull,
       quota = parseQuota(o["quota"] as? JsonObject, id, onWarning),
       promptCacheKey = o["promptCacheKey"]?.jsonPrimitive?.booleanOrNull,
+      reasoningDialect = parseReasoningDialect(o["reasoningDialect"]?.jsonPrimitive?.contentOrNull, id, onWarning),
     )
+  }
+
+  /** An unknown dialect is dropped aloud: sent as the wire's spelling, it would look like a dial that works. */
+  private fun parseReasoningDialect(value: String?, providerId: String, onWarning: (String) -> Unit): String? {
+    if (value == null || value in ReasoningMode.DIALECTS) return value
+    onWarning(t("providers.warn.reasoningDialectUnknown", "id" to providerId, "value" to value,
+                "known" to ReasoningMode.DIALECTS.joinToString(", ")))
+    return null
   }
 
   /**
@@ -488,6 +503,7 @@ object ProvidersFile {
       note = over.note ?: base.note,
       quota = over.quota ?: base.quota,
       promptCacheKey = over.promptCacheKey ?: base.promptCacheKey,
+      reasoningDialect = over.reasoningDialect ?: base.reasoningDialect,
     )
   }
 }

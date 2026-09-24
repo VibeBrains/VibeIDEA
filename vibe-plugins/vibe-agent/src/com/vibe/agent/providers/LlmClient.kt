@@ -492,7 +492,7 @@ class LlmClient(
       // A model that takes tools here only without reasoning gets the turn without it rather than a 400 for the whole
       // turn; the chat says so once ([reasoningYieldsToTools]).
       val yields = offeredTools.isNotEmpty() && ModelQuirks.reasoningYieldsToTools(quirkId, ModelQuirks.WIRE_OPENAI, overrides)
-      withReasoning(it, ModelQuirks.WIRE_OPENAI, model, forceOff = yields)
+      withReasoning(it, ReasoningMode.dialectOf(ModelQuirks.WIRE_OPENAI, provider.entry.reasoningDialect), model, forceOff = yields)
     }), model.extraBody)
     if (ModelQuirks.quirksOf(quirkId, overrides).isNotEmpty()) {
       logger<LlmClient>().info("Model quirks applied for " + quirkId + ": " + ModelQuirks.noteOf(quirkId, overrides))

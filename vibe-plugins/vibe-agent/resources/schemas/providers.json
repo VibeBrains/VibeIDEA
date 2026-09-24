@@ -42,6 +42,11 @@
           "apiKeyRef": {
             "type": "string"
           },
+          "reasoningDialect": {
+            "type": "string",
+            "enum": ["openrouter"],
+            "description": "Как endpoint пишет рассуждение, если не так, как его протокол: openrouter — объект reasoning с effort, «выключено» — effort none."
+          },
           "auth": {
             "type": "object",
             "properties": {

@@ -20,6 +20,21 @@ object ReasoningMode {
   enum class Level { OFF, LOW, MEDIUM, HIGH }
 
   /**
+   * OpenRouter's spelling on the OpenAI wire: one `reasoning` object for every model it routes, `effort` inside, and
+   * `effort: "none"` to switch reasoning off (openrouter.ai/docs/use-cases/reasoning-tokens, checked 2026-09-24).
+   */
+  const val DIALECT_OPENROUTER = "openrouter"
+
+  /** The `reasoningDialect` values a provider entry may declare. */
+  val DIALECTS: List<String> = listOf(DIALECT_OPENROUTER)
+
+  private val OPENROUTER_OFF: JsonObject = buildJsonObject { put("reasoning", buildJsonObject { put("effort", "none") }) }
+
+  /** The dialect a request speaks: the provider's declared one where it applies to this wire, the wire's own otherwise. */
+  fun dialectOf(wire: String, declared: String?): String =
+    if (declared == DIALECT_OPENROUTER && wire == ModelQuirks.WIRE_OPENAI) DIALECT_OPENROUTER else wire
+
+  /**
    * Что умеет КОНКРЕТНАЯ модель — объявление из `providers.json` (`"reasoning"`).
    *
    * Ползунок один на всё приложение, а модели разные: GLM даёт low/high и не даёт medium,
@@ -170,7 +185,8 @@ object ReasoningMode {
      */
     levels: Boolean = true,
   ): JsonObject {
-    if (level == Level.OFF) return support?.off ?: JsonObject(emptyMap())
+    // The router switches reasoning off the same way for every model behind it, so «off» there needs no entry to say so.
+    if (level == Level.OFF) return support?.off ?: if (protocol == DIALECT_OPENROUTER) OPENROUTER_OFF else JsonObject(emptyMap())
     if (!levels) return JsonObject(emptyMap())
     return when (protocol.lowercase()) {
       "anthropic" -> buildJsonObject {
@@ -203,7 +219,7 @@ object ReasoningMode {
       // No `summary`: the vendor may require a verified organization for reasoning summaries
       // (developers.openai.com/api/docs/guides/reasoning, checked 2026-09-23), and asking for one there fails the whole
       // request rather than just the summary.
-      ModelQuirks.WIRE_OPENAI_RESPONSES -> buildJsonObject {
+      ModelQuirks.WIRE_OPENAI_RESPONSES, DIALECT_OPENROUTER -> buildJsonObject {
         put("reasoning", buildJsonObject { put("effort", effortWord(level, support)!!) })
       }
       else -> buildJsonObject { put("reasoning_effort", effortWord(level, support)!!) }

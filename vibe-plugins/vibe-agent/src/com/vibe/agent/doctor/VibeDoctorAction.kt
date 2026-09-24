@@ -81,7 +81,8 @@ class VibeDoctorAction : AnAction({ t("doctor.action") }) {
       // default, and the only way to see which of the two it is here is to look at the fields themselves.
       val provider = providers.first { p -> p.models.any { it.id == quirkModel } }
       val model = provider.models.first { it.id == quirkModel }
-      val wire = ProvidersService.protocolFor(provider.protocol, model.protocol)
+      val wire = com.vibe.agent.providers.ReasoningMode.dialectOf(
+        ProvidersService.protocolFor(provider.protocol, model.protocol), provider.reasoningDialect)
       val level = com.vibe.agent.providers.ReasoningMode.levelOf(com.vibe.agent.settings.VibeAgentSettings.reasoningLevel)
       val fields = com.vibe.agent.providers.LlmClient.reasoningFields(
         wire, level, quirkModel, model.reasoning,
