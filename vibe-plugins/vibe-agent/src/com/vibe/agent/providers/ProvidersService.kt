@@ -12,7 +12,13 @@ data class ResolvedProvider(
   val baseUrl: String,
   val apiKey: String?,
   val isLocal: Boolean,
-)
+) {
+  /**
+   * No key where one is needed: asking would earn a predictable 401, so callers skip the provider
+   * A local endpoint passes undeclared; `"auth": "none"` passes on any address — a vLLM in the local network included
+   */
+  val missingKey: Boolean get() = apiKey == null && !isLocal && entry.auth.type != AuthSpec.NONE
+}
 
 /**
  * Loads and merges the provider registry from four layers, weakest first:
@@ -54,7 +60,12 @@ object ProvidersService {
     // Origin describes which scope contributed to the entry (for the settings hint).
     val globalIds = HashSet<String>().apply { globalCatalog.mapTo(this) { it.id }; globalJson.mapTo(this) { it.id } }
     val projectIds = HashSet<String>().apply { projectCatalog.mapTo(this) { it.id }; projectJson.mapTo(this) { it.id } }
-    return ProvidersFile.resolveExtends(merged, onWarning).filter { it.active }.map {
+    val resolved = ProvidersFile.resolveExtends(merged, onWarning)
+    // Checked after the merge: the contradiction usually spans layers, a seeded `none` under a user's own key variable
+    resolved.filter { it.active && it.auth.type == AuthSpec.NONE && (it.apiKeyEnv != null || it.apiKeyRef != null) }.forEach {
+      onWarning(t("providers.warn.authNoneWithKey", "id" to it.id, "sources" to ApiKeyResolver.sourceNames(it)))
+    }
+    return resolved.filter { it.active }.map {
       it.copy(origin = when {
         it.id in projectIds && it.id in globalIds -> ProviderOrigin.OVERRIDDEN
         it.id in projectIds -> ProviderOrigin.PROJECT

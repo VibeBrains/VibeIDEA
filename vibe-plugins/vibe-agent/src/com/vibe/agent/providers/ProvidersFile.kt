@@ -119,7 +119,19 @@ data class ModelEntry(
   val cacheTtl: String? = null,
 )
 
-data class AuthSpec(val type: String = "bearer", val name: String? = null)
+/**
+ * How the key reaches the endpoint: `bearer` (the default), `header` and `query` under [name], `none` — never sent
+ * An unrecognised type is read as `bearer` and warned about at load ([ProvidersFile.parse])
+ */
+data class AuthSpec(val type: String = BEARER, val name: String? = null) {
+  companion object {
+    const val BEARER = "bearer"
+    const val HEADER = "header"
+    const val QUERY = "query"
+    const val NONE = "none"
+    val KNOWN = setOf(BEARER, HEADER, QUERY, NONE)
+  }
+}
 
 /** Which providers.json the entry ultimately came from (set after merge, not parsed). */
 enum class ProviderOrigin { GLOBAL, PROJECT, OVERRIDDEN }
@@ -143,7 +155,12 @@ data class ProviderEntry(
   val order: Int? = null,
   val protocol: String? = null,
   val baseURL: String? = null,
-  val auth: AuthSpec = AuthSpec(),
+  /**
+   * `auth` as this layer wrote it; null — the layer said nothing about it
+   * Kept apart from [auth] because the default IS a valid value: a merge comparing against `AuthSpec()` could not tell
+   * a user's explicit `"bearer"` from silence, and a seeded `none` stayed in force under it
+   */
+  val declaredAuth: AuthSpec? = null,
   val apiKeyEnv: String? = null,
   val apiKeyRef: String? = null,
   val headers: Map<String, String> = emptyMap(),
@@ -168,7 +185,10 @@ data class ProviderEntry(
    * says `reasoning_effort`, a field OpenRouter does not document. Null — the wire's own spelling.
    */
   val reasoningDialect: String? = null,
-)
+) {
+  /** The auth in force: what some layer declared, `bearer` when none did */
+  val auth: AuthSpec get() = declaredAuth ?: AuthSpec()
+}
 
 object ProvidersFile {
   private val json = Json { ignoreUnknownKeys = true }
@@ -295,12 +315,17 @@ object ProvidersFile {
 
   private fun parseProvider(id: String, o: JsonObject, onWarning: (String) -> Unit): ProviderEntry {
     val auth = when (val a = o["auth"]) {
-      null -> AuthSpec()
+      null -> null
       else -> if (a is kotlinx.serialization.json.JsonPrimitive) AuthSpec(type = a.content)
               else AuthSpec(
-                type = a.jsonObject["type"]?.jsonPrimitive?.contentOrNull ?: "bearer",
+                type = a.jsonObject["type"]?.jsonPrimitive?.contentOrNull ?: AuthSpec.BEARER,
                 name = a.jsonObject["name"]?.jsonPrimitive?.contentOrNull,
               )
+    }
+    // Read as bearer on the wire, as before; the warning is what changes: "None" or "basic" used to send the key
+    // as a Bearer header without a word, which is the opposite of what a person writing "None" meant
+    if (auth != null && auth.type !in AuthSpec.KNOWN) {
+      onWarning(t("providers.warn.authUnknown", "id" to id, "type" to auth.type))
     }
     val modelsObj = o["models"]?.jsonObject
     val fetchEl = modelsObj?.get("fetch")
@@ -346,7 +371,7 @@ object ProvidersFile {
       order = o["order"]?.jsonPrimitive?.intOrNull,
       protocol = o["protocol"]?.jsonPrimitive?.contentOrNull,
       baseURL = o["baseURL"]?.jsonPrimitive?.contentOrNull,
-      auth = auth,
+      declaredAuth = auth,
       apiKeyEnv = o["apiKeyEnv"]?.jsonPrimitive?.contentOrNull,
       apiKeyRef = o["apiKeyRef"]?.jsonPrimitive?.contentOrNull,
       headers = o["headers"]?.jsonObject?.mapValues { it.value.jsonPrimitive.content } ?: emptyMap(),
@@ -489,7 +514,7 @@ object ProvidersFile {
       order = over.order ?: base.order,
       protocol = over.protocol ?: base.protocol,
       baseURL = over.baseURL ?: base.baseURL,
-      auth = if (over.auth != AuthSpec()) over.auth else base.auth,
+      declaredAuth = over.declaredAuth ?: base.declaredAuth,
       apiKeyEnv = over.apiKeyEnv ?: base.apiKeyEnv,
       apiKeyRef = over.apiKeyRef ?: base.apiKeyRef,
       headers = base.headers + over.headers,

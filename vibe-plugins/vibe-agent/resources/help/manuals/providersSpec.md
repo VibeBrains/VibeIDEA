@@ -225,7 +225,31 @@ MiniMax и Qwen обслуживаются Anthropic-совместимым `/v1
 
 Приоритет резолва: защищённое хранилище (`apiKeyRef` → id) → `.vibe/.env` проекта → `~/.vibe/.env` → переменная окружения ОС (имя из `apiKeyEnv`). Формат `.env`: строки `ИМЯ=значение`, `#`-комментарии; интерполяции нет; файл в `.gitignore`. Для localhost-провайдера ключ не обязателен, чат помечается меткой `[локальная модель]`.
 
-Точный путь: клиент дописывает к `baseURL` только имя метода — anthropic: `/messages`, openai: `/chat/completions`, gemini: `/models/<id>:streamGenerateContent` — поэтому версию пути включайте в `baseURL` сами: `https://api.anthropic.com/v1`, `http://localhost:11434/v1`, `https://generativelanguage.googleapis.com/v1beta`. Для gemini дефолтный auth-способ — `{"type":"query","name":"key"}` либо заголовок `x-goog-api-key` (auth `header`).
+Точный путь: клиент дописывает к `baseURL` только имя метода — anthropic: `/messages`, openai: `/chat/completions`, gemini: `/models/<id>:streamGenerateContent` — поэтому версию пути включайте в `baseURL` сами: `https://api.anthropic.com/v1`, `http://localhost:11434/v1`, `https://generativelanguage.googleapis.com/v1beta`.
+
+### Как ключ уходит в запрос: `auth`
+
+Одно правило для всех трёх форматов и для запроса каталога моделей:
+
+| `auth` | Куда уходит ключ |
+|---|---|
+| не указан или `"bearer"` | `Authorization: Bearer <ключ>`; у gemini — заголовок `x-goog-api-key` |
+| `{"type":"header","name":"X"}` | заголовок `X`; без `name` — `x-api-key`, у gemini — `x-goog-api-key` |
+| `{"type":"query","name":"k"}` | параметр `k` в адресе; без `name` — `key` |
+| `"none"` | никуда |
+
+Про `"none"`:
+- Ключ не отправляется ни в каком виде и даже не ищется: ни в хранилище ОС, ни в `.env`, ни в окружении
+- Заголовки из `headers` уходят как есть
+- Провайдер пригоден без ключа **на любом адресе**, не только на localhost: так описывается vLLM в локальной сети (`http://192.168.1.50:8000/v1`)
+- Сервер ответил на каталог 401/403 — в чате и на странице «Провайдеры» строка «сервер требует ключ, а в файле none», а не «ключ отклонён»
+- Рядом с `none` объявлены `apiKeyEnv` или `apiKeyRef` — предупреждение при загрузке: ключ всё равно не уйдёт
+
+localhost-провайдер без ключа пропускается и без `"none"`.
+Незнакомое значение (`"None"`, `"basic"`) читается как `bearer`, и при загрузке об этом предупреждение.
+
+Слияние слоёв: `auth` из более сильного слоя побеждает, если он там написан — в том числе явный `"bearer"` поверх засеянного `"none"`.
+Слой, где `auth` не написан, оставляет значение нижнего.
 
 ## Безопасность (Config Guard)
 

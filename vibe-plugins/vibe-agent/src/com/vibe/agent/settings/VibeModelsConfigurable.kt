@@ -272,7 +272,7 @@ class VibeModelsConfigurable(private val project: Project) : Configurable, Confi
         // ходит — иначе диалог с паролем на каждого провайдера. Ключ, ещё никем не прочитанный,
         // здесь выглядит как «нет ключа»: каталог останется из кэша.
         val resolved = ProvidersService.resolve(p, project.basePath, quiet = true) { }
-        if (resolved == null || (resolved.apiKey == null && !resolved.isLocal)) {
+        if (resolved == null || resolved.missingKey) {
           setStatus(p.id, mySeq, t("settings.models.noKey"))
           return@mapNotNull null
         }

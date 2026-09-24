@@ -18,11 +18,9 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 import java.net.URI
-import java.net.URLEncoder
 import java.net.http.HttpClient
 import java.net.http.HttpRequest
 import java.net.http.HttpResponse
-import java.nio.charset.StandardCharsets
 import java.time.Duration
 
 /** One inline image: raw base64 payload (no data: prefix) plus its MIME type. */
@@ -371,28 +369,11 @@ class LlmClient(
    */
   fun listModels(provider: ResolvedProvider, fetchUrl: String?): List<CatalogModel> {
     val entry = provider.entry
-    var url = if (!fetchUrl.isNullOrBlank()) fetchUrl else provider.baseUrl.trimEnd('/') + "/models"
+    val url = if (!fetchUrl.isNullOrBlank()) fetchUrl else provider.baseUrl.trimEnd('/') + "/models"
     // Same auth/header/query treatment as chat requests — the catalog endpoint is not special.
-    val queryParams = LinkedHashMap(entry.query)
-    if (entry.auth.type == "query" && entry.auth.name != null && provider.apiKey != null) {
-      queryParams[entry.auth.name] = provider.apiKey
-    }
-    if (queryParams.isNotEmpty()) {
-      url += (if ('?' in url) "&" else "?") + queryParams.entries.joinToString("&") {
-        URLEncoder.encode(it.key, StandardCharsets.UTF_8) + "=" + URLEncoder.encode(it.value, StandardCharsets.UTF_8)
-      }
-    }
-    val builder = HttpRequest.newBuilder(URI.create(url)).timeout(Duration.ofMillis(CATALOG_TIMEOUT_MS)).GET()
-    entry.headers.forEach { (k, v) -> builder.header(k, v) }
+    val builder = authorizedRequest(provider, url, provider.protocol, CATALOG_TIMEOUT_MS).GET()
     // Anthropic rejects any request without the version header, /v1/models included.
     if (provider.protocol == "anthropic") builder.header("anthropic-version", "2023-06-01")
-    provider.apiKey?.let { key ->
-      when (entry.auth.type) {
-        "header" -> builder.header(entry.auth.name ?: "x-api-key", key)
-        "query", "none" -> {}
-        else -> builder.header("Authorization", "Bearer " + key)
-      }
-    }
     val response = http.send(builder.build(), HttpResponse.BodyHandlers.ofString())
     if (response.statusCode() !in 200..299) throw RuntimeException("HTTP " + response.statusCode())
     val root = json.parseToJsonElement(response.body()).jsonObject
@@ -440,17 +421,10 @@ class LlmClient(
         model.maxOutputTokens?.let { put("maxOutputTokens", it) }
       })
     }.let { withReasoning(it, "gemini", model) }, model.extraBody)
-    var url = provider.baseUrl.trimEnd('/') + "/models/" + model.id + ":streamGenerateContent?alt=sse"
-    val key = provider.apiKey
-    if (key != null && provider.entry.auth.type == "query") {
-      url += "&" + (provider.entry.auth.name ?: "key") + "=" + URLEncoder.encode(key, StandardCharsets.UTF_8)
-    }
-    val builder = HttpRequest.newBuilder(URI.create(url))
-      .timeout(Duration.ofMillis(provider.entry.timeoutMs ?: DEFAULT_REQUEST_TIMEOUT_MS))
+    val url = provider.baseUrl.trimEnd('/') + "/models/" + model.id + ":streamGenerateContent?alt=sse"
+    val request = authorizedRequest(provider, url, "gemini", provider.entry.timeoutMs ?: DEFAULT_REQUEST_TIMEOUT_MS)
       .header("Content-Type", "application/json")
-    provider.entry.headers.forEach { (k, v) -> builder.header(k, v) }
-    if (key != null && provider.entry.auth.type != "query") builder.header("x-goog-api-key", key)
-    val request = builder.POST(HttpRequest.BodyPublishers.ofString(body.toString())).build()
+      .POST(HttpRequest.BodyPublishers.ofString(body.toString())).build()
     streamSse(request) { data ->
       val event = eventObject(data) ?: return@streamSse
       ModelEcho.fromGeminiEvent(event)?.let { lastAnsweredModel = it }
@@ -645,31 +619,26 @@ class LlmClient(
     }
   }
 
-  private fun requestBuilder(provider: ResolvedProvider, method: String): HttpRequest.Builder {
-    val entry = provider.entry
-    var url = provider.baseUrl.trimEnd('/') + "/" + method
-    val queryParams = LinkedHashMap(entry.query)
-    if (entry.auth.type == "query" && entry.auth.name != null && provider.apiKey != null) {
-      queryParams[entry.auth.name] = provider.apiKey
-    }
-    if (queryParams.isNotEmpty()) {
-      url += "?" + queryParams.entries.joinToString("&") {
-        URLEncoder.encode(it.key, StandardCharsets.UTF_8) + "=" + URLEncoder.encode(it.value, StandardCharsets.UTF_8)
-      }
-    }
-    val builder = HttpRequest.newBuilder(URI.create(url))
-      .timeout(Duration.ofMillis(entry.timeoutMs ?: DEFAULT_REQUEST_TIMEOUT_MS))
+  /**
+   * Requests of the OpenAI-compatible and Anthropic wires; Gemini builds its own URL ([geminiChat])
+   * The wire is named here rather than taken from the provider: a model may speak another wire than its provider,
+   * And only Gemini's own requests may get Gemini's key header
+   */
+  private fun requestBuilder(provider: ResolvedProvider, method: String): HttpRequest.Builder =
+    authorizedRequest(provider, provider.baseUrl.trimEnd('/') + "/" + method, ModelQuirks.WIRE_OPENAI,
+                      provider.entry.timeoutMs ?: DEFAULT_REQUEST_TIMEOUT_MS)
       .header("Content-Type", "application/json")
-    entry.headers.forEach { (k, v) -> builder.header(k, v) }
-    val key = provider.apiKey
-    if (key != null) {
-      when (entry.auth.type) {
-        "bearer" -> builder.header("Authorization", "Bearer " + key)
-        "header" -> builder.header(entry.auth.name ?: "x-api-key", key)
-        "query", "none" -> {}
-        else -> builder.header("Authorization", "Bearer " + key)
-      }
-    }
+
+  /**
+   * The one door every request to a provider goes through
+   * Its declared query and headers first, then the key where [ProviderAuth] places it
+   */
+  private fun authorizedRequest(provider: ResolvedProvider, url: String, wire: String, timeoutMs: Long): HttpRequest.Builder {
+    val auth = ProviderAuth.placement(provider.entry.auth, provider.apiKey, wire)
+    val builder = HttpRequest.newBuilder(URI.create(ProviderAuth.withQuery(url, provider.entry.query + auth.query)))
+      .timeout(Duration.ofMillis(timeoutMs))
+    provider.entry.headers.forEach { (k, v) -> builder.header(k, v) }
+    auth.headers.forEach { (k, v) -> builder.header(k, v) }
     return builder
   }
 

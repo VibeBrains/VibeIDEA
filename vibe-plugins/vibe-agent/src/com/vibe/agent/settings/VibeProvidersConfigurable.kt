@@ -10,6 +10,8 @@ import com.intellij.ui.components.JBLabel
 import com.intellij.ui.components.JBPasswordField
 import com.intellij.util.ui.JBUI
 import com.vibe.agent.providers.ApiKeyResolver
+import com.vibe.agent.providers.AuthSpec
+import com.vibe.agent.providers.CatalogReport
 import com.vibe.agent.providers.LlmClient
 import com.vibe.agent.providers.ProviderOrigin
 import com.vibe.agent.providers.ProviderEntry
@@ -147,11 +149,11 @@ class VibeProvidersConfigurable(private val project: Project) : Configurable, Co
       }
       // The key takes part in the request only when the provider authenticates at all: with auth
       // "none" (local servers) the catalog answers an empty key too, so "the key is valid" would lie.
-      val keyUsed = resolved != null && resolved.apiKey != null && p.auth.type != "none"
+      val keyUsed = resolved != null && resolved.apiKey != null && p.auth.type != AuthSpec.NONE
       var ok = false
       val text = when {
         resolved == null -> t("settings.providers.noBaseUrl")
-        resolved.apiKey == null && !resolved.isLocal -> sourceLine(p)
+        resolved.missingKey -> sourceLine(p)
         else -> try {
           val n = llm.listModels(resolved, p.modelsFetch?.url).size
           ok = true
@@ -163,7 +165,8 @@ class VibeProvidersConfigurable(private val project: Project) : Configurable, Co
           }
         }
         catch (e: Exception) {
-          t("settings.providers.checkFailed", "reason" to e.message?.take(120))
+          if (p.auth.type == AuthSpec.NONE && CatalogReport.isRejectedKey(e.message)) t("settings.providers.keyRequired")
+          else t("settings.providers.checkFailed", "reason" to e.message?.take(120))
         }
       }
       SwingUtilities.invokeLater {

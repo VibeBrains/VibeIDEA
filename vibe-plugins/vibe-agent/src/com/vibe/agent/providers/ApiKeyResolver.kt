@@ -48,6 +48,7 @@ object ApiKeyResolver {
    * стучится в связку сама.
    */
   fun resolveQuietly(provider: ProviderEntry, projectBase: String?): String? {
+    if (provider.auth.type == AuthSpec.NONE) return null
     known[provider.apiKeyRef ?: provider.id]?.let { return it }
     provider.apiKeyEnv?.let { envName ->
       dotEnv(projectBase)[envName]?.takeIf { it.isNotBlank() }?.let { return it }
@@ -248,6 +249,10 @@ object ApiKeyResolver {
    * (brought by the owner's brother 18.09.2026, as «берёт значение, даже если оно пустое»).
    */
   fun resolve(provider: ProviderEntry, projectBase: String?): String? {
+    // A provider that takes no key is not asked for one anywhere
+    // Reading the keychain for it could only bring a password dialog
+    // And a key found in `.env` would have nowhere to go
+    if (provider.auth.type == AuthSpec.NONE) return null
     storedKey(provider)?.let { return it }
     provider.apiKeyEnv?.let { envName ->
       dotEnv(projectBase)[envName]?.takeIf { it.isNotBlank() }?.let { return it }

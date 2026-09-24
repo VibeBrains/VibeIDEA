@@ -29,6 +29,14 @@ class CatalogReportTest {
   }
 
   @Test
+  fun `a keyless server that wants a key is not called a rejected key`() {
+    val text = CatalogReport(keyRequired = listOf("gpu")).summary()
+    assertTrue(text.contains("сервер требует ключ"), text)
+    assertTrue(text.contains("gpu"), text)
+    assertFalse(text.contains("ключ отклонён"), text)
+  }
+
+  @Test
   fun `other failures carry their reason`() {
     val text = CatalogReport(failed = listOf("zai" to "HTTP connect timed out")).summary()
     assertTrue(text.contains("zai (HTTP connect timed out)"), text)

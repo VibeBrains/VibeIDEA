@@ -13,6 +13,7 @@ import com.vibe.agent.i18n.VibeI18n.t
  *
  * - [keyless] — no key at all: nothing failed, there is simply nothing to ask with (→ Провайдеры);
  * - [rejected] — a key exists and the provider refused it (401/403): the key is wrong or expired;
+ * - [keyRequired] — the file says `"auth": "none"` and the server answered 401/403: it wants a key after all;
  * - [localDown] — a local endpoint (ollama, vLLM) is not running: start it or ignore;
  * - [failed] — anything else (timeout, DNS, 5xx): the network or the provider.
  *
@@ -22,11 +23,12 @@ data class CatalogReport(
   val updated: List<String> = emptyList(),
   val keyless: List<String> = emptyList(),
   val rejected: List<String> = emptyList(),
+  val keyRequired: List<String> = emptyList(),
   val localDown: List<String> = emptyList(),
   val failed: List<Pair<String, String>> = emptyList(),
 ) {
   val isEmpty: Boolean
-    get() = updated.isEmpty() && keyless.isEmpty() && rejected.isEmpty() && localDown.isEmpty() && failed.isEmpty()
+    get() = updated.isEmpty() && keyless.isEmpty() && rejected.isEmpty() && keyRequired.isEmpty() && localDown.isEmpty() && failed.isEmpty()
 
   /** The whole round in one line; empty string when there is nothing to say. */
   fun summary(): String {
@@ -37,6 +39,7 @@ data class CatalogReport(
         add(t("catalog.keyless", "count" to keyless.size, "list" to keyless.joinToString(", ")))
       }
       if (rejected.isNotEmpty()) add(t("catalog.rejected", "list" to rejected.joinToString(", ")))
+      if (keyRequired.isNotEmpty()) add(t("catalog.keyRequired", "list" to keyRequired.joinToString(", ")))
       if (localDown.isNotEmpty()) add(t("catalog.localDown", "list" to localDown.joinToString(", ")))
       if (failed.isNotEmpty()) add(t("catalog.failed", "list" to failed.joinToString(", ") { "${it.first} (${it.second})" }))
     }

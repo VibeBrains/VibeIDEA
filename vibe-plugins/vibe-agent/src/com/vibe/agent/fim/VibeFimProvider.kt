@@ -103,7 +103,7 @@ class VibeFimProvider : DebouncedInlineCompletionProvider() {
         val model = p.models.firstOrNull { it.active && it.fim } ?: continue
         val resolved = ProvidersService.resolve(p, projectBase) { } ?: continue
         if (resolved.protocol != "openai") continue
-        if (resolved.apiKey == null && !resolved.isLocal) continue
+        if (resolved.missingKey) continue
         return@run resolved to model
       }
       null

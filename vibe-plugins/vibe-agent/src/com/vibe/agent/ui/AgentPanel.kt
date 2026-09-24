@@ -46,6 +46,7 @@ import com.vibe.agent.history.StoredImage
 import com.vibe.agent.history.ThreadState
 import com.vibe.agent.history.VibeChatHistory
 import com.vibe.agent.pipelines.PipelinesFile
+import com.vibe.agent.providers.AuthSpec
 import com.vibe.agent.providers.CatalogReport
 import com.vibe.agent.providers.ChatMessage
 import com.vibe.agent.providers.ImagePart
@@ -3641,7 +3642,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
         systemLine(com.vibe.agent.i18n.VibeI18n.t("chat.provider.noBaseUrl", "id" to t.provider.id))
         return
       }
-      if (resolved.apiKey == null && !resolved.isLocal) {
+      if (resolved.missingKey) {
         systemLine(com.vibe.agent.i18n.VibeI18n.t(
           "chat.provider.noKey", "id" to t.provider.id,
           "sources" to com.vibe.agent.providers.ApiKeyResolver.sourceNames(t.provider)))
@@ -4723,7 +4724,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
       ?: ModelEntry(id = modelId) // модели нет в каталоге — это ещё не повод не спросить о ней
     val resolved = ProvidersService.resolve(provider, project.basePath) { systemLine("[providers] $it") }
       ?: throw IllegalStateException(com.vibe.agent.i18n.VibeI18n.t("chat.provider.noBaseUrl", "id" to providerId))
-    if (resolved.apiKey == null && !resolved.isLocal) {
+    if (resolved.missingKey) {
       throw IllegalStateException(com.vibe.agent.i18n.VibeI18n.t(
         "chat.provider.noKey", "id" to providerId,
         "sources" to com.vibe.agent.providers.ApiKeyResolver.sourceNames(provider)))
@@ -5456,6 +5457,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
       val updated = java.util.Collections.synchronizedList(ArrayList<String>())
       val keyless = java.util.Collections.synchronizedList(ArrayList<String>())
       val rejected = java.util.Collections.synchronizedList(ArrayList<String>())
+      val keyRequired = java.util.Collections.synchronizedList(ArrayList<String>())
       val localDown = java.util.Collections.synchronizedList(ArrayList<String>())
       val failed = java.util.Collections.synchronizedList(ArrayList<Pair<String, String>>())
       val pending = snapshot.mapNotNull { p ->
@@ -5468,7 +5470,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
         val resolved = ProvidersService.resolve(p, project.basePath, quiet = true) { } ?: return@mapNotNull null
         // No key and not a local endpoint: asking would earn a predictable 401. Не спрашиваем и
         // не называем это ошибкой провайдера — у человека просто не введён ключ.
-        if (resolved.apiKey == null && !resolved.isLocal) {
+        if (resolved.missingKey) {
           keyless += p.id
           return@mapNotNull null
         }
@@ -5482,6 +5484,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
           catch (e: Exception) {
             val reason = CatalogReport.reason(e)
             when {
+              CatalogReport.isRejectedKey(reason) && p.auth.type == AuthSpec.NONE -> keyRequired += p.id
               CatalogReport.isRejectedKey(reason) -> rejected += p.id
               resolved.isLocal -> localDown += p.id
               else -> failed += (p.id to reason)
@@ -5493,7 +5496,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
       ModelCatalogCache.put(fresh)
       val report = CatalogReport(
         updated = updated.toList(), keyless = keyless.toList(), rejected = rejected.toList(),
-        localDown = localDown.toList(), failed = failed.toList(),
+        keyRequired = keyRequired.toList(), localDown = localDown.toList(), failed = failed.toList(),
       )
       val keylessChanged = keylessProviders != keyless.toSet()
       keylessProviders = keyless.toSet()
