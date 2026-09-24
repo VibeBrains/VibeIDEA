@@ -14,16 +14,26 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
+        id: checkout
 
+      # Every check runs even after the other one failed, and the job is still red if either did: a failing step must
+      # not hide the verdict behind it. Only a failed checkout stops them, since there is nothing to read.
       - name: Подключить апстрим (только чтение)
+        if: ${{ !cancelled() && steps.checkout.outcome == 'success' }}
         run: git remote add upstream https://github.com/JetBrains/intellij-community.git || true
 
       - name: Отставание от апстрима
+        if: ${{ !cancelled() && steps.checkout.outcome == 'success' }}
+        # The base commit lives upstream, not in this checkout, so the script asks GitHub for its date; gh needs a token.
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: ./vibe-plugins/tools/checkUpstreamLag.sh 30
 
       - uses: actions/setup-node@v4
+        if: ${{ !cancelled() && steps.checkout.outcome == 'success' }}
         with:
           node-version: '24'
 
       - name: Уязвимости и закрепление версий поставляемых серверов
+        if: ${{ !cancelled() && steps.checkout.outcome == 'success' }}
         run: ./vibe-plugins/tools/checkServerDeps.sh

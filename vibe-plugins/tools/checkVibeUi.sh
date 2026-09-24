@@ -4,6 +4,12 @@
 # иначе замечает только владелец на живой сборке.
 #
 #   ./vibe-plugins/tools/checkVibeUi.sh
+#   ./vibe-plugins/tools/checkVibeUi.sh --no-build
+#
+# --no-build is for a machine that cannot build the test target, the CI runner above all: block 8б measures the
+# hint with a Bazel test, and there Bazel stops at analysis, because the project model reads the android/ clone,
+# which lives outside this repository. Every check that reads sources still runs. The measurement is announced as
+# skipped rather than dropped, and it stays mandatory locally, where the gate runs without the flag.
 #
 # 1. Тонкие скроллы (решение владельца 2026-08-28). Наши панели используют платформенный
 #    JBThinOverlappingScrollBar через обёртку com.vibe.agent.ui.VibeScroll. Класс платформы —
@@ -16,7 +22,16 @@
 set -euo pipefail
 root="$(cd "$(dirname "$0")/../.."; pwd)"
 . "$root/vibe-plugins/tools/pythonBin.sh"
+. "$root/vibe-plugins/tools/bazelTest.sh"
 status=0
+
+no_build=0
+for arg in "$@"; do
+  case "$arg" in
+    --no-build) no_build=1 ;;
+    *) echo "ОШИБКА: неизвестный аргумент «$arg» — гейт понимает только --no-build"; exit 2 ;;
+  esac
+done
 
 thin_class="$root/platform/platform-api/src/com/intellij/ui/components/JBThinOverlappingScrollBar.kt"
 if [[ ! -f "$thin_class" ]]; then
@@ -285,21 +300,28 @@ done < <(grep -rl 'com.intellij.openapi.options.Configurable\|: Configurable' "
 # общее сообщение об одной врёт про другую. Гейт, который на сбой сборки говорит «подсказка не
 # переносится», отправляет человека чинить работающее — ровно та ошибка, за которую этот файл уже
 # ругал сам себя выше.
-echo "  подсказка настроек: перенос проверяется замером"
-HINT_OUT=$(cd "$root" && ./bazel.cmd test //vibe-plugins/vibe-agent:vibe-agent_test --test_filter=SettingsHintWidth 2>&1) || true
-case "$HINT_OUT" in
-  *"tests pass"*|*"test passes"*)
-    : ;;
-  *"FAILED"*|*"failing"*)
-    echo "ОШИБКА: подсказка настроек не переносится по ширине — страница обрежет текст по правому краю"
-    printf '%s\n' "$HINT_OUT" | grep -F 'AssertionFailedError' | head -3 | sed 's/^/    /'
-    echo "  Прогоните: ./bazel.cmd test //vibe-plugins/vibe-agent:vibe-agent_test --test_filter=SettingsHintWidth"
-    status=1 ;;
-  *)
-    echo "ОШИБКА: замер переноса НЕ ВЫПОЛНЕН — это не приговор подсказке, а невозможность её проверить"
-    printf '%s\n' "$HINT_OUT" | tail -3 | sed 's/^/    /'
-    status=1 ;;
-esac
+#
+# Which of the three answers came back is decided by bazelTest.sh from Bazel's exit code and its test-case summary.
+if [ "$no_build" -eq 1 ]; then
+  echo "  подсказка настроек: замер переноса ПРОПУЩЕН (--no-build) — здесь нет сборки;"
+  echo "    он обязателен локально: этим гейтом без флага и тестами vibe-agent_test"
+else
+  echo "  подсказка настроек: перенос проверяется замером"
+  bazel_test_verdict //vibe-plugins/vibe-agent:vibe-agent_test SettingsHintWidth
+  case "$BAZEL_TEST_VERDICT" in
+    pass)
+      echo "  подсказка настроек: переносится, замер прошёл — случаев: $BAZEL_TEST_PASSED" ;;
+    fail)
+      echo "ОШИБКА: подсказка настроек не переносится по ширине — страница обрежет текст по правому краю"
+      bazel_test_evidence
+      echo "  Прогоните: ./bazel.cmd test //vibe-plugins/vibe-agent:vibe-agent_test --test_filter=SettingsHintWidth"
+      status=1 ;;
+    *)
+      echo "ОШИБКА: замер переноса НЕ ВЫПОЛНЕН — $BAZEL_TEST_REASON; это не приговор подсказке"
+      bazel_test_evidence
+      status=1 ;;
+  esac
+fi
 
 # 8б2. Списки на страницах настроек — только сжимаемые.
 #
