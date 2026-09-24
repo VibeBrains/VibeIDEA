@@ -14,10 +14,13 @@ LIMIT_DAYS="${1:-30}"
 say() { printf '%s\n' "$1"; }
 
 # Базу берём из реестра отличий, а не из git: там она записана человеком и сверяется глазами.
-BASE=$(grep -oE '`[0-9a-f]{10}`' FORK_CHANGES.md | head -1 | tr -d '`')
+#
+# Every pipeline assigned below ends in `|| true`: under `set -euo pipefail` a failed pipeline inside an assignment ends
+# the script on the spot, and the check right after it, the one that says what went wrong, never gets to speak.
+BASE=$(grep -oE '`[0-9a-f]{10}`' FORK_CHANGES.md | head -1 | tr -d '`' || true)
 [ -n "$BASE" ] || { say "✖ в FORK_CHANGES.md не нашлась текущая база апстрима"; exit 1; }
 
-REMOTE_HEAD=$(git ls-remote upstream master 2>/dev/null | awk '{print $1}' | head -1)
+REMOTE_HEAD=$(git ls-remote upstream master 2>/dev/null | awk '{print $1}' | head -1 || true)
 [ -n "$REMOTE_HEAD" ] || { say "✖ не удалось спросить upstream (сеть или remote)"; exit 1; }
 
 if [ "${REMOTE_HEAD:0:10}" = "$BASE" ]; then
@@ -25,13 +28,38 @@ if [ "${REMOTE_HEAD:0:10}" = "$BASE" ]; then
   exit 0
 fi
 
-# Дата базы есть локально: сам коммит у нас в репозитории.
+# The base is an upstream commit, and a clone of our repository alone may well lack it: a sync that landed as one
+# ordinary commit leaves the base out of our history entirely, and a merged base sits deeper than the single commit the
+# CI checkout fetches. Locally it is here once upstream has been fetched. Otherwise upstream itself is asked: GitHub
+# resolves the short id the registry keeps. Only a commit upstream does not know either is a registry problem; a
+# question nobody answered measures nothing.
 BASE_DATE=$(git log -1 --format=%ct "$BASE" 2>/dev/null || echo "")
-[ -n "$BASE_DATE" ] || { say "✖ коммита базы $BASE нет локально — синк делался мимо реестра?"; exit 1; }
+BASE_DAY=$(git log -1 --format=%cd --date=short "$BASE" 2>/dev/null || echo "")
+if [ -z "$BASE_DATE" ]; then
+  UPSTREAM_REPO=$(git remote get-url upstream 2>/dev/null | sed -nE 's#^https://github\.com/([^/]+/[^/]+)$#\1#p' | sed 's/\.git$//' || true)
+  if ! command -v gh >/dev/null 2>&1 || [ -z "$UPSTREAM_REPO" ]; then
+    say "✖ коммита базы $BASE в этом клоне нет, а спросить апстрим нечем (нужны gh и remote upstream на GitHub)"
+    say "  отставание не измерено; локально хватит git fetch upstream"
+    exit 1
+  fi
+  ASKED=$(gh api "repos/$UPSTREAM_REPO/commits/$BASE" \
+    --jq '(.commit.committer.date | fromdateiso8601 | tostring) + " " + .commit.committer.date[0:10]' 2>&1) || {
+    case "$ASKED" in
+      *"(HTTP 422)"*|*"(HTTP 404)"*)
+        say "✖ коммита базы $BASE нет ни в этом клоне, ни у апстрима — в реестре опечатка или синк делался мимо реестра" ;;
+      *)
+        say "✖ коммита базы $BASE в этом клоне нет, а апстрим не ответил — отставание не измерено:"
+        printf '%s\n' "$ASKED" | tail -1 | sed 's/^/    /' ;;
+    esac
+    exit 1
+  }
+  BASE_DATE=${ASKED%% *}
+  BASE_DAY=${ASKED#* }
+fi
 
 NOW=$(date +%s)
 DAYS=$(( (NOW - BASE_DATE) / 86400 ))
-say "  база:            $BASE ($(git log -1 --format=%cd --date=short "$BASE"))"
+say "  база:            $BASE ($BASE_DAY)"
 say "  upstream/master: ${REMOTE_HEAD:0:10}"
 say "  отставание:      $DAYS дн. (порог $LIMIT_DAYS)"
 
@@ -41,9 +69,9 @@ say "  отставание:      $DAYS дн. (порог $LIMIT_DAYS)"
 #
 # Все теги не тащим (их около 2800, и они тянут релизные ветки): здесь только ИМЕНА через
 # ls-remote, а нужный тег забирается точечно — команда печатается ниже.
-LINE=$(sed -E 's/^([0-9]+)\..*/\1/' build.txt 2>/dev/null | head -1)
+LINE=$(sed -E 's/^([0-9]+)\..*/\1/' build.txt 2>/dev/null | head -1 || true)
 TAGS=$(git ls-remote --tags upstream 'refs/tags/idea/*' 2>/dev/null \
-       | grep -v '\^{}' | awk '{print $2}' | sed 's|refs/tags/||' | sort -V)
+       | grep -v '\^{}' | awk '{print $2}' | sed 's|refs/tags/||' | sort -V || true)
 if [ -n "$TAGS" ]; then
   # Тег ЧУЖОЙ линии брать нельзя: наша база стоит на 263 (2026.3), а последний стабильный релиз
   # апстрима на момент написания — 2026.2.2, то есть предыдущая линия. Слить её в наше дерево
