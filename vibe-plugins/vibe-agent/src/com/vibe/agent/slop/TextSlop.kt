@@ -55,7 +55,14 @@ data class SlopReport(
  * Pure: text and a compiled catalogue in, a report out.
  */
 object TextSlop {
-  fun analyze(text: String, catalog: CompiledCatalog): SlopReport {
+  /** A Windows line break, or a lone carriage return. */
+  private val LINE_BREAK = Regex("\r\n?")
+
+  fun analyze(source: String, catalog: CompiledCatalog): SlopReport {
+    // Every pattern here is written for \n, the frontmatter one first of all, and a file read as it lies on disk with
+    // Windows line breaks had its frontmatter read as prose. Normalising at the entry gives every surface the same
+    // reading at once; a line keeps its number, and a column its place.
+    val text = LINE_BREAK.replace(source, "\n")
     val masked = mask(text)
     val lineStarts = lineStarts(text)
     val suppress = suppressed(text.split('\n'))
