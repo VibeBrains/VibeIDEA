@@ -15,11 +15,13 @@ object SlopRender {
     fun finding(finding: SlopFinding): String
     fun blocking(rules: List<String>): String
     fun more(count: Int): String
+    fun skipped(rules: List<String>): String
   }
 
   fun render(report: SlopReport, labels: Labels, maxFindings: Int = DEFAULT_MAX_FINDINGS): String = buildString {
     appendLine(labels.verdict(number(report.score), number(report.passScore), report.passed, report.findings.size))
     if (report.blocking.isNotEmpty()) appendLine(labels.blocking(report.blocking))
+    if (report.skipped.isNotEmpty()) appendLine(labels.skipped(report.skipped))
     val ordered = ordered(report.findings)
     ordered.take(maxFindings).forEach { appendLine(labels.finding(it)) }
     if (ordered.size > maxFindings) appendLine(labels.more(ordered.size - maxFindings))

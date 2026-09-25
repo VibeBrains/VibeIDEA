@@ -229,14 +229,24 @@ MiniMax и Qwen обслуживаются Anthropic-совместимым `/v1
 
 ### Как ключ уходит в запрос: `auth`
 
-Одно правило для всех трёх форматов и для запроса каталога моделей:
+Одно правило для всех трёх форматов и для запроса каталога моделей, общее с VibeIDE:
+**написанное отправляется как написано, ненаписанное — родным способом формата.**
 
 | `auth` | Куда уходит ключ |
 |---|---|
-| не указан или `"bearer"` | `Authorization: Bearer <ключ>`; у gemini — заголовок `x-goog-api-key` |
-| `{"type":"header","name":"X"}` | заголовок `X`; без `name` — `x-api-key`, у gemini — `x-goog-api-key` |
+| не указан ни в одном слое | родной заголовок формата: anthropic — `x-api-key`, gemini — `x-goog-api-key`, openai и openai-responses — `Authorization: Bearer <ключ>` |
+| `"bearer"` | `Authorization: Bearer <ключ>` на любом формате, anthropic и gemini тоже |
+| `{"type":"header","name":"X"}` | заголовок `X`; без `name` — родной заголовок формата (`x-api-key` у openai) |
 | `{"type":"query","name":"k"}` | параметр `k` в адресе; без `name` — `key` |
 | `"none"` | никуда |
+
+Формат берётся у запроса, а не у провайдера: у провайдера `opencode-go` модели MiniMax идут на `/messages`, и
+незаданный `auth` отдал бы им `x-api-key`.
+В засеянном `opencode-go` написано `"bearer"`, поэтому им уходит `Authorization: Bearer`.
+
+Явный `"bearer"` у провайдера на формате gemini даёт предупреждение при загрузке.
+Google на API-ключ в `Authorization: Bearer` отвечает ошибкой OAuth.
+Уберите `auth` (уйдёт `x-goog-api-key`) или напишите `{"type": "query"}`.
 
 Про `"none"`:
 - Ключ не отправляется ни в каком виде и даже не ищется: ни в хранилище ОС, ни в `.env`, ни в окружении

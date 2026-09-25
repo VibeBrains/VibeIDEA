@@ -95,6 +95,10 @@ object VibeAgentSettings {
   const val DEFAULT_SLOP_MAX_ATTEMPTS = 2
   const val MIN_SLOP_MAX_ATTEMPTS = 1
   const val MAX_SLOP_MAX_ATTEMPTS = 5
+  /** How long one rule of the detector may match a text; the default lives with the detector, which runs without the IDE */
+  const val DEFAULT_SLOP_RULE_BUDGET_SEC = (com.vibe.agent.slop.SlopBudget.DEFAULT_RULE_MILLIS / 1000).toInt()
+  const val MIN_SLOP_RULE_BUDGET_SEC = 1
+  const val MAX_SLOP_RULE_BUDGET_SEC = 60
 
   // --- FIM autocomplete ---
   const val DEFAULT_FIM_ENABLED = true
@@ -229,6 +233,7 @@ object VibeAgentSettings {
   private const val KEY_DESIGN_MAX_ATTEMPTS = "vibe.agent.design.maxAttempts"
   private const val KEY_SLOP_MODE = "vibe.agent.slop.mode"
   private const val KEY_SLOP_MAX_ATTEMPTS = "vibe.agent.slop.maxAttempts"
+  private const val KEY_SLOP_RULE_BUDGET_SEC = "vibe.agent.slop.ruleBudgetSec"
   private const val KEY_FIM_ENABLED = "vibe.agent.fim.enabled"
   private const val KEY_FIM_DEBOUNCE_MS = "vibe.agent.fim.debounceMs"
   private const val KEY_FIM_CACHE_SIZE = "vibe.agent.fim.cacheSize"
@@ -436,6 +441,16 @@ object VibeAgentSettings {
   var slopMaxAttempts: Int
     get() = props.getInt(KEY_SLOP_MAX_ATTEMPTS, DEFAULT_SLOP_MAX_ATTEMPTS).coerceIn(MIN_SLOP_MAX_ATTEMPTS, MAX_SLOP_MAX_ATTEMPTS)
     set(value) = props.setValue(KEY_SLOP_MAX_ATTEMPTS, value.coerceIn(MIN_SLOP_MAX_ATTEMPTS, MAX_SLOP_MAX_ATTEMPTS), DEFAULT_SLOP_MAX_ATTEMPTS)
+
+  var slopRuleBudgetSec: Int
+    get() = props.getInt(KEY_SLOP_RULE_BUDGET_SEC, DEFAULT_SLOP_RULE_BUDGET_SEC)
+      .coerceIn(MIN_SLOP_RULE_BUDGET_SEC, MAX_SLOP_RULE_BUDGET_SEC)
+    set(value) = props.setValue(KEY_SLOP_RULE_BUDGET_SEC, value.coerceIn(MIN_SLOP_RULE_BUDGET_SEC, MAX_SLOP_RULE_BUDGET_SEC),
+                                DEFAULT_SLOP_RULE_BUDGET_SEC)
+
+  /** A fresh budget for one round of text-slop checks, from the setting above */
+  fun slopBudget(isCancelled: () -> Boolean = { false }): com.vibe.agent.slop.SlopBudget =
+    com.vibe.agent.slop.SlopBudget(slopRuleBudgetSec * 1000L, isCancelled)
 
   var watchSceneThreshold: Double
     get() = props.getValue(KEY_WATCH_SCENE_THRESHOLD)?.toDoubleOrNull()?.coerceIn(0.05, 0.9) ?: DEFAULT_WATCH_SCENE_THRESHOLD

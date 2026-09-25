@@ -397,7 +397,7 @@ class LlmClient(
       put("max_tokens", if (provider.isLocal) FIM_MAX_TOKENS_LOCAL else FIM_MAX_TOKENS_CLOUD)
       if (stop.isNotEmpty()) put("stop", JsonArray(stop.map { kotlinx.serialization.json.JsonPrimitive(it) }))
     }, model.extraBody)
-    val request = requestBuilder(provider, "completions")
+    val request = requestBuilder(provider, "completions", ModelQuirks.WIRE_OPENAI)
       .POST(HttpRequest.BodyPublishers.ofString(body.toString()))
       .build()
     val response = http.send(request, HttpResponse.BodyHandlers.ofString())
@@ -471,7 +471,7 @@ class LlmClient(
     if (ModelQuirks.quirksOf(quirkId, overrides).isNotEmpty()) {
       logger<LlmClient>().info("Model quirks applied for " + quirkId + ": " + ModelQuirks.noteOf(quirkId, overrides))
     }
-    val request = requestBuilder(provider, "chat/completions")
+    val request = requestBuilder(provider, "chat/completions", ModelQuirks.WIRE_OPENAI)
       .POST(HttpRequest.BodyPublishers.ofString(body.toString()))
       .build()
     if (!streaming) {
@@ -523,7 +523,7 @@ class LlmClient(
     if (ModelQuirks.quirksOf(quirkId, overrides).isNotEmpty()) {
       logger<LlmClient>().info("Model quirks applied for " + quirkId + ": " + ModelQuirks.noteOf(quirkId, overrides))
     }
-    val request = requestBuilder(provider, "responses")
+    val request = requestBuilder(provider, "responses", ModelQuirks.WIRE_OPENAI_RESPONSES)
       .POST(HttpRequest.BodyPublishers.ofString(body.toString()))
       .build()
     if (!streaming) {
@@ -594,7 +594,7 @@ class LlmClient(
       // — where MiniMax and Qwen actually live — sending exactly the fields those models ignore.
       .let { ModelQuirks.applyToBody(quirkIdOf(model), it, overrides, ModelQuirks.WIRE_ANTHROPIC) },
       model.extraBody)
-    val request = requestBuilder(provider, "messages")
+    val request = requestBuilder(provider, "messages", ModelQuirks.WIRE_ANTHROPIC)
       .header("anthropic-version", "2023-06-01")
       // Без бета-заголовка вендор молча оставит пять минут — по цене часовой записи.
       .apply { if (PromptCache.needsExtendedBeta(model.cacheTtl)) header("anthropic-beta", PromptCache.EXTENDED_TTL_BETA) }
@@ -621,11 +621,11 @@ class LlmClient(
 
   /**
    * Requests of the OpenAI-compatible and Anthropic wires; Gemini builds its own URL ([geminiChat])
-   * The wire is named here rather than taken from the provider: a model may speak another wire than its provider,
-   * And only Gemini's own requests may get Gemini's key header
+   * The caller names the wire rather than the provider: a model may speak another wire than its provider,
+   * And the wire decides where an undeclared key goes ([ProviderAuth])
    */
-  private fun requestBuilder(provider: ResolvedProvider, method: String): HttpRequest.Builder =
-    authorizedRequest(provider, provider.baseUrl.trimEnd('/') + "/" + method, ModelQuirks.WIRE_OPENAI,
+  private fun requestBuilder(provider: ResolvedProvider, method: String, wire: String): HttpRequest.Builder =
+    authorizedRequest(provider, provider.baseUrl.trimEnd('/') + "/" + method, wire,
                       provider.entry.timeoutMs ?: DEFAULT_REQUEST_TIMEOUT_MS)
       .header("Content-Type", "application/json")
 
@@ -634,7 +634,7 @@ class LlmClient(
    * Its declared query and headers first, then the key where [ProviderAuth] places it
    */
   private fun authorizedRequest(provider: ResolvedProvider, url: String, wire: String, timeoutMs: Long): HttpRequest.Builder {
-    val auth = ProviderAuth.placement(provider.entry.auth, provider.apiKey, wire)
+    val auth = ProviderAuth.placement(provider.entry.declaredAuth, provider.apiKey, wire)
     val builder = HttpRequest.newBuilder(URI.create(ProviderAuth.withQuery(url, provider.entry.query + auth.query)))
       .timeout(Duration.ofMillis(timeoutMs))
     provider.entry.headers.forEach { (k, v) -> builder.header(k, v) }

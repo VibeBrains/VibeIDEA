@@ -21,4 +21,6 @@ object SlopLabels : SlopRender.Labels {
   override fun blocking(rules: List<String>): String = t("slop.blocking", "rules" to rules.joinToString(", "))
 
   override fun more(count: Int): String = t("slop.more", "count" to count)
+
+  override fun skipped(rules: List<String>): String = t("slop.skipped", "rules" to rules.joinToString(", "))
 }

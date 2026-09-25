@@ -349,7 +349,8 @@ class VibeMcpTools(private val projectProvider: () -> Project? = { ProjectManage
       }
     }
     val warnings = ArrayList<String>()
-    val report = com.vibe.agent.slop.SlopCheck.check(text, project.basePath) { warnings.add(it) }
+    val budget = com.vibe.agent.settings.VibeAgentSettings.slopBudget()
+    val report = com.vibe.agent.slop.SlopCheck.check(text, project.basePath, budget) { warnings.add(it) }
       ?: return McpServer.Tools.Result("каталог нейрослопа в сборке не читается: " +
                                        com.vibe.agent.slop.SlopCheck.builtInWarnings.joinToString("; "), isError = true)
     val body = com.vibe.agent.slop.SlopRender.render(report, SLOP_LABELS)
@@ -372,6 +373,9 @@ class VibeMcpTools(private val projectProvider: () -> Project? = { ProjectManage
     override fun blocking(rules: List<String>): String = "Не пропускают: " + rules.joinToString(", ")
 
     override fun more(count: Int): String = "…и ещё $count"
+
+    override fun skipped(rules: List<String>): String =
+      "Правила не уложились в предел времени и пропущены: ${rules.joinToString(", ")} — оценка посчитана без них"
   }
 
   private fun writeFile(project: Project, arguments: JsonObject): McpServer.Tools.Result {

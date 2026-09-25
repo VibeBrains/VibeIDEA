@@ -65,6 +65,11 @@ object ProvidersService {
     resolved.filter { it.active && it.auth.type == AuthSpec.NONE && (it.apiKeyEnv != null || it.apiKeyRef != null) }.forEach {
       onWarning(t("providers.warn.authNoneWithKey", "id" to it.id, "sources" to ApiKeyResolver.sourceNames(it)))
     }
+    // A written bearer is sent as written ([ProviderAuth]), and Gemini answers a Bearer carrying an API key with an error
+    // The one combination the rule makes certainly wrong is named at load rather than at the first request
+    resolved.filter { it.active && it.declaredAuth?.type == AuthSpec.BEARER && speaksGemini(it) }.forEach {
+      onWarning(t("providers.warn.bearerOnGemini", "id" to it.id))
+    }
     return resolved.filter { it.active }.map {
       it.copy(origin = when {
         it.id in projectIds && it.id in globalIds -> ProviderOrigin.OVERRIDDEN
@@ -73,6 +78,9 @@ object ProvidersService {
       })
     }
   }
+
+  private fun speaksGemini(entry: ProviderEntry): Boolean =
+    protocolFor(entry.protocol) == "gemini" || entry.models.any { it.protocol != null && protocolFor(entry.protocol, it.protocol) == "gemini" }
 
   /**
    * Reads `.vibe/modelQuirks.json` of both scopes and installs it as the quirk catalogue.

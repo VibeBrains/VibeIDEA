@@ -426,8 +426,11 @@ class DesignPreviewPanel(private val project: Project) : JPanel(BorderLayout()),
     // Accepted drifts come from the project's own design context — the same file the agent reads.
     val accepted = DesignContextFile.load(project.basePath)?.acceptedDrift.orEmpty()
       .map { DesignReview.Accepted(it.ruleId, it.reason) }
-    val reports = snapshots.map { DesignReview.run(it, accepted, copyCatalog()) }
+    val copy = copyCatalog()
+    val budget = com.vibe.agent.settings.VibeAgentSettings.slopBudget()
+    val reports = snapshots.map { DesignReview.run(it, accepted, copy, budget) }
     val findings = DesignReview.merge(reports)
+    val skipped = budget.skipped.takeIf { it.isNotEmpty() }?.let { com.vibe.agent.slop.SlopLabels.skipped(it) }
     // «Что сейчас плохо» перестают спрашивать после третьего раза: ответ — длинный список, с
     // которым уже решили жить. Спрашивают «что я только что сломал», и на это нужен прошлый замер.
     val diff = com.vibe.agent.design.DesignDiff.compare(previousFindings[currentUrl()], findings)
@@ -438,6 +441,8 @@ class DesignPreviewPanel(private val project: Project) : JPanel(BorderLayout()),
         status.text = status.text + " · " + line
       }
       results.removeAll()
+      // A copy check that dropped a rule reads cleaner than the page is, so the page says which rules it went without
+      skipped?.let { results.add(hint(it)) }
       if (findings.isEmpty()) results.add(hint(t("design.noFindings")))
       else findings.forEach { results.add(row(it)) }
       results.revalidate(); results.repaint()
@@ -474,7 +479,12 @@ class DesignPreviewPanel(private val project: Project) : JPanel(BorderLayout()),
     if (snapshots.isEmpty()) return null
     val accepted = DesignContextFile.load(project.basePath)?.acceptedDrift.orEmpty()
       .map { DesignReview.Accepted(it.ruleId, it.reason) }
-    val findings = DesignReview.merge(snapshots.map { DesignReview.run(it, accepted, copyCatalog()) })
+    val copy = copyCatalog()
+    val budget = com.vibe.agent.settings.VibeAgentSettings.slopBudget()
+    val findings = DesignReview.merge(snapshots.map { DesignReview.run(it, accepted, copy, budget) })
+    budget.skipped.takeIf { it.isNotEmpty() }?.let {
+      com.intellij.openapi.diagnostic.logger<DesignPreviewPanel>().warn(com.vibe.agent.slop.SlopLabels.skipped(it))
+    }
     SwingUtilities.invokeLater {
       lastFindings = findings
       status.text = DesignReview.summary(findings)

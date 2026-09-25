@@ -38,6 +38,8 @@ data class SlopReport(
   val words: Int,
   val findings: List<SlopFinding>,
   val deductions: List<SlopDeduction>,
+  /** Rules left out for running out of time ([SlopBudget]): the score is over the rest, and the surface says so */
+  val skipped: List<String> = emptyList(),
 )
 
 /**
@@ -58,7 +60,11 @@ object TextSlop {
   /** A Windows line break, or a lone carriage return. */
   private val LINE_BREAK = Regex("\r\n?")
 
-  fun analyze(source: String, catalog: CompiledCatalog): SlopReport {
+  /**
+   * @param budget how long each rule may match
+   *   Shared across the texts of one round, so a runaway rule is paid for once
+   */
+  fun analyze(source: String, catalog: CompiledCatalog, budget: SlopBudget = SlopBudget()): SlopReport {
     // Every pattern here is written for \n, the frontmatter one first of all, and a file read as it lies on disk with
     // Windows line breaks had its frontmatter read as prose. Normalising at the entry gives every surface the same
     // reading at once; a line keeps its number, and a column its place.
@@ -71,12 +77,27 @@ object TextSlop {
     val context = Context(text, masked, lineStarts, suppress, paragraphs)
 
     val raw = ArrayList<SlopFinding>()
+    val skipped = ArrayList<String>()
     for (compiled in catalog.rules) {
       val rule = compiled.rule
+      if (budget.spent(rule.id)) {
+        skipped += rule.id
+        continue
+      }
       when (rule.kind) {
-        SlopKind.WORDS, SlopKind.PHRASES, SlopKind.REGEX -> raw += lexical(compiled, context)
-        SlopKind.OPENER -> raw += openers(compiled, context, sentences)
-        SlopKind.DENSITY -> density(compiled, context)?.let { raw += it }
+        // The kinds that run the catalogue's patterns; a pattern may come from the project, so they run on the clock
+        SlopKind.WORDS, SlopKind.PHRASES, SlopKind.REGEX, SlopKind.OPENER, SlopKind.DENSITY -> try {
+          val clock = budget.clock()
+          when (rule.kind) {
+            SlopKind.OPENER -> raw += openers(compiled, context, sentences, clock)
+            SlopKind.DENSITY -> density(compiled, context, clock)?.let { raw += it }
+            else -> raw += lexical(compiled, context, clock)
+          }
+        }
+        catch (e: SlopBudget.Overrun) {
+          budget.exhaust(rule.id)
+          skipped += rule.id
+        }
         SlopKind.INVISIBLE -> raw += invisible(rule, context)
         SlopKind.RHYTHM_UNIFORM -> raw += uniformRhythm(rule, context, sentences)
         SlopKind.RHYTHM_FRAGMENTS -> raw += stackedFragments(rule, context, sentences)
@@ -87,7 +108,7 @@ object TextSlop {
     }
     val findings = dedupe(raw.filterNot { allowed(it, catalog.allow) })
       .sortedWith(compareBy({ it.line }, { it.column }, { it.rule }))
-    return score(findings, catalog.scoring, words(masked))
+    return score(findings, catalog.scoring, words(masked)).copy(skipped = skipped)
   }
 
   // --- masking: never flag what the writer did not write as prose ---
@@ -296,10 +317,11 @@ object TextSlop {
 
   // --- the checks ---
 
-  private fun lexical(compiled: CompiledRule, context: Context): List<SlopFinding> {
+  private fun lexical(compiled: CompiledRule, context: Context, clock: SlopBudget.Clock): List<SlopFinding> {
     val out = ArrayList<SlopFinding>()
+    val text = clock.guard(context.masked)
     for (pattern in compiled.patterns) {
-      val m = pattern.matcher(context.masked)
+      val m = pattern.matcher(text)
       while (m.find()) {
         if (m.group().isBlank() || m.start() == m.end()) continue
         if (!context.reads(compiled.rule, m.start()) || context.suppressed(compiled.rule.id, m.start())) continue
@@ -310,12 +332,12 @@ object TextSlop {
   }
 
   /** An opener counts only where a sentence starts: the same word in the middle of one is ordinary language. */
-  private fun openers(compiled: CompiledRule, context: Context, sentences: List<Sentence>): List<SlopFinding> {
+  private fun openers(compiled: CompiledRule, context: Context, sentences: List<Sentence>, clock: SlopBudget.Clock): List<SlopFinding> {
     val out = ArrayList<SlopFinding>()
     for (sentence in sentences) {
       if (compiled.rule.lang != SlopLang.ANY && sentence.paragraph?.lang != compiled.rule.lang) continue
       for (pattern in compiled.patterns) {
-        val m = pattern.matcher(sentence.text)
+        val m = pattern.matcher(clock.guard(sentence.text))
         if (!m.lookingAt()) continue
         val start = sentence.start + m.start()
         if (!context.suppressed(compiled.rule.id, start)) out.add(context.finding(compiled.rule, start, sentence.start + m.end()))
@@ -326,11 +348,12 @@ object TextSlop {
   }
 
   /** Some devices are tells only in bulk: every «rather than» is defensible, three in a short post are a habit. */
-  private fun density(compiled: CompiledRule, context: Context): SlopFinding? {
+  private fun density(compiled: CompiledRule, context: Context, clock: SlopBudget.Clock): SlopFinding? {
     val rule = compiled.rule
     val hits = ArrayList<Pair<Int, Int>>()
+    val text = clock.guard(context.masked)
     for (pattern in compiled.patterns) {
-      val m = pattern.matcher(context.masked)
+      val m = pattern.matcher(text)
       while (m.find()) if (context.reads(rule, m.start())) hits.add(m.start() to m.end())
     }
     // Two patterns of one rule can match the same words — a short form of the device and a longer one — and one

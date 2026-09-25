@@ -3468,9 +3468,14 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
         systemLine(t("slop.gate.noCatalog", "reason" to com.vibe.agent.slop.SlopCheck.builtInWarnings.joinToString("; ")))
       }
       else {
+        // One budget for the whole turn: a runaway rule from .vibe/slop.json is paid for once, not once per file
+        val budget = VibeAgentSettings.slopBudget()
         val reports = prose.mapNotNull { path ->
-          readFileForScan(path)?.let { com.vibe.agent.slop.SlopGatePolicy.FileReport(path, com.vibe.agent.slop.TextSlop.analyze(it, catalog)) }
+          readFileForScan(path)?.let {
+            com.vibe.agent.slop.SlopGatePolicy.FileReport(path, com.vibe.agent.slop.TextSlop.analyze(it, catalog, budget))
+          }
         }
+        budget.skipped.takeIf { it.isNotEmpty() }?.let { systemLine(com.vibe.agent.slop.SlopLabels.skipped(it)) }
         val maxAttempts = VibeAgentSettings.slopMaxAttempts
         when (com.vibe.agent.slop.SlopGatePolicy.decide(slopMode, reports, slopAttempt, maxAttempts)) {
           com.vibe.agent.slop.SlopGatePolicy.Decision.BOUNCE -> return GateBounce(

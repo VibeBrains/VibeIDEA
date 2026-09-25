@@ -30,14 +30,17 @@ object DesignReview {
   /**
    * @param copy the text-slop catalogue for the page's copy, with the project's `.vibe/slop.json` applied; the shipped
    *   one when the caller has no project
+   * @param copyBudget how long each catalogue rule may match; one per round of measuring, so both viewports and every
+   *   element share it and a runaway rule is paid for once
    */
   fun run(
     doc: DocumentSnapshot,
     accepted: List<Accepted> = emptyList(),
     copy: com.vibe.agent.slop.CompiledCatalog? = com.vibe.agent.slop.SlopCheck.builtIn,
+    copyBudget: com.vibe.agent.slop.SlopBudget = com.vibe.agent.slop.SlopBudget(),
   ): Report {
     val byRule = accepted.associate { DesignRuleCatalog.canonical(it.rule) to it.reason }
-    val raw = DesignFloorRules.all(doc) + DesignMarkupRules.all(doc) + DesignStyleRules.all(doc, copy) +
+    val raw = DesignFloorRules.all(doc) + DesignMarkupRules.all(doc) + DesignStyleRules.all(doc, copy, copyBudget) +
       // Findability runs once per page rather than per element, so it lands here rather than in a
       // per-element pass: a title is not a property of a div.
       DesignFindabilityRules.all(doc) + DesignRhythmRules.all(doc) +

@@ -16,6 +16,8 @@ import kotlin.system.exitProcess
  * command only counts: the total goes out as `SLOP_FINDINGS=N`, a line the ratchet script reads, and the exit code is 0.
  * A named path or overrides file that is not there, or a file that cannot be read, is exit code 2: a gate handed a
  * wrong path must not pass on «nothing checked, nothing failed».
+ * So is a rule that ran out of its time ([SlopBudget]):
+ * The count went without it, and a ratchet would read that as progress
  */
 object TextSlopCli {
   @JvmStatic
@@ -49,6 +51,7 @@ object TextSlopCli {
       return EXIT_BROKEN
     }
     val files = paths.flatMap { prose(it) }.distinct().sorted()
+    val budget = SlopBudget()
     var failed = 0
     var total = 0
     var unreadable = 0
@@ -58,7 +61,7 @@ object TextSlopCli {
         unreadable++
         continue
       }
-      val report = TextSlop.analyze(text, catalog)
+      val report = TextSlop.analyze(text, catalog, budget)
       total += report.findings.size
       if (count) {
         if (report.findings.isNotEmpty()) out.println("${report.findings.size}\t$file")
@@ -69,8 +72,9 @@ object TextSlopCli {
       out.println(file.toString())
       out.println(SlopRender.render(report, SlopLabels).prependIndent("  "))
     }
-    // A count that skipped a file is lower than the truth, and a ratchet would take it as progress.
-    if (unreadable > 0) return EXIT_BROKEN
+    // A count that skipped a file or a rule is lower than the truth, and a ratchet would take it as progress.
+    budget.skipped.takeIf { it.isNotEmpty() }?.let { err.println(SlopLabels.skipped(it)) }
+    if (unreadable > 0 || budget.skipped.isNotEmpty()) return EXIT_BROKEN
     if (count) {
       out.println("$COUNT_LINE$total")
       return EXIT_OK

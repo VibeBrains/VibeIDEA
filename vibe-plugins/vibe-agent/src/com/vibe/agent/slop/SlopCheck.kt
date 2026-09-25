@@ -54,8 +54,8 @@ object SlopCheck {
     return SlopOverrides.parse(text, onWarning).applyTo(base, onWarning)
   }
 
-  fun check(text: String, projectBase: String?, onWarning: (String) -> Unit): SlopReport? =
-    catalog(projectBase, onWarning)?.let { TextSlop.analyze(text, it) }
+  fun check(text: String, projectBase: String?, budget: SlopBudget, onWarning: (String) -> Unit): SlopReport? =
+    catalog(projectBase, onWarning)?.let { TextSlop.analyze(text, it, budget) }
 
   fun isProse(path: String): Boolean {
     val lower = path.lowercase()

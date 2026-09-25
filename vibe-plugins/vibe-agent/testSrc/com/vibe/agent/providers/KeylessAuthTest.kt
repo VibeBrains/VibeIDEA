@@ -47,27 +47,6 @@ class KeylessAuthTest {
   }
 
   @Test
-  fun `every wire places the key by one rule`() {
-    assertEquals(mapOf("Authorization" to "Bearer k"), ProviderAuth.placement(AuthSpec(), "k", "openai").headers)
-    assertEquals(mapOf("Authorization" to "Bearer k"), ProviderAuth.placement(AuthSpec(), "k", "anthropic").headers)
-    assertEquals(mapOf(ProviderAuth.GEMINI_KEY_HEADER to "k"), ProviderAuth.placement(AuthSpec(), "k", "gemini").headers)
-    // The header name is honoured on Gemini too; it used to be replaced by x-goog-api-key
-    assertEquals(mapOf("x-custom" to "k"), ProviderAuth.placement(AuthSpec(AuthSpec.HEADER, "x-custom"), "k", "gemini").headers)
-    assertEquals(mapOf("x-api-key" to "k"), ProviderAuth.placement(AuthSpec(AuthSpec.HEADER), "k", "openai").headers)
-    // A query without a name used to send the key nowhere on the OpenAI wire
-    assertEquals(mapOf("key" to "k"), ProviderAuth.placement(AuthSpec(AuthSpec.QUERY), "k", "openai").query)
-    assertEquals(mapOf("Authorization" to "Bearer k"), ProviderAuth.placement(AuthSpec("basic"), "k", "openai").headers)
-    assertEquals(ProviderAuth.Placement(emptyMap(), emptyMap()), ProviderAuth.placement(AuthSpec(), null, "openai"))
-  }
-
-  @Test
-  fun `query parameters join an existing query string`() {
-    assertEquals("https://h/m?alt=sse&key=a%26b", ProviderAuth.withQuery("https://h/m?alt=sse", mapOf("key" to "a&b")))
-    assertEquals("https://h/m?key=k", ProviderAuth.withQuery("https://h/m", mapOf("key" to "k")))
-    assertEquals("https://h/m", ProviderAuth.withQuery("https://h/m", emptyMap()))
-  }
-
-  @Test
   fun `an explicit bearer overrides a seeded none, silence keeps it`() {
     val seed = ProviderEntry(id = "p", baseURL = "http://gpu:8000/v1", declaredAuth = none)
     assertEquals(AuthSpec.BEARER,

@@ -5,11 +5,12 @@ import java.net.URLEncoder
 import java.nio.charset.StandardCharsets
 
 /**
- * Where a provider's key goes on the request: one rule for every wire and for the model catalog
+ * Where a provider's key goes on the request: one rule for every wire and for the model catalog, shared with VibeIDE
  *
- * The rule used to be written three times, and the copies drifted:
- * The Gemini wire sent the key under `"auth": "none"`, ignored the header name of `"header"`
- * And a `"query"` without a name sent the key nowhere at all
+ * An auth the file declares is sent as written: `bearer` is a literal `Authorization: Bearer` on any wire
+ * An auth nobody declared takes the wire's own header:
+ * `x-api-key` on Anthropic, `x-goog-api-key` on Gemini, Bearer on the OpenAI wires
+ * Only this reading changes no entry of the shared set in either product, and a written value means what it says
  *
  * Pure on purpose: the HTTP client needs the IDE to be constructed, this does not
  */
@@ -19,29 +20,45 @@ object ProviderAuth {
 
   private val NOTHING = Placement(emptyMap(), emptyMap())
 
-  /** Gemini's own key header: it answers a Bearer with an OAuth error, so its default is the native one */
+  /** Anthropic's own key header: its API takes a key there and reads a Bearer as an OAuth token */
+  const val ANTHROPIC_KEY_HEADER = "x-api-key"
+
+  /** Gemini's own key header: it answers a Bearer carrying an API key with an OAuth error */
   const val GEMINI_KEY_HEADER = "x-goog-api-key"
 
-  /** Default header name for `"header"` without `name` on every other wire */
+  /** Default header name for `"header"` without `name` on the OpenAI wires */
   const val DEFAULT_KEY_HEADER = "x-api-key"
 
   /** Default parameter name for `"query"` without `name`: the one Gemini documents */
   const val DEFAULT_KEY_PARAM = "key"
 
+  /** The wire's own key header, or null for a wire whose own way is Bearer */
+  fun nativeHeader(wire: String): String? = when (wire) {
+    ModelQuirks.WIRE_ANTHROPIC -> ANTHROPIC_KEY_HEADER
+    "gemini" -> GEMINI_KEY_HEADER
+    else -> null
+  }
+
   /**
-   * @param wire the protocol the request speaks (`gemini` changes the defaults, see [GEMINI_KEY_HEADER])
+   * @param declared the auth some layer wrote ([ProviderEntry.declaredAuth]); null — nobody did, the wire decides
+   * @param wire the protocol the request speaks
    */
-  fun placement(auth: AuthSpec, key: String?, wire: String): Placement {
+  fun placement(declared: AuthSpec?, key: String?, wire: String): Placement {
     if (key == null) return NOTHING
-    val gemini = wire == "gemini"
-    return when (auth.type) {
+    val native = nativeHeader(wire)
+    if (declared == null) return if (native != null) header(native, key) else bearer(key)
+    return when (declared.type) {
       AuthSpec.NONE -> NOTHING
-      AuthSpec.QUERY -> Placement(emptyMap(), mapOf((auth.name ?: DEFAULT_KEY_PARAM) to key))
-      AuthSpec.HEADER -> Placement(mapOf((auth.name ?: if (gemini) GEMINI_KEY_HEADER else DEFAULT_KEY_HEADER) to key), emptyMap())
+      AuthSpec.QUERY -> Placement(emptyMap(), mapOf((declared.name ?: DEFAULT_KEY_PARAM) to key))
+      AuthSpec.HEADER -> header(declared.name ?: native ?: DEFAULT_KEY_HEADER, key)
       // `bearer` and anything unrecognised (warned about at load)
-      else -> Placement(if (gemini) mapOf(GEMINI_KEY_HEADER to key) else mapOf("Authorization" to "Bearer $key"), emptyMap())
+      else -> bearer(key)
     }
   }
+
+  private fun header(name: String, key: String) = Placement(mapOf(name to key), emptyMap())
+
+  private fun bearer(key: String) = Placement(mapOf("Authorization" to "Bearer $key"), emptyMap())
 
   /** [url] with [params] appended, after its own query string when it already has one */
   fun withQuery(url: String, params: Map<String, String>): String {

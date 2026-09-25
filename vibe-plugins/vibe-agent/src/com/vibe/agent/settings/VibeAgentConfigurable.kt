@@ -68,6 +68,7 @@ class VibeAgentConfigurable : Configurable, Configurable.NoScroll {
   private var designAttempts: JBIntSpinner? = null
   private var slopMode: com.intellij.openapi.ui.ComboBox<String>? = null
   private var slopAttempts: JBIntSpinner? = null
+  private var slopRuleBudget: JBIntSpinner? = null
   private var fimEnabled: JBCheckBox? = null
   private var fimDebounce: JBIntSpinner? = null
   private var fimCache: JBIntSpinner? = null
@@ -143,6 +144,9 @@ class VibeAgentConfigurable : Configurable, Configurable.NoScroll {
       .also { it.item = VibeAgentSettings.slopMode; slopMode = it }
     val slopTries = JBIntSpinner(VibeAgentSettings.slopMaxAttempts, VibeAgentSettings.MIN_SLOP_MAX_ATTEMPTS, VibeAgentSettings.MAX_SLOP_MAX_ATTEMPTS)
       .also { slopAttempts = it }
+    val slopBudget = JBIntSpinner(VibeAgentSettings.slopRuleBudgetSec, VibeAgentSettings.MIN_SLOP_RULE_BUDGET_SEC,
+                                  VibeAgentSettings.MAX_SLOP_RULE_BUDGET_SEC)
+      .also { slopRuleBudget = it }
     val fim = JBCheckBox(t("settings.agent.fim"), VibeAgentSettings.fimEnabled).also { fimEnabled = it }
     val fimDelay = JBIntSpinner(VibeAgentSettings.fimDebounceMs, VibeAgentSettings.MIN_FIM_DEBOUNCE_MS, VibeAgentSettings.MAX_FIM_DEBOUNCE_MS)
       .also { fimDebounce = it }
@@ -241,6 +245,8 @@ class VibeAgentConfigurable : Configurable, Configurable.NoScroll {
       .addLabeledComponent(t("settings.agent.mode"), slop)
       .addLabeledComponent(t("settings.agent.bounceAttempts"), slopTries)
       .addComponent(hint(t("settings.agent.hint.slopHint")))
+      .addLabeledComponent(t("settings.agent.slopRuleBudget"), slopBudget)
+      .addComponent(hint(t("settings.agent.hint.slopRuleBudgetHint")))
       .addComponent(section(t("settings.agent.section.fim")))
       .addComponent(fim)
       .addLabeledComponent(t("settings.agent.fimDebounce"), fimDelay)
@@ -347,6 +353,7 @@ class VibeAgentConfigurable : Configurable, Configurable.NoScroll {
     designAttempts?.number != VibeAgentSettings.designMaxAttempts ||
     (slopMode?.item ?: VibeAgentSettings.slopMode) != VibeAgentSettings.slopMode ||
     slopAttempts?.number != VibeAgentSettings.slopMaxAttempts ||
+    slopRuleBudget?.number != VibeAgentSettings.slopRuleBudgetSec ||
     fimEnabled?.isSelected != VibeAgentSettings.fimEnabled ||
     fimDebounce?.number != VibeAgentSettings.fimDebounceMs ||
     fimCache?.number != VibeAgentSettings.fimCacheSize ||
@@ -409,6 +416,7 @@ class VibeAgentConfigurable : Configurable, Configurable.NoScroll {
     designAttempts?.let { VibeAgentSettings.designMaxAttempts = it.number }
     slopMode?.let { VibeAgentSettings.slopMode = it.item }
     slopAttempts?.let { VibeAgentSettings.slopMaxAttempts = it.number }
+    slopRuleBudget?.let { VibeAgentSettings.slopRuleBudgetSec = it.number }
     fimEnabled?.let { VibeAgentSettings.fimEnabled = it.isSelected }
     fimDebounce?.let { VibeAgentSettings.fimDebounceMs = it.number }
     fimCache?.let { VibeAgentSettings.fimCacheSize = it.number }
@@ -484,6 +492,7 @@ class VibeAgentConfigurable : Configurable, Configurable.NoScroll {
     designAttempts?.number = VibeAgentSettings.designMaxAttempts
     slopMode?.item = VibeAgentSettings.slopMode
     slopAttempts?.number = VibeAgentSettings.slopMaxAttempts
+    slopRuleBudget?.number = VibeAgentSettings.slopRuleBudgetSec
     fimEnabled?.isSelected = VibeAgentSettings.fimEnabled
     fimDebounce?.number = VibeAgentSettings.fimDebounceMs
     fimCache?.number = VibeAgentSettings.fimCacheSize

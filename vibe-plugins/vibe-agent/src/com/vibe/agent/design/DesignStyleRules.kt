@@ -34,10 +34,14 @@ object DesignStyleRules {
   private val LAYOUT_PROPERTIES = listOf("width", "height", "top", "left", "right", "bottom", "margin", "padding")
 
 
-  fun all(doc: DocumentSnapshot, copy: com.vibe.agent.slop.CompiledCatalog? = null): List<Finding> =
+  fun all(
+    doc: DocumentSnapshot,
+    copy: com.vibe.agent.slop.CompiledCatalog? = null,
+    copyBudget: com.vibe.agent.slop.SlopBudget = com.vibe.agent.slop.SlopBudget(),
+  ): List<Finding> =
     gradientText(doc) + glow(doc) + glass(doc) + purple(doc) + eyebrow(doc) + clones(doc) +
     radiusDrift(doc) + extremeRadius(doc) + animatedLayout(doc) + overshoot(doc) +
-    hangingPreposition(doc) + orphanWord(doc) + copySlop(doc, copy) + hoverResponse(doc)
+    hangingPreposition(doc) + orphanWord(doc) + copySlop(doc, copy, copyBudget) + hoverResponse(doc)
 
   fun gradientText(doc: DocumentSnapshot): List<Finding> = doc.elements.mapNotNull { element ->
     if (element.text.isBlank()) return@mapNotNull null
@@ -197,11 +201,15 @@ object DesignStyleRules {
    * headline with three tells is one headline to rewrite. Only the list and template rules apply; rhythm and layout
    * rules read documents, not a button.
    */
-  fun copySlop(doc: DocumentSnapshot, catalog: com.vibe.agent.slop.CompiledCatalog?): List<Finding> {
+  fun copySlop(
+    doc: DocumentSnapshot,
+    catalog: com.vibe.agent.slop.CompiledCatalog?,
+    budget: com.vibe.agent.slop.SlopBudget = com.vibe.agent.slop.SlopBudget(),
+  ): List<Finding> {
     val copy = catalog?.lexical() ?: return emptyList()
     return doc.elements.mapNotNull { element ->
       if (element.text.isBlank()) return@mapNotNull null
-      val hit = com.vibe.agent.slop.TextSlop.analyze(element.text, copy).findings.maxByOrNull { it.severity.ordinal }
+      val hit = com.vibe.agent.slop.TextSlop.analyze(element.text, copy, budget).findings.maxByOrNull { it.severity.ordinal }
         ?: return@mapNotNull null
       DesignFloorRules.finding(
         DesignRuleCatalog.COPY_SLOP, Severity.HINT, element, doc,
