@@ -149,6 +149,15 @@ class AcpClient(
     // GUI apps on macOS do not inherit the shell PATH — extend it with well-known dirs.
     val path = (pb.environment()["PATH"] ?: "") + File.pathSeparator + EXTRA_PATH
     pb.environment()["PATH"] = path
+    // The route first and the entry's `env` after it: a variable the record sets by hand is the person's final word
+    val route = AgentProxyRoute.of(config.name) { handler.onProtocolLog("[acp] $it") }
+    AgentProxyEnv.apply(pb.environment(), route)
+    when (route) {
+      AgentProxyEnv.Route.Direct -> handler.onProtocolLog("[acp] " + com.vibe.agent.i18n.VibeI18n.t("acp.proxy.direct"))
+      is AgentProxyEnv.Route.Through ->
+        handler.onProtocolLog("[acp] " + com.vibe.agent.i18n.VibeI18n.t("acp.proxy.through", "proxy" to AgentProxyEnv.masked(route.url)))
+      AgentProxyEnv.Route.Inherit -> Unit
+    }
     // `${secret:NAME}` in the agent's env is resolved HERE, at start, from the OS keychain and
     // `.vibe/.env` — so the token is not written into `.vibe/acp.json`, which travels with the
     // repository. What this does NOT do is shorten the token's life inside the agent: a child

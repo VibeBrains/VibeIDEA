@@ -34,6 +34,8 @@ class VibeAgentConfigurable : Configurable, Configurable.NoScroll {
   private var councilField: com.intellij.ui.components.JBTextField? = null
   private var contextFilter: com.intellij.openapi.ui.ComboBox<String>? = null
   private var proxyField: com.intellij.ui.components.JBTextField? = null
+  /** The «direct, past the proxy» list: one box per provider and agent, keyed by [com.vibe.agent.resilience.ProxyTargets] */
+  private val proxyDirectBoxes = LinkedHashMap<String, JBCheckBox>()
   private var digestField: com.intellij.ui.components.JBTextField? = null
   private var embeddingField: com.intellij.ui.components.JBTextField? = null
   private var minimalismMode: com.intellij.openapi.ui.ComboBox<String>? = null
@@ -112,6 +114,7 @@ class VibeAgentConfigurable : Configurable, Configurable.NoScroll {
     val embedding = com.intellij.ui.components.JBTextField(VibeAgentSettings.embeddingModel, 32).also { embeddingField = it }
     val digest = com.intellij.ui.components.JBTextField(VibeAgentSettings.digestTime, 8).also { digestField = it }
     val proxy = com.intellij.ui.components.JBTextField(VibeAgentSettings.llmProxyUrl, 32).also { proxyField = it }
+    val proxyDirect = proxyDirectPanel()
     val failover = com.intellij.ui.components.JBTextField(VibeAgentSettings.failoverChain, 32).also { failoverField = it }
     val filterMode = SettingsUi.combo(arrayOf("auto", "raw", "aggregate", "off")).also {
       it.selectedItem = VibeAgentSettings.contextFilterMode
@@ -212,6 +215,8 @@ class VibeAgentConfigurable : Configurable, Configurable.NoScroll {
       .addComponent(hint(t("settings.agent.hint.digest")))
       .addLabeledComponent(t("settings.agent.proxy"), proxy)
       .addComponent(hint(t("settings.agent.hint.proxy")))
+      .addLabeledComponent(t("settings.agent.proxyDirect"), proxyDirect)
+      .addComponent(hint(t("settings.agent.hint.proxyDirect")))
       .addLabeledComponent(t("settings.agent.failover"), failover)
       .addComponent(hint(t("settings.agent.hint.failover")))
       .addLabeledComponent(t("settings.agent.contextFilter"), filterMode)
@@ -319,6 +324,7 @@ class VibeAgentConfigurable : Configurable, Configurable.NoScroll {
     (councilField?.text?.trim() ?: VibeAgentSettings.councilAdvisers) != VibeAgentSettings.councilAdvisers ||
     (contextFilter?.selectedItem as? String ?: VibeAgentSettings.contextFilterMode) != VibeAgentSettings.contextFilterMode ||
     (proxyField?.text?.trim() ?: VibeAgentSettings.llmProxyUrl) != VibeAgentSettings.llmProxyUrl ||
+    checkedProxyDirect() != VibeAgentSettings.proxyDirect ||
     (digestField?.text?.trim() ?: VibeAgentSettings.digestTime) != VibeAgentSettings.digestTime ||
     (embeddingField?.text?.trim() ?: VibeAgentSettings.embeddingModel) != VibeAgentSettings.embeddingModel ||
     (minimalismMode?.selectedItem as? String ?: VibeAgentSettings.minimalismMode) != VibeAgentSettings.minimalismMode ||
@@ -382,6 +388,7 @@ class VibeAgentConfigurable : Configurable, Configurable.NoScroll {
     councilField?.let { VibeAgentSettings.councilAdvisers = it.text }
     (contextFilter?.selectedItem as? String)?.let { VibeAgentSettings.contextFilterMode = it }
     proxyField?.let { VibeAgentSettings.llmProxyUrl = it.text }
+    VibeAgentSettings.proxyDirect = checkedProxyDirect()
     digestField?.let { VibeAgentSettings.digestTime = it.text }
     embeddingField?.let { VibeAgentSettings.embeddingModel = it.text }
     (minimalismMode?.selectedItem as? String)?.let { VibeAgentSettings.minimalismMode = it }
@@ -456,6 +463,7 @@ class VibeAgentConfigurable : Configurable, Configurable.NoScroll {
     councilField?.text = VibeAgentSettings.councilAdvisers
     contextFilter?.selectedItem = VibeAgentSettings.contextFilterMode
     proxyField?.text = VibeAgentSettings.llmProxyUrl
+    VibeAgentSettings.proxyDirect.let { saved -> proxyDirectBoxes.forEach { (target, box) -> box.isSelected = target in saved } }
     digestField?.text = VibeAgentSettings.digestTime
     embeddingField?.text = VibeAgentSettings.embeddingModel
     minimalismMode?.selectedItem = VibeAgentSettings.minimalismMode
@@ -502,4 +510,37 @@ class VibeAgentConfigurable : Configurable, Configurable.NoScroll {
     maskSecrets?.isSelected = VibeAgentSettings.maskSecretsInContext
     warnForeign?.isSelected = VibeAgentSettings.warnForeignProject
   }
+
+  /**
+   * Every provider and agent this machine knows: the global `~/.vibe` and each open project, so a choice made here
+   * applies wherever the target appears; a saved target no longer found keeps its box, or it could not be unticked
+   */
+  private fun proxyDirectPanel(): JComponent {
+    val home = java.nio.file.Path.of(System.getProperty("user.home"), ".vibe")
+    val bases = listOf<String?>(null) + com.intellij.openapi.project.ProjectManager.getInstance().openProjects.mapNotNull { it.basePath }
+    val rows = java.util.TreeMap<String, String>()
+    for (base in bases) {
+      val projectVibe = base?.let { java.nio.file.Path.of(it, ".vibe") }
+      runCatching { com.vibe.agent.providers.ProvidersService.loadFrom(home, projectVibe) { } }.getOrDefault(emptyList())
+        .forEach {
+          rows[com.vibe.agent.resilience.ProxyTargets.provider(it.id)] = t("settings.agent.proxyDirect.provider", "name" to it.name)
+        }
+      runCatching { com.vibe.agent.acp.AcpConfig.load(base) }.getOrDefault(emptyList())
+        .forEach { rows[com.vibe.agent.resilience.ProxyTargets.agent(it.name)] = t("settings.agent.proxyDirect.agent", "name" to it.name) }
+    }
+    val saved = VibeAgentSettings.proxyDirect
+    saved.filterNot { it in rows }.forEach { rows[it] = t("settings.agent.proxyDirect.gone", "target" to it) }
+    val panel = JPanel().apply { layout = javax.swing.BoxLayout(this, javax.swing.BoxLayout.Y_AXIS) }
+    proxyDirectBoxes.clear()
+    rows.forEach { (target, label) ->
+      val box = JBCheckBox(label, target in saved)
+      proxyDirectBoxes[target] = box
+      panel.add(box)
+    }
+    return panel
+  }
+
+  private fun checkedProxyDirect(): Set<String> =
+    if (proxyDirectBoxes.isEmpty()) VibeAgentSettings.proxyDirect
+    else proxyDirectBoxes.filterValues { it.isSelected }.keys.toSortedSet()
 }

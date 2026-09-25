@@ -191,14 +191,13 @@ object ProvidersService {
       return null
     }
     val protocol = protocolFor(entry.protocol)
-    val host = runCatching { java.net.URI(base).host }.getOrNull() ?: ""
     val key = if (quiet) ApiKeyResolver.resolveQuietly(entry, projectBase) else ApiKeyResolver.resolve(entry, projectBase)
     return ResolvedProvider(
       entry = entry,
       protocol = protocol,
       baseUrl = base,
       apiKey = key,
-      isLocal = host == "localhost" || host == "127.0.0.1" || host == "::1",
+      isLocal = LocalAddress.isLocal(base),
     )
   }
 }

@@ -184,6 +184,7 @@ object VibeAgentSettings {
   private const val KEY_COUNCIL = "vibe.agent.councilAdvisers"
   private const val KEY_CONTEXT_FILTER = "vibe.agent.contextFilterMode"
   private const val KEY_LLM_PROXY = "vibe.agent.llmProxyUrl"
+  private const val KEY_PROXY_DIRECT = "vibe.agent.proxyDirect"
   private const val KEY_DIGEST_TIME = "vibe.agent.digestTime"
   private const val KEY_DOCS_FOLDER = "vibe.agent.docsFolder"
   private const val KEY_EMBEDDING_MODEL = "vibe.agent.embeddingModel"
@@ -532,6 +533,13 @@ object VibeAgentSettings {
   var llmProxyUrl: String
     get() = props.getValue(KEY_LLM_PROXY, "")
     set(value) = props.setValue(KEY_LLM_PROXY, value.trim(), "")
+
+  /** Providers and agents that go straight out, past every proxy ([com.vibe.agent.resilience.ProxyTargets]) */
+  var proxyDirect: Set<String>
+    get() = com.vibe.agent.resilience.ProxyTargets.parse(props.getValue(KEY_PROXY_DIRECT))
+    set(value) = props.setValue(KEY_PROXY_DIRECT, com.vibe.agent.resilience.ProxyTargets.serialize(value), "")
+
+  fun goesDirect(target: String): Boolean = target in proxyDirect
 
   /** `провайдер/модель` через запятую: куда уходить, когда выбранная цель не отвечает. */
   var failoverChain: String

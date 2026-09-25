@@ -159,7 +159,8 @@ internal object LlmMessages {
  * Pure transport: no IDE types in here.
  */
 class LlmClient(
-  private val http: HttpClient = defaultClient(Duration.ofSeconds(20)),
+  /** How requests leave: the configured route, or straight out for a provider marked «direct» ([ProviderClients]) */
+  private val clients: ProviderClients = ProviderClients(CHAT_CONNECT_TIMEOUT),
   /**
    * Whose quirk catalogue to apply. Null is not «нет проекта вообще», it is «работа вне проекта» —
    * settings pages and the catalogue probe, which have their own entry in the registry.
@@ -369,12 +370,10 @@ class LlmClient(
    */
   fun listModels(provider: ResolvedProvider, fetchUrl: String?): List<CatalogModel> {
     val entry = provider.entry
-    val url = if (!fetchUrl.isNullOrBlank()) fetchUrl else provider.baseUrl.trimEnd('/') + "/models"
     // Same auth/header/query treatment as chat requests — the catalog endpoint is not special.
+    val url = ProviderRequest.catalogUrl(provider.baseUrl, fetchUrl)
     val builder = authorizedRequest(provider, url, provider.protocol, CATALOG_TIMEOUT_MS).GET()
-    // Anthropic rejects any request without the version header, /v1/models included.
-    if (provider.protocol == "anthropic") builder.header("anthropic-version", "2023-06-01")
-    val response = http.send(builder.build(), HttpResponse.BodyHandlers.ofString())
+    val response = clients.of(provider).send(builder.build(), HttpResponse.BodyHandlers.ofString())
     if (response.statusCode() !in 200..299) throw RuntimeException("HTTP " + response.statusCode())
     val root = json.parseToJsonElement(response.body()).jsonObject
     // Заодно запоминаем, какое окно провайдер приписывает своим моделям: второй поход в сеть ради
@@ -400,7 +399,7 @@ class LlmClient(
     val request = requestBuilder(provider, "completions", ModelQuirks.WIRE_OPENAI)
       .POST(HttpRequest.BodyPublishers.ofString(body.toString()))
       .build()
-    val response = http.send(request, HttpResponse.BodyHandlers.ofString())
+    val response = clients.of(provider).send(request, HttpResponse.BodyHandlers.ofString())
     if (response.statusCode() !in 200..299) throw RuntimeException("HTTP " + response.statusCode() + ": " + response.body().take(300))
     return json.parseToJsonElement(response.body()).jsonObject["choices"].arr()?.firstOrNull()
       .obj()?.get("text")?.jsonPrimitive?.contentOrNull ?: ""
@@ -425,7 +424,7 @@ class LlmClient(
     val request = authorizedRequest(provider, url, "gemini", provider.entry.timeoutMs ?: DEFAULT_REQUEST_TIMEOUT_MS)
       .header("Content-Type", "application/json")
       .POST(HttpRequest.BodyPublishers.ofString(body.toString())).build()
-    streamSse(request) { data ->
+    streamSse(provider, request) { data ->
       val event = eventObject(data) ?: return@streamSse
       ModelEcho.fromGeminiEvent(event)?.let { lastAnsweredModel = it }
       StopReason.fromGeminiEvent(event)?.let { lastStopReason = it }
@@ -478,10 +477,10 @@ class LlmClient(
       // A model that refuses to stream answers in one piece. Delivering it as a single delta keeps
       // the rest of the chat unaware: waiting silently is bad, but crashing on «stream unsupported»
       // is worse, and that is what happened before the catalogue existed.
-      onDelta(sendWhole(request))
+      onDelta(sendWhole(provider, request))
       return
     }
-    streamSse(request) { data ->
+    streamSse(provider, request) { data ->
       if (data == "[DONE]") return@streamSse
       val chunk = eventObject(data) ?: return@streamSse
       TokenUsage.fromOpenAiChunk(chunk)?.let { lastUsage = lastUsage.merge(it) }
@@ -527,7 +526,7 @@ class LlmClient(
       .POST(HttpRequest.BodyPublishers.ofString(body.toString()))
       .build()
     if (!streaming) {
-      val answer = sendWholeBody(request)
+      val answer = sendWholeBody(provider, request)
       TokenUsage.fromResponsesBody(answer)?.let { lastUsage = lastUsage.merge(it) }
       ModelEcho.fromResponsesBody(answer)?.let { lastAnsweredModel = it }
       StopReason.fromResponsesBody(answer)?.let { lastStopReason = it }
@@ -538,7 +537,7 @@ class LlmClient(
       onDelta(ResponsesWire.outputText(answer))
       return
     }
-    streamSse(request) { data ->
+    streamSse(provider, request) { data ->
       val event = eventObject(data) ?: return@streamSse
       ResponsesWire.failure(event)?.let { throw RuntimeException(it) }
       TokenUsage.fromResponsesEvent(event)?.let { lastUsage = lastUsage.merge(it) }
@@ -595,12 +594,11 @@ class LlmClient(
       .let { ModelQuirks.applyToBody(quirkIdOf(model), it, overrides, ModelQuirks.WIRE_ANTHROPIC) },
       model.extraBody)
     val request = requestBuilder(provider, "messages", ModelQuirks.WIRE_ANTHROPIC)
-      .header("anthropic-version", "2023-06-01")
       // Без бета-заголовка вендор молча оставит пять минут — по цене часовой записи.
       .apply { if (PromptCache.needsExtendedBeta(model.cacheTtl)) header("anthropic-beta", PromptCache.EXTENDED_TTL_BETA) }
       .POST(HttpRequest.BodyPublishers.ofString(body.toString()))
       .build()
-    streamSse(request) { data ->
+    streamSse(provider, request) { data ->
       val obj = eventObject(data) ?: return@streamSse
       // Input, cache reads and cache writes arrive at `message_start`; the output count at
       // `message_delta`. One reader for both, because both put it under `usage`.
@@ -630,15 +628,12 @@ class LlmClient(
       .header("Content-Type", "application/json")
 
   /**
-   * The one door every request to a provider goes through
-   * Its declared query and headers first, then the key where [ProviderAuth] places it
+   * The one door every request to a provider goes through: address and headers come from [ProviderRequest]
    */
   private fun authorizedRequest(provider: ResolvedProvider, url: String, wire: String, timeoutMs: Long): HttpRequest.Builder {
-    val auth = ProviderAuth.placement(provider.entry.declaredAuth, provider.apiKey, wire)
-    val builder = HttpRequest.newBuilder(URI.create(ProviderAuth.withQuery(url, provider.entry.query + auth.query)))
-      .timeout(Duration.ofMillis(timeoutMs))
-    provider.entry.headers.forEach { (k, v) -> builder.header(k, v) }
-    auth.headers.forEach { (k, v) -> builder.header(k, v) }
+    val target = ProviderRequest.target(provider.entry, provider.apiKey, wire, url)
+    val builder = HttpRequest.newBuilder(URI.create(target.url)).timeout(Duration.ofMillis(timeoutMs))
+    target.headers.forEach { (k, v) -> builder.header(k, v) }
     return builder
   }
 
@@ -663,8 +658,8 @@ class LlmClient(
   }
 
   /** One-shot request for a model that refuses to stream; the whole answer comes back as text. */
-  private fun sendWhole(request: HttpRequest): String {
-    val answer = sendWholeBody(request)
+  private fun sendWhole(provider: ResolvedProvider, request: HttpRequest): String {
+    val answer = sendWholeBody(provider, request)
     // A whole answer carries its usage at the top level, where the stream's last chunk carries it.
     TokenUsage.fromOpenAiChunk(answer)?.let { lastUsage = lastUsage.merge(it) }
     ModelEcho.fromOpenAiChunk(answer)?.let { lastAnsweredModel = it }
@@ -675,8 +670,8 @@ class LlmClient(
   }
 
   /** The body of a one-shot request, after the same checks a stream gets: a stop, then the status. */
-  private fun sendWholeBody(request: HttpRequest): JsonObject {
-    val response = http.send(request, HttpResponse.BodyHandlers.ofString())
+  private fun sendWholeBody(provider: ResolvedProvider, request: HttpRequest): JsonObject {
+    val response = clients.of(provider).send(request, HttpResponse.BodyHandlers.ofString())
     lastRetryAfter = response.headers().firstValue("retry-after").orElse(null)
     if (cancelled()) throw java.io.InterruptedIOException(STOPPED_BY_USER)
     if (response.statusCode() !in 200..299) {
@@ -698,8 +693,8 @@ class LlmClient(
     return element as? JsonObject
   }
 
-  private fun streamSse(request: HttpRequest, onData: (String) -> Unit) {
-    val response = http.send(request, HttpResponse.BodyHandlers.ofInputStream())
+  private fun streamSse(provider: ResolvedProvider, request: HttpRequest, onData: (String) -> Unit) {
+    val response = clients.of(provider).send(request, HttpResponse.BodyHandlers.ofInputStream())
     // The provider knows its own window; guessing shorter means being refused again.
     lastRetryAfter = response.headers().firstValue("retry-after").orElse(null)
     val body = response.body()
@@ -764,10 +759,15 @@ class LlmClient(
      *
      * A malformed setting is logged and ignored rather than thrown: a typo in a proxy address must
      * not make the chat unusable, but it must not pass for «прокси работает» either.
+     *
+     * No setting — no selector, and the JVM default applies, which the platform replaces at startup with the IDE's
+     * own (`OverrideDefaultJdkProxy`): model requests then take the route of the whole IDE
      */
-    fun defaultClient(timeout: Duration): HttpClient {
+    fun defaultClient(timeout: Duration, direct: Boolean = false): HttpClient {
       val builder = HttpClient.newBuilder().connectTimeout(timeout)
       applyIdeTrust(builder)
+      // Straight out means past OUR proxy and past the IDE's one: without a selector the JVM default is the IDE's
+      if (direct) return builder.proxy(HttpClient.Builder.NO_PROXY).build()
       val spec = runCatching { com.vibe.agent.resilience.ProxySettings.parse(com.vibe.agent.settings.VibeAgentSettings.llmProxyUrl) }
         .getOrElse {
           logger<LlmClient>().warn("LLM proxy setting is malformed and was ignored: ${it.message}")
@@ -829,7 +829,10 @@ class LlmClient(
      * worth waiting for), while a catalog refresh runs behind a served cache and must not.
      */
     fun forCatalog(): LlmClient =
-      LlmClient(defaultClient(Duration.ofMillis(CATALOG_TIMEOUT_MS)))
+      LlmClient(ProviderClients(Duration.ofMillis(CATALOG_TIMEOUT_MS)))
+
+    /** A chat is worth waiting for: the connection may take this long before the request is called failed */
+    val CHAT_CONNECT_TIMEOUT: Duration = Duration.ofSeconds(20)
 
     val STOPPED_BY_USER: String get() = t("common.stoppedByUser")
     /** Default per-request timeout when a provider does not set `timeoutMs` (10 min). */
