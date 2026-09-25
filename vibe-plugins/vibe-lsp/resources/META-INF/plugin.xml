@@ -37,8 +37,8 @@
     <gotoDeclarationHandler implementation="com.vibe.lsp.extjs.ExtGotoDeclarationHandler"/>
     <!-- The switch of our own go-to (PreciseNavigation); the handler itself is registered with LSP4IJ's
          integration, since it talks to the servers through LSP4IJ. -->
-    <registryKey key="vibe.lsp.precise.navigation" defaultValue="false"
-                 description="VibeIDEA: свой переход по коду вместо перехода LSP4IJ — ждёт сервер с потолком и помнит ответы по позиции (опытный режим)"/>
+    <registryKey key="vibe.lsp.precise.navigation" defaultValue="true"
+                 description="VibeIDEA: свой переход по коду вместо перехода LSP4IJ — ждёт сервер с потолком и помнит ответы по позиции; выключите, чтобы вернуть переход LSP4IJ"/>
   </extensions>
 
   <projectListeners>

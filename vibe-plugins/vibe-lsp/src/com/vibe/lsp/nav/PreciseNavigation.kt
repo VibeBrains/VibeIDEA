@@ -19,8 +19,8 @@ import com.redhat.devtools.lsp4ij.client.features.LSPDefinitionFeature
  */
 object PreciseNavigation {
   /**
-   * The switch. Off by default: replacing the navigation changes what a person gets under the cursor in every file,
-   * and only a person at the keyboard can check that; the key turns it back without rebuilding the IDE.
+   * The switch, on by default: LSP4IJ's handler waits for a cold server without a ceiling and asks again on every click
+   * The key turns LSP4IJ's navigation back without rebuilding the IDE; the default itself lives in plugin.xml
    */
   const val REGISTRY_KEY = "vibe.lsp.precise.navigation"
 
