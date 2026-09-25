@@ -180,7 +180,7 @@ git submodule update --init                 # сиды .vibe: pull двигае�
 git config core.longpaths true              # без этого чекаут обрывается на путях длиннее 260
 git clone --shallow-since=<дата синка минус 3 дня> https://github.com/JetBrains/android.git android
 git -C android checkout "$(git -C android log --before='<дата коммита синка>' -1 --format=%H origin/master)"
-python vibe-plugins/tools/makeWinImages.py  # только если менялся vibeidea.icns: ico и картинки NSIS
+python vibe-plugins/tools/makeWinImages.py  # только если менялся vibeidea.icns (его собирает makeAppIcon.sh): ico и картинки NSIS
 ```
 
 Нужны `python`, `node`, `php` на PATH (гейт дистрибутива запускает встроенные серверы), `gh`.

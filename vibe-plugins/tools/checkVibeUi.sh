@@ -577,6 +577,20 @@ PYSWATCH
 # бампа — ошибка на один шаг, и не видно её ниоткуда: файл на месте, гейт дистрибутива сверяет его
 # с нашей же копией и зеленеет. Так на образе 0.6.16 оказалось написано 0.6.11 — четыре сборки
 # подряд, и заметил это владелец, а не мы.
+# Иконка бандла собирается из SVG логотипа, а не рисуется руками.
+# Ручная сборка месяц отгружала мелкие размеры с логотипом в углу пустого поля:
+# в Dock и «О программе» этого не видно, в списке Finder (16 px) вместо значка пятно
+ICNS=vibeidea-customization/resources/mac/vibeidea.icns
+ICNS_SOURCES="$ICNS.sources"
+ICNS_NOW=$(shasum -a 256 vibeidea-customization/resources/vibeidea.svg vibeidea-customization/resources/vibeidea_16.svg "$ICNS" | awk '{print $1}')
+if [ ! -f "$ICNS_SOURCES" ] || [ "$(cat "$ICNS_SOURCES")" != "$ICNS_NOW" ]; then
+  echo "ОШИБКА: иконка бандла не совпадает с тем, что собирает makeAppIcon.sh из SVG логотипа"
+  echo "  Пересоберите: ./vibe-plugins/tools/makeAppIcon.sh, затем makeWinImages.py"
+  status=1
+else
+  echo "  иконка бандла: собрана из SVG логотипа"
+fi
+
 BG=vibeidea-customization/resources/mac/dmgBackground.tiff
 BG_VERSION_FILE="$BG.version"
 APP_VERSION=$(sed -n 's/.*full="\([^"]*\)".*/\1/p' vibeidea-customization/resources/idea/VibeIdeaApplicationInfo.xml | head -1)
