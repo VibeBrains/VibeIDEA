@@ -64,10 +64,14 @@ object McpInputRequired {
     return Required(result["requestState"], requests)
   }
 
-  /** The params of the call sent again: the original ones with the answers and the server's state as it came */
+  /**
+   * The params of the call sent again: the original ones with the answers and the server's state as it came
+   * Built from the original each round, so a state the server did not send again does not go back
+   * No requests — no `inputResponses`: the server shed load and wants the call again with its state only
+   */
   fun retry(original: JsonObject, required: Required, responses: Map<String, JsonElement>): JsonObject =
     JsonObject(original + buildMap {
-      put("inputResponses", JsonObject(responses))
+      if (required.requests.isNotEmpty()) put("inputResponses", JsonObject(responses))
       required.requestState?.let { put("requestState", it) }
     })
 

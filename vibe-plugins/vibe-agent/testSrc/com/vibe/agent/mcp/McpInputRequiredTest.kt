@@ -54,4 +54,11 @@ class McpInputRequiredTest {
     assertEquals(folder.toUri().toString(), root["uri"]!!.jsonPrimitive.content)
     assertEquals("proj", root["name"]!!.jsonPrimitive.content)
   }
+
+  @Test
+  fun `a result without requests is retried with the state only`() {
+    val shed = McpInputRequired.of(obj("""{"resultType":"input_required","requestState":"s9"}"""))!!
+    val retry = McpInputRequired.retry(obj("""{"name":"t","arguments":{}}"""), shed, McpInputRequired.answers(shed, McpInputRequired.Answerer.NONE)!!)
+    assertEquals(obj("""{"name":"t","arguments":{},"requestState":"s9"}"""), retry)
+  }
 }
