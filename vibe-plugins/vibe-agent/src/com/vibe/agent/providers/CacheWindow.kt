@@ -85,7 +85,7 @@ object CacheWindow {
   private fun defaultPayOff(ttl: String?): Int = if (PromptCache.ttlOf(ttl) == PromptCache.TTL_1H) 3 else 2
 
   private fun defaultWriteFactor(ttl: String?): Double =
-    if (PromptCache.ttlOf(ttl) == PromptCache.TTL_1H) 2.0 else 1.25
+    if (PromptCache.ttlOf(ttl) == PromptCache.TTL_1H) ModelPricing.HOUR_WRITE_INPUT_FACTOR else 1.25
 
   private const val DEFAULT_READ_FACTOR = 0.1
 }

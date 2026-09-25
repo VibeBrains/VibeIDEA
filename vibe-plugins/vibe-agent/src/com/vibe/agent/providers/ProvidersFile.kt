@@ -185,6 +185,14 @@ data class ProviderEntry(
    * says `reasoning_effort`, a field OpenRouter does not document. Null — the wire's own spelling.
    */
   val reasoningDialect: String? = null,
+  /**
+   * The models behind this entry run on this machine; null — not declared, and the address decides ([ResolvedProvider])
+   * Kept apart from the address because the two part ways:
+   * LiteLLM on localhost in front of a cloud model is local by address and remote by model, a GPU server of one's own is the reverse
+   * It decides what is about the model — the offline mode, local budgets, the privacy label — and never the key
+   * The field and its meaning are shared with VibeIDE (`providers/README.md` of the set)
+   */
+  val runsLocally: Boolean? = null,
 ) {
   /** The auth in force: what some layer declared, `bearer` when none did */
   val auth: AuthSpec get() = declaredAuth ?: AuthSpec()
@@ -205,6 +213,7 @@ object ProvidersFile {
       output = it["output"]?.jsonPrimitive?.doubleOrNull ?: 0.0,
       cacheRead = it["cacheRead"]?.jsonPrimitive?.doubleOrNull ?: 0.0,
       cacheWrite = it["cacheWrite"]?.jsonPrimitive?.doubleOrNull ?: 0.0,
+      cacheWrite1h = it["cacheWrite1h"]?.jsonPrimitive?.doubleOrNull ?: 0.0,
       currency = it["currency"]?.jsonPrimitive?.contentOrNull ?: ModelPricing.DEFAULT_CURRENCY,
       // Надбавка за длинный промпт объявляется вложенным блоком: вендоры называют её отдельно от
       // базовой ставки, и плоские поля рядом с `input` читались бы как ещё одна цена.
@@ -384,6 +393,7 @@ object ProvidersFile {
       quota = parseQuota(o["quota"] as? JsonObject, id, onWarning),
       promptCacheKey = o["promptCacheKey"]?.jsonPrimitive?.booleanOrNull,
       reasoningDialect = parseReasoningDialect(o["reasoningDialect"]?.jsonPrimitive?.contentOrNull, id, onWarning),
+      runsLocally = o["runsLocally"]?.jsonPrimitive?.booleanOrNull,
     )
   }
 
@@ -529,6 +539,7 @@ object ProvidersFile {
       quota = over.quota ?: base.quota,
       promptCacheKey = over.promptCacheKey ?: base.promptCacheKey,
       reasoningDialect = over.reasoningDialect ?: base.reasoningDialect,
+      runsLocally = over.runsLocally ?: base.runsLocally,
     )
   }
 }

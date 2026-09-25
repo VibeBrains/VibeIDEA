@@ -11,13 +11,27 @@ data class ResolvedProvider(
   val protocol: String,
   val baseUrl: String,
   val apiKey: String?,
-  val isLocal: Boolean,
+  /** The address is this machine ([LocalAddress]): a question about the network — the key, «not running» */
+  val localAddress: Boolean,
 ) {
+  /**
+   * The models run on this machine: the entry's `runsLocally`, the address when it says nothing
+   * Everything about the model reads this — the offline mode, local budgets, the privacy label
+   * Apart from [localAddress] on purpose: a localhost proxy to a cloud model is local by address and remote by model
+   */
+  val runsLocally: Boolean get() = entry.runsLocally ?: localAddress
+
+  /**
+   * The server needs a key: an address elsewhere without `"auth": "none"`
+   * The address decides and not [runsLocally]: the key is a question of who is asked, not of where the model runs
+   */
+  val needsKey: Boolean get() = !localAddress && entry.auth.type != AuthSpec.NONE
+
   /**
    * No key where one is needed: asking would earn a predictable 401, so callers skip the provider
    * A local endpoint passes undeclared; `"auth": "none"` passes on any address — a vLLM in the local network included
    */
-  val missingKey: Boolean get() = apiKey == null && !isLocal && entry.auth.type != AuthSpec.NONE
+  val missingKey: Boolean get() = apiKey == null && needsKey
 }
 
 /**
@@ -31,7 +45,8 @@ data class ResolvedProvider(
  * parsed independently — one broken file never disables providers from the others.
  * `extends` resolves once, over the fully merged registry; `active` is filtered
  * last, so `extends`/patches work against inactive catalog entries. Locality is
- * determined by the endpoint host, not by a hardcoded vendor list.
+ * determined by the endpoint host, not by a hardcoded vendor list; whether the
+ * models run here, an entry may declare with `runsLocally` ([ResolvedProvider]).
  */
 object ProvidersService {
   fun load(projectBase: String?, onWarning: (String) -> Unit): List<ProviderEntry> {
@@ -197,7 +212,7 @@ object ProvidersService {
       protocol = protocol,
       baseUrl = base,
       apiKey = key,
-      isLocal = LocalAddress.isLocal(base),
+      localAddress = LocalAddress.isLocal(base),
     )
   }
 }

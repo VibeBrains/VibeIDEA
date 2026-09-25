@@ -7,6 +7,14 @@ import java.net.http.HttpClient
 import java.time.Duration
 
 /**
+ * Which HTTP client carries a request to a provider
+ * [ProviderClients] is the IDE's answer; a test of the wire gives its own, since the IDE's one reads settings a test lacks
+ */
+fun interface ProviderRoutes {
+  fun of(provider: ResolvedProvider): HttpClient
+}
+
+/**
  * The two ways a request to a provider can leave:
  * The configured route, and straight out for a provider marked «direct»
  *
@@ -15,10 +23,10 @@ import java.time.Duration
  *
  * Each client is built on first use: a machine without a single direct provider never builds the second one
  */
-class ProviderClients(private val connectTimeout: Duration) {
+class ProviderClients(private val connectTimeout: Duration) : ProviderRoutes {
   private val routed: HttpClient by lazy { LlmClient.defaultClient(connectTimeout) }
   private val direct: HttpClient by lazy { LlmClient.defaultClient(connectTimeout, direct = true) }
 
-  fun of(provider: ResolvedProvider): HttpClient =
+  override fun of(provider: ResolvedProvider): HttpClient =
     if (VibeAgentSettings.goesDirect(ProxyTargets.provider(provider.entry.id))) direct else routed
 }

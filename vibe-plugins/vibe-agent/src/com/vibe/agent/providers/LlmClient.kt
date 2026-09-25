@@ -150,6 +150,26 @@ internal object LlmMessages {
 }
 
 /**
+ * What a request reads from the IDE settings, at the moment it is sent
+ * An interface so the wire can be tested without an application:
+ * The IDE keeps these in `PropertiesComponent`, which a unit test does not have
+ * And a test that cannot send a request cannot see what the request carries
+ */
+interface LlmSettings {
+  /** Nothing leaves the machine but requests to models that run on it */
+  val offline: Boolean
+
+  /** The reasoning level the person chose, in the words [ReasoningMode.levelOf] reads */
+  val reasoningLevel: String
+
+  /** The live IDE settings, read on every request: a toggle between two requests applies to the second */
+  object Ide : LlmSettings {
+    override val offline: Boolean get() = com.vibe.agent.settings.VibeAgentSettings.offline
+    override val reasoningLevel: String get() = com.vibe.agent.settings.VibeAgentSettings.reasoningLevel
+  }
+}
+
+/**
  * Direct streaming chat against a provider endpoint.
  * Wire protocols mirror VibeIDE: "openai" (chat/completions SSE), "openai-responses"
  * (responses SSE, [ResponsesWire]), "gemini" and
@@ -160,12 +180,14 @@ internal object LlmMessages {
  */
 class LlmClient(
   /** How requests leave: the configured route, or straight out for a provider marked «direct» ([ProviderClients]) */
-  private val clients: ProviderClients = ProviderClients(CHAT_CONNECT_TIMEOUT),
+  private val clients: ProviderRoutes = ProviderClients(CHAT_CONNECT_TIMEOUT),
   /**
    * Whose quirk catalogue to apply. Null is not «нет проекта вообще», it is «работа вне проекта» —
    * settings pages and the catalogue probe, which have their own entry in the registry.
    */
   private val projectBase: String? = null,
+  /** What a request reads from the IDE settings: the live ones, unless a test of the wire gives its own */
+  private val settings: LlmSettings = LlmSettings.Ide,
 ) {
   private fun quirks(): List<ModelQuirks.Rule> = ModelQuirksRegistry.rulesFor(projectBase)
 
@@ -302,10 +324,10 @@ class LlmClient(
     val wire = ProvidersService.protocolFor(provider.protocol, model.protocol)
     offeredTools = if (tools.isEmpty() || toolSupport(model, wire) != ModelQuirks.ToolSupport.YES) emptyList() else tools
     toolCalls = ToolCallAccumulator()
-    // The offline promise is kept HERE, at the single door out: a check in the UI would be a
-    // reminder, and a reminder is not a guarantee. A local provider is still allowed — nothing
-    // leaves the machine.
-    if (com.vibe.agent.settings.VibeAgentSettings.offline && !provider.isLocal) {
+    // The offline promise is kept HERE, at the single door out: a check in the UI would be a reminder, and a reminder is not a guarantee
+    // A provider whose models run here is still allowed — nothing leaves the machine
+    // Its address alone would not say so: a proxy on localhost may lead to the cloud
+    if (settings.offline && !provider.runsLocally) {
       throw IllegalStateException(t("offline.blocked", "provider" to provider.entry.id))
     }
     var attempt = 1
@@ -393,7 +415,7 @@ class LlmClient(
       put("prompt", prefix)
       put("suffix", suffix)
       put("stream", false)
-      put("max_tokens", if (provider.isLocal) FIM_MAX_TOKENS_LOCAL else FIM_MAX_TOKENS_CLOUD)
+      put("max_tokens", if (provider.runsLocally) FIM_MAX_TOKENS_LOCAL else FIM_MAX_TOKENS_CLOUD)
       if (stop.isNotEmpty()) put("stop", JsonArray(stop.map { kotlinx.serialization.json.JsonPrimitive(it) }))
     }, model.extraBody)
     val request = requestBuilder(provider, "completions", ModelQuirks.WIRE_OPENAI)
@@ -646,7 +668,7 @@ class LlmClient(
 
   private fun withReasoning(body: JsonObject, protocol: String, model: ModelEntry, forceOff: Boolean = false): JsonObject {
     val asked = if (forceOff) ReasoningMode.Level.OFF
-                else ReasoningMode.levelOf(com.vibe.agent.settings.VibeAgentSettings.reasoningLevel)
+                else ReasoningMode.levelOf(settings.reasoningLevel)
     val fields = reasoningFields(protocol, asked, quirkIdOf(model), model.reasoning,
                                  model.maxOutputTokens ?: DEFAULT_MAX_OUTPUT_TOKENS, quirks())
     return if (fields.isEmpty()) body else JsonObject(body + fields)

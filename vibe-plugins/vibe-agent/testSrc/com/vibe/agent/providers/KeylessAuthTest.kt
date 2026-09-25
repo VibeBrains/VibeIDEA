@@ -16,8 +16,8 @@ import kotlin.test.assertTrue
 class KeylessAuthTest {
   private val none = AuthSpec(AuthSpec.NONE)
 
-  private fun resolved(baseUrl: String, auth: AuthSpec?, key: String? = null, isLocal: Boolean = false) =
-    ResolvedProvider(ProviderEntry(id = "p", baseURL = baseUrl, declaredAuth = auth), "openai", baseUrl, key, isLocal)
+  private fun resolved(baseUrl: String, auth: AuthSpec?, key: String? = null, localAddress: Boolean = false) =
+    ResolvedProvider(ProviderEntry(id = "p", baseURL = baseUrl, declaredAuth = auth), "openai", baseUrl, key, localAddress)
 
   @Test
   fun `none lets a server in the local network through without a key`() {
@@ -26,7 +26,7 @@ class KeylessAuthTest {
 
   @Test
   fun `localhost passes undeclared, a remote address without a key does not`() {
-    assertFalse(resolved("http://localhost:11434/v1", null, isLocal = true).missingKey)
+    assertFalse(resolved("http://localhost:11434/v1", null, localAddress = true).missingKey)
     assertTrue(resolved("https://api.example.com/v1", null).missingKey)
     assertFalse(resolved("https://api.example.com/v1", null, key = "k").missingKey)
   }

@@ -59,7 +59,7 @@ class VibeFimProvider : DebouncedInlineCompletionProvider() {
     // A minified or generated line: nothing useful to continue, and a huge prompt to pay for.
     if (lineBefore.length > MAX_LINE_LENGTH) return InlineCompletionSuggestion.Empty
 
-    val window = FimPrediction.contextLines(target.first.isLocal)
+    val window = FimPrediction.contextLines(target.first.runsLocally)
     val prefix = FimPrediction.limitPrefix(text.substring(0, offset), window)
     val suffix = FimPrediction.limitSuffix(text.substring(offset), window)
     val path = com.intellij.openapi.fileEditor.FileDocumentManager.getInstance().getFile(document)?.path.orEmpty()

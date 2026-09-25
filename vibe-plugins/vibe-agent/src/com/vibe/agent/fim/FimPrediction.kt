@@ -114,7 +114,7 @@ object FimPrediction {
   fun limitSuffix(text: String, lines: Int): String =
     text.split("\n").take(lines).joinToString("\n")
 
-  fun contextLines(isLocal: Boolean): Int = if (isLocal) CONTEXT_LINES_LOCAL else CONTEXT_LINES_CLOUD
+  fun contextLines(runsLocally: Boolean): Int = if (runsLocally) CONTEXT_LINES_LOCAL else CONTEXT_LINES_CLOUD
 
   private fun dropFirstLine(suffix: String): String {
     val newline = suffix.indexOf('\n')

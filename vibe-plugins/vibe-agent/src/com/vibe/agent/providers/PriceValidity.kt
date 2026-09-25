@@ -71,10 +71,15 @@ object PriceValidity {
    * вдвое дешевле, чем вендор берёт.
    *
    * Срок не прошёл, цены «после» нет, или она ничего не говорит — возвращаем действующую.
+   *
+   * The rates come for this model's cache lifetime ([ModelPricing.forCacheTtl]):
+   * With `"cacheTtl": "1h"` every cache write goes into the hour-long cache and is billed at the hour rate
+   * Applied here, on the one road every turn's price takes, so no caller can bill a write by the wrong lifetime
    */
   fun effective(model: ModelEntry, today: LocalDate): ModelPricing? {
-    val after = model.priceAfter?.takeIf { it.stated } ?: return model.pricing
-    return if (isExpired(model, today)) after else model.pricing
+    val after = model.priceAfter?.takeIf { it.stated }
+    val inForce = if (after != null && isExpired(model, today)) after else model.pricing
+    return inForce?.forCacheTtl(model.cacheTtl)
   }
 
   data class Notice(

@@ -193,7 +193,7 @@ class TelegramBridge {
       .mapNotNull { entry ->
         val model = entry.models.firstOrNull { it.active } ?: return@mapNotNull null
         val resolved = com.vibe.agent.providers.ProvidersService.resolve(entry, base) { } ?: return@mapNotNull null
-        if (!resolved.isLocal) null else resolved to model
+        if (!resolved.runsLocally) null else resolved to model
       }
       .firstOrNull() ?: return raw
 

@@ -2,6 +2,9 @@
 package com.vibe.agent.providers
 
 import com.vibe.agent.pipelines.StepModelRef
+import org.junit.jupiter.api.io.TempDir
+import java.nio.file.Files
+import java.nio.file.Path
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
@@ -61,6 +64,22 @@ class ModelRoutesTest {
     // Тихая подмена здесь стоит денег: шаг выглядит работающим и идёт к другой модели.
     assertFailsWith<IllegalArgumentException> { StepModelRef.resolve(null, "@cheap", routes) }
     assertFailsWith<IllegalArgumentException> { StepModelRef.resolve(null, "@off", mapOf("off" to null)) }
+  }
+
+  @Test
+  fun `the project catalog outranks the global providers json`(@TempDir dir: Path) {
+    // The shared vectors give these two layers different names, so they cannot tell the order apart; the contract can
+    val global = dir.resolve("home/.vibe")
+    val project = dir.resolve("project/.vibe")
+    write(global.resolve("providers.json"), """{ "routes": { "fast": "zai/glm-5.3" }, "providers": [] }""")
+    write(project.resolve("providers/routes.jsonc"), """{ "routes": { "fast": "minimax/MiniMax-M3" }, "providers": [] }""")
+    assertEquals(ModelRoutes.Resolution.Found("minimax", "MiniMax-M3"),
+                 ModelRoutes.resolve("@fast", ProvidersService.loadRoutes(global, project) { }))
+  }
+
+  private fun write(path: Path, text: String) {
+    Files.createDirectories(path.parent)
+    Files.writeString(path, text)
   }
 
   @Test

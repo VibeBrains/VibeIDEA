@@ -4,6 +4,7 @@ package com.vibe.agent.providers
 /**
  * Whether a provider's address is this machine:
  * Such a provider works without a key, and its outage reads «not running»
+ * Whether its models run here is a separate question with its own answer — [ResolvedProvider.runsLocally]
  *
  * The list is shared with VibeIDE (`testVectors/providerAuth.json` of the set), so one entry behaves the same in both
  * `0.0.0.0` is in it: servers print it as the address they listen on, and a request to it lands on this machine

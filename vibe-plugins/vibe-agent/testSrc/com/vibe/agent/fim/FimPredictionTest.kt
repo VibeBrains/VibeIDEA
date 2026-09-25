@@ -49,8 +49,8 @@ class FimPredictionTest {
 
   @Test
   fun `a local model gets a smaller window than a cloud one`() {
-    assertEquals(FimPrediction.CONTEXT_LINES_LOCAL, FimPrediction.contextLines(isLocal = true))
-    assertEquals(FimPrediction.CONTEXT_LINES_CLOUD, FimPrediction.contextLines(isLocal = false))
+    assertEquals(FimPrediction.CONTEXT_LINES_LOCAL, FimPrediction.contextLines(runsLocally = true))
+    assertEquals(FimPrediction.CONTEXT_LINES_CLOUD, FimPrediction.contextLines(runsLocally = false))
   }
 
   @Test

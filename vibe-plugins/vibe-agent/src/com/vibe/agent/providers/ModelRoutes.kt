@@ -24,6 +24,8 @@ package com.vibe.agent.providers
  *
  * 1. **Слои.** Таблицы складываются в порядке чтения файлов: глобальная `~/.vibe`, затем проектная.
  *    Проект перекрывает глобальное имя, а не спорит с ним.
+ *    In full, weakest first: global catalog `providers/`, global `providers.json`, project catalog, project `providers.json`
+ *    The order is shared with VibeIDE and held by the set's `testVectors/modelRoutes.json`
  * 2. **`null` — это запрет, а не пустое место.** Имя со значением `null` объявлено и закрыто:
  *    нижний слой НЕ может его молча вернуть. Иначе «выключил дорогую модель в проекте» означало бы
  *    «проект берёт её из глобального файла».

@@ -50,15 +50,19 @@ class VibeDoctorAction : AnAction({ t("doctor.action") }) {
     val providers = ProvidersService.load(base) { }
     // Доктору нужно ЧИСЛО провайдеров с ключом, а не сами ключи: читать значения значило бы
     // показывать диалог связки на каждого при открытии доктора (20.09.2026).
-    val withKey = providers.count {
-      com.vibe.agent.providers.ApiKeyResolver.hasStoredKey(it) ||
-      ProvidersService.resolve(it, base, quiet = true) { }?.apiKey != null
+    val resolved = providers.associateWith { ProvidersService.resolve(it, base, quiet = true) { } }
+    val withKey = resolved.count { (entry, provider) ->
+      com.vibe.agent.providers.ApiKeyResolver.hasStoredKey(entry) || provider?.apiKey != null
     }
-    val localCount = providers.count { ProvidersService.resolve(it, base, quiet = true) { }?.isLocal == true }
+    // Usable without a key: a server at this machine's address, or one declared `"auth": "none"` — a vLLM in the office included
+    // The chat asks them keyless, so the doctor must not call them unusable
+    val keyFree = resolved.values.count { it?.needsKey == false }
+    // Counted by the model and not the address: a proxy on localhost to a cloud model is not a local model
+    val localCount = resolved.values.count { it?.runsLocally == true }
     lines.add(VibeDiagnosis.Line(
       t("doctor.line.providers"),
       if (providers.isEmpty()) VibeDiagnosis.State.ABSENT
-      else if (withKey + localCount == 0) VibeDiagnosis.State.WARN else VibeDiagnosis.State.OK,
+      else if (withKey + keyFree == 0) VibeDiagnosis.State.WARN else VibeDiagnosis.State.OK,
       t("doctor.detail.providers", "total" to providers.size, "keyed" to withKey, "local" to localCount),
     ))
 

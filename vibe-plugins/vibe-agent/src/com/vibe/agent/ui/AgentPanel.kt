@@ -3696,7 +3696,8 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
           "sources" to com.vibe.agent.providers.ApiKeyResolver.sourceNames(t.provider)))
         return
       }
-      if (resolved.isLocal) systemLine(t("chat.localModel"))
+      // A privacy label, so the model decides and not the address: a proxy on localhost may lead to the cloud
+      if (resolved.runsLocally) systemLine(t("chat.localModel"))
       // The conversation so far (this turn's user record included) — rebuilt from the thread each time,
       // so reopening an old thread resumes with its full context.
       val threadId = turnThreadId ?: return
@@ -5534,7 +5535,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
             when {
               CatalogReport.isRejectedKey(reason) && p.auth.type == AuthSpec.NONE -> keyRequired += p.id
               CatalogReport.isRejectedKey(reason) -> rejected += p.id
-              resolved.isLocal -> localDown += p.id
+              resolved.localAddress -> localDown += p.id
               else -> failed += (p.id to reason)
             }
           }

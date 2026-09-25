@@ -27,7 +27,13 @@ data class ModelPricing(
   val input: Double = 0.0,
   val output: Double = 0.0,
   val cacheRead: Double = 0.0,
+  /** A write into the cache of the vendor's default lifetime (five minutes at Anthropic) */
   val cacheWrite: Double = 0.0,
+  /**
+   * A write into the hour-long cache, which a model with `"cacheTtl": "1h"` makes on every write ([forCacheTtl])
+   * One rate for both lifetimes billed every hour write short: $5 instead of $8 for Opus 5.5
+   */
+  val cacheWrite1h: Double = 0.0,
   val currency: String = DEFAULT_CURRENCY,
   /**
    * Надбавка за длинный промпт, если вендор её объявил.
@@ -135,7 +141,20 @@ data class ModelPricing(
     val tier = longContext?.takeIf { it.stated } ?: return false
     return usage.inputTokens + usage.cacheReadTokens + usage.cacheWriteTokens > tier.overInputTokens
   }
-  val stated: Boolean get() = input > 0 || output > 0 || cacheRead > 0 || cacheWrite > 0
+  val stated: Boolean get() = input > 0 || output > 0 || cacheRead > 0 || cacheWrite > 0 || cacheWrite1h > 0
+
+  /**
+   * The rates for a model whose cache lives [ttl]: at an hour every cache write is billed at [cacheWrite1h]
+   *
+   * Without the hour rate a write costs twice the input, which is Anthropic's rule for the hour-long cache
+   * The five-minute [cacheWrite] is never used in its place: it is another price
+   * Billing hour writes by it understated each of them by three eighths
+   * The same rule as VibeIDE's `withHourCacheWrite`, so one providers.json bills alike in both products
+   */
+  fun forCacheTtl(ttl: String?): ModelPricing {
+    if (PromptCache.ttlOf(ttl) != PromptCache.TTL_1H) return this
+    return copy(cacheWrite = cacheWrite1h.takeIf { it > 0 } ?: (input * HOUR_WRITE_INPUT_FACTOR))
+  }
 
   /**
    * What this usage costs, or null when the price is not stated.
@@ -186,5 +205,8 @@ data class ModelPricing(
   companion object {
     const val MILLION = 1_000_000.0
     const val DEFAULT_CURRENCY = "USD"
+
+    /** A write into the hour-long cache at Anthropic costs twice the base input, whatever the model */
+    const val HOUR_WRITE_INPUT_FACTOR = 2.0
   }
 }
