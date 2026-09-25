@@ -1,116 +1,183 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
   "title": "Провайдеры моделей VibeIDEA (.vibe/providers.json)",
+  "description": "Формат — docs/vibe/manuals/providersSpec.md. Незнакомые ключи допустимы: файл общий с VibeIDE и с будущими сборками.",
   "type": "object",
   "properties": {
+    "version": {
+      "type": "integer",
+      "description": "Версия формата, сейчас 1."
+    },
     "providers": {
       "type": "array",
-      "items": {
-        "type": "object",
-        "required": [
-          "id"
-        ],
-        "properties": {
-          "id": {
-            "type": "string"
-          },
-          "name": {
-            "type": "string"
-          },
-          "protocol": {
-            "type": "string",
-            "enum": [
-              "openai",
-              "anthropic",
-              "gemini"
-            ]
-          },
-          "baseURL": {
-            "type": "string",
-            "description": "HTTPS наружу; http допустим только для localhost."
-          },
-          "extends": {
-            "type": "string"
-          },
-          "active": {
-            "type": "boolean"
-          },
-          "apiKeyEnv": {
-            "type": "string",
-            "description": "Имя переменной окружения. Значение ключа в файл не пишется."
-          },
-          "apiKeyRef": {
-            "type": "string"
-          },
-          "reasoningDialect": {
-            "type": "string",
-            "enum": ["openrouter"],
-            "description": "Как endpoint пишет рассуждение, если не так, как его протокол: openrouter — объект reasoning с effort, «выключено» — effort none."
-          },
-          "auth": {
-            "type": "object",
-            "properties": {
-              "type": {
-                "type": "string",
-                "enum": [
-                  "bearer",
-                  "header",
-                  "query",
-                  "none"
-                ]
-              },
-              "name": {
-                "type": "string"
-              }
-            }
-          },
-          "headers": {
-            "type": "object",
-            "additionalProperties": {
-              "type": "string"
-            }
-          },
-          "query": {
-            "type": "object",
-            "additionalProperties": {
-              "type": "string"
-            }
-          },
-          "models": {
-            "type": "array",
-            "items": {
+      "items": { "$ref": "#/definitions/provider" }
+    },
+    "routes": {
+      "type": "object",
+      "description": "Логические имена моделей: \"fast\": \"провайдер/модель\"; null — имя запрещено, нижний слой его не вернёт.",
+      "additionalProperties": { "type": ["string", "null"] }
+    }
+  },
+  "definitions": {
+    "protocol": {
+      "type": "string",
+      "enum": ["openai", "openai-responses", "anthropic", "gemini"],
+      "description": "Формат API. Незнакомое значение читается как openai."
+    },
+    "authType": {
+      "type": "string",
+      "enum": ["bearer", "header", "query", "none"]
+    },
+    "stringMap": {
+      "type": "object",
+      "additionalProperties": { "type": "string" }
+    },
+    "provider": {
+      "type": "object",
+      "required": ["id"],
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "active": {
+          "type": "boolean",
+          "description": "Запись без поля считается включённой, и при слиянии тоже."
+        },
+        "order": { "type": "integer", "description": "Порядок среди ваших провайдеров, меньше — выше." },
+        "protocol": { "$ref": "#/definitions/protocol" },
+        "baseURL": {
+          "type": "string",
+          "description": "С версией пути: https://api.anthropic.com/v1. По http — только адрес этой машины."
+        },
+        "auth": {
+          "description": "Куда уходит ключ: \"bearer\", \"none\" или объект {\"type\": \"header\"|\"query\", \"name\": …}.",
+          "anyOf": [
+            { "$ref": "#/definitions/authType" },
+            {
               "type": "object",
-              "required": [
-                "id"
-              ],
               "properties": {
-                "id": {
-                  "type": "string"
-                },
-                "name": {
-                  "type": "string"
-                },
-                "vision": {
-                  "type": "boolean"
-                },
-                "fim": {
-                  "type": "boolean"
-                },
-                "temperature": {
-                  "type": "number"
-                },
-                "topP": {
-                  "type": "number"
-                },
-                "topK": {
-                  "type": "integer"
-                },
-                "maxOutputTokens": {
-                  "type": "integer",
-                  "minimum": 1
-                }
+                "type": { "$ref": "#/definitions/authType" },
+                "name": { "type": "string" }
               }
             }
+          ]
+        },
+        "apiKeyEnv": {
+          "type": "string",
+          "description": "Имя переменной окружения. Значение ключа в файл не пишется."
+        },
+        "apiKeyRef": { "type": "string", "description": "Ключ из защищённого хранилища ОС под этим именем." },
+        "headers": { "$ref": "#/definitions/stringMap" },
+        "query": { "$ref": "#/definitions/stringMap" },
+        "timeoutMs": { "type": "integer", "minimum": 1, "description": "Сколько ждать начала ответа, мс." },
+        "extends": { "type": "string", "description": "id записи, от которой унаследовать поля." },
+        "note": { "type": "string" },
+        "products": {
+          "description": "Кому адресована запись: \"vibeidea\", \"vibeide\", \"vibecli\"; нет поля — всем.",
+          "type": ["string", "array"],
+          "items": { "type": "string" }
+        },
+        "quota": {
+          "type": "object",
+          "description": "Где спросить у вендора остаток подписки.",
+          "required": ["url", "format"],
+          "properties": {
+            "url": { "type": "string", "description": "Только https://." },
+            "format": { "type": "string", "enum": ["minimax-token-plan", "zai-monitor"] }
+          }
+        },
+        "promptCacheKey": {
+          "type": "boolean",
+          "description": "Endpoint принимает prompt_cache_key (OpenAI, xAI). Без объявления поле не отправляется."
+        },
+        "reasoningDialect": {
+          "type": "string",
+          "enum": ["openrouter"],
+          "description": "Как endpoint пишет рассуждение, если не так, как его протокол: openrouter — объект reasoning с effort, «выключено» — effort none."
+        },
+        "runsLocally": {
+          "type": "boolean",
+          "description": "Модели работают на этой машине: офлайн-режим, бюджеты автодополнения, метка «локальная модель». Нет поля — по адресу. Ключа не касается."
+        },
+        "models": {
+          "type": "object",
+          "properties": {
+            "fetch": {
+              "description": "true (по умолчанию) — каталог с <baseURL>/models; строка — полный адрес каталога; false — только static.",
+              "type": ["boolean", "string"]
+            },
+            "static": {
+              "type": "array",
+              "items": { "$ref": "#/definitions/model" }
+            }
+          }
+        }
+      }
+    },
+    "model": {
+      "type": "object",
+      "required": ["id"],
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "active": { "type": "boolean" },
+        "default": { "type": "boolean" },
+        "pinned": { "type": "boolean" },
+        "contextWindow": { "type": "integer", "minimum": 1 },
+        "maxOutputTokens": { "type": "integer", "minimum": 1 },
+        "temperature": { "type": "number" },
+        "topP": { "type": "number" },
+        "topK": { "type": "integer" },
+        "extraBody": { "type": "object", "description": "Доливается в тело запроса дословно." },
+        "protocol": { "$ref": "#/definitions/protocol" },
+        "fim": { "type": "boolean" },
+        "vision": { "type": "boolean" },
+        "floating": { "type": "boolean", "description": "Имя — плавающий алиас: вендор переводит его на новую сборку без предупреждения." },
+        "note": { "type": "string" },
+        "sunsetDate": { "type": "string", "description": "День, когда доступ к модели кончается, ISO: 2026-11-12." },
+        "cacheTtl": { "type": "string", "description": "Срок кэша промпта: \"5m\" (умолчание вендора) или \"1h\"." },
+        "reasoning": {
+          "type": "object",
+          "properties": {
+            "canTurnOff": { "type": "boolean" },
+            "effort": { "type": "array", "items": { "type": "string" } },
+            "off": { "type": "object", "description": "Что слать в положении «выключено»." }
+          }
+        },
+        "cost": { "$ref": "#/definitions/cost" },
+        "costValidUntil": { "type": "string", "description": "До какой даты цена верна, ISO." },
+        "costAfter": { "$ref": "#/definitions/cost" },
+        "costNote": { "type": "string", "description": "Где цена объявлена." },
+        "pricing": { "$ref": "#/definitions/cost", "description": "Устаревшее имя cost." },
+        "priceValidUntil": { "type": "string", "description": "Устаревшее имя costValidUntil." },
+        "priceAfter": { "$ref": "#/definitions/cost", "description": "Устаревшее имя costAfter." },
+        "priceNote": { "type": "string", "description": "Устаревшее имя costNote." }
+      }
+    },
+    "cost": {
+      "type": "object",
+      "description": "Цена вашего тарифа за миллион токенов.",
+      "properties": {
+        "input": { "type": "number" },
+        "output": { "type": "number" },
+        "cacheRead": { "type": "number" },
+        "cacheWrite": { "type": "number", "description": "Запись в кэш на срок по умолчанию (пять минут)." },
+        "cacheWrite1h": { "type": "number", "description": "Запись в часовой кэш, при \"cacheTtl\": \"1h\"; нет поля — два input." },
+        "currency": { "type": "string" },
+        "longContext": {
+          "type": "object",
+          "properties": {
+            "overInputTokens": { "type": "integer" },
+            "input": { "type": "number" },
+            "cache": { "type": "number" },
+            "output": { "type": "number" }
+          }
+        },
+        "timeOfDay": {
+          "type": "object",
+          "properties": {
+            "peakUtc": { "type": "array", "items": { "type": "string" } },
+            "peakDays": { "type": "array", "items": { "type": "string" } },
+            "offPeakFactor": { "type": "number" }
           }
         }
       }

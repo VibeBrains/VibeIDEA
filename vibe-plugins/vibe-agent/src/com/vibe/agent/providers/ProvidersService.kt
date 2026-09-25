@@ -187,12 +187,10 @@ object ProvidersService {
    * first request answers with an error naming the endpoint.
    */
   fun protocolFor(providerProtocol: String?, modelProtocol: String? = null): String =
-    when (modelProtocol ?: providerProtocol) {
-      "anthropic" -> "anthropic"
-      "gemini" -> "gemini"
-      ModelQuirks.WIRE_OPENAI_RESPONSES -> ModelQuirks.WIRE_OPENAI_RESPONSES
-      else -> "openai"
-    }
+    (modelProtocol ?: providerProtocol)?.takeIf { it in PROTOCOLS } ?: ModelQuirks.WIRE_OPENAI
+
+  /** Every wire a request can speak; the schema of providers.json offers exactly these, and a test holds them together */
+  val PROTOCOLS: List<String> = listOf(ModelQuirks.WIRE_OPENAI, ModelQuirks.WIRE_OPENAI_RESPONSES, ModelQuirks.WIRE_ANTHROPIC, "gemini")
 
   /**
    * @param quiet фоновый вызов: ключ берётся без обращения к связке ключей ([ApiKeyResolver.resolveQuietly]),
