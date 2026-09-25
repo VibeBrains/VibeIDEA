@@ -283,8 +283,8 @@ localhost-провайдер без ключа пропускается и бе�
 ## Безопасность (Config Guard)
 
 При загрузке реестр сканируется чистой функцией; находки печатаются в чат:
-- `provider-endpoint-non-https` (critical) — не-HTTPS endpoint (localhost/127.0.0.1 легитимны, не флагаются);
-- `provider-endpoint-raw-ip` (high) — сырой IP;
+- `provider-endpoint-non-https` (critical) — не-HTTPS endpoint; адреса этой машины (`localhost`, `127.0.0.1`, `[::1]`, `0.0.0.0`, без учёта регистра — тот же список, что в разделе «Ключи API») легитимны и не флагаются;
+- `provider-endpoint-raw-ip` (high) — сырой IP, кроме адресов этой машины;
 - `provider-hardcoded-secret` (critical) — креды в URL (`user:pass@`) или секрет-подобный литерал в `headers`/`query`.
 
 ## Отличия от VibeIDE (честные границы этой реализации)

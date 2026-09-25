@@ -28,6 +28,18 @@ class ConfigGuardTest {
   }
 
   @Test
+  fun `every address of this machine is quiet, the shared list and not a list of its own`() {
+    for (url in listOf("http://[::1]:8000/v1", "http://0.0.0.0:11434/v1", "http://LOCALHOST:11434/v1")) {
+      assertTrue(ConfigGuard.inspect("providers.json", """{"baseURL":"$url"}""").isEmpty(), url)
+    }
+    // An address in the office network is not this machine: plain http to it stays an error, the raw IP stays visible
+    val lan = ConfigGuard.inspect("servers.json", """{"url":"http://192.168.1.50:8000/v1"}""")
+    assertTrue(lan.any { it.rule == ConfigGuard.RULE_INSECURE_ENDPOINT }, lan.toString())
+    val raw = ConfigGuard.inspect("servers.json", """{"url":"https://192.168.1.50:8000/v1"}""")
+    assertEquals(listOf(ConfigGuard.RULE_RAW_IP_ENDPOINT), raw.map { it.rule })
+  }
+
+  @Test
   fun `credentials in a url are an error, and the value is not echoed back`() {
     val findings = ConfigGuard.inspect("servers.json", """{"url":"https://user:password@host/api"}""")
     val finding = findings.first { it.rule == ConfigGuard.RULE_CREDENTIALS_IN_URL }

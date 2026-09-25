@@ -1,6 +1,7 @@
 // Copyright 2026 VibeBrains. Use of this source code is governed by the Apache 2.0 license.
 package com.vibe.agent.guard
 
+import com.vibe.agent.providers.LocalAddress
 import com.vibe.agent.security.SecretPatterns
 
 /**
@@ -27,7 +28,6 @@ object ConfigGuard {
   private val URL = Regex("\"(https?://[^\"\\s]+)\"")
   private val CREDENTIALS_IN_URL = Regex("https?://[^/@\\s\"]+:[^/@\\s\"]+@")
   private val RAW_IP = Regex("https?://(\\d{1,3}\\.){3}\\d{1,3}")
-  private val LOOPBACK = Regex("https?://(localhost|127\\.0\\.0\\.1|\\[::1])([:/]|$)")
 
   /** [text] is the file content; [name] is what to show the person. */
   fun inspect(name: String, text: String): List<Finding> {
@@ -46,10 +46,11 @@ object ConfigGuard {
           // The warning about a password must not repeat the password: everything before the @ is
           // dropped, and what is left is enough to find the line.
           findings.add(Finding(name, RULE_CREDENTIALS_IN_URL, Severity.ERROR, "…@" + url.substringAfter('@')))
-        // Loopback over http is normal: a local model server has nothing to encrypt against.
-        url.startsWith("http://") && !LOOPBACK.containsMatchIn(url) ->
+        // Loopback over http is normal: a local model server has nothing to encrypt against
+        // «This machine» is the one list shared with VibeIDE ([LocalAddress]): 0.0.0.0, [::1] and any case included
+        url.startsWith("http://") && !LocalAddress.isLocal(url) ->
           findings.add(Finding(name, RULE_INSECURE_ENDPOINT, Severity.ERROR, url))
-        RAW_IP.containsMatchIn(url) && !LOOPBACK.containsMatchIn(url) ->
+        RAW_IP.containsMatchIn(url) && !LocalAddress.isLocal(url) ->
           findings.add(Finding(name, RULE_RAW_IP_ENDPOINT, Severity.WARNING, url))
       }
     }

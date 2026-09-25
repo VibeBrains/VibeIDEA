@@ -11,7 +11,7 @@ data class GuardFinding(val providerId: String, val ruleId: String, val severity
  * Config Guard for providers.json, VibeIDE rules verbatim:
  * provider-endpoint-non-https (critical), provider-endpoint-raw-ip (high),
  * provider-hardcoded-secret (critical: userinfo in baseURL / literal secret in headers or query).
- * http://localhost and 127.0.0.1 are legitimate (local proxy) and never flagged.
+ * An address of this machine ([LocalAddress]) is legitimate over http (local proxy) and never flagged.
  * Pure function, no I/O — findings are reported once, deduplicated by signature.
  */
 object ProviderGuard {
@@ -24,7 +24,8 @@ object ProviderGuard {
       val url = p.baseURL ?: continue
       val uri = runCatching { URI(url) }.getOrNull()
       val host = uri?.host ?: ""
-      val local = host == "localhost" || host == "127.0.0.1" || host == "::1"
+      // The shared list of this machine: comparing `URI.host` here would miss `[::1]`, whose host keeps the brackets
+      val local = LocalAddress.isLocal(url)
       if (uri?.scheme == "http" && !local) {
         findings.add(GuardFinding(p.id, "provider-endpoint-non-https", "critical", t("guard.notHttps", "id" to p.id, "url" to url)))
       }
