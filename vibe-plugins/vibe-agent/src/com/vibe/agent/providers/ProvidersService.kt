@@ -55,19 +55,17 @@ object ProvidersService {
     // Read together with the registry: both answer the same question — how a request to this model
     // must be built — and loading them apart is how the two drift into disagreeing.
     ModelQuirksRegistry.install(projectBase, loadQuirks(globalVibeDir, projectVibeDir, onWarning))
-    // Логические имена читаются из тех же файлов и в том же порядке слоёв: проектное имя
-    // перекрывает глобальное, объявленный null закрывает имя совсем (ModelRoutes).
+    // Logical names come from the same files in the same layer order as the providers ([layers]):
+    // A seeded name never outranks a user's file, and a declared null closes the name for good ([ModelRoutes])
     ModelRoutesRegistry.install(projectBase, loadRoutes(globalVibeDir, projectVibeDir, onWarning))
     return loadFrom(globalVibeDir, projectVibeDir, onWarning)
   }
 
   /** Same as [load], with explicit scope directories — the seam unit tests drive. */
   fun loadFrom(globalVibeDir: Path, projectVibeDir: Path?, onWarning: (String) -> Unit): List<ProviderEntry> {
-    val globalCatalog = loadCatalog(globalVibeDir, onWarning)
-    val projectCatalog = projectVibeDir?.let { loadCatalog(it, onWarning) } ?: emptyList()
-    val globalJson = loadFile(globalVibeDir.resolve("providers.json"), "providers.json", onWarning)
-    val projectJson = projectVibeDir?.let { loadFile(it.resolve("providers.json"), "providers.json", onWarning) }
-                      ?: emptyList()
+    val (globalCatalog, projectCatalog, globalJson, projectJson) = layers(globalVibeDir, projectVibeDir, onWarning).map { layer ->
+      layer.fold(emptyList<ProviderEntry>()) { acc, file -> ProvidersFile.merge(acc, loadFile(file.path, file.source, onWarning)) }
+    }
     val merged = ProvidersFile.merge(
       ProvidersFile.merge(ProvidersFile.merge(globalCatalog, projectCatalog), globalJson),
       projectJson,
@@ -128,28 +126,30 @@ object ProvidersService {
   }
 
   /** Таблицы `routes` всех файлов обоих слоёв, сложенные в порядке чтения. */
-  internal fun loadRoutes(globalVibeDir: Path, projectVibeDir: Path?, onWarning: (String) -> Unit): Map<String, String?> {
-    val layers = ArrayList<Map<String, String?>>()
-    for (dir in listOfNotNull(globalVibeDir, projectVibeDir)) {
-      for (file in catalogFiles(dir.resolve("providers"), onWarning)) {
-        layers += routesOf(file, "providers/${file.fileName}", onWarning)
-      }
-      layers += routesOf(dir.resolve("providers.json"), "providers.json", onWarning)
-    }
-    return ModelRoutes.merge(layers)
+  internal fun loadRoutes(globalVibeDir: Path, projectVibeDir: Path?, onWarning: (String) -> Unit): Map<String, String?> =
+    ModelRoutes.merge(layers(globalVibeDir, projectVibeDir, onWarning).flatten().map { routesOf(it.path, it.source, onWarning) })
+
+  /** One file of the registry and the name it is warned under */
+  private data class LayerFile(val path: Path, val source: String)
+
+  /**
+   * The files of the registry by layer, weakest first: global catalog, project catalog, global and project providers.json
+   * Inside a catalog the files go by name, so a later file overrides an earlier one
+   * One list for the providers and for their routes: two orders of the same files let a seeded route outrank a user's file
+   */
+  private fun layers(globalVibeDir: Path, projectVibeDir: Path?, onWarning: (String) -> Unit): List<List<LayerFile>> {
+    fun catalog(dir: Path?): List<LayerFile> =
+      dir?.let { catalogFiles(it.resolve(CATALOG_DIR), onWarning) }.orEmpty().map { LayerFile(it, "$CATALOG_DIR/${it.fileName}") }
+    fun userFile(dir: Path?): List<LayerFile> = listOfNotNull(dir?.let { LayerFile(it.resolve(USER_FILE), USER_FILE) })
+    return listOf(catalog(globalVibeDir), catalog(projectVibeDir), userFile(globalVibeDir), userFile(projectVibeDir))
   }
+
+  private const val CATALOG_DIR = "providers"
+  private const val USER_FILE = "providers.json"
 
   private fun routesOf(path: Path, source: String, onWarning: (String) -> Unit): Map<String, String?> {
     if (!Files.isRegularFile(path)) return emptyMap()
     return runCatching { ProvidersFile.parseRoutes(Files.readString(path), source, onWarning) }.getOrDefault(emptyMap())
-  }
-
-  private fun loadCatalog(vibeDir: Path, onWarning: (String) -> Unit): List<ProviderEntry> {
-    var acc = emptyList<ProviderEntry>()
-    for (file in catalogFiles(vibeDir.resolve("providers"), onWarning)) {
-      acc = ProvidersFile.merge(acc, loadFile(file, "providers/${file.fileName}", onWarning))
-    }
-    return acc
   }
 
   private fun catalogFiles(dir: Path, onWarning: (String) -> Unit): List<Path> {

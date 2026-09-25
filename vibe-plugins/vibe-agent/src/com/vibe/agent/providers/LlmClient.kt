@@ -59,6 +59,8 @@ data class ChatMessage(
  */
 internal object LlmMessages {
   private const val DATA_URL_PREFIX = "data:"
+  private const val THINK_OPEN = "<think>\n"
+  private const val THINK_CLOSE = "\n</think>\n\n"
   private const val DATA_URL_BASE64_MARKER = ";base64,"
 
   /**
@@ -66,12 +68,15 @@ internal object LlmMessages {
    *
    * [echoReasoning] puts an assistant message's reasoning back as `reasoning_content` — only for a
    * model that requires it (`ECHO_REASONING`); a wire that does not expect the field may reject it.
+   * [thinkTags] puts it back inside the content as `<think>…</think>` instead (`REASONING_AS_THINK_TAGS`)
    */
-  fun openAi(m: ChatMessage, echoReasoning: Boolean = false): JsonObject = buildJsonObject {
+  fun openAi(m: ChatMessage, echoReasoning: Boolean = false, thinkTags: Boolean = false): JsonObject = buildJsonObject {
     put("role", m.role)
-    if (echoReasoning && m.role == "assistant" && !m.reasoning.isNullOrEmpty()) put("reasoning_content", m.reasoning)
+    val echoed = m.reasoning?.takeIf { echoReasoning && m.role == "assistant" && it.isNotEmpty() }
+    if (echoed != null && !thinkTags) put("reasoning_content", echoed)
+    val text = if (echoed != null && thinkTags) THINK_OPEN + echoed + THINK_CLOSE + m.text else m.text
     // An answer that only calls tools has no text; openai wants null there, not an empty string.
-    if (m.images.isEmpty()) put("content", if (m.toolCalls.isNotEmpty() && m.text.isBlank()) ToolCalls.NO_CONTENT else JsonPrimitive(m.text))
+    if (m.images.isEmpty()) put("content", if (m.toolCalls.isNotEmpty() && text.isBlank()) ToolCalls.NO_CONTENT else JsonPrimitive(text))
     else put("content", JsonArray(buildList {
       if (m.text.isNotBlank()) add(buildJsonObject { put("type", "text"); put("text", m.text) })
       m.images.forEach { img ->
@@ -89,10 +94,23 @@ internal object LlmMessages {
    * [cacheable] marks the end of the stable prefix: everything up to and including this message is
    * the same on the next turn, so the provider may bill it as a cache hit. Marked on the message
    * rather than on the whole request because that is where the boundary actually is.
+   * [thinking] — the blocks this message carries back, as [ThinkingReplay.blocksFor] chose them
    */
-  fun anthropic(m: ChatMessage, cacheable: Boolean = false, ttl: String? = null, withThinking: Boolean = false): JsonObject = when {
+  fun anthropic(m: ChatMessage, cacheable: Boolean = false, ttl: String? = null,
+                thinking: List<ThinkingBlock> = emptyList()): JsonObject = when {
     m.role == ToolCalls.ROLE -> ToolCalls.anthropicResults(m)
-    m.toolCalls.isNotEmpty() -> ToolCalls.anthropicAssistant(m, withThinking)
+    m.toolCalls.isNotEmpty() -> ToolCalls.anthropicAssistant(m, thinking)
+    thinking.isNotEmpty() -> buildJsonObject {
+      put("role", m.role)
+      put("content", JsonArray(buildList {
+        thinking.forEach { add(it.toWire()) }
+        if (m.text.isNotBlank()) add(buildJsonObject {
+          put("type", "text")
+          put("text", m.text)
+          if (cacheable) put("cache_control", cacheControl(ttl))
+        })
+      }))
+    }
     else -> anthropicPlain(m, cacheable, ttl)
   }
 
@@ -477,9 +495,10 @@ class LlmClient(
       model.maxOutputTokens?.let { put("max_tokens", it) }
       // A model that requires its reasoning back gets it; no other model ever sees the field.
       val echo = ModelQuirks.has(quirkId, ModelQuirks.Quirk.ECHO_REASONING, overrides)
+      val thinkTags = ModelQuirks.has(quirkId, ModelQuirks.Quirk.REASONING_AS_THINK_TAGS, overrides)
       // A round's results are one message here and several on this wire.
       put("messages", JsonArray(asked.flatMap {
-        if (it.role == ToolCalls.ROLE) ToolCalls.openAiResults(it) else listOf(LlmMessages.openAi(it, echo))
+        if (it.role == ToolCalls.ROLE) ToolCalls.openAiResults(it) else listOf(LlmMessages.openAi(it, echo, thinkTags))
       }))
       if (offeredTools.isNotEmpty()) put("tools", ToolCalls.openAiTools(offeredTools))
       PromptCacheKey.sent(provider.entry.promptCacheKey, cacheKey)?.let { put("prompt_cache_key", it) }
@@ -607,7 +626,7 @@ class LlmClient(
       val replay = ThinkingReplay.of(quirkIdOf(model), overrides)
       put("messages", JsonArray(wire.mapIndexed { index, message ->
         LlmMessages.anthropic(message, cacheable = index == boundary, ttl = model.cacheTtl,
-                              withThinking = message.thinking.isNotEmpty() && replay.admits(message.thinkingKey, key))
+                              thinking = replay.blocksFor(message, key))
       }))
       tools?.let { put("tools", it) }
     }.let { withReasoning(it, "anthropic", model) }

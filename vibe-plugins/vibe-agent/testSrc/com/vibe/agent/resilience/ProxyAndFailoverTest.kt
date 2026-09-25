@@ -86,4 +86,13 @@ class FailoverPlanTest {
     assertTrue(FailoverPlan.isSingleVendor(FailoverPlan.parseChain("openai/gpt-5-mini"), currentProviderId = "OpenAI"))
     assertFalse(FailoverPlan.isSingleVendor(emptyList()), "пустая цепочка — это отсутствие плана, а не одновендорность")
   }
+
+  @Test
+  fun `a refused answer goes to the next model, a content filter and a normal stop do not`() {
+    // The vendor advises asking another model after a refusal; a platform's content filter meets the same text elsewhere
+    assertTrue(FailoverPlan.shouldFailOver(com.vibe.agent.providers.StopReason.Kind.REFUSAL))
+    for (kind in com.vibe.agent.providers.StopReason.Kind.entries - com.vibe.agent.providers.StopReason.Kind.REFUSAL) {
+      assertFalse(FailoverPlan.shouldFailOver(kind), kind.name)
+    }
+  }
 }

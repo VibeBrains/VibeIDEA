@@ -1195,6 +1195,14 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     val kind = com.vibe.agent.resilience.RetryPolicy.classify(
       com.vibe.agent.resilience.RetryPolicy.statusFromMessage(error.message), error)
     if (!com.vibe.agent.resilience.FailoverPlan.shouldFailOver(kind, retriesExhausted = true)) return false
+    return failOver(from, error.message?.take(FAILOVER_REASON_CHARS) ?: "", startedAt)
+  }
+
+  /**
+   * The switch itself, once the caller has decided the failure is worth another model
+   * [beforeSwitch] runs only when there is somewhere to go: a refused answer is taken off the feed then, and not before
+   */
+  private fun failOver(from: ChatTarget.Model, reason: String, startedAt: Long, beforeSwitch: () -> Unit = {}): Boolean {
     val chain = com.vibe.agent.resilience.FailoverPlan.parseChain(VibeAgentSettings.failoverChain)
     if (chain.isEmpty()) return false
     val current = com.vibe.agent.resilience.FailoverPlan.Target(from.provider.id, from.model.id)
@@ -1208,8 +1216,8 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
       return false
     }
     failoverTried.add(next)
-    systemLine(t("failover.switching", "from" to current.toString(), "to" to next.toString(),
-                "reason" to (error.message?.take(120) ?: "")))
+    beforeSwitch()
+    systemLine(t("failover.switching", "from" to current.toString(), "to" to next.toString(), "reason" to reason))
     val target = ChatTarget.Model(provider, com.vibe.agent.providers.ModelEntry(id = next.modelId), static = true)
     sendToLlm(target, startedAt)
     return true
@@ -3825,7 +3833,12 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
           promptCacheKey = com.vibe.agent.providers.PromptCacheKey.of(turnThreadId ?: currentThreadId, "agent"),
         ) { delta -> noteActivity(); roundText.append(delta); appendAgentText(delta) }
         usage = usage.merge(llmClient.lastUsage())
-        llmClient.lastStopReason()?.takeIf { it.abnormal }?.let { turnNote(stopNote(it)) }
+        val stop = llmClient.lastStopReason()
+        stop?.takeIf { it.abnormal }?.let { turnNote(stopNote(it)) }
+        // A refusal before any tool ran: another model may answer, and nothing this one did has to be undone
+        // After a tool round the files are already changed, and a model starting over would redo that work blind
+        if (stop != null && rounds == 0 && com.vibe.agent.resilience.FailoverPlan.shouldFailOver(stop.kind) &&
+            failOver(t, stopNote(stop), startedAt) { discardRefusedAnswer(t, usage) }) return
         val calls = llmClient.lastToolCalls()
         // On the Responses wire the answer's own output items go back with it; an answer that ends the turn on calls
         // without results is not kept that way — the vendor refuses a call that has no output after it.
@@ -5904,6 +5917,67 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     }
   }
 
+  /**
+   * What the turn cost, into the spending report and the counters
+   *
+   * The provider's own numbers when it reported them; the old length-based guess only when it
+   * did not. The guess counted the ANSWER and nothing else, so a request carrying two hundred
+   * thousand tokens of context cost, in the report, as much as the sentence it produced —
+   * which is why the spending ceiling never fired on this path.
+   */
+  private fun recordTurnSpend(turn: TurnState, answer: String, threadId: String?) {
+    val usage = turn.usage
+    val counted = if (usage.known) usage.total
+                  else com.vibe.agent.context.ContextBudget.estimateTokens(answer)
+    // The moment of the turn, for the price by the hour: off-peak DeepSeek bills the same work at half.
+    val finishedAt = java.time.Instant.now()
+    val pricing = turn.pricing
+    val cost = pricing?.costOf(usage, finishedAt)
+    // Taken before the reset below: read after it, every spend line went down in the default currency.
+    val currency = pricing?.currency ?: com.vibe.agent.providers.ModelPricing.DEFAULT_CURRENCY
+    pricing?.cacheSavingOf(usage, finishedAt)?.takeIf { it > 0 }?.let { saved ->
+      systemLine(t("spend.cacheSaved", "saved" to "%.2f".format(saved),
+                   "tokens" to "%,d".format(usage.cacheReadTokens)))
+    }
+    if (usage.known) {
+      threadUsages.add(usage)
+      while (threadUsages.size > MAX_TRACKED_TURNS) threadUsages.removeAt(0)
+    }
+    turn.usage = com.vibe.agent.providers.TokenUsage.NONE
+    turn.pricing = null
+    sessionTokens.addAndGet(counted)
+    // The chat's attached files belong to the chat's turn; a step's prompt carries none of them.
+    val attachments = if (turn.role == null) turnAttachments else emptyList()
+    com.vibe.agent.budget.VibeSpendService.getInstance().record(
+      turn.role, targetLabel(), counted, cost, cost?.let { currency },
+      com.vibe.agent.budget.FileSpend.attribute(counted, attachments), threadId)
+    stretchTokens.addAndGet(counted)
+  }
+
+  /**
+   * Takes a refused answer out of the turn before another model is asked
+   *
+   * The refused request is paid for all the same, so it goes into the spending report, under the model that refused
+   * Its partial text leaves the feed and never reaches the thread: the next model gets the question, not a refusal
+   */
+  private fun discardRefusedAnswer(from: ChatTarget.Model, usage: com.vibe.agent.providers.TokenUsage, turn: TurnState = turns.chat) {
+    if (usage.known) {
+      turn.usage = usage
+      turn.pricing = com.vibe.agent.providers.PriceValidity.effective(from.model, java.time.LocalDate.now())
+      recordTurnSpend(turn, "", turnThreadId)
+    }
+    synchronized(turn.text) { turn.text.setLength(0) }
+    synchronized(turn.reasoning) { turn.reasoning.setLength(0) }
+    turn.responses = null
+    SwingUtilities.invokeLater {
+      turn.thoughts?.finish()
+      turn.thoughts = null
+      turn.message?.row?.let { row -> row.parent?.let { parent -> parent.remove(row); parent.revalidate(); parent.repaint() } }
+      turn.message = null
+      turn.uiConsumed = 0
+    }
+  }
+
   private fun finishAgentBubble(seconds: Double, suffix: String?, turn: TurnState = turns.chat) {
     val threadId = turnThreadId
     // Atomic capture+clear: queued per-delta projections then see an empty buffer and no-op.
@@ -5934,36 +6008,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     if (threadId != null && fullText.isNotBlank()) {
       history.append(threadId, ChatMessageRecord(Role.ASSISTANT, fullText, at = nowIso(), reasoning = reasoning, toolRounds = toolRounds,
                                                  responses = responses))
-      // The provider's own numbers when it reported them; the old length-based guess only when it
-      // did not. The guess counted the ANSWER and nothing else, so a request carrying two hundred
-      // thousand tokens of context cost, in the report, as much as the sentence it produced —
-      // which is why the spending ceiling never fired on this path.
-      val usage = turn.usage
-      val counted = if (usage.known) usage.total
-                    else com.vibe.agent.context.ContextBudget.estimateTokens(fullText)
-      // The moment of the turn, for the price by the hour: off-peak DeepSeek bills the same work at half.
-      val finishedAt = java.time.Instant.now()
-      val pricing = turn.pricing
-      val cost = pricing?.costOf(usage, finishedAt)
-      // Taken before the reset below: read after it, every spend line went down in the default currency.
-      val currency = pricing?.currency ?: com.vibe.agent.providers.ModelPricing.DEFAULT_CURRENCY
-      pricing?.cacheSavingOf(usage, finishedAt)?.takeIf { it > 0 }?.let { saved ->
-        systemLine(t("spend.cacheSaved", "saved" to "%.2f".format(saved),
-                     "tokens" to "%,d".format(usage.cacheReadTokens)))
-      }
-      if (usage.known) {
-        threadUsages.add(usage)
-        while (threadUsages.size > MAX_TRACKED_TURNS) threadUsages.removeAt(0)
-      }
-      turn.usage = com.vibe.agent.providers.TokenUsage.NONE
-      turn.pricing = null
-      sessionTokens.addAndGet(counted)
-      // The chat's attached files belong to the chat's turn; a step's prompt carries none of them.
-      val attachments = if (turn.role == null) turnAttachments else emptyList()
-      com.vibe.agent.budget.VibeSpendService.getInstance().record(
-        turn.role, targetLabel(), counted, cost, cost?.let { currency },
-        com.vibe.agent.budget.FileSpend.attribute(counted, attachments), threadId)
-      stretchTokens.addAndGet(counted)
+      recordTurnSpend(turn, fullText, threadId)
     }
     // Счётчик прямого провода: у ACP-агента окно считает он сам и присылает `usage_update`, а у
     // прямой модели такого кадра нет вовсе — и до 18.09.2026 счётчик у неё просто не появлялся,
@@ -6818,6 +6863,8 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
 
     /** Сколько ходов помнит счётчик контекстного налога: разговор длиннее — это уже журнал расхода. */
     const val MAX_TRACKED_TURNS = 200
+    /** How much of a provider's error text the failover line quotes */
+    const val FAILOVER_REASON_CHARS = 120
 
     /** Сколько ответа шага уходит гейту: вердикт выносится по сути, а не по всему транскрипту. */
     const val GATE_ANSWER_CHARS = 4000

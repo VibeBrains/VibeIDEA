@@ -75,7 +75,7 @@ data class ThinkingBlock(
 /**
  * Which thinking blocks of earlier tool rounds go back to this model on Anthropic's wire.
  *
- * A model that requires its reasoning back ([ModelQuirks.Quirk.ECHO_REASONING]: MiMo, Kimi, DeepSeek) gets every block it
+ * A model that requires its reasoning back ([ModelQuirks.Quirk.ECHO_REASONING]: MiMo, Kimi, DeepSeek, MiniMax) gets every block it
  * produced, earlier turns included — without them the vendor answers 400. Claude gets the blocks of the turn in progress
  * whose request had the same system prompt and tool set: its vendor asks for them in a tool loop, and a block replayed
  * after a change of either is a 400 on newer accounts. Blocks read back from the thread carry no key and never reach
@@ -91,7 +91,21 @@ enum class ThinkingReplay {
     NONE -> false
   }
 
+  /**
+   * The blocks [m] carries back in a request whose prefix key is [requestKey]
+   *
+   * A model that requires its reasoning back gets it from every answer, and an answer without tool calls kept only
+   * the text of its reasoning: it goes back as one unsigned block, as vendors without signatures send it
+   * Claude never gets such a block — its vendor takes back only what it signed
+   */
+  fun blocksFor(m: ChatMessage, requestKey: String): List<ThinkingBlock> = when {
+    m.thinking.isNotEmpty() -> if (admits(m.thinkingKey, requestKey)) m.thinking else emptyList()
+    this == ALL && m.role == ASSISTANT && !m.reasoning.isNullOrBlank() -> listOf(ThinkingBlock(thinking = m.reasoning))
+    else -> emptyList()
+  }
+
   companion object {
+    private const val ASSISTANT = "assistant"
     private const val CLAUDE_PREFIX = "claude-"
 
     fun of(modelId: String, overrides: List<ModelQuirks.Rule> = emptyList()): ThinkingReplay = when {

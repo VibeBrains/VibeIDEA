@@ -67,13 +67,12 @@ class ModelRoutesTest {
   }
 
   @Test
-  fun `the project catalog outranks the global providers json`(@TempDir dir: Path) {
-    // The shared vectors give these two layers different names, so they cannot tell the order apart; the contract can
+  fun `a person's global providers json outranks a seeded project catalog, as it does for providers`(@TempDir dir: Path) {
     val global = dir.resolve("home/.vibe")
     val project = dir.resolve("project/.vibe")
     write(global.resolve("providers.json"), """{ "routes": { "fast": "zai/glm-5.3" }, "providers": [] }""")
     write(project.resolve("providers/routes.jsonc"), """{ "routes": { "fast": "minimax/MiniMax-M3" }, "providers": [] }""")
-    assertEquals(ModelRoutes.Resolution.Found("minimax", "MiniMax-M3"),
+    assertEquals(ModelRoutes.Resolution.Found("zai", "glm-5.3"),
                  ModelRoutes.resolve("@fast", ProvidersService.loadRoutes(global, project) { }))
   }
 

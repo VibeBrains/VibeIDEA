@@ -119,6 +119,14 @@ object ModelQuirks {
     ECHO_REASONING,
 
     /**
+     * With [ECHO_REASONING] on the openai wire: the reasoning goes back inside the answer as `<think>…</think>`, not as
+     * a `reasoning_content` field
+     * MiniMax streams its reasoning that way and asks for the content back unmodified, the tags included; the chat
+     * takes the tags out of the answer as it streams ([InlineThinking]), so they are put back in front of the text
+     */
+    REASONING_AS_THINK_TAGS,
+
+    /**
      * Tools are not accepted: a request carrying `tools` is refused as a whole.
      *
      * The direct chat offers tools to every model it can; a model behind an endpoint without function
@@ -246,6 +254,14 @@ object ModelQuirks {
       Regex("^(kimi-k3|kimi-k2\\.[67]|kimi-for-coding|k3(-|$))"),
       setOf(Quirk.ECHO_REASONING),
       "kimi: the assistant's reasoning_content goes back with its answer and its tool calls in the history",
+    ),
+    Rule(
+      // MiniMax interleaved thinking: the whole assistant message goes back — thinking blocks on the Anthropic-compatible
+      // endpoint, the content with its `<think>` tags on the OpenAI-compatible one, without which "subsequent
+      // conversation loses context" (platform.minimax.io/docs/guides/text-m3-function-call, checked 25.09.2026)
+      Regex("^minimax-m\\d"),
+      setOf(Quirk.ECHO_REASONING, Quirk.REASONING_AS_THINK_TAGS),
+      "minimax: the reasoning goes back with every answer, as <think> tags on the openai wire",
     ),
     Rule(
       // Xiaomi MiMo: "during multi-turn tool calls in thinking mode the model returns a `thinking` content block

@@ -93,7 +93,7 @@ class ModelRoutesVectorsTest {
 
   private companion object {
     const val VECTORS = "/vibeDefaults/testVectors/modelRoutes.json"
-    const val MIN_RESOLVE = 5
+    const val MIN_RESOLVE = 6
     val FILE_FIELDS = setOf("_comment", "version", "layers", "merged", "resolve")
     val CASE_FIELDS = setOf("reference", "result")
     val RESULT_FIELDS = mapOf(
@@ -102,11 +102,11 @@ class ModelRoutesVectorsTest {
       "unknown" to setOf("kind", "known"),
     )
 
-    /** Weakest first, as the vectors list them: global catalog, global file, project catalog, project file */
+    /** Weakest first, as the vectors list them: global catalog, project catalog, global file, project file */
     val LAYER_FILES = listOf(
       LayerFile(global = true, path = "providers/routes.jsonc"),
-      LayerFile(global = true, path = "providers.json"),
       LayerFile(global = false, path = "providers/routes.jsonc"),
+      LayerFile(global = true, path = "providers.json"),
       LayerFile(global = false, path = "providers.json"),
     )
   }

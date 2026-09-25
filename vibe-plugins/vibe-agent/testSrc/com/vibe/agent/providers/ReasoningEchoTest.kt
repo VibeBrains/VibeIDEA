@@ -6,6 +6,7 @@ import com.vibe.agent.history.ChatThread
 import com.vibe.agent.history.ChatTranscriptCodec
 import com.vibe.agent.history.Role
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.jsonPrimitive
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -31,6 +32,20 @@ class ReasoningEchoTest {
     for (id in listOf("deepseek-flash", "deepseek-v4-pro", "deepseek-anthropic")) {
       assertTrue(ModelQuirks.has(id, ModelQuirks.Quirk.ECHO_REASONING), id)
     }
+  }
+
+  @Test
+  fun `MiniMax gets its reasoning back inside the content, as the tags it streamed`() {
+    for (id in listOf("MiniMax-M3", "minimax-m2.7", "minimax/minimax-m2.5")) {
+      assertTrue(ModelQuirks.has(id, ModelQuirks.Quirk.ECHO_REASONING), id)
+      assertTrue(ModelQuirks.has(id, ModelQuirks.Quirk.REASONING_AS_THINK_TAGS), id)
+    }
+    val wire = LlmMessages.openAi(answer, echoReasoning = true, thinkTags = true)
+    assertEquals("<think>\nсперва подумаю\n</think>\n\nответ", wire["content"]!!.jsonPrimitive.content)
+    assertNull(wire["reasoning_content"])
+    // An answer that only called tools still carries its reasoning: the content is the tags, not null
+    val call = ChatMessage("assistant", "", reasoning = "нужен файл", toolCalls = listOf(ToolCall("t1", "read", "{}")))
+    assertEquals("<think>\nнужен файл\n</think>\n\n", LlmMessages.openAi(call, echoReasoning = true, thinkTags = true)["content"]!!.jsonPrimitive.content)
   }
 
   @Test

@@ -46,12 +46,26 @@ class ThinkingBlocksTest {
   fun `the blocks go first in the assistant message, before the text and the tool calls`() {
     val m = ChatMessage("assistant", "Reading it.", toolCalls = listOf(ToolCall("t1", "read", "{}")),
                         thinking = listOf(ThinkingBlock("why", "sig")))
-    val content = ToolCalls.anthropicAssistant(m, withThinking = true)["content"]!!.jsonArray.map {
+    val content = ToolCalls.anthropicAssistant(m, m.thinking)["content"]!!.jsonArray.map {
       it.jsonObject["type"]!!.jsonPrimitive.content
     }
     assertEquals(listOf("thinking", "text", "tool_use"), content)
     assertEquals(listOf("text", "tool_use"),
                  ToolCalls.anthropicAssistant(m)["content"]!!.jsonArray.map { it.jsonObject["type"]!!.jsonPrimitive.content })
+  }
+
+  @Test
+  fun `an answer that kept its reasoning only as text goes back with one unsigned block, to models that require it`() {
+    val m = ChatMessage("assistant", "Done.", reasoning = "checked the file")
+    val wire = LlmMessages.anthropic(m, thinking = ThinkingReplay.ALL.blocksFor(m, "key"))
+    val content = wire["content"]!!.jsonArray.map { it.jsonObject }
+    assertEquals(listOf("thinking", "text"), content.map { it["type"]!!.jsonPrimitive.content })
+    assertEquals("checked the file", content[0]["thinking"]!!.jsonPrimitive.content)
+    assertNull(content[0]["signature"])
+    // Claude takes back only what it signed, and a model that did not ask gets nothing
+    assertEquals(emptyList(), ThinkingReplay.SAME_PREFIX.blocksFor(m, "key"))
+    assertEquals(emptyList(), ThinkingReplay.NONE.blocksFor(m, "key"))
+    assertEquals(emptyList(), ThinkingReplay.ALL.blocksFor(ChatMessage("user", "q", reasoning = "x"), "key"))
   }
 
   @Test
@@ -68,8 +82,10 @@ class ThinkingBlocksTest {
     assertFalse(claude.admits("old", "k"))
     assertFalse(claude.admits(null, "k"))
 
+    // MiniMax asks for the whole content back, thinking blocks included, on its Anthropic-compatible endpoint
+    assertEquals(ThinkingReplay.ALL, ThinkingReplay.of("minimax-m3"))
     // A vendor on this wire that never asked for its blocks back gets none.
-    assertEquals(ThinkingReplay.NONE, ThinkingReplay.of("minimax-m3"))
+    assertEquals(ThinkingReplay.NONE, ThinkingReplay.of("qwen3.8-max"))
   }
 
   @Test

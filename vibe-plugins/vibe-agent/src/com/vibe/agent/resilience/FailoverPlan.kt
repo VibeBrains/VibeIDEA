@@ -50,6 +50,16 @@ object FailoverPlan {
     return chain.isNotEmpty() && vendors.size == 1
   }
 
+  /**
+   * Whether a model that stopped for [kind] is worth asking another one
+   *
+   * A refusal is: a classifier declined this model, and the vendor itself advises repeating the request on another
+   * (platform.claude.com/docs/en/build-with-claude/refusals-and-fallback); our chain does that for any provider
+   * A content filter is not: it is the platform's decision about the text, and another vendor meets the same text
+   */
+  fun shouldFailOver(kind: com.vibe.agent.providers.StopReason.Kind): Boolean =
+    kind == com.vibe.agent.providers.StopReason.Kind.REFUSAL
+
   /** Only these kinds are worth another provider at all. */
   fun shouldFailOver(kind: RetryPolicy.Kind, retriesExhausted: Boolean): Boolean = when (kind) {
     // A key is wrong here and will be wrong there: failing over hides the real message behind a

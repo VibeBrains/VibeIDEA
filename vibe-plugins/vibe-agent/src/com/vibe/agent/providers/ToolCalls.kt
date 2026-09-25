@@ -110,13 +110,13 @@ object ToolCalls {
   }
 
   /**
-   * anthropic: the assistant's thinking blocks when [withThinking], then its text (if any), then its `tool_use` blocks —
+   * anthropic: the [thinking] blocks chosen for it, then its text (if any), then its `tool_use` blocks —
    * the order the answer came in, which is the order the wire checks.
    */
-  fun anthropicAssistant(m: ChatMessage, withThinking: Boolean = false): JsonObject = buildJsonObject {
+  fun anthropicAssistant(m: ChatMessage, thinking: List<ThinkingBlock> = emptyList()): JsonObject = buildJsonObject {
     put("role", "assistant")
     put("content", JsonArray(buildList {
-      if (withThinking) m.thinking.forEach { add(it.toWire()) }
+      thinking.forEach { add(it.toWire()) }
       if (m.text.isNotBlank()) add(buildJsonObject { put("type", "text"); put("text", m.text) })
       m.toolCalls.forEach { call ->
         add(buildJsonObject {
