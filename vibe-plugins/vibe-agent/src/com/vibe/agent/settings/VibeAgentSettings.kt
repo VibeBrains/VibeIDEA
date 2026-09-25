@@ -189,6 +189,7 @@ object VibeAgentSettings {
   private const val KEY_DOCS_FOLDER = "vibe.agent.docsFolder"
   private const val KEY_EMBEDDING_MODEL = "vibe.agent.embeddingModel"
   private const val KEY_MINIMALISM = "vibe.agent.minimalismMode"
+  private const val KEY_TERSE = "vibe.agent.terseMode"
   private const val KEY_METRIC_PATTERN = "vibe.agent.metricPattern"
   private const val KEY_OFFLINE = "vibe.agent.offline"
   private const val KEY_REASONING = "vibe.agent.reasoningLevel"
@@ -517,6 +518,11 @@ object VibeAgentSettings {
   var minimalismMode: String
     get() = props.getValue(KEY_MINIMALISM, "off")
     set(value) = props.setValue(KEY_MINIMALISM, value.trim().lowercase(), "off")
+
+  /** Terse replies ([com.vibe.agent.terse.TerseReplies]): off, lite, full, ultra; on by default at `full` */
+  var terseMode: String
+    get() = props.getValue(KEY_TERSE, com.vibe.agent.terse.TerseReplies.Level.DEFAULT.id)
+    set(value) = props.setValue(KEY_TERSE, value.trim().lowercase(), com.vibe.agent.terse.TerseReplies.Level.DEFAULT.id)
 
   var embeddingModel: String
     get() = props.getValue(KEY_EMBEDDING_MODEL, "")

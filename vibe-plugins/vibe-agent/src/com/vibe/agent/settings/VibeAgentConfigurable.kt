@@ -39,6 +39,7 @@ class VibeAgentConfigurable : Configurable, Configurable.NoScroll {
   private var digestField: com.intellij.ui.components.JBTextField? = null
   private var embeddingField: com.intellij.ui.components.JBTextField? = null
   private var minimalismMode: com.intellij.openapi.ui.ComboBox<String>? = null
+  private var terseMode: com.intellij.openapi.ui.ComboBox<String>? = null
   private var metricPattern: com.intellij.ui.components.JBTextField? = null
   private var offlineBox: com.intellij.ui.components.JBCheckBox? = null
   private var reasoningLevel: com.intellij.openapi.ui.ComboBox<String>? = null
@@ -97,7 +98,7 @@ class VibeAgentConfigurable : Configurable, Configurable.NoScroll {
     val watchHeight = JBIntSpinner(VibeAgentSettings.watchFrameHeight, VibeAgentSettings.MIN_WATCH_FRAME_HEIGHT, VibeAgentSettings.MAX_WATCH_FRAME_HEIGHT).also { watchHeightSpinner = it }
     val telegramProxy = com.intellij.ui.components.JBTextField(VibeAgentSettings.telegramProxy, 24).also { telegramProxyField = it }
     val telegramProject = com.intellij.ui.components.JBTextField(VibeAgentSettings.telegramProject, 24).also { telegramProjectField = it }
-    val reasoning = SettingsUi.combo(arrayOf("off", "low", "medium", "high")).also {
+    val reasoning = SettingsUi.combo(QuickSettings.REASONING_LEVELS.toTypedArray()).also {
       it.selectedItem = VibeAgentSettings.reasoningLevel
       reasoningLevel = it
     }
@@ -107,9 +108,13 @@ class VibeAgentConfigurable : Configurable, Configurable.NoScroll {
       it.selectedItem = VibeAgentSettings.metricDirection
       metricDirection = it
     }
-    val minimalism = SettingsUi.combo(arrayOf("off", "light", "full", "ultra")).also {
+    val minimalism = SettingsUi.combo(com.vibe.agent.minimalism.MinimalismPolicy.Mode.entries.map { it.name.lowercase() }.toTypedArray()).also {
       it.selectedItem = VibeAgentSettings.minimalismMode
       minimalismMode = it
+    }
+    val terse = SettingsUi.combo(com.vibe.agent.terse.TerseReplies.Level.entries.map { it.id }.toTypedArray()).also {
+      it.selectedItem = com.vibe.agent.terse.TerseReplies.Level.of(VibeAgentSettings.terseMode).id
+      terseMode = it
     }
     val embedding = com.intellij.ui.components.JBTextField(VibeAgentSettings.embeddingModel, 32).also { embeddingField = it }
     val digest = com.intellij.ui.components.JBTextField(VibeAgentSettings.digestTime, 8).also { digestField = it }
@@ -200,6 +205,8 @@ class VibeAgentConfigurable : Configurable, Configurable.NoScroll {
       .addLabeledComponent(t("autopilot.checkpointEvery"), autopilotEvery)
       .addLabeledComponent(t("autopilot.maxTokens"), autopilotBudget)
       .addComponent(hint(t("autopilot.hint")))
+      .addLabeledComponent(t("settings.agent.terse"), terse)
+      .addComponent(hint(t("settings.agent.hint.terse")))
       .addLabeledComponent(t("settings.agent.reasoning"), reasoning)
       .addComponent(hint(t("settings.agent.hint.reasoning")))
       .addComponent(offline)
@@ -328,6 +335,7 @@ class VibeAgentConfigurable : Configurable, Configurable.NoScroll {
     (digestField?.text?.trim() ?: VibeAgentSettings.digestTime) != VibeAgentSettings.digestTime ||
     (embeddingField?.text?.trim() ?: VibeAgentSettings.embeddingModel) != VibeAgentSettings.embeddingModel ||
     (minimalismMode?.selectedItem as? String ?: VibeAgentSettings.minimalismMode) != VibeAgentSettings.minimalismMode ||
+    (terseMode?.selectedItem as? String)?.let { it != com.vibe.agent.terse.TerseReplies.Level.of(VibeAgentSettings.terseMode).id } == true ||
     (metricPattern?.text?.trim() ?: VibeAgentSettings.metricPattern) != VibeAgentSettings.metricPattern ||
     (offlineBox?.isSelected ?: VibeAgentSettings.offline) != VibeAgentSettings.offline ||
     (reasoningLevel?.selectedItem as? String ?: VibeAgentSettings.reasoningLevel) != VibeAgentSettings.reasoningLevel ||
@@ -392,6 +400,7 @@ class VibeAgentConfigurable : Configurable, Configurable.NoScroll {
     digestField?.let { VibeAgentSettings.digestTime = it.text }
     embeddingField?.let { VibeAgentSettings.embeddingModel = it.text }
     (minimalismMode?.selectedItem as? String)?.let { VibeAgentSettings.minimalismMode = it }
+    (terseMode?.selectedItem as? String)?.let { VibeAgentSettings.terseMode = it }
     metricPattern?.let { VibeAgentSettings.metricPattern = it.text }
     offlineBox?.let { VibeAgentSettings.offline = it.isSelected }
     (reasoningLevel?.selectedItem as? String)?.let { VibeAgentSettings.reasoningLevel = it }
@@ -467,6 +476,7 @@ class VibeAgentConfigurable : Configurable, Configurable.NoScroll {
     digestField?.text = VibeAgentSettings.digestTime
     embeddingField?.text = VibeAgentSettings.embeddingModel
     minimalismMode?.selectedItem = VibeAgentSettings.minimalismMode
+    terseMode?.selectedItem = com.vibe.agent.terse.TerseReplies.Level.of(VibeAgentSettings.terseMode).id
     metricPattern?.text = VibeAgentSettings.metricPattern
     offlineBox?.isSelected = VibeAgentSettings.offline
     reasoningLevel?.selectedItem = VibeAgentSettings.reasoningLevel

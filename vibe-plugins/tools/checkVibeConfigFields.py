@@ -113,19 +113,23 @@ SEED_ROOT = 'vibe-plugins/vibe-agent/resources/vibeDefaults/'
 PRODUCTS_FILE = SEED_ROOT + 'products.json'
 
 
-def seeded_to_nobody():
-    """Пути набора, которые products.json адресует пустому списку продуктов: не засеваются никому.
+PRODUCT = 'vibeidea'
 
-    Это данные набора, а не настройки — сейчас общие тестовые векторы (testVectors/, 17.09.2026).
-    Человек их не копирует, и ключи в них читает тест, а не парсер конфига: проверять их как поля
-    сида — ложная тревога. Граница взята из того же файла, по которому решает сеялка, а не списком
-    здесь: иначе новый файл тестовых данных снова красил бы гейт.
+
+def seeded_to_nobody():
+    """Пути набора, которые products.json не засевает НАМ: адресованные пустому списку или другому продукту.
+
+    Пустой список — данные набора, а не настройки (тестовые векторы, каталог нейрослопа): ключи в них
+    читает тест или код из сборки, а не парсер конфига. Файл другого продукта (сценарии `workflows/`
+    только для VibeIDE) к нам не приезжает вовсе, и его ключи читает чужой парсер: проверять их как
+    поля нашего сида — ложная тревога. Граница взята из того же файла, по которому решает сеялка.
     """
     try:
         data = json.loads(strip_jsonc(io.open(PRODUCTS_FILE, encoding='utf-8').read()))
     except (IOError, ValueError):
         return set()
-    return {f.get('path') for f in data.get('files', []) if isinstance(f, dict) and f.get('products') == []}
+    return {f.get('path') for f in data.get('files', [])
+            if isinstance(f, dict) and isinstance(f.get('products'), list) and PRODUCT not in f.get('products')}
 
 
 def strip_jsonc(text):

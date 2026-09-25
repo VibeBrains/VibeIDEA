@@ -112,6 +112,8 @@ object VibeDefaults {
     "skills/anti-slop/evals/evals.json" to "skills/anti-slop/evals/evals.json",
     "skills/anti-slop/evals/draft.md" to "skills/anti-slop/evals/draft.md",
     "skills/anti-slop/evals/human-post.md" to "skills/anti-slop/evals/human-post.md",
+    "skills/demo/SKILL.md" to "skills/demo/SKILL.md",
+    "skills/demo/evals/evals.json" to "skills/demo/evals/evals.json",
     "skills/design-vocabulary/SKILL.md" to "skills/design-vocabulary/SKILL.md",
     "skills/example/SKILL.md" to "skills/example/SKILL.md",
     // Образец эвалов: случаи проверяют ровно то, что обещает SKILL.md примера.

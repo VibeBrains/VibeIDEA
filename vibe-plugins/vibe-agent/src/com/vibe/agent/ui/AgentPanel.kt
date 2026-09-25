@@ -460,6 +460,10 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     // Шестерёнка уехала в шапку панели (VibeAgentToolWindowFactory): настройки открывают раз в
     // месяц, а место в ряду композера занимают всегда — там живёт то, что меняют по ходу работы.
     composer.addPill(permissionPicker.pill)
+    // Unlike the settings pages, this menu holds what people change while working: reply style, reasoning, offline
+    composer.addPill(com.vibe.agent.ui.composer.QuickSettingsPill {
+      ShowSettingsUtil.getInstance().showSettingsDialog(project, com.vibe.agent.settings.VibeAgentConfigurable::class.java)
+    }.pill)
     // The microphone appears only where recording is possible: a button that cannot work is worse
     // than no button.
     if (com.vibe.agent.voice.VoiceCapture.isSupported()) composer.addPill(voicePill)
@@ -3197,6 +3201,43 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     return com.vibe.agent.minimalism.MinimalismPolicy.preamble(mode, rules) + "\n\n" + prompt
   }
 
+  /**
+   * Agent sessions and the terse-replies level each was last given
+   * An agent keeps its own history, so the instruction goes once per session and again only when the level changes
+   */
+  private val terseSent = java.util.concurrent.ConcurrentHashMap<String, com.vibe.agent.terse.TerseReplies.Level>()
+
+  /** The terse-replies instruction in front of an agent prompt, when this session has not been given the current level */
+  private fun prependTerse(c: AcpClient, prompt: String): String {
+    val session = c.sessionId ?: return prompt
+    val file = terseFile() ?: return prompt
+    val current = com.vibe.agent.terse.TerseReplies.Level.of(VibeAgentSettings.terseMode)
+    val note = com.vibe.agent.terse.TerseReplies.forAgent(file, terseSent[session], current)
+    terseSent[session] = current
+    return if (note == null) prompt else note + "\n\n" + prompt
+  }
+
+  /**
+   * The terse-replies instruction as a system message of the direct chat, nothing when the style is off
+   * A system message and not a prefix of the user's text: it stays the same from turn to turn, so the prompt cache holds
+   */
+  private fun terseMessage(): List<ChatMessage> {
+    val file = terseFile() ?: return emptyList()
+    val text = com.vibe.agent.terse.TerseReplies.instruction(file, com.vibe.agent.terse.TerseReplies.Level.of(VibeAgentSettings.terseMode))
+    return if (text.isEmpty()) emptyList() else listOf(ChatMessage("system", text))
+  }
+
+  /** The instruction from the build; its absence is a packaging defect, said once in the log rather than on every turn */
+  private fun terseFile(): String? {
+    val text = com.vibe.agent.defaults.VibeDefaults.setFile(com.vibe.agent.terse.TerseReplies.FILE)
+    if (text == null && terseMissingLogged.compareAndSet(false, true)) {
+      com.intellij.openapi.diagnostic.logger<AgentPanel>().warn("${com.vibe.agent.terse.TerseReplies.FILE} is missing from the build")
+    }
+    return text
+  }
+
+  private val terseMissingLogged = java.util.concurrent.atomic.AtomicBoolean(false)
+
   private fun prependKnowledge(prompt: String, userText: String): String {
     val index = com.vibe.agent.knowledge.KnowledgeIndex.getInstance(project)
     val entries = index.entries()
@@ -3283,7 +3324,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     // The client first: whether the agent could resume its session is known only once it is open,
     // and a session it could not resume gets the unfinished plan in front of the prompt.
     val c = ensureClient(t.config, turnThreadId ?: currentThreadId)
-    val fullPrompt = prependMinimalism(prependProjectRules(prependKnowledge(prependCarriedPlan(designed), text), text, loaded))
+    val fullPrompt = prependTerse(c, prependMinimalism(prependProjectRules(prependKnowledge(prependCarriedPlan(designed), text), text, loaded)))
     // A fresh turn: its tool calls, changed files and ceilings started empty with its TurnState; what the panel keeps
     // besides them is reset here.
     trace.clear()
@@ -3732,7 +3773,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
       var tools = com.vibe.agent.mcp.ToolSearch.offered(allTools, loaded, VibeAgentSettings.toolSearchThreshold)
       // Where the turn is happening goes FIRST and always: a model that is not told invents the
       // answer, and which tool it invents with differs from endpoint to endpoint (WorkspaceBriefing).
-      val wire = listOf(workspaceMessage()) +
+      val wire = listOf(workspaceMessage()) + terseMessage() +
                  com.vibe.agent.providers.ToolRounds.expand(compactForWindow(t, resolved, threadId, transcript, uncompacted, tools))
       // Said out loud when it happens: a broken prefix is invisible, and its whole cost lands on
       // the bill. The line names the turn where the conversation stopped being append-only.
