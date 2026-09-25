@@ -24,6 +24,8 @@ object SecretPatterns {
     Pattern("GitHub token", Regex("\\bgh[pousr]_[A-Za-z0-9]{36,}\\b")),
     Pattern("Slack token", Regex("\\bxox[baprs]-[A-Za-z0-9-]{10,}")),
     Pattern("Google API key", Regex("\\bAIza[0-9A-Za-z_-]{35}\\b")),
+    // A team memory token of VibeMemory: `vmt_<token id>_<secret>`, the form its engine recognises itself
+    Pattern("VibeMemory token", Regex("\\bvmt_[A-Za-z0-9]+_[A-Za-z0-9_-]{16,}")),
   )
 
   /** First matching shape, or null. */

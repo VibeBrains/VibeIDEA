@@ -765,7 +765,7 @@ class LlmClient(
      */
     fun defaultClient(timeout: Duration, direct: Boolean = false): HttpClient {
       val builder = HttpClient.newBuilder().connectTimeout(timeout)
-      applyIdeTrust(builder)
+      com.vibe.agent.util.IdeHttpTrust.apply(builder)
       // Straight out means past OUR proxy and past the IDE's one: without a selector the JVM default is the IDE's
       if (direct) return builder.proxy(HttpClient.Builder.NO_PROXY).build()
       val spec = runCatching { com.vibe.agent.resilience.ProxySettings.parse(com.vibe.agent.settings.VibeAgentSettings.llmProxyUrl) }
@@ -778,33 +778,6 @@ class LlmClient(
       // о том, идёт ли хост мимо, принимает [ProxySettings.bypasses]; здесь только проводка.
       spec?.let { builder.proxy(BypassingProxySelector(it.toProxy(), System.getenv("NO_PROXY") ?: System.getenv("no_proxy"))) }
       return builder.build()
-    }
-
-    /**
-     * Trust and authentication taken from the IDE itself: its certificates and its proxy authenticator.
-     *
-     * A client built from scratch inherits none of what the person configured in the IDE: a corporate root
-     * certificate added in settings would not apply to provider requests (the chat fails at the TLS handshake behind
-     * such a proxy), and a proxy that asks for a login would not be passed at all. The platform provides both
-     * (`PlatformHttpClient`, 2026.3) — exactly the part not worth writing ourselves.
-     *
-     * The ROUTE stays ours. Model traffic uses its own proxy on purpose — people often need one tunnel and not the
-     * other — so only trust and authentication are taken here, and [BypassingProxySelector] below picks the proxy.
-     * The authenticator alone changes nothing: it fires only when a proxy actually asks for credentials.
-     *
-     * Wrapped in `runCatching` and gated on the application state: before the application is up there are no
-     * services yet, and a missing embellishment must not fail the client — the request just goes as before.
-     */
-    private fun applyIdeTrust(builder: HttpClient.Builder) {
-      runCatching {
-        val app = com.intellij.openapi.application.ApplicationManager.getApplication() ?: return
-        if (app.isDisposed) return
-        app.getServiceIfCreated(com.intellij.util.net.ssl.CertificateManager::class.java)
-          ?.let { builder.sslContext(it.sslContext) }
-        builder.authenticator(com.intellij.util.net.JdkProxyProvider.getInstance().authenticator)
-      }.onFailure {
-        logger<LlmClient>().warn("could not take the IDE trust settings for the model client: ${it.message}")
-      }
     }
 
     /**

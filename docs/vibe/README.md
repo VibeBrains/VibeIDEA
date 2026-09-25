@@ -16,6 +16,7 @@
 - [manuals/release.md](manuals/release.md) — как выпустить релиз: ветка, сборка с гейтом дистрибутива, заметки, тег, публикация, права.
 - [manuals/compareModels.md](manuals/compareModels.md) — как сравнить две модели на своём репозитории: почему не по бенчмаркам, порядок прогонов, что считать кроме метрики.
 - [manuals/debugging.md](manuals/debugging.md) — отладка TS и PHP: адаптеры ставятся снаружи, проверка доктором, подключение через LSP4IJ.
+- [manuals/teamMemory.md](manuals/teamMemory.md) — память команды VibeMemory: подключение агента `vibeidea` в кабинете, где токен, инструменты команды в прямом чате и у внешних агентов
 - [manuals/telegramBridge.md](manuals/telegramBridge.md) — мост в Telegram: свой бот, разрешение чата владельцем, команды, прокси и чего пока нет.
 - [manuals/commandsSpec.md](manuals/commandsSpec.md) — спека команд проекта `.vibe/commands.json`: формат, что отклоняется и почему, разрешение по хешу, секреты по имени (самодостаточная, для LLM).
 - [manuals/skillsSpec.md](manuals/skillsSpec.md) — спека Agent Skills `.vibe/skills/<id>/SKILL.md`: формат, шесть ключей шапки, валидатор, пример (самодостаточная, для LLM).

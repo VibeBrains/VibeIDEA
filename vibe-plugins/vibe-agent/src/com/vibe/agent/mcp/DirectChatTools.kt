@@ -28,7 +28,7 @@ class DirectChatTools(
 
     fun riskOf(tool: String): McpProtocol.Risk
 
-    fun call(tool: String, arguments: JsonObject): McpStdioClient.CallResult
+    fun call(tool: String, arguments: JsonObject): McpClient.CallResult
 
     override fun close() {}
   }
@@ -134,7 +134,7 @@ class DirectChatTools(
 }
 
 /**
- * The shared VibeMemory store over [McpStdioClient].
+ * The shared VibeMemory store over [McpClient].
  *
  * One server per chat panel, started on the first turn that offers tools and kept for the next ones — the
  * store is read on every search, and a process per turn would be a cost nobody sees. A server that died is
@@ -144,12 +144,12 @@ class DirectChatTools(
  * updated [READ_TOOLS].
  */
 class MemoryServerSource(
-  private val connect: () -> McpStdioClient?,
+  private val connect: () -> McpClient?,
   private val clientVersion: String,
   private val timeoutMs: Long = DirectChatTools.CALL_TIMEOUT_MS,
 ) : DirectChatTools.Source {
-  private var client: McpStdioClient? = null
-  private var tools: List<McpStdioClient.RemoteTool> = emptyList()
+  private var client: McpClient? = null
+  private var tools: List<McpClient.RemoteTool> = emptyList()
 
   @Synchronized
   override fun specs(): List<ToolSpec> {
@@ -173,8 +173,8 @@ class MemoryServerSource(
 
   override fun riskOf(tool: String): McpProtocol.Risk = Companion.riskOf(tool)
 
-  override fun call(tool: String, arguments: JsonObject): McpStdioClient.CallResult {
-    val current = synchronized(this) { client?.takeIf { it.isAlive } } ?: throw McpStdioClient.McpException("server stopped")
+  override fun call(tool: String, arguments: JsonObject): McpClient.CallResult {
+    val current = synchronized(this) { client?.takeIf { it.isAlive } } ?: throw McpClient.McpException("server stopped")
     return current.callTool(tool, arguments, timeoutMs)
   }
 
@@ -206,10 +206,10 @@ class IdeToolsSource(private val dispatch: (String, JsonObject) -> McpServer.Too
 
   override fun riskOf(tool: String): McpProtocol.Risk = McpProtocol.riskOf(tool)
 
-  override fun call(tool: String, arguments: JsonObject): McpStdioClient.CallResult {
-    if (tool in EXCLUDED) throw McpStdioClient.McpException("not offered in the direct chat")
+  override fun call(tool: String, arguments: JsonObject): McpClient.CallResult {
+    if (tool in EXCLUDED) throw McpClient.McpException("not offered in the direct chat")
     val result = dispatch(tool, arguments)
-    return McpStdioClient.CallResult(result.text, result.isError)
+    return McpClient.CallResult(result.text, result.isError)
   }
 
   companion object {

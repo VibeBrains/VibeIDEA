@@ -284,6 +284,7 @@ class VibeDoctorAction : AnAction({ t("doctor.action") }) {
         com.vibe.agent.mcp.MemoryServerOffer.Reason.NOT_RUNNING -> t("doctor.detail.memoryBroken", "path" to memory.path.toString())
       },
     ))
+    lines.add(teamMemoryLine())
 
     // Голос: чем расшифровывается и идёт ли расшифровка во время записи. Иначе «кнопка не
     // работает» выясняется первой же заметкой, а причин у этого три разных.
@@ -478,5 +479,35 @@ class VibeDoctorAction : AnAction({ t("doctor.action") }) {
   private fun labels() = object : VibeDiagnosis.Labels {
     override fun header(problems: Int, total: Int) = t("doctor.header", "problems" to problems, "total" to total)
     override val allGood: String get() = t("doctor.allGood")
+  }
+
+  /**
+   * The team memories this machine is connected to, each asked for real: the helper gives the header, the server
+   * answers the handshake or refuses the token. A sidecar alone says only that a token was once issued
+   */
+  private fun teamMemoryLine(): VibeDiagnosis.Line {
+    val root = com.vibe.agent.mcp.TeamMemory.root(System.getenv("VIBEMEMORY_DIR"), System.getProperty("user.home"))
+    val teams = com.vibe.agent.mcp.TeamMemory.teams(root)
+    if (teams.isEmpty()) return VibeDiagnosis.Line(t("doctor.line.teamMemory"), VibeDiagnosis.State.ABSENT, t("doctor.detail.teamMemoryNone"))
+    val helper = com.vibe.agent.mcp.TeamMemory.helperPath(root, com.vibe.agent.util.ExecutableNames.isWindows())
+    val version = com.intellij.openapi.application.ApplicationInfo.getInstance().fullVersion
+    val problems = teams.mapNotNull { team ->
+      val failure = runCatching {
+        val headers = com.vibe.agent.mcp.TeamMemory.headers(helper, team.team)
+        com.vibe.agent.mcp.McpClient(com.vibe.agent.mcp.McpHttpTransport(java.net.URI.create(team.url), headers,
+          com.vibe.agent.mcp.McpHttpTransport.ideClient(TEAM_MEMORY_PROBE))).use { it.initialize(version, TEAM_MEMORY_PROBE.toMillis()) }
+      }.exceptionOrNull() ?: return@mapNotNull null
+      if (failure is com.vibe.agent.mcp.McpClient.Unauthorized)
+        t("doctor.detail.teamMemoryUnauthorized", "team" to team.team, "cabinet" to (team.cabinet ?: "VibeMemory"))
+      else t("doctor.detail.teamMemoryFailed", "team" to team.team, "reason" to (failure.message ?: failure.javaClass.simpleName))
+    }
+    return if (problems.isEmpty())
+      VibeDiagnosis.Line(t("doctor.line.teamMemory"), VibeDiagnosis.State.OK, t("doctor.detail.teamMemoryOk", "teams" to teams.joinToString { it.team }))
+    else VibeDiagnosis.Line(t("doctor.line.teamMemory"), VibeDiagnosis.State.WARN, problems.joinToString("; "))
+  }
+
+  private companion object {
+    /** The doctor waits for a team server as long as a person waits for a report line */
+    val TEAM_MEMORY_PROBE: java.time.Duration = java.time.Duration.ofSeconds(5)
   }
 }

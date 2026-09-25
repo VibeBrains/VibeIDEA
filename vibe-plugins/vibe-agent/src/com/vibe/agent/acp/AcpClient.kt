@@ -65,6 +65,12 @@ class AcpClient(
     fun memoryServer(): Map<String, Any>? = null
 
     /**
+     * The memory servers of the teams this machine is connected to — see [com.vibe.agent.mcp.TeamMemory]
+     * They are reached over HTTP, so an agent that does not speak it gets none
+     */
+    fun teamMemoryServers(agentSupportsHttp: Boolean): List<Map<String, Any>> = emptyList()
+
+    /**
      * Свои MCP-серверы человека из `.vibe/mcp.json` — те же, что видит прямой чат.
      *
      * Агент запускает их сам, поэтому получает команду, аргументы и окружение. Два набора
@@ -172,7 +178,7 @@ class AcpClient(
     process = p
     writer = p.outputStream.bufferedWriter()
     Thread({ readLoop(p.inputStream.bufferedReader()) }, "vibe-acp-reader").apply { isDaemon = true }.start()
-    Thread({ p.errorStream.bufferedReader().forEachLine { handler.onProtocolLog("[stderr] $it") } }, "vibe-acp-stderr")
+    Thread({ p.errorStream.bufferedReader().forEachLine { handler.onProtocolLog("[stderr] " + masked(it)) } }, "vibe-acp-stderr")
       .apply { isDaemon = true }.start()
     Thread({
       val code = p.waitFor()
@@ -253,6 +259,13 @@ class AcpClient(
    */
   private var ideTools: Map<String, Any>? = null
 
+  /** Credentials handed to the agent in `session/new`: never printed back, whatever the agent writes to stderr */
+  private val secrets: MutableSet<String> = java.util.concurrent.ConcurrentHashMap.newKeySet()
+
+  /** A line of the agent's stderr with every credential we gave it, and every known shape of one, hidden */
+  private fun masked(line: String): String =
+    com.vibe.agent.security.SecretPatterns.redact(AgentSecrets.maskValues(line, secrets))
+
   /**
    * Открыть сессию, ВОЗОБНОВИВ прежнюю, если она известна и агент это умеет.
    *
@@ -306,10 +319,13 @@ class AcpClient(
       // Инструменты самой IDE предлагаются агенту, которого IDE и запустила: без этого он
       // работает в проекте, не видя ни графа импортов, ни поиска по корпусу, ни журнала решений.
       // Решение о том, можно ли, принимает [IdeToolsOffer]; здесь только форма запроса.
+      val servers = listOfNotNull(ideTools, handler.memoryServer()) +
+                    handler.teamMemoryServers(capabilities?.mcpHttp == true) + handler.configuredServers()
+      // Every header value handed to the agent is a credential it may print: its stderr goes to the chat, masked
+      secrets.addAll(AgentSecrets.headerValues(servers))
       sessionParams = buildJsonObject {
         put("cwd", workingDir ?: System.getProperty("user.home"))
-        put("mcpServers", JsonArray((listOfNotNull(ideTools, handler.memoryServer()) + handler.configuredServers())
-                                      .map { toJson(it) }))
+        put("mcpServers", JsonArray(servers.map { toJson(it) }))
       }
       openSession(previousSessionId)
     }

@@ -1,121 +1,53 @@
 // Copyright 2026 VibeBrains. Use of this source code is governed by the Apache 2.0 license.
 package com.vibe.agent.mcp
 
-import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.contentOrNull
-import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
-import kotlinx.serialization.json.longOrNull
 import kotlinx.serialization.json.put
-import java.io.InputStream
-import java.io.OutputStream
 import java.nio.file.Path
-import java.util.concurrent.CompletableFuture
-import java.util.concurrent.ConcurrentHashMap
-import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicLong
 
 /**
- * A client of one stdio MCP server: newline-delimited JSON-RPC 2.0 over the process's stdin and stdout.
+ * A client of one MCP server: the protocol over a transport — a process's stdio ([McpStdioTransport]) or HTTP
+ * ([McpHttpTransport]).
  *
  * Our own agent needs it where an ACP agent does not: an ACP agent is the MCP client itself and only gets
  * a `session/new` record ([MemoryServerOffer]), while the direct chat has nobody else to speak to the server.
  *
- * Speaks the handshake revision ([McpProtocol.VERSION_2025]): stdio servers in the wild, VibeMemory's
- * included, open with `initialize`. Only what the direct chat uses is here — `tools/list` and
- * `tools/call`; a request from the server (`roots/list`, sampling) is answered «method not found»
- * rather than left hanging, because a server waiting for our answer stops answering us.
- *
- * Streams, not a process, in the constructor: the protocol is testable against a pipe, and [start] is
- * the one place that knows about processes.
+ * Only what the direct chat uses is here — the handshake, `tools/list` and `tools/call`.
+ * The protocol lives apart from the transport so that a server reached over HTTP is read by the same rules as one
+ * started as a process: two copies of the handshake would part ways on exactly the revision question
  */
-class McpStdioClient(private val input: InputStream, private val output: OutputStream, private val onClose: () -> Unit = {}) : AutoCloseable {
+class McpClient(private val transport: McpTransport) : AutoCloseable {
   data class RemoteTool(val name: String, val description: String, val inputSchema: JsonObject)
 
   data class CallResult(val text: String, val isError: Boolean)
 
-  class McpException(message: String) : RuntimeException(message)
+  open class McpException(message: String) : RuntimeException(message)
 
-  private val json = Json { ignoreUnknownKeys = true }
+  /** The server refused the credentials: a new request with the same ones cannot succeed */
+  class Unauthorized(message: String) : McpException(message)
+
   private val nextId = AtomicLong(1)
-  private val pending = ConcurrentHashMap<Long, CompletableFuture<JsonObject>>()
-  @Volatile private var closed = false
 
-  val isAlive: Boolean get() = !closed
-
-  private val reader = Thread({ readLoop(input) }, "vibe-mcp-stdio").apply { isDaemon = true }
-
-  init {
-    reader.start()
-  }
-
-  private fun readLoop(input: InputStream) {
-    try {
-      input.bufferedReader(Charsets.UTF_8).forEachLine { line ->
-        if (line.isNotBlank()) runCatching { dispatch(json.parseToJsonElement(line).jsonObject) }
-      }
-    }
-    catch (_: java.io.IOException) {
-      // The process went away; close() below fails whatever still waits.
-    }
-    finally {
-      close()
-    }
-  }
-
-  private fun dispatch(message: JsonObject) {
-    val id = message["id"]?.jsonPrimitive?.longOrNull
-    if (message["method"] != null) {
-      if (id != null) send(buildJsonObject {
-        put("jsonrpc", "2.0")
-        put("id", id)
-        put("error", buildJsonObject {
-          put("code", McpProtocol.Error.METHOD_NOT_FOUND)
-          put("message", "not supported by this client")
-        })
-      })
-      return
-    }
-    val waiter = id?.let { pending.remove(it) } ?: return
-    val error = message["error"] as? JsonObject
-    if (error != null) waiter.completeExceptionally(McpException(error["message"]?.jsonPrimitive?.contentOrNull ?: error.toString()))
-    else waiter.complete(message["result"] as? JsonObject ?: JsonObject(emptyMap()))
-  }
-
-  private fun send(message: JsonObject) {
-    synchronized(output) {
-      output.write((message.toString() + "\n").toByteArray(Charsets.UTF_8))
-      output.flush()
-    }
-  }
+  val isAlive: Boolean get() = transport.isAlive
 
   private fun request(method: String, params: JsonObject, timeoutMs: Long, meta: JsonObject? = null): JsonObject {
-    if (closed) throw McpException("server is not running")
+    if (!transport.isAlive) throw McpException("server is not running")
     val id = nextId.getAndIncrement()
-    val waiter = CompletableFuture<JsonObject>()
-    pending[id] = waiter
-    try {
-      send(buildJsonObject {
-        put("jsonrpc", "2.0")
-        put("id", id)
-        put("method", method)
-        put("params", if (meta == null) params else JsonObject(params + ("_meta" to meta)))
-      })
-      return waiter.get(timeoutMs, TimeUnit.MILLISECONDS)
-    }
-    catch (e: java.util.concurrent.ExecutionException) {
-      throw e.cause ?: e
-    }
-    catch (e: java.util.concurrent.TimeoutException) {
-      throw McpException("$method: no answer in $timeoutMs ms")
-    }
-    finally {
-      pending.remove(id)
-    }
+    val response = transport.exchange(buildJsonObject {
+      put("jsonrpc", "2.0")
+      put("id", id)
+      put("method", method)
+      put("params", if (meta == null) params else JsonObject(params + ("_meta" to meta)))
+    }, id, timeoutMs)
+    val error = response["error"] as? JsonObject
+    if (error != null) throw McpException(error["message"]?.jsonPrimitive?.contentOrNull ?: error.toString())
+    return response["result"] as? JsonObject ?: JsonObject(emptyMap())
   }
 
   /**
@@ -137,7 +69,8 @@ class McpStdioClient(private val input: InputStream, private val output: OutputS
       put("capabilities", JsonObject(emptyMap()))
       put("clientInfo", buildJsonObject { put("name", McpProtocol.SERVER_NAME); put("version", clientVersion) })
     }, timeoutMs)
-    send(buildJsonObject { put("jsonrpc", "2.0"); put("method", "notifications/initialized") })
+    transport.agreed(result["protocolVersion"]?.jsonPrimitive?.contentOrNull ?: McpProtocol.VERSION_2025)
+    transport.notify(buildJsonObject { put("jsonrpc", "2.0"); put("method", "notifications/initialized") })
     return result["instructions"]?.jsonPrimitive?.contentOrNull
   }
 
@@ -152,16 +85,26 @@ class McpStdioClient(private val input: InputStream, private val output: OutputS
    * молча идём знакомиться по-старому. Ответ новой эры приносит `instructions` и список версий;
    * инструкции возвращаются пустой строкой, если сервер их не дал, — иначе вызывающий не отличит
    * «сервер новой эры промолчал» от «пробы не было».
+   *
+   * A refused credential is not an «older revision» answer: it is raised as is
+   * Otherwise the caller would get it from `initialize`, a second request with the same refused token
    */
   private fun discover(clientVersion: String, timeoutMs: Long): String? {
     // Потолок пробы СВОЙ и короткий. Сервер прежней эры обязан ответить «метод не найден», но
     // обязан не значит отвечает: сервер, который молча глотает незнакомый метод, иначе добавлял бы
     // полный таймаут к каждому подключению — и это была бы наша плата за его молчание.
     val probeMs = minOf(timeoutMs, PROBE_MS)
-    val result = runCatching {
+    val result = try {
       request("server/discover", buildJsonObject {}, probeMs, meta = requestMeta(clientVersion))
-    }.getOrElse { return null }
+    }
+    catch (e: Unauthorized) {
+      throw e
+    }
+    catch (_: Exception) {
+      return null
+    }
     revision = McpProtocol.VERSION_2026
+    transport.agreed(McpProtocol.VERSION_2026)
     return result["instructions"]?.jsonPrimitive?.contentOrNull.orEmpty()
   }
 
@@ -229,23 +172,9 @@ class McpStdioClient(private val input: InputStream, private val output: OutputS
     return CallResult(text, result["isError"]?.jsonPrimitive?.booleanOrNull == true)
   }
 
-  override fun close() {
-    if (closed) return
-    closed = true
-    pending.values.forEach { it.completeExceptionally(McpException("server stopped")) }
-    pending.clear()
-    runCatching { output.close() }
-    onClose()
-    // The reader blocks in read(): closing the input is what wakes it. Without this a stopped server left a
-    // thread per chat panel waiting on a stream nobody would ever write to again (caught by the leak check).
-    runCatching { input.close() }
-    if (Thread.currentThread() !== reader) reader.join(READER_JOIN_MS)
-  }
+  override fun close() = transport.close()
 
   companion object {
-    /** A piped stream notices its close within a second; waiting a little longer covers a slow machine. */
-    private const val READER_JOIN_MS = 2_000L
-
     /** Сколько ждать ответа на пробу новой ревизии, прежде чем знакомиться по-старому. */
     private const val PROBE_MS = 1_500L
 
@@ -258,16 +187,8 @@ class McpStdioClient(private val input: InputStream, private val output: OutputS
       "This client cannot answer such requests; the call did not complete."
     private const val UNKNOWN_RESULT_MESSAGE = "The MCP server returned %s with an unknown resultType \"%s\"; the result was not read."
 
-    /** Starts the server process; its stderr is discarded — it is a log, not a protocol. */
-    fun start(command: String, args: List<String>, workingDir: Path?, env: Map<String, String> = emptyMap()): McpStdioClient {
-      val process = ProcessBuilder(listOf(command) + args)
-        .apply { workingDir?.let { directory(it.toFile()) } }
-        // Переменные окружения нужны чужим серверам: почти каждый просит ключ именно так. Своё
-        // окружение процесса IDE при этом СОХРАНЯЕТСЯ — сервер без PATH не найдёт даже node.
-        .apply { if (env.isNotEmpty()) environment().putAll(env) }
-        .redirectError(ProcessBuilder.Redirect.DISCARD)
-        .start()
-      return McpStdioClient(process.inputStream, process.outputStream) { process.destroy() }
-    }
+    /** Starts the server process and speaks to it over its stdio ([McpStdioTransport.start]) */
+    fun start(command: String, args: List<String>, workingDir: Path?, env: Map<String, String> = emptyMap()): McpClient =
+      McpClient(McpStdioTransport.start(command, args, workingDir, env))
   }
 }

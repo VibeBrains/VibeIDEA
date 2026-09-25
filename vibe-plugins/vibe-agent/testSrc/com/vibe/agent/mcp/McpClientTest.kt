@@ -15,8 +15,8 @@ import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
-/** The stdio MCP client against a fake server on a pipe, and the rights of the direct chat's tools. */
-class McpStdioClientTest {
+/** The MCP client over stdio against a fake server on a pipe, and the rights of the direct chat's tools. */
+class McpClientTest {
   /** A server that answers by a script: method → result JSON, or null to stay silent. */
   private class FakeServer(private val answer: (method: String, params: JsonObject) -> String?) {
     val toClient = PipedOutputStream()
@@ -45,7 +45,7 @@ class McpStdioClientTest {
 
     // onClose ends the server's output the way process.destroy() ends a real server's stdout: a pipe whose
     // writer never wrote does not notice the reader's close and would block the client's reader forever.
-    fun client() = McpStdioClient(clientIn, clientOut) { runCatching { toClient.close() } }
+    fun client() = McpClient(McpStdioTransport(clientIn, clientOut) { runCatching { toClient.close() } })
   }
 
   private val memoryServer = FakeServer { method, params ->
@@ -138,7 +138,7 @@ class McpStdioClientTest {
     val client = memoryServer.client()
     assertEquals("project VibeIDEA", client.initialize("test", 2_000))
     assertEquals(listOf("memory_search", "memory_save"), client.listTools(2_000).map { it.name })
-    assertEquals(McpStdioClient.CallResult("one record", false), client.callTool("memory_search", JsonObject(emptyMap()), 2_000))
+    assertEquals(McpClient.CallResult("one record", false), client.callTool("memory_search", JsonObject(emptyMap()), 2_000))
     assertTrue("notifications/initialized" in memoryServer.seen)
     client.close()
   }
@@ -147,7 +147,7 @@ class McpStdioClientTest {
   fun `a result that is not complete is an error that names it, not an empty success`() {
     val client = memoryServer.client()
     client.initialize("test", 2_000)
-    assertEquals(McpStdioClient.CallResult("saved", false), client.callTool("memory_new", JsonObject(emptyMap()), 2_000))
+    assertEquals(McpClient.CallResult("saved", false), client.callTool("memory_new", JsonObject(emptyMap()), 2_000))
     val asked = client.callTool("memory_ask", JsonObject(emptyMap()), 2_000)
     assertTrue(asked.isError && "input_required" in asked.text && "memory_ask" in asked.text, asked.text)
     val unknown = client.callTool("memory_future", JsonObject(emptyMap()), 2_000)
@@ -158,7 +158,7 @@ class McpStdioClientTest {
   @Test
   fun `a server error becomes an exception with its message`() {
     val client = memoryServer.client()
-    val e = assertFailsWith<McpStdioClient.McpException> { client.callTool("memory_save", JsonObject(emptyMap()), 2_000) }
+    val e = assertFailsWith<McpClient.McpException> { client.callTool("memory_save", JsonObject(emptyMap()), 2_000) }
     assertEquals("id is required", e.message)
     client.close()
   }
@@ -166,7 +166,7 @@ class McpStdioClientTest {
   @Test
   fun `a silent server times out instead of hanging the chat`() {
     val client = FakeServer { _, _ -> null }.client()
-    assertFailsWith<McpStdioClient.McpException> { client.initialize("test", 200) }
+    assertFailsWith<McpClient.McpException> { client.initialize("test", 200) }
     client.close()
     assertFalse(client.isAlive)
   }
@@ -210,9 +210,9 @@ class McpStdioClientTest {
     val calls = ArrayList<String>()
     val ide = IdeToolsSource { name, _ -> calls += name; McpServer.Tools.Result("ok $name") }
     val broken = object : DirectChatTools.Source {
-      override fun specs(): List<com.vibe.agent.providers.ToolSpec> = throw McpStdioClient.McpException("down")
+      override fun specs(): List<com.vibe.agent.providers.ToolSpec> = throw McpClient.McpException("down")
       override fun riskOf(tool: String) = McpProtocol.Risk.READ
-      override fun call(tool: String, arguments: JsonObject) = McpStdioClient.CallResult("", false)
+      override fun call(tool: String, arguments: JsonObject) = McpClient.CallResult("", false)
     }
     val failures = ArrayList<Exception>()
     val tools = DirectChatTools(listOf(ide, broken))
@@ -237,10 +237,10 @@ class McpStdioClientTest {
     val slow = object : DirectChatTools.Source {
       override fun specs() = listOf(com.vibe.agent.providers.ToolSpec("slow_tool", "долгий", JsonObject(emptyMap())))
       override fun riskOf(tool: String) = McpProtocol.Risk.READ
-      override fun call(tool: String, arguments: JsonObject): McpStdioClient.CallResult {
+      override fun call(tool: String, arguments: JsonObject): McpClient.CallResult {
         started.countDown()
         release.await(30, java.util.concurrent.TimeUnit.SECONDS)
-        return McpStdioClient.CallResult("поздно", false)
+        return McpClient.CallResult("поздно", false)
       }
     }
     val tools = DirectChatTools(listOf(slow), callTimeoutMs = 300)

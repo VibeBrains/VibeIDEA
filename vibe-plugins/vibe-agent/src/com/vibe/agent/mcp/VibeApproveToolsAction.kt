@@ -61,7 +61,7 @@ class VibeApproveToolsAction : DumbAwareAction() {
   private fun read(entry: McpServersFile.Entry, base: String?): List<ToolSpec> {
     val dir = base?.let { java.nio.file.Path.of(it) }
     val version = com.intellij.openapi.application.ApplicationInfo.getInstance().fullVersion
-    return McpStdioClient.start(entry.command, entry.args, dir, entry.env).use { client ->
+    return McpClient.start(entry.command, entry.args, dir, entry.env).use { client ->
       client.initialize(version, DirectChatTools.CALL_TIMEOUT_MS)
       client.listTools(DirectChatTools.CALL_TIMEOUT_MS).map { ToolSpec(it.name, it.description, it.inputSchema) }
     }

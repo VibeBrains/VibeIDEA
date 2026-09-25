@@ -186,10 +186,17 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
       connect = {
         val offer = com.vibe.agent.mcp.MemoryServerOffer.resolve()
         if (offer.reason != com.vibe.agent.mcp.MemoryServerOffer.Reason.OFFERED) null
-        else com.vibe.agent.mcp.McpStdioClient.start(offer.path.toString(), com.vibe.agent.mcp.MemoryServerOffer.ARGS,
-                                                     project.basePath?.let { java.nio.file.Path.of(it) })
+        else com.vibe.agent.mcp.McpClient.start(offer.path.toString(), com.vibe.agent.mcp.MemoryServerOffer.ARGS,
+                                                project.basePath?.let { java.nio.file.Path.of(it) })
       },
       clientVersion = com.intellij.openapi.application.ApplicationInfo.getInstance().fullVersion,
+    ),
+    // The team memories on the VibeMemory host; their tools carry the team in the name, so the order does not hide them
+    com.vibe.agent.mcp.TeamMemorySource(
+      teams = { com.vibe.agent.mcp.TeamMemory.teams(teamMemoryRoot()) },
+      connect = { team -> teamMemoryClient(team) },
+      clientVersion = com.intellij.openapi.application.ApplicationInfo.getInstance().fullVersion,
+      onFailure = { team, e -> systemLine(teamMemoryProblem(team, e)) },
     ),
     // Свои серверы человека идут ПОСЛЕДНИМИ: имя инструмента, совпавшее с нашим, достаётся нам —
     // иначе чужой сервер молча подменил бы `vibe_read_file`, и понять это было бы не по чему.
@@ -1032,6 +1039,42 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
       com.vibe.agent.mcp.McpServersFile.Problem.UNREADABLE -> t("mcp.servers.unreadable")
     }
   }
+
+  override fun teamMemoryServers(agentSupportsHttp: Boolean): List<Map<String, Any>> {
+    val teams = com.vibe.agent.mcp.TeamMemory.teams(teamMemoryRoot())
+    if (teams.isEmpty()) return emptyList()
+    // The person's own word in ~/.jetbrains/acp.json covers every server we would add, the team ones included
+    if (com.vibe.agent.acp.AcpConfig.useCustomMcp() == false) return emptyList()
+    if (!agentSupportsHttp) {
+      systemLine(t("mcp.team.agentNoHttp", "teams" to teams.joinToString { it.team }))
+      return emptyList()
+    }
+    val helper = com.vibe.agent.mcp.TeamMemory.helperPath(teamMemoryRoot(), com.vibe.agent.util.ExecutableNames.isWindows())
+    val offered = teams.mapNotNull { team ->
+      runCatching { com.vibe.agent.mcp.TeamMemory.acpEntry(team, com.vibe.agent.mcp.TeamMemory.headers(helper, team.team)) }
+        .onFailure { systemLine(teamMemoryProblem(team, it)) }
+        .getOrNull()
+    }
+    if (offered.isNotEmpty()) systemLine(t("mcp.team.offered", "teams" to teams.joinToString { it.team }))
+    return offered
+  }
+
+  private fun teamMemoryRoot(): java.nio.file.Path =
+    com.vibe.agent.mcp.TeamMemory.root(System.getenv("VIBEMEMORY_DIR"), System.getProperty("user.home"))
+
+  /** A connection to one team's server, with the header asked of VibeMemory's helper right now and kept nowhere */
+  private fun teamMemoryClient(team: com.vibe.agent.mcp.TeamMemory.Team): com.vibe.agent.mcp.McpClient {
+    val helper = com.vibe.agent.mcp.TeamMemory.helperPath(teamMemoryRoot(), com.vibe.agent.util.ExecutableNames.isWindows())
+    val headers = com.vibe.agent.mcp.TeamMemory.headers(helper, team.team)
+    return com.vibe.agent.mcp.McpClient(com.vibe.agent.mcp.McpHttpTransport(
+      java.net.URI.create(team.url), headers, com.vibe.agent.mcp.McpHttpTransport.ideClient(TEAM_MEMORY_CONNECT_TIMEOUT)))
+  }
+
+  /** What went wrong with a team's memory, in words the person can act on: a refused token says where to renew it */
+  private fun teamMemoryProblem(team: com.vibe.agent.mcp.TeamMemory.Team, e: Throwable): String =
+    if (e is com.vibe.agent.mcp.McpClient.Unauthorized)
+      t("mcp.team.unauthorized", "team" to team.team, "cabinet" to (team.cabinet ?: "VibeMemory"))
+    else t("mcp.team.failed", "team" to team.team, "reason" to (e.message ?: e.javaClass.simpleName))
 
   /**
    * The shared VibeMemory server — offered to every ACP agent this IDE starts, when it is installed and
@@ -6803,6 +6846,9 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     /** «У низа» для прилипания скролла: столько px недоскролла всё ещё считается низом. */
     /** Truncation of a command preview shown in a destructive-command confirm dialog. */
     const val DESTRUCTIVE_PREVIEW_LEN = 300
+
+    /** A team's memory lives on a host across the network; a connection that takes longer is one the chat should not wait on */
+    val TEAM_MEMORY_CONNECT_TIMEOUT: java.time.Duration = java.time.Duration.ofSeconds(10)
     /** How much of a tool call's arguments the approval dialog shows: enough to recognise the record, not a wall of JSON. */
     const val DIRECT_TOOL_ARGS_PREVIEW = 600
     /** Checkpoint label preview length. */

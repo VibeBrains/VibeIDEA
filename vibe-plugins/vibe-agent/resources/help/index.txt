@@ -33,4 +33,5 @@ manuals/serversSpec.md
 manuals/skillEvalsSpec.md
 manuals/skillsSpec.md
 manuals/slopSpec.md
+manuals/teamMemory.md
 manuals/telegramBridge.md

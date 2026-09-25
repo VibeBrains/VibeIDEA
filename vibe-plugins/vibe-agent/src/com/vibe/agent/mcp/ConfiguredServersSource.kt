@@ -40,7 +40,7 @@ class ConfiguredServersSource(
 ) : DirectChatTools.Source {
   private class Running(
     val entry: McpServersFile.Entry,
-    val client: McpStdioClient,
+    val client: McpClient,
     val tools: List<String>,
     /** Схемы запоминаются вместе с именами: список инструментов сервера меняется его перезапуском. */
     val specs: List<ToolSpec>,
@@ -61,7 +61,7 @@ class ConfiguredServersSource(
       if (alive == null) {
         stop(entry.name)
         val started = runCatching {
-          val client = McpStdioClient.start(entry.command, entry.args, workingDir, entry.env)
+          val client = McpClient.start(entry.command, entry.args, workingDir, entry.env)
           client.initialize(clientVersion, timeoutMs)
           val tools = client.listTools(timeoutMs)
           val specs = tools.map { ToolSpec(it.name, it.description, it.inputSchema) }
@@ -109,9 +109,9 @@ class ConfiguredServersSource(
 
   override fun riskOf(tool: String): McpProtocol.Risk = McpProtocol.Risk.WRITE
 
-  override fun call(tool: String, arguments: JsonObject): McpStdioClient.CallResult {
+  override fun call(tool: String, arguments: JsonObject): McpClient.CallResult {
     val owner = synchronized(this) { running.values.firstOrNull { tool in it.tools && it.client.isAlive } }
-      ?: throw McpStdioClient.McpException("сервер этого инструмента не запущен: $tool")
+      ?: throw McpClient.McpException("сервер этого инструмента не запущен: $tool")
     return owner.client.callTool(tool, arguments, timeoutMs)
   }
 

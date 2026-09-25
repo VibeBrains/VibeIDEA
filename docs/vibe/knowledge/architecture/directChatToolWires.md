@@ -1,7 +1,7 @@
 # Вызов инструментов в прямом чате: три провода, одна форма раунда
 
 **Дата:** 13.09.2026
-**Где:** `providers/ToolCalls.kt`, `providers/LlmClient.kt`, `mcp/McpStdioClient.kt`, `mcp/DirectChatTools.kt`
+**Где:** `providers/ToolCalls.kt`, `providers/LlmClient.kt`, `mcp/McpClient.kt` (до 25.09 — `McpStdioClient.kt`), `mcp/DirectChatTools.kt`
 
 ---
 
