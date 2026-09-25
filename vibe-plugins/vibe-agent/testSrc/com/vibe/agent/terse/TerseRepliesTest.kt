@@ -37,6 +37,7 @@ class TerseRepliesTest {
     assertTrue(positions.none { it < 0 }, "нет раздела: ${order.filterIndexed { i, _ -> positions[i] < 0 }}")
     assertEquals(positions.sorted(), positions, "разделы не в порядке файла")
     assertFalse(text.contains("## Off"))
+    assertFalse(text.contains("## Short"), "сжатая форма ушла вместе с полной")
     assertFalse(text.contains("Permission is hereby granted"), "лицензия ушла модели")
   }
 
@@ -64,5 +65,22 @@ class TerseRepliesTest {
     val text = "## Rules\n\nBe short.\n\n## Level: lite\n\nLite."
     assertEquals("", TerseReplies.instruction(text, Level.FULL))
     assertEquals("## Rules\n\nBe short.\n\n## Level: lite\n\nLite.", TerseReplies.instruction(text, Level.LITE))
+  }
+
+  @Test
+  fun `the short form is the short section and the level, without the common sections`() {
+    for (level in levels) {
+      val text = TerseReplies.instruction(file, level, short = true)
+      assertTrue(text.contains("## Short"), level.id)
+      assertTrue(text.contains("## Level: ${level.id}"), level.id)
+      for (common in listOf("## Rules", "## Boundaries", "## Clear parts", "## Off")) assertFalse(text.contains(common), common)
+    }
+    assertEquals("", TerseReplies.instruction(file, Level.OFF, short = true))
+  }
+
+  @Test
+  fun `a file without the short section gives the full text to a local model`() {
+    val text = "## Rules\n\nBe short.\n\n## Level: full\n\nFull."
+    assertEquals(TerseReplies.instruction(text, Level.FULL), TerseReplies.instruction(text, Level.FULL, short = true))
   }
 }

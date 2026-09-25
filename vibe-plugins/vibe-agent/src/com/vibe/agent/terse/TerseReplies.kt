@@ -26,6 +26,7 @@ object TerseReplies {
 
   private const val LEVEL_PREFIX = "level:"
   private const val OFF_SECTION = "off"
+  private const val SHORT_SECTION = "short"
   private val SECTION = Regex("^## ", RegexOption.MULTILINE)
 
   /** One `## ` section of the file: its heading and its whole text, heading included */
@@ -43,16 +44,24 @@ object TerseReplies {
     heading.takeIf { it.startsWith(LEVEL_PREFIX) }?.removePrefix(LEVEL_PREFIX)?.trim()
 
   /**
-   * The instruction for [level]: every common section, and of the level sections only the chosen one, in file order
+   * The instruction for [level]: the base sections and, of the level sections, only the chosen one, in file order
+   * The base is every common section, or with [short] only the `Short` one: a local model's prompt budget cannot carry
+   * the full text
+   * A file without the `Short` section gives the full text even then: the style must not vanish with a missing section
    * Empty at [Level.OFF], and empty when the file has no section for the level: half an instruction is worse than none
    */
-  fun instruction(file: String, level: Level): String {
+  fun instruction(file: String, level: Level, short: Boolean = false): String {
     if (level == Level.OFF) return ""
     val all = sections(file)
     if (all.none { levelOf(it.heading) == level.id }) return ""
+    val shortForm = short && all.any { it.heading == SHORT_SECTION }
     return all.filter { section ->
       val sectionLevel = levelOf(section.heading)
-      if (sectionLevel != null) sectionLevel == level.id else section.heading != OFF_SECTION
+      when {
+        sectionLevel != null -> sectionLevel == level.id
+        shortForm -> section.heading == SHORT_SECTION
+        else -> section.heading != OFF_SECTION && section.heading != SHORT_SECTION
+      }
     }.joinToString("\n\n") { it.text }
   }
 

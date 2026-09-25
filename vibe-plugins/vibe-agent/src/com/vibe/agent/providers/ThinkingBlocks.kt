@@ -47,25 +47,36 @@ data class ThinkingBlock(
     redactedData?.let { put("data", it) }
   }
 
+  /**
+   * The key of the prefix a thinking block was produced after: the system prompt, the tool set and every message before it
+   *
+   * Claude binds a block to the prefix it was produced with — a replayed block after a change of `system`, `tools` or an
+   * earlier message is a 400 on accounts created from 31.08.2026 (platform.claude.com/docs/en/models/opus-5-5/migration-guide)
+   * So a block goes back only after the same bytes it was produced after, whether it is from this turn or an earlier one:
+   * A compacted history, a result cut for the thread file or a dropped image changes the prefix, and the block stays out
+   * Messages are fed as the wire serialises them without the cache mark: the mark moves every turn and binds nothing
+   */
+  class PrefixKey(system: String, tools: String) {
+    private val digest = MessageDigest.getInstance("SHA-256").apply { feed(system); feed(tools) }
+
+    /** The key of the prefix fed so far */
+    fun current(): String = (digest.clone() as MessageDigest).digest().joinToString("") { "%02x".format(it) }
+
+    /** Extends the prefix by one message as it goes on the wire */
+    fun add(message: String) = digest.feed(message)
+
+    private fun MessageDigest.feed(text: String) {
+      update(text.toByteArray(Charsets.UTF_8))
+      update(0)
+    }
+  }
+
   companion object {
     /** Tolerant: a stored entry without a single field is not a block. */
     fun fromStored(element: JsonElement?): ThinkingBlock? {
       val o = element as? JsonObject ?: return null
       val block = ThinkingBlock(string(o["thinking"]), string(o["signature"]), string(o["data"]))
       return block.takeIf { it.thinking != null || it.signature != null || it.redactedData != null }
-    }
-
-    /**
-     * What a thinking block of a request depends on besides the messages: the system prompt and the tool set.
-     *
-     * Claude binds a block to the prefix it was produced with — a replayed block after a change of `system` or `tools`
-     * is a 400 on accounts created from 31.08.2026 (platform.claude.com/docs/en/models/opus-5-5/migration-guide).
-     * Within one turn the messages only grow, so comparing this key is what is left to check; a round whose key no
-     * longer matches is at the front of the turn, and blocks may be dropped from the front, never from the middle.
-     */
-    fun prefixKey(system: String, tools: String): String {
-      val digest = MessageDigest.getInstance("SHA-1").digest((system + "\u0000" + tools).toByteArray(Charsets.UTF_8))
-      return digest.joinToString("") { "%02x".format(it) }
     }
 
     private fun string(element: JsonElement?): String? = (element as? JsonPrimitive)?.contentOrNull
@@ -76,11 +87,12 @@ data class ThinkingBlock(
  * Which thinking blocks of earlier tool rounds go back to this model on Anthropic's wire.
  *
  * A model that requires its reasoning back ([ModelQuirks.Quirk.ECHO_REASONING]: MiMo, Kimi, DeepSeek, MiniMax) gets every block it
- * produced, earlier turns included — without them the vendor answers 400. Claude gets the blocks of the turn in progress
- * whose request had the same system prompt and tool set: its vendor asks for them in a tool loop, and a block replayed
- * after a change of either is a 400 on newer accounts. Blocks read back from the thread carry no key and never reach
- * Claude — the thread's earlier messages are not byte for byte what the block saw. Any other vendor on this wire gets
- * none: a block it did not ask for is a guess about its parser.
+ * produced, earlier turns included — without them the vendor answers 400
+ * Claude gets every block whose prefix is byte for byte the one it was produced after ([ThinkingBlock.PrefixKey]),
+ * earlier turns included: its vendor asks for them in a tool loop, keeps its reasoning coherent with them, and a prefix
+ * that stops matching where a block used to be is a cache miss on everything after it
+ * A block replayed after a changed prefix is a 400 on newer accounts, so a block without a matching key stays out
+ * Any other vendor on this wire gets none: a block it did not ask for is a guess about its parser
  */
 enum class ThinkingReplay {
   ALL, SAME_PREFIX, NONE;

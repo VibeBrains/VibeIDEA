@@ -98,6 +98,14 @@ object ModelQuirks {
      */
     NO_REASONING_LEVELS,
 
+    /**
+     * Forced tool use is refused: `tool_choice` `{"type": "any"}` or `{"type": "tool"}` is a 400 on every request
+     *
+     * We never send `tool_choice`, so the quirk changes no request: it lets the doctor name the field in a hand-written
+     * `extraBody` before the vendor answers 400 to every turn
+     */
+    NO_FORCED_TOOL_CHOICE,
+
     /** The system role is not accepted; the instruction has to travel as the first user message. */
     NO_SYSTEM_ROLE,
 
@@ -207,6 +215,15 @@ object ModelQuirks {
       Regex("^claude-(opus-5-5|fable-5|mythos-5)"),
       setOf(Quirk.THINKING_ALWAYS_ON),
       "claude opus 5.5, fable 5, mythos 5: thinking cannot be switched off; «off» sends the lowest effort",
+    ),
+    Rule(
+      // «tool_choice: type "tool" and "any" are not supported for this model», the token counting endpoint included;
+      // Fable 5.1 and Mythos 5.1 «reject forced tool use on every request with a 400 error»
+      // (platform.claude.com/docs/en/models/opus-5-5/whats-new-opus-5-5, checked 2026-09-25)
+      // Exact versions: the page names these three, and Fable 5 and Mythos 5 are not on it
+      Regex("^claude-(opus-5-5|fable-5-1|mythos-5-1)"),
+      setOf(Quirk.NO_FORCED_TOOL_CHOICE),
+      "claude opus 5.5, fable 5.1, mythos 5.1: forced tool use (tool_choice any or tool) is rejected",
     ),
     Rule(
       // Thinking is on by default here too, but the switch is accepted: Opus 5 takes `{"type": "disabled"}` at effort

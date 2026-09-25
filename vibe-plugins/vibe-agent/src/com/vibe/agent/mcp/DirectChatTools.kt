@@ -20,6 +20,8 @@ class DirectChatTools(
   private val sources: List<Source>,
   /** Потолок одного вызова; свой в тестах, чтобы не ждать полминуты ради проверки самого потолка. */
   private val callTimeoutMs: Long = CALL_TIMEOUT_MS,
+  /** Who answers a server that asks for input in the middle of a call ([McpInputRequired]); the person, in the panel */
+  private val answerer: McpInputRequired.Answerer = McpInputRequired.Answerer.NONE,
 ) : AutoCloseable {
   /** One place tools come from. */
   interface Source : AutoCloseable {
@@ -28,7 +30,9 @@ class DirectChatTools(
 
     fun riskOf(tool: String): McpProtocol.Risk
 
-    fun call(tool: String, arguments: JsonObject): McpClient.CallResult
+    /** [answer] — who answers the server when it asks for input before the call completes */
+    fun call(tool: String, arguments: JsonObject,
+             answer: McpInputRequired.Answerer = McpInputRequired.Answerer.NONE): McpClient.CallResult
 
     override fun close() {}
   }
@@ -73,7 +77,9 @@ class DirectChatTools(
     return try {
       // Потолок на КАЖДЫЙ вызов, не только на сервер памяти: инструмент IDE, ушедший в долгую работу,
       // останавливал ход молча — человек видел значок вызова и больше ничего (18.09.2026).
-      val result = withCeiling(call, ceilingFor(call.name)) { source.call(call.name, call.argumentsObject()) }
+      val human = HumanTime()
+      val answer = McpInputRequired.Answerer { request -> human.during { answerer.answer(request) } }
+      val result = withCeiling(call, ceilingFor(call.name), human) { source.call(call.name, call.argumentsObject(), answer) }
       ToolResult(call.id, call.name, result.text, result.isError)
     }
     catch (e: java.util.concurrent.TimeoutException) {
@@ -109,14 +115,44 @@ class DirectChatTools(
   private fun ceilingFor(tool: String): Long =
     if (tool == McpProtocol.TOOL_RUN_COMMAND) COMMAND_TIMEOUT_MS else callTimeoutMs
 
-  private fun <T> withCeiling(call: ToolCall, ceilingMs: Long, body: () -> T): T {
+  private fun <T> withCeiling(call: ToolCall, ceilingMs: Long, human: HumanTime, body: () -> T): T {
     val task = java.util.concurrent.FutureTask(body)
     Thread(task, "vibe-direct-tool-" + call.name).apply { isDaemon = true }.start()
-    return try {
-      task.get(ceilingMs, java.util.concurrent.TimeUnit.MILLISECONDS)
+    val started = System.currentTimeMillis()
+    while (true) {
+      val left = ceilingMs - (System.currentTimeMillis() - started - human.spentMs())
+      val wait = if (human.waiting()) HUMAN_POLL_MS else left.coerceAtLeast(1)
+      try {
+        return task.get(wait, java.util.concurrent.TimeUnit.MILLISECONDS)
+      }
+      catch (e: java.util.concurrent.ExecutionException) {
+        throw (e.cause ?: e)
+      }
+      catch (e: java.util.concurrent.TimeoutException) {
+        // A person filling in the server's form is not the tool keeping silent: their time is not the tool's
+        if (!human.waiting() && System.currentTimeMillis() - started - human.spentMs() >= ceilingMs) throw e
+      }
     }
-    catch (e: java.util.concurrent.ExecutionException) {
-      throw (e.cause ?: e)
+  }
+
+  /** The time a call spent waiting for the person, which the ceiling does not count */
+  private class HumanTime {
+    private val active = java.util.concurrent.atomic.AtomicInteger()
+    private val spent = java.util.concurrent.atomic.AtomicLong()
+    private val since = java.util.concurrent.atomic.AtomicLong()
+
+    fun waiting(): Boolean = active.get() > 0
+
+    fun spentMs(): Long = spent.get() + if (waiting()) System.currentTimeMillis() - since.get() else 0
+
+    fun <T> during(body: () -> T): T {
+      if (active.getAndIncrement() == 0) since.set(System.currentTimeMillis())
+      try {
+        return body()
+      }
+      finally {
+        if (active.decrementAndGet() == 0) spent.addAndGet(System.currentTimeMillis() - since.get())
+      }
     }
   }
 
@@ -130,6 +166,9 @@ class DirectChatTools(
      * бесконечности; сама команда останавливается раньше своим потолком и говорит об этом.
      */
     const val COMMAND_TIMEOUT_MS = 600_000L
+
+    /** How often a call waiting on the person looks again at its ceiling */
+    private const val HUMAN_POLL_MS = 500L
   }
 }
 
@@ -173,9 +212,9 @@ class MemoryServerSource(
 
   override fun riskOf(tool: String): McpProtocol.Risk = Companion.riskOf(tool)
 
-  override fun call(tool: String, arguments: JsonObject): McpClient.CallResult {
+  override fun call(tool: String, arguments: JsonObject, answer: McpInputRequired.Answerer): McpClient.CallResult {
     val current = synchronized(this) { client?.takeIf { it.isAlive } } ?: throw McpClient.McpException("server stopped")
-    return current.callTool(tool, arguments, timeoutMs)
+    return current.callTool(tool, arguments, timeoutMs, answer)
   }
 
   @Synchronized
@@ -206,7 +245,7 @@ class IdeToolsSource(private val dispatch: (String, JsonObject) -> McpServer.Too
 
   override fun riskOf(tool: String): McpProtocol.Risk = McpProtocol.riskOf(tool)
 
-  override fun call(tool: String, arguments: JsonObject): McpClient.CallResult {
+  override fun call(tool: String, arguments: JsonObject, answer: McpInputRequired.Answerer): McpClient.CallResult {
     if (tool in EXCLUDED) throw McpClient.McpException("not offered in the direct chat")
     val result = dispatch(tool, arguments)
     return McpClient.CallResult(result.text, result.isError)

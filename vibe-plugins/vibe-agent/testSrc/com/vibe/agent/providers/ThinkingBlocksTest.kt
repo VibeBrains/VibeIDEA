@@ -88,22 +88,61 @@ class ThinkingBlocksTest {
     assertEquals(ThinkingReplay.NONE, ThinkingReplay.of("qwen3.8-max"))
   }
 
+  private fun key(system: String, tools: String, vararg messages: String) =
+    ThinkingBlock.PrefixKey(system, tools).apply { messages.forEach { add(it) } }.current()
+
   @Test
-  fun `the prefix key follows the system prompt and the tool set`() {
-    val key = ThinkingBlock.prefixKey("system", "[tools]")
-    assertEquals(key, ThinkingBlock.prefixKey("system", "[tools]"))
-    assertNotEquals(key, ThinkingBlock.prefixKey("system", "[tools, search]"))
-    assertNotEquals(key, ThinkingBlock.prefixKey("system 2", "[tools]"))
+  fun `the prefix key follows the system prompt, the tool set and every message before the block`() {
+    val k = key("system", "[tools]", "a")
+    assertEquals(k, key("system", "[tools]", "a"))
+    assertNotEquals(k, key("system", "[tools, search]", "a"))
+    assertNotEquals(k, key("system 2", "[tools]", "a"))
+    assertNotEquals(k, key("system", "[tools]", "b"))
+    // Boundaries count: the same bytes split differently are a different prefix
+    assertNotEquals(key("s", "t", "ab"), key("s", "t", "a", "b"))
+  }
+
+  private val call = ToolCall("t1", "read", "{}")
+  private val blocks = listOf(ThinkingBlock("why", "sig"))
+
+  /** One turn of a tool loop: the question, the round with its blocks produced after [before], the results, the answer */
+  private fun turn(question: String, keyBefore: String?) = listOf(
+    ChatMessage("user", question),
+    ChatMessage("assistant", "", toolCalls = listOf(call), thinking = blocks, thinkingKey = keyBefore),
+    ChatMessage(ToolCalls.ROLE, "", toolResults = listOf(ToolResult("t1", "read", "ok"))),
+    ChatMessage("assistant", "done"),
+  )
+
+  private fun request(wire: List<ChatMessage>, system: String = "sys") =
+    LlmMessages.anthropicMessages(wire, system, "[tools]", ThinkingReplay.SAME_PREFIX, boundary = null, ttl = null)
+
+  private fun hasBlocks(message: kotlinx.serialization.json.JsonObject) =
+    (message["content"] as? kotlinx.serialization.json.JsonArray).orEmpty().any { it.jsonObject["type"]?.jsonPrimitive?.content == "thinking" }
+
+  @Test
+  fun `claude gets the blocks of an earlier turn while the prefix they were produced after is unchanged`() {
+    // The key a round is produced after is the answer key of the request that produced it
+    val first = request(listOf(ChatMessage("user", "q1")))
+    val history = turn("q1", first.answerKey) + ChatMessage("user", "q2")
+    val next = request(history)
+    assertTrue(hasBlocks(next.messages[1]), "блок прошлого хода не вернулся при том же префиксе")
+    // A changed system prompt: the same history, the blocks stay out
+    assertFalse(hasBlocks(request(history, system = "sys 2").messages[1]))
+    // A changed earlier message (a compacted or cut history): the blocks stay out
+    val edited = listOf(ChatMessage("user", "q1 edited")) + history.drop(1)
+    assertFalse(hasBlocks(request(edited).messages[1]))
+    // No key: never to Claude
+    assertFalse(hasBlocks(request(turn("q1", null) + ChatMessage("user", "q2")).messages[1]))
   }
 
   @Test
-  fun `the blocks survive the thread file and come back without a key`() {
+  fun `the blocks survive the thread file with their key`() {
     val round = ToolRound("text", listOf(ToolCall("t1", "read", "{}")), listOf(ToolResult("t1", "read", "ok")),
-                          thinking = listOf(ThinkingBlock("why", "sig"), ThinkingBlock(redactedData = "opaque")))
+                          thinking = listOf(ThinkingBlock("why", "sig"), ThinkingBlock(redactedData = "opaque")), thinkingKey = "k1")
     val stored = ToolRounds.fromJson(ToolRounds.toJson(listOf(round))).single()
     assertEquals(round.thinking, stored.thinking)
     val expanded = ToolRounds.expand(listOf(ChatMessage("assistant", "textanswer", toolRounds = listOf(stored))))
     assertEquals(round.thinking, expanded.first().thinking)
-    assertNull(expanded.first().thinkingKey)
+    assertEquals("k1", expanded.first().thinkingKey)
   }
 }

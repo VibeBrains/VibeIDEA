@@ -76,4 +76,25 @@ class ToolCallRegistryTest {
     reg.onToolCallUpdate(frame("""{"toolCallId":"t1","status":"completed"}"""))
     assertEquals(listOf("/a.kt", "/b.kt"), reg["t1"]?.locations)
   }
+
+  @Test
+  fun updatesAreNormalisedAndCarryTheName() {
+    val reg = ToolCallRegistry()
+    reg.onToolCall(frame("""{"toolCallId":"t1","title":"Read","kind":"read"}"""))
+    val call = reg.onToolCallUpdate(frame("""{"toolCallId":"t1","title":"Read\nfile\u202E","name":"Read"}"""))!!
+    assertEquals("Read file", call.title)
+    assertEquals("Read", call.toolName)
+    // ACP v1: an update without the name keeps it
+    reg.onToolCallUpdate(frame("""{"toolCallId":"t1","status":"completed"}"""))
+    assertEquals("Read", reg["t1"]!!.toolName)
+  }
+
+  @Test
+  fun theLabelAddsTheNameOnlyWhenTheTitleDoesNotSayIt() {
+    assertEquals("Bash", ToolCall.label("Bash", "Bash"))
+    assertEquals("Run `bash ls`", ToolCall.label("Run `bash ls`", "bash"))
+    assertEquals("List files", ToolCall.label("List files", null))
+    val labelled = ToolCall.label("List files", "Glob")
+    assertTrue(labelled.contains("List files") && labelled.contains("Glob") && labelled != "List files", labelled)
+  }
 }

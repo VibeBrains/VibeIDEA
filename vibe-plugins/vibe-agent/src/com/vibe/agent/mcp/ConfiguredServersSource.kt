@@ -109,10 +109,10 @@ class ConfiguredServersSource(
 
   override fun riskOf(tool: String): McpProtocol.Risk = McpProtocol.Risk.WRITE
 
-  override fun call(tool: String, arguments: JsonObject): McpClient.CallResult {
+  override fun call(tool: String, arguments: JsonObject, answer: McpInputRequired.Answerer): McpClient.CallResult {
     val owner = synchronized(this) { running.values.firstOrNull { tool in it.tools && it.client.isAlive } }
       ?: throw McpClient.McpException("сервер этого инструмента не запущен: $tool")
-    return owner.client.callTool(tool, arguments, timeoutMs)
+    return owner.client.callTool(tool, arguments, timeoutMs, answer)
   }
 
   @Synchronized

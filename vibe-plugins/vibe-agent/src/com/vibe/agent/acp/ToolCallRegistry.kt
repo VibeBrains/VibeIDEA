@@ -69,6 +69,14 @@ data class ToolCall(
       return if (flat.length <= MAX_TITLE_CHARS) flat else flat.take(MAX_TITLE_CHARS - 1) + "…"
     }
 
+    /**
+     * What a person sees for a call: the title, and the program name beside it when the title does not already say it
+     * ACP gives the name only to show which tool runs; it grants nothing, so it is a label and never a reason to allow
+     * Both parts are expected normalised ([normalizeTitle]): the name reaches the permission question too
+     */
+    fun label(title: String, name: String?): String =
+      if (name == null || title.contains(name, ignoreCase = true)) title else t("tool.titleWithName", "title" to title, "name" to name)
+
     const val STATUS_PENDING = "pending"
     const val STATUS_IN_PROGRESS = "in_progress"
     const val STATUS_COMPLETED = "completed"
@@ -129,12 +137,15 @@ class ToolCallRegistry {
         title = ToolCall.normalizeTitle(update["title"]?.jsonPrimitive?.contentOrNull) ?: t("tool.fallbackTitle"),
         kind = ToolCall.normalizeKind(update["kind"]?.jsonPrimitive?.contentOrNull),
         status = ToolCall.STATUS_IN_PROGRESS,
-        toolName = update["name"]?.jsonPrimitive?.contentOrNull,
+        toolName = ToolCall.normalizeTitle(update["name"]?.jsonPrimitive?.contentOrNull),
         rawInput = update["rawInput"] as? JsonObject,
       )
     }
     update["status"]?.jsonPrimitive?.contentOrNull?.let { call.status = it }
-    update["title"]?.jsonPrimitive?.contentOrNull?.let { call.title = it }
+    // The same normalisation as the announce: an update is no more trusted than the frame it follows
+    // ACP v1: an absent or null field leaves the value as it was
+    ToolCall.normalizeTitle(update["title"]?.jsonPrimitive?.contentOrNull)?.let { call.title = it }
+    ToolCall.normalizeTitle(update["name"]?.jsonPrimitive?.contentOrNull)?.let { call.toolName = it }
     (update["rawInput"] as? JsonObject)?.let { call.rawInput = it }
     (terminalIdOf(update))?.let { call.terminalId = it }
     locationsOf(update)?.let { call.locations = it }

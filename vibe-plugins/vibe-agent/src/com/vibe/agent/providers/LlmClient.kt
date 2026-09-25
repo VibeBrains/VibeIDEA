@@ -40,7 +40,7 @@ data class ChatMessage(
   val toolRounds: List<ToolRound> = emptyList(),
   /** Assistant only: the thinking blocks of a tool-calling answer on Anthropic's wire, as they streamed. */
   val thinking: List<ThinkingBlock> = emptyList(),
-  /** The [ThinkingBlock.prefixKey] of the request that produced [thinking]; null for blocks read back from the thread. */
+  /** The [ThinkingBlock.PrefixKey] [thinking] was produced after; null when unknown, and then the blocks never reach Claude */
   val thinkingKey: String? = null,
   /** Assistant only: this answer's output items on the Responses wire, in place of its text and calls for the same model. */
   val responses: ResponsesReplay? = null,
@@ -96,6 +96,24 @@ internal object LlmMessages {
    * rather than on the whole request because that is where the boundary actually is.
    * [thinking] — the blocks this message carries back, as [ThinkingReplay.blocksFor] chose them
    */
+  /** The messages of an Anthropic request and the prefix key its answer is produced after */
+  class AnthropicMessages(val messages: List<JsonObject>, val answerKey: String)
+
+  /**
+   * The messages of an Anthropic request, each carrying the thinking blocks [replay] admits after its own prefix
+   * A block's admission changes the bytes of its message and so the prefix of every later one: the key is fed in order
+   */
+  fun anthropicMessages(wire: List<ChatMessage>, system: String, tools: String, replay: ThinkingReplay,
+                        boundary: Int?, ttl: String?): AnthropicMessages {
+    val key = ThinkingBlock.PrefixKey(system, tools)
+    val messages = wire.mapIndexed { index, message ->
+      val blocks = replay.blocksFor(message, key.current())
+      key.add(anthropic(message, thinking = blocks).toString())
+      anthropic(message, cacheable = index == boundary, ttl = ttl, thinking = blocks)
+    }
+    return AnthropicMessages(messages, key.current())
+  }
+
   fun anthropic(m: ChatMessage, cacheable: Boolean = false, ttl: String? = null,
                 thinking: List<ThinkingBlock> = emptyList()): JsonObject = when {
     m.role == ToolCalls.ROLE -> ToolCalls.anthropicResults(m)
@@ -249,7 +267,7 @@ class LlmClient(
   /** The thinking blocks of the last answer on Anthropic's wire, in answer order; empty on the other wires. */
   fun lastThinking(): List<ThinkingBlock> = thinking.blocks()
 
-  /** The [ThinkingBlock.prefixKey] of the last Anthropic request; null after a request on another wire. */
+  /** The [ThinkingBlock.PrefixKey] the last Anthropic answer was produced after; null after a request on another wire */
   fun lastThinkingKey(): String? = lastThinkingKey
 
   @Volatile private var responses = ResponsesAccumulator()
@@ -621,13 +639,10 @@ class LlmClient(
       val wire = messages.filter { it.role != "system" }
       val boundary = PromptCache.cacheBoundary(wire)
       val tools = if (offeredTools.isNotEmpty()) ToolCalls.anthropicTools(offeredTools) else null
-      val key = ThinkingBlock.prefixKey(system, tools?.toString().orEmpty())
-      lastThinkingKey = key
-      val replay = ThinkingReplay.of(quirkIdOf(model), overrides)
-      put("messages", JsonArray(wire.mapIndexed { index, message ->
-        LlmMessages.anthropic(message, cacheable = index == boundary, ttl = model.cacheTtl,
-                              thinking = replay.blocksFor(message, key))
-      }))
+      val messages = LlmMessages.anthropicMessages(wire, system, tools?.toString().orEmpty(),
+                                                   ThinkingReplay.of(quirkIdOf(model), overrides), boundary, model.cacheTtl)
+      lastThinkingKey = messages.answerKey
+      put("messages", JsonArray(messages.messages))
       tools?.let { put("tools", it) }
     }.let { withReasoning(it, "anthropic", model) }
       // Quirks were applied on the OpenAI path only, which left the Anthropic-compatible endpoints

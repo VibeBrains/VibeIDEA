@@ -147,19 +147,33 @@ class McpClient(private val transport: McpTransport) : AutoCloseable {
   /**
    * One call; the text parts of the result joined, other parts named by type so nothing vanishes silently.
    *
-   * A result of the 2026-07-28 revision says what it is in `resultType`. Only a complete one carries the tool's output:
-   * `input_required` asks the client for input and to call again (MRTR), which the direct chat cannot do, and an unknown
-   * type is a shape we cannot read. Both come back as an error that names them — read as content they would be an empty
-   * success, and the model would take «nothing found» for the answer. No `resultType` is the older revision: complete.
+   * A result of the 2026-07-28 revision says what it is in `resultType`. Only a complete one carries the tool's output
+   * `input_required` asks for input ([McpInputRequired]): [answer] gives it, and the call goes again with the answers,
+   * at most [McpInputRequired.MAX_ROUNDS] times
+   * A request [answer] cannot answer and an unknown type come back as an error that names them: read as content they
+   * would be an empty success, and the model would take «nothing found» for the answer
+   * No `resultType` is the older revision: complete
    */
-  fun callTool(name: String, arguments: JsonObject, timeoutMs: Long): CallResult {
-    val result = request("tools/call", buildJsonObject {
+  fun callTool(name: String, arguments: JsonObject, timeoutMs: Long,
+               answer: McpInputRequired.Answerer = McpInputRequired.Answerer.NONE): CallResult {
+    val params = buildJsonObject {
       put("name", name)
       put("arguments", arguments)
-    }, timeoutMs)
+    }
+    var result = request("tools/call", params, timeoutMs)
+    var rounds = 0
+    while (true) {
+      val required = McpInputRequired.of(result) ?: break
+      val methods = required.requests.joinToString { it.method }
+      if (rounds++ >= McpInputRequired.MAX_ROUNDS) {
+        return CallResult(INPUT_LOOP_MESSAGE.format(name, McpInputRequired.MAX_ROUNDS), isError = true)
+      }
+      val answers = McpInputRequired.answers(required, answer)
+        ?: return CallResult(INPUT_REQUIRED_MESSAGE.format(name, methods), isError = true)
+      result = request("tools/call", McpInputRequired.retry(params, required, answers), timeoutMs)
+    }
     when (val type = result["resultType"]?.jsonPrimitive?.contentOrNull) {
       null, RESULT_COMPLETE -> {}
-      RESULT_INPUT_REQUIRED -> return CallResult(INPUT_REQUIRED_MESSAGE.format(name), isError = true)
       else -> return CallResult(UNKNOWN_RESULT_MESSAGE.format(name, type), isError = true)
     }
     val text = (result["content"] as? JsonArray).orEmpty().joinToString("\n") { part ->
@@ -183,8 +197,10 @@ class McpClient(private val transport: McpTransport) : AutoCloseable {
 
     // Tool results go back to the model, not to the interface: written in English like the rest of the wire.
     private const val INPUT_REQUIRED_MESSAGE =
-      "The MCP server asked for additional input before completing %s (resultType input_required). " +
-      "This client cannot answer such requests; the call did not complete."
+      "The MCP server asked for additional input before completing %s (resultType input_required: %s), " +
+      "and this client cannot answer such a request. The call did not complete."
+    private const val INPUT_LOOP_MESSAGE =
+      "The MCP server kept asking for input while completing %s: more than %d rounds. The call did not complete."
     private const val UNKNOWN_RESULT_MESSAGE = "The MCP server returned %s with an unknown resultType \"%s\"; the result was not read."
 
     /** Starts the server process and speaks to it over its stdio ([McpStdioTransport.start]) */

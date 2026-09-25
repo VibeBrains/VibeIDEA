@@ -110,6 +110,7 @@ class VibeDoctorAction : AnAction({ t("doctor.action") }) {
                                com.vibe.agent.providers.ExtraBodyConflicts.Reason.SAMPLING -> t("doctor.extraBody.sampling")
                                com.vibe.agent.providers.ExtraBodyConflicts.Reason.BUDGET -> t("doctor.extraBody.budget")
                                com.vibe.agent.providers.ExtraBodyConflicts.Reason.SWITCH -> t("doctor.extraBody.switch")
+                               com.vibe.agent.providers.ExtraBodyConflicts.Reason.FORCED_TOOL -> t("doctor.extraBody.forcedTool")
                              }) }
     }
     lines.add(VibeDiagnosis.Line(

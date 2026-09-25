@@ -279,6 +279,8 @@ data class ToolRound(
   val reasoning: String? = null,
   /** The round's thinking blocks on Anthropic's wire, kept for the models that require them back ([ThinkingBlock]). */
   val thinking: List<ThinkingBlock> = emptyList(),
+  /** The [ThinkingBlock.PrefixKey] the round was produced after: kept with the thread, so a later turn may replay its blocks */
+  val thinkingKey: String? = null,
   /** The round's output items on the Responses wire, sent back as they came to the same model ([ResponsesReplay]). */
   val responses: ResponsesReplay? = null,
 )
@@ -346,7 +348,7 @@ object ToolRounds {
     m.toolRounds.flatMap { round ->
       listOf(
         ChatMessage("assistant", round.text, reasoning = round.reasoning, toolCalls = round.calls, thinking = round.thinking,
-                    responses = round.responses),
+                    thinkingKey = round.thinkingKey, responses = round.responses),
         ChatMessage(ToolCalls.ROLE, "", toolResults = round.results),
       )
     } + m.copy(text = answer, reasoning = answerReasoning, toolRounds = emptyList())
@@ -357,6 +359,7 @@ object ToolRounds {
       put("text", round.text)
       round.reasoning?.let { put("reasoning", it) }
       if (round.thinking.isNotEmpty()) put("thinking", JsonArray(round.thinking.map { it.toStored() }))
+      round.thinkingKey?.let { put("thinkingKey", it) }
       round.responses?.let { put("responses", it.toStored()) }
       put("calls", JsonArray(round.calls.map { buildJsonObject { put("id", it.id); put("name", it.name); put("arguments", it.arguments); it.signature?.let { s -> put("signature", s) } } }))
       put("results", JsonArray(round.results.map {
@@ -384,6 +387,7 @@ object ToolRounds {
     }
     val thinking = (o["thinking"] as? JsonArray).orEmpty().mapNotNull { ThinkingBlock.fromStored(it) }
     if (calls.isEmpty()) null
-    else ToolRound(o.s("text").orEmpty(), calls, results, o.s("reasoning"), thinking, ResponsesReplay.fromStored(o["responses"]))
+    else ToolRound(o.s("text").orEmpty(), calls, results, o.s("reasoning"), thinking, o.s("thinkingKey"),
+                   ResponsesReplay.fromStored(o["responses"]))
   }
 }

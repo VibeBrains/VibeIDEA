@@ -177,11 +177,11 @@ class TeamMemorySource(
   override fun riskOf(tool: String): McpProtocol.Risk =
     route(tool)?.let { (_, serverTool) -> MemoryServerSource.riskOf(serverTool) } ?: McpProtocol.Risk.WRITE
 
-  override fun call(tool: String, arguments: JsonObject): McpClient.CallResult {
+  override fun call(tool: String, arguments: JsonObject, answer: McpInputRequired.Answerer): McpClient.CallResult {
     val (team, serverTool) = route(tool) ?: throw McpClient.McpException("unknown tool $tool")
     val source = synchronized(this) { sources[team] } ?: throw McpClient.McpException("team $team is not connected")
     return try {
-      source.call(serverTool, arguments)
+      source.call(serverTool, arguments, answer)
     }
     catch (e: McpClient.Unauthorized) {
       source.close()

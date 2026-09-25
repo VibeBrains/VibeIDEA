@@ -58,7 +58,17 @@ class McpClientTest {
         when (params["name"]!!.jsonPrimitive.content) {
           "memory_search" -> """"result":{"content":[{"type":"text","text":"one record"}]}"""
           "memory_new" -> """"result":{"resultType":"complete","content":[{"type":"text","text":"saved"}]}"""
-          "memory_ask" -> """"result":{"resultType":"input_required","inputRequests":{"q":{"method":"elicitation/create"}},"requestState":"s1"}"""
+          // Asks for a branch name, then answers with it: the state must come back as it went out, the answer under its key
+          "memory_ask" -> {
+            val answer = (params["inputResponses"] as? JsonObject)?.get("q") as? JsonObject
+            when {
+              answer == null ->
+                """"result":{"resultType":"input_required","inputRequests":{"q":{"method":"elicitation/create","params":{"message":"branch?"}}},"requestState":{"n":[1,"s1"]}}"""
+              params["requestState"].toString() != """{"n":[1,"s1"]}""" -> """"error":{"code":-32602,"message":"state changed"}"""
+              else -> """"result":{"content":[{"type":"text","text":"branch ${answer["content"]!!.jsonObject["branch"]!!.jsonPrimitive.content}"}]}"""
+            }
+          }
+          "memory_nag" -> """"result":{"resultType":"input_required","inputRequests":{"q":{"method":"elicitation/create"}}}"""
           "memory_future" -> """"result":{"resultType":"deferred"}"""
           else -> """"error":{"code":-32602,"message":"id is required"}"""
         }
@@ -149,9 +159,28 @@ class McpClientTest {
     client.initialize("test", 2_000)
     assertEquals(McpClient.CallResult("saved", false), client.callTool("memory_new", JsonObject(emptyMap()), 2_000))
     val asked = client.callTool("memory_ask", JsonObject(emptyMap()), 2_000)
-    assertTrue(asked.isError && "input_required" in asked.text && "memory_ask" in asked.text, asked.text)
+    assertTrue(asked.isError && "input_required" in asked.text && "elicitation/create" in asked.text && "memory_ask" in asked.text,
+               asked.text)
     val unknown = client.callTool("memory_future", JsonObject(emptyMap()), 2_000)
     assertTrue(unknown.isError && "deferred" in unknown.text, unknown.text)
+    client.close()
+  }
+
+  @Test
+  fun `a request for input is answered and the call goes again with the answers and the state as it came`() {
+    val client = memoryServer.client()
+    client.initialize("test", 2_000)
+    val asked = java.util.concurrent.CopyOnWriteArrayList<McpInputRequired.Request>()
+    val answered = client.callTool("memory_ask", JsonObject(emptyMap()), 2_000) { request ->
+      asked += request
+      Json.parseToJsonElement("""{"action":"accept","content":{"branch":"next"}}""")
+    }
+    assertEquals(McpClient.CallResult("branch next", false), answered)
+    assertEquals(listOf("elicitation/create"), asked.map { it.method })
+    assertEquals("branch?", asked.single().params["message"]!!.jsonPrimitive.content)
+    // A server that asks after every answer is stopped, not followed forever
+    val nagged = client.callTool("memory_nag", JsonObject(emptyMap()), 2_000) { Json.parseToJsonElement("{}") }
+    assertTrue(nagged.isError && "${McpInputRequired.MAX_ROUNDS}" in nagged.text, nagged.text)
     client.close()
   }
 
@@ -212,7 +241,7 @@ class McpClientTest {
     val broken = object : DirectChatTools.Source {
       override fun specs(): List<com.vibe.agent.providers.ToolSpec> = throw McpClient.McpException("down")
       override fun riskOf(tool: String) = McpProtocol.Risk.READ
-      override fun call(tool: String, arguments: JsonObject) = McpClient.CallResult("", false)
+      override fun call(tool: String, arguments: JsonObject, answer: McpInputRequired.Answerer) = McpClient.CallResult("", false)
     }
     val failures = ArrayList<Exception>()
     val tools = DirectChatTools(listOf(ide, broken))
@@ -237,7 +266,7 @@ class McpClientTest {
     val slow = object : DirectChatTools.Source {
       override fun specs() = listOf(com.vibe.agent.providers.ToolSpec("slow_tool", "долгий", JsonObject(emptyMap())))
       override fun riskOf(tool: String) = McpProtocol.Risk.READ
-      override fun call(tool: String, arguments: JsonObject): McpClient.CallResult {
+      override fun call(tool: String, arguments: JsonObject, answer: McpInputRequired.Answerer): McpClient.CallResult {
         started.countDown()
         release.await(30, java.util.concurrent.TimeUnit.SECONDS)
         return McpClient.CallResult("поздно", false)
@@ -250,5 +279,24 @@ class McpClientTest {
     assertTrue(result.isError, "ход обязан получить ответ, а не ждать молча")
     assertTrue("slow_tool" in result.text, result.text)
     release.countDown()
+  }
+
+  @Test
+  fun `the time a person spends answering the server is not the tool's silence`() {
+    val asking = object : DirectChatTools.Source {
+      override fun specs() = listOf(com.vibe.agent.providers.ToolSpec("asking_tool", "asks", JsonObject(emptyMap())))
+      override fun riskOf(tool: String) = McpProtocol.Risk.READ
+      override fun call(tool: String, arguments: JsonObject, answer: McpInputRequired.Answerer): McpClient.CallResult {
+        val given = answer.answer(McpInputRequired.Request("q", McpInputRequired.ELICITATION, JsonObject(emptyMap())))
+        return McpClient.CallResult("answered $given", false)
+      }
+    }
+    // The person takes longer than the ceiling to fill the form in
+    val slowPerson = McpInputRequired.Answerer { Thread.sleep(900); Json.parseToJsonElement("1") }
+    val tools = DirectChatTools(listOf(asking), callTimeoutMs = 300, answerer = slowPerson)
+    tools.specs { throw it }
+    val result = tools.execute(ToolCall("1", "asking_tool", "{}")) { _, _ -> true }
+    assertEquals("answered 1", result.text)
+    assertFalse(result.isError)
   }
 }

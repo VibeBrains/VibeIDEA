@@ -24,6 +24,9 @@ object ExtraBodyConflicts {
 
     /** The explicit reasoning switch on a model whose reasoning cannot be switched off. */
     SWITCH,
+
+    /** Forced tool use on a model that refuses it. */
+    FORCED_TOOL,
   }
 
   data class Conflict(val field: String, val reason: Reason)
@@ -49,6 +52,10 @@ object ExtraBodyConflicts {
     if (wire == ModelQuirks.WIRE_OPENAI_RESPONSES && ModelQuirks.Quirk.THINKING_ALWAYS_ON in quirks && responsesEffort == NONE) {
       result.add(Conflict("$REASONING.$EFFORT", Reason.SWITCH))
     }
+    if (wire == ModelQuirks.WIRE_ANTHROPIC && ModelQuirks.Quirk.NO_FORCED_TOOL_CHOICE in quirks) {
+      val choice = ((extraBody[TOOL_CHOICE] as? JsonObject)?.get(TYPE) as? JsonPrimitive)?.contentOrNull
+      if (choice in FORCED_CHOICES) result.add(Conflict("$TOOL_CHOICE.$TYPE", Reason.FORCED_TOOL))
+    }
     return result
   }
 
@@ -63,4 +70,6 @@ object ExtraBodyConflicts {
   private const val REASONING = "reasoning"
   private const val EFFORT = "effort"
   private const val NONE = "none"
+  private const val TOOL_CHOICE = "tool_choice"
+  private val FORCED_CHOICES = setOf("any", "tool")
 }

@@ -80,6 +80,7 @@
 | Имя | Что означает | Что делает IDE |
 |---|---|---|
 | `ADAPTIVE_THINKING` | мышление задаётся адаптивным режимом и уровнем усилия, бюджет токенов отвергается с 400 | шлёт `thinking: {"type": "adaptive", "display": "summarized"}` и `output_config.effort`; вшита для Claude Opus 4.7, 4.8 и линейки 5 |
+| `NO_FORCED_TOOL_CHOICE` | принудительный выбор инструмента отвергается: `tool_choice` `{"type": "any"}` или `{"type": "tool"}` — 400 на каждом запросе | запрос не меняет: сами мы `tool_choice` не шлём; доктор называет такое поле в `extraBody` на проводе Anthropic. Вшита для Claude Opus 5.5, Fable 5.1 и Mythos 5.1 |
 | `THINKING_ALWAYS_ON` | рассуждение не выключается: явный выключатель — 400 | положение «выключено» шлёт самый низкий уровень; вшита для Claude Opus 5.5, Fable и Mythos 5, GPT-6 Astra; доктор называет выключатель в `extraBody` такой модели до того, как вендор ответит 400 |
 | `OFF_THINKING_DISABLED` | рассуждение включено по умолчанию, выключатель — `thinking: {"type": "disabled"}` | «выключено» шлёт выключатель — только на проводе Anthropic; вшита для Claude Opus 5 и Sonnet 5 |
 | `OFF_EFFORT_NONE` | рассуждение включено по умолчанию, выключатель — усилие `none` | «выключено» шлёт `reasoning_effort: "none"` на chat/completions и `reasoning: {"effort": "none"}` на проводе Responses; вшита для GPT-6 Sol и Luna |

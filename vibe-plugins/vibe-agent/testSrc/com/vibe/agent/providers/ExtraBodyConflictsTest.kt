@@ -56,4 +56,17 @@ class ExtraBodyConflictsTest {
     assertTrue(ExtraBodyConflicts.of("claude-opus-5-5", "anthropic", null).isEmpty())
     assertTrue(conflicts("some-local-model", "openai", """{"temperature": 0.2}""").isEmpty())
   }
+
+  @Test
+  fun `opus 5-5, fable 5-1 and mythos 5-1 refuse forced tool use, auto is fine`() {
+    for (id in listOf("claude-opus-5-5", "claude-fable-5-1", "claude-mythos-5-1")) {
+      for (type in listOf("any", "tool")) {
+        assertEquals(listOf("tool_choice.type" to ExtraBodyConflicts.Reason.FORCED_TOOL),
+                     conflicts(id, "anthropic", """{"tool_choice": {"type": "$type", "name": "x"}}"""), "$id $type")
+      }
+      assertTrue(conflicts(id, "anthropic", """{"tool_choice": {"type": "auto"}}""").isEmpty(), id)
+    }
+    // Opus 5 is not on the vendor's list
+    assertTrue(conflicts("claude-opus-5", "anthropic", """{"tool_choice": {"type": "any"}}""").isEmpty())
+  }
 }

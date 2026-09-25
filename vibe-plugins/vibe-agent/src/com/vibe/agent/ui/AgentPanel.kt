@@ -209,7 +209,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
       // other descriptions, and the decision is theirs (see ToolFingerprint).
       onDrift = { server, drift -> systemLine(com.vibe.agent.mcp.DriftMessage.of(server, drift)) },
     ),
-  ))
+  ), answerer = { request -> answerMcpInput(request) })
 
   /** Why the direct chat goes without tools is said once per panel: a line on every turn stops being read. */
   @Volatile private var directToolsNoted = false
@@ -3228,10 +3228,12 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
   /**
    * The terse-replies instruction as a system message of the direct chat, nothing when the style is off
    * A system message and not a prefix of the user's text: it stays the same from turn to turn, so the prompt cache holds
+   * A model on this machine ([local]) gets the short form: its prompt budget is the tight one
    */
-  private fun terseMessage(): List<ChatMessage> {
+  private fun terseMessage(local: Boolean): List<ChatMessage> {
     val file = terseFile() ?: return emptyList()
-    val text = com.vibe.agent.terse.TerseReplies.instruction(file, com.vibe.agent.terse.TerseReplies.Level.of(VibeAgentSettings.terseMode))
+    val text = com.vibe.agent.terse.TerseReplies.instruction(
+      file, com.vibe.agent.terse.TerseReplies.Level.of(VibeAgentSettings.terseMode), short = local)
     return if (text.isEmpty()) emptyList() else listOf(ChatMessage("system", text))
   }
 
@@ -3781,7 +3783,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
       var tools = com.vibe.agent.mcp.ToolSearch.offered(allTools, loaded, VibeAgentSettings.toolSearchThreshold)
       // Where the turn is happening goes FIRST and always: a model that is not told invents the
       // answer, and which tool it invents with differs from endpoint to endpoint (WorkspaceBriefing).
-      val wire = listOf(workspaceMessage()) + terseMessage() +
+      val wire = listOf(workspaceMessage()) + terseMessage(resolved.runsLocally) +
                  com.vibe.agent.providers.ToolRounds.expand(compactForWindow(t, resolved, threadId, transcript, uncompacted, tools))
       // Said out loud when it happens: a broken prefix is invisible, and its whole cost lands on
       // the bill. The line names the turn where the conversation stopped being append-only.
@@ -3861,11 +3863,13 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
         // The round's thinking blocks travel with it: a model that requires its reasoning back gets them in the next
         // request, and Claude keeps its reasoning through the loop (ThinkingReplay decides which).
         val thinking = llmClient.lastThinking()
+        val thinkingKey = llmClient.lastThinkingKey()
         turns.chat.toolRounds.add(com.vibe.agent.providers.ToolRound(roundText.toString(), calls, results,
-                                                                     roundReasoning.toString().ifEmpty { null }, thinking, replay))
+                                                                     roundReasoning.toString().ifEmpty { null }, thinking,
+                                                                     thinkingKey, replay))
         request = request +
           ChatMessage("assistant", roundText.toString(), reasoning = roundReasoning.toString().ifEmpty { null }, toolCalls = calls,
-                      thinking = thinking, thinkingKey = llmClient.lastThinkingKey(), responses = replay) +
+                      thinking = thinking, thinkingKey = thinkingKey, responses = replay) +
           ChatMessage(com.vibe.agent.providers.ToolCalls.ROLE, "", toolResults = results)
       }
       // What the provider itself reported, and the price the owner of the key wrote down. Both may
@@ -6177,7 +6181,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
           auditToolCall(AuditEvent.Action.TOOL_CALL_START, call, turn); harvestMutation(call, turn); noteLoop(call, turn)
           turn.toolStarts[call.id] = System.currentTimeMillis()
         }
-        toolCard(call?.title ?: u["title"]?.jsonPrimitive?.contentOrNull ?: u["kind"]?.jsonPrimitive?.contentOrNull ?: t("chat.tool"), turn)
+        toolCard(call?.let { com.vibe.agent.acp.ToolCall.label(it.title, it.toolName) } ?: t("chat.tool"), turn)
         // Claude adapter announces a terminal for this tool-call — open a live console.
         terminalInfoId(u)?.let { openTerminalConsole(it, call?.title ?: t("chat.terminal"), turn) }
       }
@@ -6514,6 +6518,19 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
                              actor = agentActor(), meta = mapOf("mode" to "url", "event" to "complete")))
   }
 
+  /**
+   * The person answers an MCP server of the direct chat that asks for input before its call completes
+   * A form or a link goes to the same clarification dialog an agent's request does; the roots are the project's folder
+   * Sampling is not answered: the direct chat does not lend its model to a server
+   */
+  private fun answerMcpInput(request: com.vibe.agent.mcp.McpInputRequired.Request): JsonElement? = when (request.method) {
+    com.vibe.agent.mcp.McpInputRequired.ELICITATION -> com.vibe.agent.mcp.McpInputRequired.elicitationResult(
+      onElicit(com.vibe.agent.mcp.McpInputRequired.elicitationParams(request.params)).jsonObject)
+    com.vibe.agent.mcp.McpInputRequired.ROOTS ->
+      com.vibe.agent.mcp.McpInputRequired.rootsResult(listOfNotNull(project.basePath?.let { java.nio.file.Path.of(it) }))
+    else -> null
+  }
+
   override fun onElicit(params: JsonObject): JsonElement {
     com.vibe.agent.sound.VibeSoundService.getInstance()
       .play(com.vibe.agent.sound.SoundPolicy.Event.AWAITING_PERMISSION, project)
@@ -6587,7 +6604,13 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
       .play(com.vibe.agent.sound.SoundPolicy.Event.AWAITING_PERMISSION, project)
     val toolCall = params["toolCall"] as? JsonObject
     val permissionCallId = toolCall?.get("toolCallId")?.jsonPrimitive?.contentOrNull
-    val title = toolCall?.get("title")?.jsonPrimitive?.contentOrNull ?: t("chat.permission.default")
+    // The question is normalised like every title: bidi or invisible characters must not hide text in what is approved
+    // The request may omit the name the call was announced with, so the registry's call fills it in
+    val known = permissionCallId?.let { turn.toolCalls[it] }
+    val name = com.vibe.agent.acp.ToolCall.normalizeTitle(toolCall?.get("name")?.jsonPrimitive?.contentOrNull) ?: known?.toolName
+    val title = com.vibe.agent.acp.ToolCall.label(
+      com.vibe.agent.acp.ToolCall.normalizeTitle(toolCall?.get("title")?.jsonPrimitive?.contentOrNull)
+        ?: known?.title ?: t("chat.permission.default"), name)
     // preToolUse hook: this is one of the two points the client controls (the other is fs/write).
     val hookTool = toolCall?.get("name")?.jsonPrimitive?.contentOrNull ?: toolCall?.get("kind")?.jsonPrimitive?.contentOrNull
     val hookParams = toolCall?.get("rawInput") as? JsonObject
