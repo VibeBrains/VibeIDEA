@@ -1181,6 +1181,9 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     verify = t("handoff.verify"), empty = t("handoff.empty"),
   )
 
+  /** The last refusal's credit, waiting for the retry on the next model ([com.vibe.agent.providers.FallbackCredit]) */
+  private val refusalCredit = java.util.concurrent.atomic.AtomicReference<com.vibe.agent.providers.FallbackCredit.Credit?>()
+
   /**
    * Moves the turn to another provider when the chosen one cannot answer — and only then.
    *
@@ -3780,11 +3783,19 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
       // Built before compaction: the tool schemas count towards the window.
       val allTools = directToolSpecs(t)
       val loaded = loadedTools.getOrPut(threadId) { java.util.Collections.synchronizedSet(LinkedHashSet()) }
-      var tools = com.vibe.agent.mcp.ToolSearch.offered(allTools, loaded, VibeAgentSettings.toolSearchThreshold)
+      // Where the model takes tools in place, `tools` stays as the thread began and found tools follow as system messages:
+      // the prefix, its cache and the thinking blocks after it stay valid. What earlier turns found comes from the thread
+      val inPlace = llmClient.addsToolsInPlace(resolved, t.model)
+      if (inPlace) transcript.forEach { record -> record.toolRounds.forEach { loaded.addAll(it.addedTools) } }
+      fun offer() = com.vibe.agent.mcp.ToolSearch.offered(allTools, if (inPlace) emptySet() else loaded,
+                                                          VibeAgentSettings.toolSearchThreshold)
+      var tools = offer()
       // Where the turn is happening goes FIRST and always: a model that is not told invents the
       // answer, and which tool it invents with differs from endpoint to endpoint (WorkspaceBriefing).
       val wire = listOf(workspaceMessage()) + terseMessage(resolved.runsLocally) +
-                 com.vibe.agent.providers.ToolRounds.expand(compactForWindow(t, resolved, threadId, transcript, uncompacted, tools))
+                 com.vibe.agent.providers.ToolRounds.expand(compactForWindow(t, resolved, threadId, transcript, uncompacted, tools)) {
+                   name -> allTools.firstOrNull { it.name == name }
+                 }
       // Said out loud when it happens: a broken prefix is invisible, and its whole cost lands on
       // the bill. The line names the turn where the conversation stopped being append-only.
       val lines = wire.map {
@@ -3833,14 +3844,23 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
           tools = tools,
           // The same key on every turn of the thread: the provider routes the conversation to the server with its cache.
           promptCacheKey = com.vibe.agent.providers.PromptCacheKey.of(turnThreadId ?: currentThreadId, "agent"),
+          // A refusal's credit goes to the first request after it, and only to the same provider: one token, one retry
+          fallbackCredit = com.vibe.agent.providers.FallbackCredit.usable(
+            refusalCredit.getAndSet(null), resolved.entry.id, System.currentTimeMillis()),
         ) { delta -> noteActivity(); roundText.append(delta); appendAgentText(delta) }
         usage = usage.merge(llmClient.lastUsage())
         val stop = llmClient.lastStopReason()
         stop?.takeIf { it.abnormal }?.let { turnNote(stopNote(it)) }
         // A refusal before any tool ran: another model may answer, and nothing this one did has to be undone
         // After a tool round the files are already changed, and a model starting over would redo that work blind
+        // The refusal's credit is kept only when the turn does move on: held otherwise, it would ride on an unrelated request
         if (stop != null && rounds == 0 && com.vibe.agent.resilience.FailoverPlan.shouldFailOver(stop.kind) &&
-            failOver(t, stopNote(stop), startedAt) { discardRefusedAnswer(t, usage) }) return
+            failOver(t, stopNote(stop), startedAt) {
+              discardRefusedAnswer(t, usage)
+              stop.creditToken?.let {
+                refusalCredit.set(com.vibe.agent.providers.FallbackCredit.Credit(resolved.entry.id, it, System.currentTimeMillis()))
+              }
+            }) return
         val calls = llmClient.lastToolCalls()
         // On the Responses wire the answer's own output items go back with it; an answer that ends the turn on calls
         // without results is not kept that way — the vendor refuses a call that has no output after it.
@@ -3851,6 +3871,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
           turnNote(t("directTools.roundsLimit", "limit" to VibeAgentSettings.directToolMaxRounds))
           break
         }
+        val loadedBefore = loaded.toSet()
         val results = calls.map { call ->
           // A tool round is a sign of life too: a model that only calls tools streams no text, and
           // the watchdog must not read a working turn as a hung one.
@@ -3858,19 +3879,22 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
           if (call.name == com.vibe.agent.mcp.ToolSearch.NAME) searchTools(call, allTools, loaded)
           else runDirectTool(call, t.model.id)
         }
-        // A search may have loaded tools: the next round offers them.
-        tools = com.vibe.agent.mcp.ToolSearch.offered(allTools, loaded, VibeAgentSettings.toolSearchThreshold)
+        // A search may have loaded tools: the next round offers them, in `tools` or in place
+        val added = loaded.filter { it !in loadedBefore }
+        tools = offer()
         // The round's thinking blocks travel with it: a model that requires its reasoning back gets them in the next
         // request, and Claude keeps its reasoning through the loop (ThinkingReplay decides which).
         val thinking = llmClient.lastThinking()
         val thinkingKey = llmClient.lastThinkingKey()
         turns.chat.toolRounds.add(com.vibe.agent.providers.ToolRound(roundText.toString(), calls, results,
                                                                      roundReasoning.toString().ifEmpty { null }, thinking,
-                                                                     thinkingKey, replay))
+                                                                     thinkingKey, replay, added))
         request = request +
           ChatMessage("assistant", roundText.toString(), reasoning = roundReasoning.toString().ifEmpty { null }, toolCalls = calls,
                       thinking = thinking, thinkingKey = thinkingKey, responses = replay) +
-          ChatMessage(com.vibe.agent.providers.ToolCalls.ROLE, "", toolResults = results)
+          ChatMessage(com.vibe.agent.providers.ToolCalls.ROLE, "", toolResults = results) +
+          listOfNotNull(allTools.filter { it.name in added }.takeIf { inPlace && it.isNotEmpty() }
+                          ?.let { ChatMessage("system", "", toolAdditions = it) })
       }
       // What the provider itself reported, and the price the owner of the key wrote down. Both may
       // be absent — then the accounting falls back to the old estimate, and says so by omission.

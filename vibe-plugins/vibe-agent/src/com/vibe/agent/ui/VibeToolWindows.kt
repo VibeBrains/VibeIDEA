@@ -25,6 +25,7 @@ object VibeToolWindows {
   const val SERVER = "VibeServer"
   const val HTTP = "VibeHttp"
   const val DB = "VibeDb"
+  const val DEMOS = "VibeDemos"
 
-  val ALL: List<String> = listOf(AGENT, AUDIT, DESIGN, DOCS, RUNS, TASKS, SERVER, HTTP, DB)
+  val ALL: List<String> = listOf(AGENT, AUDIT, DESIGN, DOCS, RUNS, TASKS, SERVER, HTTP, DB, DEMOS)
 }

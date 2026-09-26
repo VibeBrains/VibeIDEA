@@ -26,6 +26,8 @@ data class StopReason(
   val category: String? = null,
   /** The vendor's human-readable account of a refusal; unstable text, shown rather than parsed. */
   val explanation: String? = null,
+  /** A refusal's one-time credit for the retry on another model ([FallbackCredit]); null when none was minted */
+  val creditToken: String? = null,
 ) {
   enum class Kind {
     /** The model finished its answer. */
@@ -74,7 +76,8 @@ data class StopReason(
         "repetition_truncation" -> Kind.REPETITION
         else -> Kind.OTHER
       }
-      return StopReason(kind, raw, string(details?.get("category")), string(details?.get("explanation")))
+      return StopReason(kind, raw, string(details?.get("category")), string(details?.get("explanation")),
+                        string(details?.get(FallbackCredit.FIELD)))
     }
 
     /** The chunk of a chat/completions stream that carries `finish_reason`, or a whole chat/completions response. */

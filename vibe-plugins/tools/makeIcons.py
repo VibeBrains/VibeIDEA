@@ -67,6 +67,13 @@ ICONS = {
         '<circle cx="10" cy="10" r="7.5" stroke="{C}" stroke-width="1.4"/>'
         '<path d="M10 5.7V10l3 2.1" stroke="{C}" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>',
     ),
+    # Демо-отчёты: кадр с кнопкой воспроизведения — прогон, который смотрят, а не читают.
+    "vibeDemos": (AGENT,
+        '<rect x="2" y="3.2" width="12" height="9.6" rx="1.6" stroke="{C}" stroke-width="1"/>'
+        '<path d="M6.8 5.8v4.4L10.4 8 6.8 5.8Z" fill="{C}"/>',
+        '<rect x="2.5" y="4" width="15" height="12" rx="2" stroke="{C}" stroke-width="1.4"/>'
+        '<path d="M8.4 7.2v5.6L13 10 8.4 7.2Z" fill="{C}"/>',
+    ),
     # База данных: цилиндр. Самая узнаваемая метафора в отрасли — её и берём, чтобы панель
     # находили глазами без чтения подписи.
     "vibeDb": (DB,

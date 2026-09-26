@@ -130,6 +130,23 @@ class WireBodyTest {
   }
 
   @Test
+  fun `tools added in place are dropped where the model does not take them`() {
+    val adding = ChatMessage("system", "", toolAdditions = listOf(ToolSpec("x", "d", JsonObject(emptyMap()))))
+    val settings = object : LlmSettings {
+      override val offline: Boolean = false
+      override val reasoningLevel: String = "off"
+    }
+    for (protocol in listOf("anthropic", "openai")) {
+      val provider = ResolvedProvider(ProviderEntry(id = "stub", baseURL = baseUrl, protocol = protocol), protocol, baseUrl,
+                                      apiKey = KEY, localAddress = true)
+      LlmClient({ http }, null, settings).chat(provider, ModelEntry(id = "claude-opus-5-5"), messages + adding) { }
+      val body = seen.last().body
+      assertTrue("tool_addition" !in body.toString(), protocol)
+    }
+    assertEquals("RULE-ONE\nRULE-TWO", seen[0].body["system"]!!.jsonPrimitive.content)
+  }
+
+  @Test
   fun `offline mode stops a model that does not run here, whatever its address`() {
     // A proxy on localhost to a cloud model: local by address, and yet the request would leave the machine
     assertFailsWith<IllegalStateException> { send("openai", offline = true, runsLocally = false) }

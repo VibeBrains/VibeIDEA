@@ -106,6 +106,12 @@ object ModelQuirks {
      */
     NO_FORCED_TOOL_CHOICE,
 
+    /**
+     * The model takes system messages mid-conversation, and with them tools added after the start ([InlineTools])
+     * On Anthropic's own API only; the direct chat then keeps `tools` as the thread began and adds found tools in place
+     */
+    INLINE_TOOL_ADDITIONS,
+
     /** The system role is not accepted; the instruction has to travel as the first user message. */
     NO_SYSTEM_ROLE,
 
@@ -224,6 +230,14 @@ object ModelQuirks {
       Regex("^claude-(opus-5-5|fable-5-1|mythos-5-1)"),
       setOf(Quirk.NO_FORCED_TOOL_CHOICE),
       "claude opus 5.5, fable 5.1, mythos 5.1: forced tool use (tool_choice any or tool) is rejected",
+    ),
+    Rule(
+      // Mid-conversation system messages: «Claude Fable 5.1, Claude Mythos 5.1, Claude Opus 5.5, Claude Opus 4.8,
+      // Claude Opus 5», not Sonnet 5 (platform.claude.com/docs/en/build-with-claude/mid-conversation-system-messages,
+      // checked 2026-09-26); the pattern covers opus-5 and opus-5-5 and stops short of fable-5 and mythos-5
+      Regex("^claude-(opus-5|opus-4-8|fable-5-1|mythos-5-1)"),
+      setOf(Quirk.INLINE_TOOL_ADDITIONS),
+      "claude opus 5, 5.5, 4.8, fable 5.1, mythos 5.1: tools found mid-conversation are added by a system message",
     ),
     Rule(
       // Thinking is on by default here too, but the switch is accepted: Opus 5 takes `{"type": "disabled"}` at effort

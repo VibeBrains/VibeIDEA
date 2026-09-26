@@ -69,4 +69,11 @@ class ExtraBodyConflictsTest {
     // Opus 5 is not on the vendor's list
     assertTrue(conflicts("claude-opus-5", "anthropic", """{"tool_choice": {"type": "any"}}""").isEmpty())
   }
+
+  @Test
+  fun `the vendor's fallback is named on anthropic's wire for any model, and ignored elsewhere`() {
+    assertEquals(listOf("fallbacks" to ExtraBodyConflicts.Reason.SERVER_FALLBACK),
+                 conflicts("claude-sonnet-4-5", "anthropic", """{"fallbacks": "default"}"""))
+    assertTrue(conflicts("gpt-6-sol", "openai", """{"fallbacks": "default"}""").isEmpty())
+  }
 }

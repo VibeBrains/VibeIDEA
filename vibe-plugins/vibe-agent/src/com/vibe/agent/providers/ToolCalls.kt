@@ -283,6 +283,8 @@ data class ToolRound(
   val thinkingKey: String? = null,
   /** The round's output items on the Responses wire, sent back as they came to the same model ([ResponsesReplay]). */
   val responses: ResponsesReplay? = null,
+  /** The tools the round's search loaded, by name: offered after the round on the routes that add tools in place ([InlineTools]) */
+  val addedTools: List<String> = emptyList(),
 )
 
 /**
@@ -337,7 +339,7 @@ object ToolRounds {
    * final answer. The stored text is the whole feed of the turn — every round's words and then the answer —
    * so the answer is what follows the rounds' text.
    */
-  fun expand(messages: List<ChatMessage>): List<ChatMessage> = messages.flatMap { m ->
+  fun expand(messages: List<ChatMessage>, tool: (String) -> ToolSpec? = { null }): List<ChatMessage> = messages.flatMap { m ->
     if (m.role != "assistant" || m.toolRounds.isEmpty()) return@flatMap listOf(m)
     val said = m.toolRounds.joinToString("") { it.text }
     val answer = (if (m.text.startsWith(said)) m.text.substring(said.length) else m.text).ifBlank { NO_ANSWER }
@@ -350,9 +352,17 @@ object ToolRounds {
         ChatMessage("assistant", round.text, reasoning = round.reasoning, toolCalls = round.calls, thinking = round.thinking,
                     thinkingKey = round.thinkingKey, responses = round.responses),
         ChatMessage(ToolCalls.ROLE, "", toolResults = round.results),
-      )
+      ) + additions(round.addedTools, tool)
     } + m.copy(text = answer, reasoning = answerReasoning, toolRounds = emptyList())
   }
+
+  /** The system message offering the tools a round loaded; a tool gone since then is not offered, and none — no message */
+  private fun additions(names: List<String>, tool: (String) -> ToolSpec?): List<ChatMessage> {
+    val specs = names.mapNotNull(tool)
+    return if (specs.isEmpty()) emptyList() else listOf(ChatMessage(SYSTEM_ROLE, "", toolAdditions = specs))
+  }
+
+  private const val SYSTEM_ROLE = "system"
 
   fun toJson(rounds: List<ToolRound>): JsonArray = JsonArray(rounds.map { round ->
     buildJsonObject {
@@ -360,6 +370,7 @@ object ToolRounds {
       round.reasoning?.let { put("reasoning", it) }
       if (round.thinking.isNotEmpty()) put("thinking", JsonArray(round.thinking.map { it.toStored() }))
       round.thinkingKey?.let { put("thinkingKey", it) }
+      if (round.addedTools.isNotEmpty()) put("addedTools", JsonArray(round.addedTools.map { kotlinx.serialization.json.JsonPrimitive(it) }))
       round.responses?.let { put("responses", it.toStored()) }
       put("calls", JsonArray(round.calls.map { buildJsonObject { put("id", it.id); put("name", it.name); put("arguments", it.arguments); it.signature?.let { s -> put("signature", s) } } }))
       put("results", JsonArray(round.results.map {
@@ -388,6 +399,7 @@ object ToolRounds {
     val thinking = (o["thinking"] as? JsonArray).orEmpty().mapNotNull { ThinkingBlock.fromStored(it) }
     if (calls.isEmpty()) null
     else ToolRound(o.s("text").orEmpty(), calls, results, o.s("reasoning"), thinking, o.s("thinkingKey"),
-                   ResponsesReplay.fromStored(o["responses"]))
+                   ResponsesReplay.fromStored(o["responses"]),
+                   (o["addedTools"] as? JsonArray).orEmpty().mapNotNull { (it as? kotlinx.serialization.json.JsonPrimitive)?.contentOrNull })
   }
 }

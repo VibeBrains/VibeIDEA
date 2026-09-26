@@ -27,6 +27,13 @@ object ExtraBodyConflicts {
 
     /** Forced tool use on a model that refuses it. */
     FORCED_TOOL,
+
+    /**
+     * The vendor's own fallback on Anthropic's wire: a refused turn is answered by another model inside one response
+     * That answer carries a `fallback` block the next request must send back at the same place, or replayed thinking
+     * around it is a 400; this client keeps no such block and retries on its own chain instead
+     */
+    SERVER_FALLBACK,
   }
 
   data class Conflict(val field: String, val reason: Reason)
@@ -52,6 +59,7 @@ object ExtraBodyConflicts {
     if (wire == ModelQuirks.WIRE_OPENAI_RESPONSES && ModelQuirks.Quirk.THINKING_ALWAYS_ON in quirks && responsesEffort == NONE) {
       result.add(Conflict("$REASONING.$EFFORT", Reason.SWITCH))
     }
+    if (wire == ModelQuirks.WIRE_ANTHROPIC && FALLBACKS in extraBody) result.add(Conflict(FALLBACKS, Reason.SERVER_FALLBACK))
     if (wire == ModelQuirks.WIRE_ANTHROPIC && ModelQuirks.Quirk.NO_FORCED_TOOL_CHOICE in quirks) {
       val choice = ((extraBody[TOOL_CHOICE] as? JsonObject)?.get(TYPE) as? JsonPrimitive)?.contentOrNull
       if (choice in FORCED_CHOICES) result.add(Conflict("$TOOL_CHOICE.$TYPE", Reason.FORCED_TOOL))
@@ -71,5 +79,6 @@ object ExtraBodyConflicts {
   private const val EFFORT = "effort"
   private const val NONE = "none"
   private const val TOOL_CHOICE = "tool_choice"
+  private const val FALLBACKS = "fallbacks"
   private val FORCED_CHOICES = setOf("any", "tool")
 }

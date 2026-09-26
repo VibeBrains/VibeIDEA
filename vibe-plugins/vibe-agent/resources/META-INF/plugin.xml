@@ -44,6 +44,8 @@
     <fileEditorProvider implementation="com.vibe.agent.docs.DocsGraphEditorProvider"/>
     <toolWindow id="VibeDocs" anchor="left" factoryClass="com.vibe.agent.docs.VibeDocsToolWindowFactory"
                 icon="/icons/vibeDocs.svg" doNotActivateOnStart="true"/>
+    <toolWindow id="VibeDemos" anchor="right" factoryClass="com.vibe.agent.demo.DemoReportsToolWindowFactory"
+                icon="/icons/vibeDemos.svg" doNotActivateOnStart="true"/>
     <toolWindow id="VibeRuns" anchor="bottom" factoryClass="com.vibe.agent.runs.VibeRunsToolWindowFactory"
                 icon="/icons/vibeRuns.svg" doNotActivateOnStart="true"/>
     <toolWindow id="VibeTasks" anchor="bottom"

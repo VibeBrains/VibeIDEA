@@ -111,6 +111,7 @@ class VibeDoctorAction : AnAction({ t("doctor.action") }) {
                                com.vibe.agent.providers.ExtraBodyConflicts.Reason.BUDGET -> t("doctor.extraBody.budget")
                                com.vibe.agent.providers.ExtraBodyConflicts.Reason.SWITCH -> t("doctor.extraBody.switch")
                                com.vibe.agent.providers.ExtraBodyConflicts.Reason.FORCED_TOOL -> t("doctor.extraBody.forcedTool")
+                               com.vibe.agent.providers.ExtraBodyConflicts.Reason.SERVER_FALLBACK -> t("doctor.extraBody.serverFallback")
                              }) }
     }
     lines.add(VibeDiagnosis.Line(
@@ -432,6 +433,19 @@ class VibeDoctorAction : AnAction({ t("doctor.action") }) {
     lines.add(VibeDiagnosis.Line(t("doctor.line.audit"),
                                  if (VibeAgentSettings.auditEnabled) VibeDiagnosis.State.OK else VibeDiagnosis.State.WARN,
                                  if (VibeAgentSettings.auditEnabled) "" else t("doctor.detail.auditOff")))
+    // A substitution is named once in the turn it happened; one that keeps happening is visible only summed up here
+    com.vibe.agent.audit.VibeAuditService.getInstance(project).get()?.let { audit ->
+      val substitutions = com.vibe.agent.audit.ModelSubstitutions.of(audit.readRecent(SUBSTITUTION_WINDOW))
+      lines.add(VibeDiagnosis.Line(
+        t("doctor.line.substitutions"),
+        if (substitutions.isEmpty()) VibeDiagnosis.State.OK else VibeDiagnosis.State.WARN,
+        if (substitutions.isEmpty()) t("doctor.detail.substitutionsNone", "events" to SUBSTITUTION_WINDOW)
+        else substitutions.take(SUBSTITUTIONS_SHOWN).joinToString("; ") {
+          t("doctor.detail.substitution", "asked" to it.asked, "answered" to it.answered, "count" to it.count,
+            "date" to java.time.Instant.ofEpochMilli(it.lastTs).atZone(java.time.ZoneId.systemDefault()).toLocalDate())
+        },
+      ))
+    }
     lines.add(VibeDiagnosis.Line(t("doctor.line.rag"),
                                  if (VibeAgentSettings.embeddingModel.isBlank()) VibeDiagnosis.State.WARN
                                  else VibeDiagnosis.State.OK,
@@ -514,5 +528,11 @@ class VibeDoctorAction : AnAction({ t("doctor.action") }) {
   private companion object {
     /** The doctor waits for a team server as long as a person waits for a report line */
     val TEAM_MEMORY_PROBE: java.time.Duration = java.time.Duration.ofSeconds(5)
+
+    /** How many recent audit events the substitution summary reads: weeks of work, a fraction of a second to parse */
+    private const val SUBSTITUTION_WINDOW = 5000
+
+    /** Pairs named in the line; the rest is in the audit viewer */
+    private const val SUBSTITUTIONS_SHOWN = 3
   }
 }

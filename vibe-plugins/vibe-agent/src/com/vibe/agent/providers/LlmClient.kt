@@ -44,6 +44,11 @@ data class ChatMessage(
   val thinkingKey: String? = null,
   /** Assistant only: this answer's output items on the Responses wire, in place of its text and calls for the same model. */
   val responses: ResponsesReplay? = null,
+  /**
+   * System only: tools offered from this point on ([InlineTools]); such a message carries no text
+   * Sent only where the model takes them, dropped on every other route — there `tools` carries the found tools instead
+   */
+  val toolAdditions: List<ToolSpec> = emptyList(),
 ) {
   /** Text-only copy for models without vision; the dropped images are named so the model knows context went missing. */
   fun withoutImages(): ChatMessage =
@@ -116,6 +121,7 @@ internal object LlmMessages {
 
   fun anthropic(m: ChatMessage, cacheable: Boolean = false, ttl: String? = null,
                 thinking: List<ThinkingBlock> = emptyList()): JsonObject = when {
+    m.toolAdditions.isNotEmpty() -> InlineTools.message(m.toolAdditions)
     m.role == ToolCalls.ROLE -> ToolCalls.anthropicResults(m)
     m.toolCalls.isNotEmpty() -> ToolCalls.anthropicAssistant(m, thinking)
     thinking.isNotEmpty() -> buildJsonObject {
@@ -264,6 +270,12 @@ class LlmClient(
   @Volatile private var thinking = ThinkingAccumulator()
   @Volatile private var lastThinkingKey: String? = null
 
+  /** Whether the request in flight adds found tools in place ([InlineTools]) */
+  @Volatile private var inlineTools = false
+
+  /** The credit token of the request in flight; cleared when the vendor refuses it ([anthropicWithCredit]) */
+  @Volatile private var creditToken: String? = null
+
   /** The thinking blocks of the last answer on Anthropic's wire, in answer order; empty on the other wires. */
   fun lastThinking(): List<ThinkingBlock> = thinking.blocks()
 
@@ -306,6 +318,13 @@ class LlmClient(
 
   private fun quirkIdOf(model: ModelEntry): String = ModelEcho.quirkId(model.id, snapshots[model.id])
 
+  /**
+   * Whether tools found mid-conversation reach this model as a system message rather than in `tools` ([InlineTools])
+   * The caller builds `tools` by the same answer: one decision, or found tools would be offered nowhere
+   */
+  fun addsToolsInPlace(provider: ResolvedProvider, model: ModelEntry): Boolean = InlineTools.supported(
+    provider.baseUrl, ProvidersService.protocolFor(provider.protocol, model.protocol), quirkIdOf(model), quirks())
+
   private val json = Json { ignoreUnknownKeys = true }
   @Volatile private var cancelled: () -> Boolean = { false }
   /** The `prompt_cache_key` of the request in flight; see [chat]. */
@@ -347,9 +366,15 @@ class LlmClient(
      * Null — a request outside a conversation, which has no cache worth routing to.
      */
     promptCacheKey: String? = null,
+    /**
+     * A refusal's credit for this retry ([FallbackCredit]): sent on Anthropic's wire only
+     * A token the vendor refuses is dropped and the request goes again without it, so a credit never costs the answer
+     */
+    fallbackCredit: String? = null,
     onDelta: (String) -> Unit,
   ) {
     this.thought = onThought
+    this.creditToken = fallbackCredit
     this.cancelled = isCancelled
     this.cacheKey = promptCacheKey
     lastUsage = TokenUsage.NONE
@@ -358,6 +383,9 @@ class LlmClient(
     // The MODEL decides, falling back to the provider: one key can serve three formats (OpenCode Go: MiniMax and Qwen
     // over /v1/messages, GLM and Kimi over /v1/chat/completions, Grok and GPT over /v1/responses).
     val wire = ProvidersService.protocolFor(provider.protocol, model.protocol)
+    inlineTools = addsToolsInPlace(provider, model)
+    // Found tools travel in place only where the model takes them; elsewhere the caller put them in `tools` already
+    val messages = if (inlineTools) messages else messages.filter { it.toolAdditions.isEmpty() }
     offeredTools = if (tools.isEmpty() || toolSupport(model, wire) != ModelQuirks.ToolSupport.YES) emptyList() else tools
     toolCalls = ToolCallAccumulator()
     // The offline promise is kept HERE, at the single door out: a check in the UI would be a reminder, and a reminder is not a guarantee
@@ -381,7 +409,7 @@ class LlmClient(
         // stream may have stopped inside an unclosed tag.
         val inline = InlineThinking(onAnswer = onDelta, onThought = onThought)
         when (wire) {
-          "anthropic" -> anthropicChat(provider, model, messages, inline::accept)
+          "anthropic" -> anthropicWithCredit(provider, model, messages, inline::accept)
           "gemini" -> geminiChat(provider, model, messages, inline::accept)
           ModelQuirks.WIRE_OPENAI_RESPONSES -> openAiResponsesChat(provider, model, messages, inline::accept)
           else -> openAiChat(provider, model, messages, inline::accept)
@@ -611,9 +639,32 @@ class LlmClient(
     }
   }
 
+  /**
+   * The Anthropic request, walking the vendor's ladder when it carries a credit token
+   * The refusal came before any output, so a 400 here streamed nothing, and the attempt can be sent again as is
+   */
+  private fun anthropicWithCredit(provider: ResolvedProvider, model: ModelEntry, messages: List<ChatMessage>,
+                                  onDelta: (String) -> Unit) {
+    var repeated = false
+    while (true) {
+      try {
+        return anthropicChat(provider, model, messages, onDelta)
+      }
+      catch (e: RuntimeException) {
+        if (creditToken == null) throw e
+        when (FallbackCredit.onError(e.message)) {
+          FallbackCredit.OnError.RAISE -> throw e
+          FallbackCredit.OnError.REPEAT -> if (repeated) creditToken = null else repeated = true
+          FallbackCredit.OnError.DROP_TOKEN -> creditToken = null
+        }
+      }
+    }
+  }
+
   private fun anthropicChat(provider: ResolvedProvider, model: ModelEntry, messages: List<ChatMessage>, onDelta: (String) -> Unit) {
     val overrides = quirks()
-    val system = messages.filter { it.role == "system" }.joinToString("\n") { it.text }
+    // A system message that adds tools stays where it is in the conversation; only text goes to the top-level field
+    val system = messages.filter { it.role == "system" && it.toolAdditions.isEmpty() }.joinToString("\n") { it.text }
     val body = withExtras(buildJsonObject {
       put("model", model.id)
       put("stream", true)
@@ -636,7 +687,7 @@ class LlmClient(
       }
       // The stable prefix of the conversation is billed once instead of on every turn; the
       // boundary never includes the last message, which is precisely what changed.
-      val wire = messages.filter { it.role != "system" }
+      val wire = messages.filter { it.role != "system" || it.toolAdditions.isNotEmpty() }
       val boundary = PromptCache.cacheBoundary(wire)
       val tools = if (offeredTools.isNotEmpty()) ToolCalls.anthropicTools(offeredTools) else null
       val messages = LlmMessages.anthropicMessages(wire, system, tools?.toString().orEmpty(),
@@ -644,6 +695,7 @@ class LlmClient(
       lastThinkingKey = messages.answerKey
       put("messages", JsonArray(messages.messages))
       tools?.let { put("tools", it) }
+      creditToken?.let { put(FallbackCredit.FIELD, it) }
     }.let { withReasoning(it, "anthropic", model) }
       // Quirks were applied on the OpenAI path only, which left the Anthropic-compatible endpoints
       // — where MiniMax and Qwen actually live — sending exactly the fields those models ignore.
@@ -651,7 +703,15 @@ class LlmClient(
       model.extraBody)
     val request = requestBuilder(provider, "messages", ModelQuirks.WIRE_ANTHROPIC)
       // Без бета-заголовка вендор молча оставит пять минут — по цене часовой записи.
-      .apply { if (PromptCache.needsExtendedBeta(model.cacheTtl)) header("anthropic-beta", PromptCache.EXTENDED_TTL_BETA) }
+      .apply {
+        // One header with every beta the request needs: the credit is redeemed only when the retry carries the same set
+        val betas = listOfNotNull(
+          PromptCache.EXTENDED_TTL_BETA.takeIf { PromptCache.needsExtendedBeta(model.cacheTtl) },
+          FallbackCredit.BETA.takeIf { FallbackCredit.offered(provider.baseUrl) },
+          InlineTools.BETA.takeIf { inlineTools },
+        )
+        if (betas.isNotEmpty()) header("anthropic-beta", betas.joinToString(","))
+      }
       .POST(HttpRequest.BodyPublishers.ofString(body.toString()))
       .build()
     streamSse(provider, request) { data ->
