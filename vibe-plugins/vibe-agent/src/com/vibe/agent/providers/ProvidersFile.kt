@@ -230,7 +230,8 @@ object ProvidersFile {
   }
 
   /**
-   * `"timeOfDay": { "peakUtc": ["01:00-04:00"], "peakDays": ["mon"], "offPeakFactor": 0.5 }` inside `cost`.
+   * `"timeOfDay": { "peakUtc": ["01:00-04:00"], "peakDays": ["mon"], "offPeakDates": ["2026-10-01"],
+   * "offPeakFactor": 0.5 }` inside `cost`.
    *
    * A block with one broken window or day is dropped WHOLE and named aloud: a price computed from half
    * a schedule looks right and is wrong silently, while without the block it is at least the peak one.
@@ -242,12 +243,19 @@ object ProvidersFile {
       PEAK_DAYS[el.jsonPrimitive.contentOrNull?.trim()?.lowercase()]
     }
     val factor = o["offPeakFactor"]?.jsonPrimitive?.doubleOrNull
-    if (windows.isNullOrEmpty() || windows.any { it == null } || days?.any { it == null } == true ||
+    // Absent is no holidays; present, it must be a list of real dates, or the whole schedule is dropped
+    val datesField = o["offPeakDates"]
+    val dates = (datesField as? kotlinx.serialization.json.JsonArray)?.map { el ->
+      el.jsonPrimitive.contentOrNull?.let { runCatching { java.time.LocalDate.parse(it.trim()) }.getOrNull() }
+    }
+    val datesBroken = datesField != null && (dates == null || dates.any { it == null })
+    if (windows.isNullOrEmpty() || windows.any { it == null } || days?.any { it == null } == true || datesBroken ||
         factor == null || factor <= 0) {
       onWarning(t("providers.warn.timeOfDayInvalid", "model" to model))
       return null
     }
-    return ModelPricing.TimeOfDay(windows.filterNotNull(), days.orEmpty().filterNotNull().toSet(), factor)
+    return ModelPricing.TimeOfDay(windows.filterNotNull(), days.orEmpty().filterNotNull().toSet(), factor,
+                                  dates.orEmpty().filterNotNull().toSet())
       .takeIf { it.stated }
   }
 

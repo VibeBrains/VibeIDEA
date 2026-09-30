@@ -84,6 +84,12 @@ data class ModelPricing(
     /** Days on which the peak windows apply; empty means every day. */
     val peakDays: Set<DayOfWeek> = emptySet(),
     val offPeakFactor: Double = 1.0,
+    /**
+     * Dates, UTC, that are off-peak all day: public holidays, which a weekday schedule cannot express
+     * DeepSeek's peak is weekdays except China's public holidays; its peak windows fall within one Beijing day, so the
+     * UTC date is the Beijing one
+     */
+    val offPeakDates: Set<java.time.LocalDate> = emptySet(),
   ) {
     /** Minutes since midnight UTC, end exclusive; a window across midnight has [toMinute] below [fromMinute]. */
     data class Window(val fromMinute: Int, val toMinute: Int) {
@@ -96,6 +102,7 @@ data class ModelPricing(
     fun isPeak(at: Instant): Boolean {
       val utc = at.atOffset(ZoneOffset.UTC)
       if (peakDays.isNotEmpty() && utc.dayOfWeek !in peakDays) return false
+      if (utc.toLocalDate() in offPeakDates) return false
       val minute = utc.get(ChronoField.MINUTE_OF_DAY)
       return peakWindows.any { it.contains(minute) }
     }

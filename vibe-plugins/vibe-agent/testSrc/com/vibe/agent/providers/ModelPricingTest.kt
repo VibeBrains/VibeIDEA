@@ -168,4 +168,28 @@ class ModelPricingTest {
     assertNull(models.first { it.id == "broken" }.pricing!!.timeOfDay, "битое окно роняет весь блок")
     assertEquals(1, warnings.size, "и об этом сказано вслух: $warnings")
   }
+
+  @Test
+  fun `a holiday is off-peak all day, the next weekday is peak again`() {
+    val warnings = mutableListOf<String>()
+    val parsed = ProvidersFile.parse(
+      """{"providers":[{"id":"deepseek","baseURL":"https://x","models":{"static":[
+         {"id":"flash","cost":{"input":0.30,"timeOfDay":{"peakUtc":["01:00-04:00","06:00-10:00"],
+          "peakDays":["mon","tue","wed","thu","fri"],"offPeakDates":["2026-10-01","2026-10-02"],"offPeakFactor":0.5}}},
+         {"id":"badDate","cost":{"input":1,"timeOfDay":{"peakUtc":["01:00-04:00"],"offPeakDates":["2026-02-30"],
+          "offPeakFactor":0.5}}},
+         {"id":"notList","cost":{"input":1,"timeOfDay":{"peakUtc":["01:00-04:00"],"offPeakDates":"2026-10-01",
+          "offPeakFactor":0.5}}}]}}]}""",
+      "test") { warnings.add(it) }
+    val models = parsed.single().models
+    val schedule = models.first { it.id == "flash" }.pricing!!.timeOfDay!!
+    // Thursday 1 October 2026 is a holiday: the peak window at 02:00 UTC is off-peak
+    assertEquals(0.5, schedule.factorAt(Instant.parse("2026-10-01T02:00:00Z")))
+    // Thursday 8 October is a working day again
+    assertEquals(1.0, schedule.factorAt(Instant.parse("2026-10-08T02:00:00Z")))
+    assertEquals(Instant.parse("2026-10-01T02:00:00Z"), schedule.nextOffPeak(Instant.parse("2026-10-01T02:00:00Z")))
+    assertNull(models.first { it.id == "badDate" }.pricing!!.timeOfDay, "несуществующая дата роняет весь блок")
+    assertNull(models.first { it.id == "notList" }.pricing!!.timeOfDay, "не массив роняет весь блок")
+    assertEquals(2, warnings.size, "и об этом сказано вслух: $warnings")
+  }
 }
