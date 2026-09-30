@@ -270,6 +270,19 @@ class LlmClient(
   @Volatile private var thinking = ThinkingAccumulator()
   @Volatile private var lastThinkingKey: String? = null
 
+  /** Cache diagnostics asked for on the request in flight ([CacheDiagnostics]) */
+  @Volatile private var diagnosticsAsk: CacheDiagnostics.Ask? = null
+
+  @Volatile private var lastMessageId: String? = null
+
+  @Volatile private var lastCacheMiss: CacheDiagnostics.Miss? = null
+
+  /** The id of the last Anthropic answer: the next request of the same conversation names it for cache diagnostics */
+  fun lastMessageId(): String? = lastMessageId
+
+  /** The vendor's reason the last request missed the prompt cache; null when not asked, not missed or still pending */
+  fun lastCacheMiss(): CacheDiagnostics.Miss? = lastCacheMiss
+
   /** Whether this model's answer is read for calls written as text ([ModelQuirks.Quirk.TOOL_CALLS_IN_TEXT]) */
   @Volatile private var textCalls = false
 
@@ -403,10 +416,18 @@ class LlmClient(
      * A token the vendor refuses is dropped and the request goes again without it, so a credit never costs the answer
      */
     fallbackCredit: String? = null,
+    /**
+     * Ask Anthropic why the prompt cache missed against the previous response ([CacheDiagnostics]); null — not asked
+     * Sent to Anthropic's own API only: the vendors on the same wire never said they take the field
+     */
+    cacheDiagnostics: CacheDiagnostics.Ask? = null,
     onDelta: (String) -> Unit,
   ) {
     this.thought = onThought
     this.creditToken = fallbackCredit
+    this.diagnosticsAsk = cacheDiagnostics
+    lastMessageId = null
+    lastCacheMiss = null
     this.cancelled = isCancelled
     this.cacheKey = promptCacheKey
     lastUsage = TokenUsage.NONE
@@ -734,6 +755,7 @@ class LlmClient(
       put("messages", JsonArray(messages.messages))
       tools?.let { put("tools", it) }
       creditToken?.let { put(FallbackCredit.FIELD, it) }
+      diagnosticsAsk?.takeIf { AnthropicApi.official(provider.baseUrl) }?.let { put(CacheDiagnostics.FIELD, CacheDiagnostics.field(it)) }
     }.let { withReasoning(it, "anthropic", model) }
       // Quirks were applied on the OpenAI path only, which left the Anthropic-compatible endpoints
       // — where MiniMax and Qwen actually live — sending exactly the fields those models ignore.
@@ -758,6 +780,8 @@ class LlmClient(
       // `message_delta`. One reader for both, because both put it under `usage`.
       TokenUsage.fromAnthropicEvent(obj)?.let { lastUsage = lastUsage.merge(it) }
       ModelEcho.fromAnthropicEvent(obj)?.let { lastAnsweredModel = it }
+      CacheDiagnostics.messageId(obj)?.let { lastMessageId = it }
+      CacheDiagnostics.miss(obj)?.let { lastCacheMiss = it }
       StopReason.fromAnthropicEvent(obj)?.let { lastStopReason = it }
       thinking.anthropicEvent(obj)
       // Рассуждение приезжает тем же событием, но другой дельтой: без этой ветки модель молчала

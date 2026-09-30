@@ -87,6 +87,7 @@ object ReasoningMode {
     if (declared == null || !declared.stated) return known
     return declared.copy(
       canTurnOff = declared.canTurnOff ?: known.canTurnOff,
+      words = declared.words.ifEmpty { known.words },
       off = declared.off ?: known.off,
     )
   }

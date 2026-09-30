@@ -87,6 +87,19 @@ object ModelQuirks {
     OFF_THINKING_DISABLED,
 
     /**
+     * «Off» is `thinking: {"type": "between_tools"}`: the model skips thinking before its answer and thinks only between
+     * tool calls. Claude Sonnet 5.5 takes no `disabled`; its lowest setting is this one (anthropic-sdk-python a9a577d)
+     */
+    OFF_THINKING_BETWEEN_TOOLS,
+
+    /**
+     * The model's effort words are `low`, `high` and `max`, with no `medium`, and an unknown word is a 400
+     * Kimi K3 and Kimi Code list exactly these; a model fetched from the vendor's list carries no declaration, and our
+     * own word `medium` would fail every request on the middle of the slider
+     */
+    EFFORT_LOW_HIGH_MAX,
+
+    /**
      * «Off» is effort `none`: without it the model reasons at its default. Spelled per wire — `reasoning_effort` on
      * chat/completions, `reasoning.effort` on the Responses wire.
      */
@@ -234,9 +247,17 @@ object ModelQuirks {
       // Fable 5.1 and Mythos 5.1 «reject forced tool use on every request with a 400 error»
       // (platform.claude.com/docs/en/models/opus-5-5/whats-new-opus-5-5, checked 2026-09-25)
       // Exact versions: the page names these three, and Fable 5 and Mythos 5 are not on it
-      Regex("^claude-(opus-5-5|fable-5-1|mythos-5-1)"),
+      Regex("^claude-(opus-5-5|fable-5-1|mythos-5-1|sonnet-5-5)"),
       setOf(Quirk.NO_FORCED_TOOL_CHOICE),
-      "claude opus 5.5, fable 5.1, mythos 5.1: forced tool use (tool_choice any or tool) is rejected",
+      "claude opus 5.5, fable 5.1, mythos 5.1, sonnet 5.5: forced tool use (tool_choice any or tool) is rejected",
+    ),
+    Rule(
+      // Sonnet 5.5, 28.09.2026: thinking is adaptive and on by default, `disabled` gave way to `between_tools`, and the
+      // API default effort is `high` (anthropic.com/claude-sonnet-5-5; anthropic-sdk-python a9a577d and a3834d4,
+      // checked 2026-09-30 — the vendor's docs were unreachable that day)
+      Regex("^claude-sonnet-5-5"),
+      setOf(Quirk.OFF_THINKING_BETWEEN_TOOLS),
+      "claude sonnet 5.5: «off» sends thinking.type between_tools",
     ),
     Rule(
       // DeepSeek's template writes calls in DSML (encoding_dsv32.py of deepseek-ai/DeepSeek-V3.2), and a call has
@@ -271,10 +292,13 @@ object ModelQuirks {
     ),
     Rule(
       // Astra refuses `reasoning_effort: "none"` with 400, and «Chat Completions does not support function calling with
-      // GPT-6 Astra» — the Responses API does (developers.openai.com/api/docs/guides/reasoning, checked 2026-09-23).
-      Regex("^gpt-6-astra"),
+      // GPT-6 Astra» — the Responses API does (developers.openai.com/api/docs/guides/reasoning, checked 2026-09-23)
+      // GPT-6.1 Sol is the same: «The none and minimal reasoning efforts are not supported», «Use the Responses API for
+      // tool calling. Chat Completions supports requests without tools» (developers.openai.com/api/docs/guides/latest-model,
+      // checked 2026-09-30); `gpt-6.1-sol` is not caught by the Sol and Luna rule below, whose name has no `.1`
+      Regex("^gpt-6(-astra|\\.1-sol)"),
       setOf(Quirk.THINKING_ALWAYS_ON, Quirk.TOOLS_ONLY_ON_RESPONSES),
-      "gpt-6 astra: reasoning cannot be switched off, and tools work on the Responses wire only",
+      "gpt-6 astra, gpt-6.1 sol: reasoning cannot be switched off, and tools work on the Responses wire only",
     ),
     Rule(
       // Sol and Luna reason at `medium` unless told `none`, and on chat/completions they call functions ONLY at `none`
@@ -299,6 +323,22 @@ object ModelQuirks {
       Regex("^(kimi-k3|kimi-k2\\.[67]|kimi-for-coding|k3(-|$))"),
       setOf(Quirk.ECHO_REASONING),
       "kimi: the assistant's reasoning_content goes back with its answer and its tool calls in the history",
+    ),
+    Rule(
+      // K3 cannot switch reasoning off, its levels are low, high and max, and the platform's default is max
+      // (platform.kimi.ai/docs/guide/use-reasoning-effort, checked 2026-09-11); Kimi Code serves it as `k3` and
+      // `k3-256k` with the same levels (kimi.com/code/docs/en/kimi-code/models.html, checked 2026-09-23)
+      // Fetched from the vendor's list, the model carries no declaration: «off» sent nothing and ran at max
+      Regex("^(kimi-k3|k3)(-|$)"),
+      setOf(Quirk.THINKING_ALWAYS_ON, Quirk.EFFORT_LOW_HIGH_MAX),
+      "kimi k3: reasoning cannot be switched off; the levels are low, high and max",
+    ),
+    Rule(
+      // Kimi Code's `kimi-for-coding` (K2.8 Preview) takes low, high and max, and `none` switches reasoning off
+      // (kimi.com/code/docs/en/kimi-code/models.html, checked 2026-09-23); the HighSpeed model is left out, it always reasons
+      Regex("^kimi-for-coding$"),
+      setOf(Quirk.OFF_EFFORT_NONE, Quirk.EFFORT_LOW_HIGH_MAX),
+      "kimi-for-coding: «off» sends effort none; the levels are low, high and max",
     ),
     Rule(
       // MiniMax interleaved thinking: the whole assistant message goes back — thinking blocks on the Anthropic-compatible
@@ -387,16 +427,23 @@ object ModelQuirks {
    */
   fun reasoningOf(modelId: String, wire: String, overrides: List<Rule> = emptyList()): ReasoningMode.Support? {
     val quirks = quirksOf(modelId, overrides)
+    val words = if (Quirk.EFFORT_LOW_HIGH_MAX in quirks) LOW_HIGH_MAX else emptyList()
     return when {
-      Quirk.THINKING_ALWAYS_ON in quirks -> ReasoningMode.Support(canTurnOff = false)
+      Quirk.THINKING_ALWAYS_ON in quirks -> ReasoningMode.Support(canTurnOff = false, words = words)
+      Quirk.OFF_THINKING_BETWEEN_TOOLS in quirks && wire == WIRE_ANTHROPIC -> ReasoningMode.Support(off = THINKING_BETWEEN_TOOLS)
       Quirk.OFF_THINKING_DISABLED in quirks && wire == WIRE_ANTHROPIC -> ReasoningMode.Support(off = THINKING_DISABLED)
-      Quirk.OFF_EFFORT_NONE in quirks && wire == WIRE_OPENAI -> ReasoningMode.Support(off = EFFORT_NONE)
-      Quirk.OFF_EFFORT_NONE in quirks && wire == WIRE_OPENAI_RESPONSES -> ReasoningMode.Support(off = RESPONSES_EFFORT_NONE)
+      Quirk.OFF_EFFORT_NONE in quirks && wire == WIRE_OPENAI -> ReasoningMode.Support(off = EFFORT_NONE, words = words)
+      Quirk.OFF_EFFORT_NONE in quirks && wire == WIRE_OPENAI_RESPONSES ->
+        ReasoningMode.Support(off = RESPONSES_EFFORT_NONE, words = words)
+      words.isNotEmpty() -> ReasoningMode.Support(words = words)
       else -> null
     }
   }
 
   private val THINKING_DISABLED: JsonObject = buildJsonObject { put("thinking", buildJsonObject { put("type", "disabled") }) }
+  private val THINKING_BETWEEN_TOOLS: JsonObject =
+    buildJsonObject { put("thinking", buildJsonObject { put("type", "between_tools") }) }
+  private val LOW_HIGH_MAX = listOf("low", "high", "max")
 
   private val EFFORT_NONE: JsonObject = buildJsonObject { put("reasoning_effort", "none") }
 

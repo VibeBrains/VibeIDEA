@@ -1181,6 +1181,23 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     verify = t("handoff.verify"), empty = t("handoff.empty"),
   )
 
+  /**
+   * The id of each thread's last Anthropic answer: the next request names it, and the vendor says what broke the cache
+   * Kept for the panel's life only: after a restart the first request opts in without a comparison
+   */
+  private val lastMessageIds = java.util.concurrent.ConcurrentHashMap<String, String>()
+
+  /** The line for the vendor's reason; only [com.vibe.agent.providers.CacheDiagnostics.CHANGES] reach it */
+  private fun vendorMissLine(miss: com.vibe.agent.providers.CacheDiagnostics.Miss): String {
+    val tokens = miss.tokens ?: 0
+    return when (miss.reason) {
+      "model_changed" -> t("cache.vendorMiss.model", "tokens" to tokens)
+      "system_changed" -> t("cache.vendorMiss.system", "tokens" to tokens)
+      "tools_changed" -> t("cache.vendorMiss.tools", "tokens" to tokens)
+      else -> t("cache.vendorMiss.messages", "tokens" to tokens)
+    }
+  }
+
   /** The last refusal's credit, waiting for the retry on the next model ([com.vibe.agent.providers.FallbackCredit]) */
   private val refusalCredit = java.util.concurrent.atomic.AtomicReference<com.vibe.agent.providers.FallbackCredit.Credit?>()
 
@@ -3849,8 +3866,14 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
           // A refusal's credit goes to the first request after it, and only to the same provider: one token, one retry
           fallbackCredit = com.vibe.agent.providers.FallbackCredit.usable(
             refusalCredit.getAndSet(null), resolved.entry.id, System.currentTimeMillis()),
+          // The vendor compares this request with the thread's previous answer and names what broke the cache
+          cacheDiagnostics = com.vibe.agent.providers.CacheDiagnostics.Ask(lastMessageIds[threadId]),
         ) { delta -> noteActivity(); roundText.append(delta); appendAgentText(delta) }
         usage = usage.merge(llmClient.lastUsage())
+        llmClient.lastMessageId()?.let { lastMessageIds[threadId] = it }
+        llmClient.lastCacheMiss()?.takeIf { com.vibe.agent.providers.CacheDiagnostics.worthSaying(it) }?.let { miss ->
+          systemLine(vendorMissLine(miss))
+        }
         val stop = llmClient.lastStopReason()
         stop?.takeIf { it.abnormal }?.let { turnNote(stopNote(it)) }
         // A refusal before any tool ran: another model may answer, and nothing this one did has to be undone

@@ -147,6 +147,19 @@ class WireBodyTest {
   }
 
   @Test
+  fun `cache diagnostics are asked of anthropic's own api only`() {
+    val settings = object : LlmSettings {
+      override val offline: Boolean = false
+      override val reasoningLevel: String = "off"
+    }
+    val provider = ResolvedProvider(ProviderEntry(id = "stub", baseURL = baseUrl, protocol = "anthropic"), "anthropic", baseUrl,
+                                    apiKey = KEY, localAddress = true)
+    LlmClient({ http }, null, settings).chat(provider, ModelEntry(id = "claude-opus-5-5"), messages,
+                                              cacheDiagnostics = CacheDiagnostics.Ask("msg_1")) { }
+    assertTrue(CacheDiagnostics.FIELD !in seen.last().body, "поле ушло стороннему адресу")
+  }
+
+  @Test
   fun `offline mode stops a model that does not run here, whatever its address`() {
     // A proxy on localhost to a cloud model: local by address, and yet the request would leave the machine
     assertFailsWith<IllegalStateException> { send("openai", offline = true, runsLocally = false) }

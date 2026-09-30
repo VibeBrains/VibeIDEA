@@ -49,7 +49,8 @@ object ExtraBodyConflicts {
     val thinkingType = ((extraBody[THINKING] as? JsonObject)?.get(TYPE) as? JsonPrimitive)?.contentOrNull
     if (wire == ModelQuirks.WIRE_ANTHROPIC) {
       if (ModelQuirks.Quirk.ADAPTIVE_THINKING in quirks && thinkingType == ENABLED) result.add(Conflict("$THINKING.$TYPE", Reason.BUDGET))
-      if (ModelQuirks.Quirk.THINKING_ALWAYS_ON in quirks && thinkingType == DISABLED) result.add(Conflict("$THINKING.$TYPE", Reason.SWITCH))
+      val noSwitch = ModelQuirks.Quirk.THINKING_ALWAYS_ON in quirks || ModelQuirks.Quirk.OFF_THINKING_BETWEEN_TOOLS in quirks
+      if (noSwitch && thinkingType == DISABLED) result.add(Conflict("$THINKING.$TYPE", Reason.SWITCH))
     }
     val effort = (extraBody[REASONING_EFFORT] as? JsonPrimitive)?.contentOrNull
     if (wire == ModelQuirks.WIRE_OPENAI && ModelQuirks.Quirk.THINKING_ALWAYS_ON in quirks && effort == NONE) {
