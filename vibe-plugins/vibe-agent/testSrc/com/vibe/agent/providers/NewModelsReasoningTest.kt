@@ -39,7 +39,8 @@ class NewModelsReasoningTest {
 
   @Test
   fun `sonnet 5-5 off is between_tools, and above off it is adaptive with an explicit effort`() {
-    assertEquals(obj("""{"thinking":{"type":"between_tools"}}"""), fields("anthropic", Level.OFF, "claude-sonnet-5-5"))
+    assertEquals(obj("""{"thinking":{"type":"between_tools"},"output_config":{"effort":"low"}}"""),
+                 fields("anthropic", Level.OFF, "claude-sonnet-5-5"))
     val medium = fields("anthropic", Level.MEDIUM, "claude-sonnet-5-5")
     assertEquals("adaptive", medium["thinking"]!!.jsonObject["type"].toString().trim('"'))
     assertEquals(obj("""{"effort":"medium"}"""), medium["output_config"])

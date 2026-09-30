@@ -19,10 +19,11 @@ class InlineToolsTest {
 
   @Test
   fun `only anthropic's own api and the models that take mid-conversation system messages`() {
-    for (id in listOf("claude-opus-5-5", "claude-opus-5", "claude-opus-4-8", "claude-fable-5-1", "claude-mythos-5-1")) {
+    for (id in listOf("claude-opus-5-5", "claude-opus-5", "claude-opus-4-8", "claude-fable-5-1", "claude-mythos-5-1",
+                      "claude-fable-5", "claude-mythos-5", "claude-sonnet-5-5")) {
       assertTrue(InlineTools.supported(api, "anthropic", id), id)
     }
-    for (id in listOf("claude-sonnet-5", "claude-fable-5", "claude-mythos-5", "claude-opus-4-7")) {
+    for (id in listOf("claude-sonnet-5", "claude-opus-4-7")) {
       assertFalse(InlineTools.supported(api, "anthropic", id), id)
     }
     assertFalse(InlineTools.supported("https://api.minimax.io/anthropic/v1", "anthropic", "claude-opus-5-5"))

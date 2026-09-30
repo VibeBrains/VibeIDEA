@@ -87,8 +87,10 @@ object ModelQuirks {
     OFF_THINKING_DISABLED,
 
     /**
-     * «Off» is `thinking: {"type": "between_tools"}`: the model skips thinking before its answer and thinks only between
-     * tool calls. Claude Sonnet 5.5 takes no `disabled`; its lowest setting is this one (anthropic-sdk-python a9a577d)
+     * «Off» is `thinking: {"type": "between_tools"}` at effort `low`: no thinking before the answer, only between tool
+     * calls. Claude Sonnet 5.5 answers `disabled` with 400, and this is its lowest setting; it is taken at low, medium
+     * and high effort, and without an effort the API default `high` applies
+     * (platform.claude.com/docs/en/models/sonnet-5-5/whats-new-sonnet-5-5, checked 2026-09-30)
      */
     OFF_THINKING_BETWEEN_TOOLS,
 
@@ -252,12 +254,12 @@ object ModelQuirks {
       "claude opus 5.5, fable 5.1, mythos 5.1, sonnet 5.5: forced tool use (tool_choice any or tool) is rejected",
     ),
     Rule(
-      // Sonnet 5.5, 28.09.2026: thinking is adaptive and on by default, `disabled` gave way to `between_tools`, and the
-      // API default effort is `high` (anthropic.com/claude-sonnet-5-5; anthropic-sdk-python a9a577d and a3834d4,
-      // checked 2026-09-30 — the vendor's docs were unreachable that day)
+      // Sonnet 5.5, 28.09.2026: thinking is adaptive and on by default, `disabled` is a 400 pointing to `between_tools`,
+      // and the API default effort is `high` (platform.claude.com/docs/en/models/sonnet-5-5/whats-new-sonnet-5-5 and
+      // /overview, checked 2026-09-30)
       Regex("^claude-sonnet-5-5"),
       setOf(Quirk.OFF_THINKING_BETWEEN_TOOLS),
-      "claude sonnet 5.5: «off» sends thinking.type between_tools",
+      "claude sonnet 5.5: «off» sends thinking.type between_tools at effort low",
     ),
     Rule(
       // DeepSeek's template writes calls in DSML (encoding_dsv32.py of deepseek-ai/DeepSeek-V3.2), and a call has
@@ -267,12 +269,13 @@ object ModelQuirks {
       "deepseek: a tool call written as DSML text in the answer is read as a call",
     ),
     Rule(
-      // Mid-conversation system messages: «Claude Fable 5.1, Claude Mythos 5.1, Claude Opus 5.5, Claude Opus 4.8,
-      // Claude Opus 5», not Sonnet 5 (platform.claude.com/docs/en/build-with-claude/mid-conversation-system-messages,
-      // checked 2026-09-26); the pattern covers opus-5 and opus-5-5 and stops short of fable-5 and mythos-5
-      Regex("^claude-(opus-5|opus-4-8|fable-5-1|mythos-5-1)"),
+      // Mid-conversation system messages: «Claude Fable 5.1, Claude Mythos 5.1, Claude Fable 5, Claude Mythos 5,
+      // Claude Opus 5.5, Claude Opus 4.8, Claude Opus 5, and Claude Sonnet 5.5», not Sonnet 5
+      // (platform.claude.com/docs/en/build-with-claude/mid-conversation-system-messages, checked 2026-09-30)
+      // The pattern covers opus-5 with opus-5-5 and fable-5, mythos-5 with their 5.1, and stops short of sonnet-5
+      Regex("^claude-(opus-5|opus-4-8|fable-5|mythos-5|sonnet-5-5)"),
       setOf(Quirk.INLINE_TOOL_ADDITIONS),
-      "claude opus 5, 5.5, 4.8, fable 5.1, mythos 5.1: tools found mid-conversation are added by a system message",
+      "claude opus 5, 5.5, 4.8, fable 5, mythos 5, sonnet 5.5: tools found mid-conversation are added by a system message",
     ),
     Rule(
       // Thinking is on by default here too, but the switch is accepted: Opus 5 takes `{"type": "disabled"}` at effort
@@ -441,8 +444,10 @@ object ModelQuirks {
   }
 
   private val THINKING_DISABLED: JsonObject = buildJsonObject { put("thinking", buildJsonObject { put("type", "disabled") }) }
-  private val THINKING_BETWEEN_TOOLS: JsonObject =
-    buildJsonObject { put("thinking", buildJsonObject { put("type", "between_tools") }) }
+  private val THINKING_BETWEEN_TOOLS: JsonObject = buildJsonObject {
+    put("thinking", buildJsonObject { put("type", "between_tools") })
+    put("output_config", buildJsonObject { put("effort", "low") })
+  }
   private val LOW_HIGH_MAX = listOf("low", "high", "max")
 
   private val EFFORT_NONE: JsonObject = buildJsonObject { put("reasoning_effort", "none") }
