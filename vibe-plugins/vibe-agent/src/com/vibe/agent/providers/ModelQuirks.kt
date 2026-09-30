@@ -347,9 +347,21 @@ object ModelQuirks {
       // MiniMax interleaved thinking: the whole assistant message goes back — thinking blocks on the Anthropic-compatible
       // endpoint, the content with its `<think>` tags on the OpenAI-compatible one, without which "subsequent
       // conversation loses context" (platform.minimax.io/docs/guides/text-m3-function-call, checked 25.09.2026)
-      Regex("^minimax-m\\d"),
+      // M3.1 is left out: it answers with its reasoning in a separate field, and the rule below says so
+      Regex("^minimax-m(?!3\\.1)\\d"),
       setOf(Quirk.ECHO_REASONING, Quirk.REASONING_AS_THINK_TAGS),
       "minimax: the reasoning goes back with every answer, as <think> tags on the openai wire",
+    ),
+    Rule(
+      // MiniMax-M3.1-Flash-Preview, for M Plan and MiniMax Code only for now: «always thinks and returns 400 if disabled
+      // is sent», reasoning_effort / output_config.effort take low, medium, high, xhigh and max and «defaults to max when
+      // omitted»; its reasoning comes in `reasoning_content`, which «must also be preserved completely», and
+      // `reasoning_split: false` is not supported (platform.minimax.io/docs/api-reference/text-openai-api and
+      // text-anthropic-api, checked 2026-09-30)
+      // «Off» therefore sends low: sending nothing ran the model at max; on the Anthropic wire thinking is adaptive
+      Regex("^minimax-m3\\.1"),
+      setOf(Quirk.ECHO_REASONING, Quirk.THINKING_ALWAYS_ON, Quirk.ADAPTIVE_THINKING),
+      "minimax m3.1: reasoning cannot be switched off and goes back in reasoning_content; «off» sends low, not the default max",
     ),
     Rule(
       // Xiaomi MiMo: "during multi-turn tool calls in thinking mode the model returns a `thinking` content block

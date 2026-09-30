@@ -63,4 +63,22 @@ class NewModelsReasoningTest {
       obj("""{"tool_choice":{"type":"any"},"thinking":{"type":"disabled"}}""")).map { it.reason }.toSet()
     assertEquals(setOf(ExtraBodyConflicts.Reason.FORCED_TOOL, ExtraBodyConflicts.Reason.SWITCH), conflicts)
   }
+
+  @Test
+  fun `minimax m3-1 never goes out without an effort, and its reasoning goes back as a field`() {
+    val id = "MiniMax-M3.1-Flash-Preview"
+    // Nothing sent meant the vendor's default max
+    assertEquals(obj("""{"reasoning_effort":"low"}"""), fields("openai", Level.OFF, id))
+    assertEquals(obj("""{"reasoning_effort":"high"}"""), fields("openai", Level.HIGH, id))
+    val anthropic = fields("anthropic", Level.OFF, id)
+    assertEquals(obj("""{"effort":"low"}"""), anthropic["output_config"])
+    assertEquals("adaptive", anthropic["thinking"]!!.jsonObject["type"].toString().trim('"'))
+    // The field, not <think> tags; M3 keeps its tags
+    assertEquals(setOf(ModelQuirks.Quirk.ECHO_REASONING), ModelQuirks.quirksOf(id).intersect(ECHO))
+    assertEquals(ECHO, ModelQuirks.quirksOf("MiniMax-M3").intersect(ECHO))
+  }
+
+  private companion object {
+    val ECHO = setOf(ModelQuirks.Quirk.ECHO_REASONING, ModelQuirks.Quirk.REASONING_AS_THINK_TAGS)
+  }
 }
