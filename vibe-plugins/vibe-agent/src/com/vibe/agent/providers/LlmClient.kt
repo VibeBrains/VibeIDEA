@@ -270,6 +270,15 @@ class LlmClient(
   @Volatile private var thinking = ThinkingAccumulator()
   @Volatile private var lastThinkingKey: String? = null
 
+  /** Whether this model's answer is read for calls written as text ([ModelQuirks.Quirk.TOOL_CALLS_IN_TEXT]) */
+  @Volatile private var textCalls = false
+
+  /** Calls the answer wrote as text, when the wire brought none ([readTextCalls]) */
+  @Volatile private var textToolCalls: List<ToolCall> = emptyList()
+
+  /** Call markup of the last answer that did not parse ([lastUnparsedToolMarkup]) */
+  @Volatile private var unparsedToolMarkup: String? = null
+
   /** Whether the request in flight adds found tools in place ([InlineTools]) */
   @Volatile private var inlineTools = false
 
@@ -293,7 +302,30 @@ class LlmClient(
   @Volatile private var toolCalls = ToolCallAccumulator()
 
   /** The tools the model called in the last completed request, in answer order; empty when it called none. */
-  fun lastToolCalls(): List<ToolCall> = toolCalls.calls()
+  fun lastToolCalls(): List<ToolCall> = toolCalls.calls().ifEmpty { textToolCalls }
+
+  /**
+   * Call markup the answer carried that did not parse; null when there was none or it became calls
+   * Held back from the feed: the caller tells the model instead of showing the person fragments of a call
+   */
+  fun lastUnparsedToolMarkup(): String? = unparsedToolMarkup
+
+  /**
+   * The held markup of an answer ([ToolMarkupFilter]): calls when the wire brought none, else it was text after all
+   * The words before and after the calls stay the answer; markup that does not parse is kept for [lastUnparsedToolMarkup]
+   */
+  private fun readTextCalls(held: String, onDelta: (String) -> Unit) {
+    if (toolCalls.calls().isNotEmpty()) return onDelta(held)
+    val parsed = DsmlToolCalls.parse(held)
+    if (parsed.answer.isNotEmpty()) onDelta(parsed.answer)
+    if (!parsed.parsed) {
+      unparsedToolMarkup = held
+      return
+    }
+    textToolCalls = parsed.calls.mapIndexed { index, call ->
+      ToolCall(id = TEXT_CALL_ID + (index + 1), name = call.name, arguments = call.arguments.toString())
+    }
+  }
 
   /**
    * Whether a request to this model on [wire] may carry tools; anything but [ModelQuirks.ToolSupport.YES] and the request
@@ -384,6 +416,7 @@ class LlmClient(
     // over /v1/messages, GLM and Kimi over /v1/chat/completions, Grok and GPT over /v1/responses).
     val wire = ProvidersService.protocolFor(provider.protocol, model.protocol)
     inlineTools = addsToolsInPlace(provider, model)
+    textCalls = ModelQuirks.has(quirkIdOf(model), ModelQuirks.Quirk.TOOL_CALLS_IN_TEXT, quirks())
     // Found tools travel in place only where the model takes them; elsewhere the caller put them in `tools` already
     val messages = if (inlineTools) messages else messages.filter { it.toolAdditions.isEmpty() }
     offeredTools = if (tools.isEmpty() || toolSupport(model, wire) != ModelQuirks.ToolSupport.YES) emptyList() else tools
@@ -399,6 +432,8 @@ class LlmClient(
       try {
         // A retry starts a new answer: calls half-collected from the failed stream are not calls.
         toolCalls = ToolCallAccumulator()
+        textToolCalls = emptyList()
+        unparsedToolMarkup = null
         lastStopReason = null
         thinking = ThinkingAccumulator()
         lastThinkingKey = null
@@ -407,7 +442,9 @@ class LlmClient(
         // Reasoning that arrives as tags inside the answer is taken out ONCE for every wire: a model writing `<think>` can
         // stand behind any of them, and a copy of the rule per wire would drift. A fresh splitter per attempt: a broken
         // stream may have stopped inside an unclosed tag.
-        val inline = InlineThinking(onAnswer = onDelta, onThought = onThought)
+        // A model that may write its calls as text has its answer read for them before it reaches the feed
+        val markup = if (textCalls) ToolMarkupFilter(onDelta) else null
+        val inline = InlineThinking(onAnswer = markup?.let { it::accept } ?: onDelta, onThought = onThought)
         when (wire) {
           "anthropic" -> anthropicWithCredit(provider, model, messages, inline::accept)
           "gemini" -> geminiChat(provider, model, messages, inline::accept)
@@ -417,6 +454,7 @@ class LlmClient(
         // Придержанный хвост отдаётся здесь: без этого последние символы ответа теряются, когда
         // поток кончился на том, что могло быть началом тега.
         inline.finish()
+        markup?.finish()?.let { held -> readTextCalls(held, onDelta) }
         lastAnsweredModel?.let { answered ->
           if (ModelEcho.quirkId(model.id, answered) == answered) snapshots[model.id] = answered
         }
@@ -932,6 +970,9 @@ class LlmClient(
     /** FIM completion budget, VibeIDE parity: local models are latency-bound, cloud can afford more. */
     const val FIM_MAX_TOKENS_LOCAL = 96
     const val FIM_MAX_TOKENS_CLOUD = 300
+    /** Ids of calls read from the answer's text: the wire gave them none, and the tool results must name them */
+    private const val TEXT_CALL_ID = "text-call-"
+
     /** Anthropic requires max_tokens; used when the model entry does not set maxOutputTokens. */
     const val DEFAULT_MAX_OUTPUT_TOKENS = 8192
   }

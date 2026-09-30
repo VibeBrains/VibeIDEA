@@ -3822,6 +3822,8 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
       var request = wire
       var usage = com.vibe.agent.providers.TokenUsage.NONE
       var rounds = 0
+      // A call written as text that did not parse is answered once with a request to use the tools; a second is the end
+      var textCallAsked = false
       turns.chat.responses = null
       // The tool loop: an answer that calls tools gets their results and is asked again, until the model
       // answers in words, the person stops, or the ceiling is reached. Without tools it is one pass, as before.
@@ -3866,6 +3868,18 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
         // without results is not kept that way — the vendor refuses a call that has no output after it.
         val replay = llmClient.lastResponses()
         if (calls.isEmpty()) turns.chat.responses = replay
+        val unparsed = llmClient.lastUnparsedToolMarkup()
+        if (calls.isEmpty() && unparsed != null && !llmCancel.get()) {
+          if (textCallAsked || rounds++ >= VibeAgentSettings.directToolMaxRounds) {
+            turnNote(t("directTools.textCallFailed"))
+            break
+          }
+          textCallAsked = true
+          turnNote(t("directTools.textCallUnparsed"))
+          request = request + ChatMessage("assistant", roundText.toString() + unparsed) +
+                    ChatMessage("user", TEXT_CALL_RETRY)
+          continue
+        }
         if (calls.isEmpty() || llmCancel.get()) break
         if (rounds++ >= VibeAgentSettings.directToolMaxRounds) {
           turnNote(t("directTools.roundsLimit", "limit" to VibeAgentSettings.directToolMaxRounds))
@@ -6877,6 +6891,14 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
   }
 
   private companion object {
+    /**
+     * Said to a model whose call came as text that did not parse; model-facing, so plain and in English
+     * The markup it wrote stays in the history it sees, so it knows which call is meant
+     */
+    private const val TEXT_CALL_RETRY =
+      "Your last tool call was written as text in the answer and could not be read as a call. " +
+      "Call the tool again through the tools interface, not as text."
+
     /**
      * How long a protocol sign-in may take. It waits for a person — the agent may have opened a
      * browser — rather than for a program, so the handshake's bound would cut it off mid-login.

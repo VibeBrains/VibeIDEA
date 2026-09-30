@@ -112,6 +112,13 @@ object ModelQuirks {
      */
     INLINE_TOOL_ADDITIONS,
 
+    /**
+     * The model sometimes writes a tool call as text in its answer, in its own markup, instead of in the wire's field
+     * ([DsmlToolCalls]); read only when the wire brought no calls, and only for these models: guessing a format from
+     * prose is not done for a model that never used one
+     */
+    TOOL_CALLS_IN_TEXT,
+
     /** The system role is not accepted; the instruction has to travel as the first user message. */
     NO_SYSTEM_ROLE,
 
@@ -230,6 +237,13 @@ object ModelQuirks {
       Regex("^claude-(opus-5-5|fable-5-1|mythos-5-1)"),
       setOf(Quirk.NO_FORCED_TOOL_CHOICE),
       "claude opus 5.5, fable 5.1, mythos 5.1: forced tool use (tool_choice any or tool) is rejected",
+    ),
+    Rule(
+      // DeepSeek's template writes calls in DSML (encoding_dsv32.py of deepseek-ai/DeepSeek-V3.2), and a call has
+      // reached the answer as text instead of `tool_calls`: six turns of deepseek-flash in VibeIDE's log, 28.09.2026
+      Regex("^deepseek"),
+      setOf(Quirk.TOOL_CALLS_IN_TEXT),
+      "deepseek: a tool call written as DSML text in the answer is read as a call",
     ),
     Rule(
       // Mid-conversation system messages: «Claude Fable 5.1, Claude Mythos 5.1, Claude Opus 5.5, Claude Opus 4.8,

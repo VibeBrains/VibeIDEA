@@ -800,6 +800,8 @@
   "directTools.reasoningYields": "Model {model} takes tools on Chat Completions only without reasoning — turns with tools go with reasoning off. For both, declare \"protocol\": \"openai-responses\" for the model",
   "directTools.refused": "The call {tool} was not run: the person did not allow it",
   "directTools.responsesOnly": "Model {model} calls tools only over the Responses API — the direct chat goes without them. To enable them, declare \"protocol\": \"openai-responses\" for the model in .vibe/providers.json",
+  "directTools.textCallFailed": "The model again wrote a tool call as text in a format the client does not read — the turn is stopped",
+  "directTools.textCallUnparsed": "The model wrote a tool call as text that could not be read — asking it to call the tool properly",
   "directTools.roundsLimit": "The model called tools {limit} times in a row — the turn stopped at the ceiling (Settings → Tools → VibeIDEA)",
   "directTools.searched": "🔎 tool search: «{query}» → {found}",
   "directTools.searchedNothing": "nothing",

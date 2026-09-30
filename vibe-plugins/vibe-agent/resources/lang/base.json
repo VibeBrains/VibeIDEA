@@ -800,6 +800,8 @@
   "directTools.reasoningYields": "Модель {model} на Chat Completions принимает инструменты только без рассуждения — ходы с инструментами идут с выключенным рассуждением. Чтобы было и то и другое, объявите модели \"protocol\": \"openai-responses\"",
   "directTools.refused": "Вызов {tool} не выполнен: человек не разрешил",
   "directTools.responsesOnly": "Модель {model} вызывает инструменты только через Responses API — прямой чат идёт без них. Чтобы включить, объявите модели \"protocol\": \"openai-responses\" в .vibe/providers.json",
+  "directTools.textCallFailed": "Модель снова написала вызов инструмента текстом в формате, который клиент не распознал, — ход остановлен",
+  "directTools.textCallUnparsed": "Модель написала вызов инструмента текстом, и разобрать его не удалось — прошу вызвать инструмент как положено",
   "directTools.roundsLimit": "Модель вызывала инструменты {limit} раз подряд — ход остановлен на потолке (Settings → Tools → VibeIDEA)",
   "directTools.searched": "🔎 поиск инструментов: «{query}» → {found}",
   "directTools.searchedNothing": "ничего",
