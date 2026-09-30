@@ -283,8 +283,11 @@ class LlmClient(
   /** The vendor's reason the last request missed the prompt cache; null when not asked, not missed or still pending */
   fun lastCacheMiss(): CacheDiagnostics.Miss? = lastCacheMiss
 
-  /** Whether this model's answer is read for calls written as text ([ModelQuirks.Quirk.TOOL_CALLS_IN_TEXT]) */
-  @Volatile private var textCalls = false
+  /**
+   * The tools a call written as text may name, with their schemas ([TextToolCalls]); empty when the request offered none
+   * A model without tools is not read for calls: markup in its answer is text it meant to show
+   */
+  @Volatile private var textCallTools: Map<String, JsonObject> = emptyMap()
 
   /** Calls the answer wrote as text, when the wire brought none ([readTextCalls]) */
   @Volatile private var textToolCalls: List<ToolCall> = emptyList()
@@ -326,17 +329,26 @@ class LlmClient(
   /**
    * The held markup of an answer ([ToolMarkupFilter]): calls when the wire brought none, else it was text after all
    * The words before and after the calls stay the answer; markup that does not parse is kept for [lastUnparsedToolMarkup]
+   * Both ends go to the IDE log with the format and the model: how often a model does this is known only from there
    */
-  private fun readTextCalls(held: String, onDelta: (String) -> Unit) {
+  private fun readTextCalls(held: String, modelId: String, onDelta: (String) -> Unit) {
     if (toolCalls.calls().isNotEmpty()) return onDelta(held)
-    val parsed = DsmlToolCalls.parse(held)
-    if (parsed.answer.isNotEmpty()) onDelta(parsed.answer)
-    if (!parsed.parsed) {
-      unparsedToolMarkup = held
-      return
-    }
-    textToolCalls = parsed.calls.mapIndexed { index, call ->
-      ToolCall(id = TEXT_CALL_ID + (index + 1), name = call.name, arguments = call.arguments.toString())
+    val read = TextToolCalls.parse(held, textCallTools)
+    when (read.outcome) {
+      TextToolCalls.Outcome.TEXT -> onDelta(held)
+      TextToolCalls.Outcome.UNPARSED -> {
+        if (read.answer.isNotEmpty()) onDelta(read.answer)
+        unparsedToolMarkup = held
+        logger<LlmClient>().warn("Tool call written as text did not parse: model=$modelId, format=${read.format}")
+      }
+      TextToolCalls.Outcome.CALLS -> {
+        if (read.answer.isNotEmpty()) onDelta(read.answer)
+        textToolCalls = read.calls.mapIndexed { index, call ->
+          ToolCall(id = TEXT_CALL_ID + (index + 1), name = call.name, arguments = call.arguments.toString())
+        }
+        logger<LlmClient>().info(
+          "Tool calls read from answer text: model=$modelId, format=${read.format}, calls=${read.calls.joinToString { it.name }}")
+      }
     }
   }
 
@@ -437,10 +449,12 @@ class LlmClient(
     // over /v1/messages, GLM and Kimi over /v1/chat/completions, Grok and GPT over /v1/responses).
     val wire = ProvidersService.protocolFor(provider.protocol, model.protocol)
     inlineTools = addsToolsInPlace(provider, model)
-    textCalls = ModelQuirks.has(quirkIdOf(model), ModelQuirks.Quirk.TOOL_CALLS_IN_TEXT, quirks())
     // Found tools travel in place only where the model takes them; elsewhere the caller put them in `tools` already
     val messages = if (inlineTools) messages else messages.filter { it.toolAdditions.isEmpty() }
     offeredTools = if (tools.isEmpty() || toolSupport(model, wire) != ModelQuirks.ToolSupport.YES) emptyList() else tools
+    // Tools found mid-conversation are offered too when they travel in place: a call to one of them is still a call
+    textCallTools = if (offeredTools.isEmpty()) emptyMap()
+    else (offeredTools + messages.flatMap { it.toolAdditions }).associate { it.name to it.schema }
     toolCalls = ToolCallAccumulator()
     // The offline promise is kept HERE, at the single door out: a check in the UI would be a reminder, and a reminder is not a guarantee
     // A provider whose models run here is still allowed — nothing leaves the machine
@@ -463,8 +477,8 @@ class LlmClient(
         // Reasoning that arrives as tags inside the answer is taken out ONCE for every wire: a model writing `<think>` can
         // stand behind any of them, and a copy of the rule per wire would drift. A fresh splitter per attempt: a broken
         // stream may have stopped inside an unclosed tag.
-        // A model that may write its calls as text has its answer read for them before it reaches the feed
-        val markup = if (textCalls) ToolMarkupFilter(onDelta) else null
+        // An answer to a request with tools is read for calls written as text before it reaches the feed
+        val markup = if (textCallTools.isNotEmpty()) ToolMarkupFilter(onDelta) else null
         val inline = InlineThinking(onAnswer = markup?.let { it::accept } ?: onDelta, onThought = onThought)
         when (wire) {
           "anthropic" -> anthropicWithCredit(provider, model, messages, inline::accept)
@@ -475,7 +489,7 @@ class LlmClient(
         // Придержанный хвост отдаётся здесь: без этого последние символы ответа теряются, когда
         // поток кончился на том, что могло быть началом тега.
         inline.finish()
-        markup?.finish()?.let { held -> readTextCalls(held, onDelta) }
+        markup?.finish()?.let { held -> readTextCalls(held, model.id, onDelta) }
         lastAnsweredModel?.let { answered ->
           if (ModelEcho.quirkId(model.id, answered) == answered) snapshots[model.id] = answered
         }
