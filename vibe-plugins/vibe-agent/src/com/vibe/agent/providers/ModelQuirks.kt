@@ -127,6 +127,12 @@ object ModelQuirks {
      */
     INLINE_TOOL_ADDITIONS,
 
+    /**
+     * On the Responses wire the effort changes mid-conversation by a `configuration_update` input item, and the
+     * request-level effort stays the thread's first: changing it rewrites the cached prefix ([EffortUpdates])
+     */
+    EFFORT_BY_UPDATE,
+
     /** The system role is not accepted; the instruction has to travel as the first user message. */
     NO_SYSTEM_ROLE,
 
@@ -278,6 +284,13 @@ object ModelQuirks {
       Regex("^gpt-6"),
       setOf(Quirk.NO_SAMPLING, Quirk.MAX_COMPLETION_TOKENS),
       "gpt-6: the model sets its own sampling, and the answer limit is named differently",
+    ),
+    Rule(
+      // «Configuration updates are supported by the GPT-6 model family in standard, single-agent mode. They change only
+      // reasoning effort» (developers.openai.com/api/docs/guides/reasoning#change-reasoning-mid-conversation, 01.10.2026)
+      Regex("^gpt-6"),
+      setOf(Quirk.EFFORT_BY_UPDATE),
+      "gpt-6: a changed effort goes as a configuration_update item, the request keeps the thread's first",
     ),
     Rule(
       // Astra refuses `reasoning_effort: "none"` with 400, and «Chat Completions does not support function calling with

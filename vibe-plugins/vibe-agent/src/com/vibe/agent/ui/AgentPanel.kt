@@ -3799,6 +3799,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
           reasoning = r.reasoning,
           toolRounds = r.toolRounds,
           responses = r.responses,
+          effortMark = r.effortMark,
         )
       }
       // A model declared non-vision must not receive images lingering in the history either.
@@ -3898,6 +3899,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
         // without results is not kept that way — the vendor refuses a call that has no output after it.
         val replay = llmClient.lastResponses()
         if (calls.isEmpty()) turns.chat.responses = replay
+        turns.chat.effortMark = llmClient.lastEffortMark()
         val unparsed = llmClient.lastUnparsedToolMarkup()
         if (calls.isEmpty() && unparsed != null && !llmCancel.get()) {
           if (textCallAsked || rounds++ >= VibeAgentSettings.directToolMaxRounds) {
@@ -6042,6 +6044,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     synchronized(turn.text) { turn.text.setLength(0) }
     synchronized(turn.reasoning) { turn.reasoning.setLength(0) }
     turn.responses = null
+    turn.effortMark = null
     SwingUtilities.invokeLater {
       turn.thoughts?.finish()
       turn.thoughts = null
@@ -6070,6 +6073,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
       com.vibe.agent.providers.ToolRounds.forStorage(turn.toolRounds.toList()).also { turn.toolRounds.clear() }
     }
     val responses = turn.responses.also { turn.responses = null }
+    val effortMark = turn.effortMark.also { turn.effortMark = null }
     // A turn that produced no words used to leave NOTHING in the thread — the question alone, and
     // the reason shown once in the feed and never written down. Reopening the IDE then showed a
     // conversation where the agent had simply not answered (eight such threads in the owner's store,
@@ -6080,7 +6084,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     }
     if (threadId != null && fullText.isNotBlank()) {
       history.append(threadId, ChatMessageRecord(Role.ASSISTANT, fullText, at = nowIso(), reasoning = reasoning, toolRounds = toolRounds,
-                                                 responses = responses))
+                                                 responses = responses, effortMark = effortMark))
       recordTurnSpend(turn, fullText, threadId)
     }
     // Счётчик прямого провода: у ACP-агента окно считает он сам и присылает `usage_update`, а у

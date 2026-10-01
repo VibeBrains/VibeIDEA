@@ -43,6 +43,10 @@ object ResponsesWire {
       val replay = m.responses?.takeIf { it.key == replayKey }?.items
       when {
         m.role == SYSTEM -> Unit
+        m.role == EffortUpdates.ROLE -> items.add(buildJsonObject {
+          put("type", EffortUpdates.ROLE)
+          put("reasoning", buildJsonObject { put("effort", m.text) })
+        })
         m.role == ToolCalls.ROLE -> m.toolResults.forEach { result ->
           items.add(buildJsonObject {
             put("type", FUNCTION_CALL_OUTPUT)

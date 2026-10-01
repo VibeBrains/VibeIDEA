@@ -74,6 +74,9 @@ internal class TurnState(
   /** The final answer's output items on the Responses wire, stored with it ([com.vibe.agent.history.ChatMessageRecord.responses]). */
   @Volatile var responses: ResponsesReplay? = null
 
+  /** The effort the turn's last request was sent at, kept with its answer ([com.vibe.agent.providers.EffortUpdates]) */
+  @Volatile var effortMark: String? = null
+
   // The feed projection; the UI thread only.
   var uiConsumed = 0
   var message: AgentPanel.AgentMessage? = null

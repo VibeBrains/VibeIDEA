@@ -46,9 +46,11 @@ class ChatMessageRecord(
    * the text: they carry the labels the vendor asks to resend with every earlier answer.
    */
   val responses: com.vibe.agent.providers.ResponsesReplay? = null,
+  /** ASSISTANT only: the effort its request was sent at, to replay where it changed ([com.vibe.agent.providers.EffortUpdates]) */
+  val effortMark: String? = null,
 ) {
   fun withPinned(pinned: Boolean): ChatMessageRecord =
-    ChatMessageRecord(role, text, images, at, wireText, pinned, reasoning, toolRounds, responses)
+    ChatMessageRecord(role, text, images, at, wireText, pinned, reasoning, toolRounds, responses, effortMark)
 }
 
 /** Per-thread snapshot of composer choices (restored when the tab is activated). */
@@ -145,6 +147,7 @@ object ChatTranscriptCodec {
         m.reasoning?.let { put("reasoning", it) }
         if (m.toolRounds.isNotEmpty()) put("toolRounds", com.vibe.agent.providers.ToolRounds.toJson(m.toolRounds))
         m.responses?.let { put("responses", it.toStored()) }
+        m.effortMark?.let { put("effortMark", it) }
         if (m.images.isNotEmpty()) put("images", JsonArray(m.images.map { img ->
           buildJsonObject {
             put("name", img.name)
@@ -182,6 +185,7 @@ object ChatTranscriptCodec {
         reasoning = m.str("reasoning"),
         toolRounds = com.vibe.agent.providers.ToolRounds.fromJson(m["toolRounds"]),
         responses = com.vibe.agent.providers.ResponsesReplay.fromStored(m["responses"]),
+        effortMark = m.str("effortMark"),
       )
     }
     return ChatThread(

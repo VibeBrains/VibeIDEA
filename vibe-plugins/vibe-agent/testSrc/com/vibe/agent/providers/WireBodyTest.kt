@@ -110,6 +110,28 @@ class WireBodyTest {
   }
 
   @Test
+  fun `gpt-6 keeps the thread's first effort in the request and sends the moved one as an update`() {
+    val settings = object : LlmSettings {
+      override val offline: Boolean = false
+      override val reasoningLevel: String = "high"
+    }
+    val provider = ResolvedProvider(ProviderEntry(id = "stub", baseURL = baseUrl, protocol = ModelQuirks.WIRE_OPENAI_RESPONSES),
+                                    ModelQuirks.WIRE_OPENAI_RESPONSES, baseUrl, apiKey = KEY, localAddress = true)
+    val client = LlmClient({ http }, null, settings)
+    val history = listOf(
+      ChatMessage("user", "q1"),
+      ChatMessage("assistant", "a1", effortMark = EffortUpdates.mark("stub/gpt-6.1-sol", "low")),
+      ChatMessage("user", "q2"),
+    )
+    client.chat(provider, ModelEntry(id = "gpt-6.1-sol"), history) { }
+    val body = seen.last().body
+    assertEquals("low", body["reasoning"]!!.jsonObject["effort"]!!.jsonPrimitive.content)
+    val kinds = body["input"]!!.jsonArray.map { (it.jsonObject["role"] ?: it.jsonObject["type"])!!.jsonPrimitive.content }
+    assertEquals(listOf("user", "assistant", "configuration_update", "user"), kinds)
+    assertEquals("stub/gpt-6.1-sol#high", client.lastEffortMark())
+  }
+
+  @Test
   fun `gemini takes the system prompt as its instruction`() {
     val request = send("gemini")!!
     assertEquals("/v1/models/m:streamGenerateContent?alt=sse", request.path)

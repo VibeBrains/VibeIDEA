@@ -44,6 +44,8 @@ data class ChatMessage(
   val thinkingKey: String? = null,
   /** Who produced [thinking], `provider/model` ([ResponsesReplay.keyOf]); null in a thread older than the field */
   val thinkingBy: String? = null,
+  /** Assistant only: the effort its request was sent at, `provider/model#effort` ([EffortUpdates]); null when none */
+  val effortMark: String? = null,
   /** Assistant only: this answer's output items on the Responses wire, in place of its text and calls for the same model. */
   val responses: ResponsesReplay? = null,
   /**
@@ -313,6 +315,11 @@ class LlmClient(
   /** Who produced [lastThinking], `provider/model`; null after a request on another wire */
   fun lastThinkingBy(): String? = lastThinkingBy
 
+  @Volatile private var lastEffortMark: String? = null
+
+  /** The effort the last request was sent at, for the answer to keep ([EffortUpdates]); null when not tracked */
+  fun lastEffortMark(): String? = lastEffortMark
+
   @Volatile private var responses = ResponsesAccumulator()
   @Volatile private var lastResponsesKey: String? = null
 
@@ -479,6 +486,7 @@ class LlmClient(
         thinking = ThinkingAccumulator()
         lastThinkingKey = null
         lastThinkingBy = null
+        lastEffortMark = null
         responses = ResponsesAccumulator()
         lastResponsesKey = null
         // Reasoning that arrives as tags inside the answer is taken out ONCE for every wire: a model writing `<think>` can
@@ -671,7 +679,13 @@ class LlmClient(
     val quirkId = quirkIdOf(model)
     val key = ResponsesReplay.keyOf(provider.entry.id, model.id)
     lastResponsesKey = key
-    val (instructions, input) = ResponsesWire.input(ModelQuirks.applyToMessages(quirkId, messages, overrides), key)
+    // The effort the slider asks for now; with updates in the input, the request keeps the thread's first one
+    val asked = (withReasoning(JsonObject(emptyMap()), ModelQuirks.WIRE_OPENAI_RESPONSES, model)[REASONING] as? JsonObject)
+      ?.get(EFFORT)?.jsonPrimitive?.contentOrNull
+    val plan = asked?.takeIf { ModelQuirks.has(quirkId, ModelQuirks.Quirk.EFFORT_BY_UPDATE, overrides) }
+      ?.let { EffortUpdates.plan(messages, key, it) }
+    lastEffortMark = plan?.mark
+    val (instructions, input) = ResponsesWire.input(ModelQuirks.applyToMessages(quirkId, plan?.messages ?: messages, overrides), key)
     val streaming = ModelQuirks.supportsStreaming(quirkId, overrides)
     val body = withExtras(ModelQuirks.applyToBody(quirkId, wire = ModelQuirks.WIRE_OPENAI_RESPONSES, overrides = overrides, body = buildJsonObject {
       put("model", model.id)
@@ -685,7 +699,10 @@ class LlmClient(
       model.maxOutputTokens?.let { put("max_output_tokens", it) }
       if (offeredTools.isNotEmpty()) put("tools", ResponsesWire.tools(offeredTools))
       PromptCacheKey.sent(provider.entry.promptCacheKey, cacheKey)?.let { put("prompt_cache_key", it) }
-    }.let { withReasoning(it, ModelQuirks.WIRE_OPENAI_RESPONSES, model) }), model.extraBody)
+    }.let { withReasoning(it, ModelQuirks.WIRE_OPENAI_RESPONSES, model) }.let { planned ->
+      if (plan == null) planned
+      else JsonObject(planned + (REASONING to JsonObject((planned[REASONING] as JsonObject) + (EFFORT to JsonPrimitive(plan.requestEffort)))))
+    }), model.extraBody)
     if (ModelQuirks.quirksOf(quirkId, overrides).isNotEmpty()) {
       logger<LlmClient>().info("Model quirks applied for " + quirkId + ": " + ModelQuirks.noteOf(quirkId, overrides))
     }
@@ -1019,6 +1036,9 @@ class LlmClient(
     const val FIM_MAX_TOKENS_CLOUD = 300
     /** Ids of calls read from the answer's text: the wire gave them none, and the tool results must name them */
     private const val TEXT_CALL_ID = "text-call-"
+
+    private const val REASONING = "reasoning"
+    private const val EFFORT = "effort"
 
     /** Anthropic requires max_tokens; used when the model entry does not set maxOutputTokens. */
     const val DEFAULT_MAX_OUTPUT_TOKENS = 8192
