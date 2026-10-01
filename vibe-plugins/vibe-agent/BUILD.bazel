@@ -27,6 +27,7 @@ jvm_library(
         "//platform/core-api:core",
         "//platform/core-impl",
         "//platform/projectModel-api:projectModel",
+        "//platform/projectModel-impl",
         "//platform/util",
         "//platform/extensions",
         "//platform/platform-api:ide",

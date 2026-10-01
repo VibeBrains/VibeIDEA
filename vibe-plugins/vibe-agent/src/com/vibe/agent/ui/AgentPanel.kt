@@ -4750,7 +4750,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
       systemLine(t("chat.pipelineBusy"))
       return
     }
-    val pipelines = PipelinesFile.load(project.basePath) { systemLine("[pipelines] $it") }
+    val pipelines = PipelinesFile.load(project.basePath, VibeAgentSettings.waveWorktrees) { systemLine("[pipelines] $it") }
     if (pipelines.isEmpty()) {
       systemLine(t("pipeline.none"))
       return
@@ -5237,7 +5237,9 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
         finishAgentBubble((System.currentTimeMillis() - startedAt) / 1000.0, t("pipeline.plan.title"), turn)
         // A drafted wave passes the same check as one in the file, qa boundary included.
         val qa = com.vibe.agent.pipelines.RolesFile.load(project.basePath) { systemLine("[roles] $it") }
-        when (val plan = PipelinesFile.planFromAnswer(turn.answer?.toString().orEmpty(), qa) { systemLine("[pipelines] $it") }) {
+        when (val plan = PipelinesFile.planFromAnswer(turn.answer?.toString().orEmpty(), qa, VibeAgentSettings.waveWorktrees) {
+          systemLine("[pipelines] $it")
+        }) {
           is PipelinesFile.Plan.Refused -> systemLine(plan.reason)
           is PipelinesFile.Plan.Ok -> planned = plan.steps
         }
@@ -5452,13 +5454,17 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
       return
     }
     systemLine(t("pipeline.wave.start", "wave" to wave, "steps" to members.joinToString { (it + 1).toString() }))
-    checkpoint(run, t("pipeline.wave.checkpointLabel", "name" to pipeline.name, "wave" to wave), members.joinToString(",") { (it + 1).toString() })
+    val snapshot = checkpoint(run, t("pipeline.wave.checkpointLabel", "name" to pipeline.name, "wave" to wave),
+                              members.joinToString(",") { (it + 1).toString() })
     // Every member gets what was known before the wave: a neighbour's work is not there yet.
     val prompts = members.associateWith { stepPrompt(run, pipeline.steps[it]) }
     val stepTurns = members.associateWith { i ->
       val name = stepName(pipeline, i)
       stepTurn(run, pipeline.steps[i], name, WaveBlockFeed(name))
     }
+    // Writing steps in trees of their own: made all before any starts, as the wave starts whole or not at all
+    val trees = project.basePath?.takeIf { VibeAgentSettings.waveWorktrees }?.let { com.vibe.agent.pipelines.StepWorktrees(it) }
+    if (trees != null && !giveTrees(run, trees, snapshot, members, stepTurns, headers)) return
     SwingUtilities.invokeLater {
       runningWave = stepTurns.values.toList()
       stepTurns.values.forEach { (it.feed as? WaveBlockFeed)?.show() }
@@ -5480,6 +5486,14 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
         turn.done = true
       }
     }
+    // What a step changed in its tree is named as the project's file, which it is once the work comes back
+    if (trees != null) stepTurns.values.forEach { turn ->
+      turn.worktree?.let { tree ->
+        val moved = turn.changedPaths.map { com.vibe.agent.pipelines.StepWorktrees.rebase(it, tree.path, project.basePath!!) }
+        turn.changedPaths.clear()
+        turn.changedPaths.addAll(moved)
+      }
+    }
     val results = members.map { i ->
       val (stop, error) = runCatching { futures.getValue(i).get() }
         .fold({ it to null }, { (it as? java.util.concurrent.ExecutionException)?.cause?.let { cause -> null to cause } ?: (null to it) })
@@ -5490,9 +5504,73 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     val summaries = results.filter { it.summary != null }
     if (summaries.isNotEmpty()) run.lastSummary = summaries.joinToString("\n\n") { it.header + ":\n" + it.summary }
     if (results.any { it.failed }) run.failed = true
+    if (trees != null) bringBack(run, trees, members, stepTurns, headers)
     // Accepted when every gated member was; no member gated — no verdict at all.
     val verdicts = results.mapNotNull { it.gate }
     run.lastGateAccepted = if (verdicts.isEmpty()) null else verdicts.all { it }
+  }
+
+  /**
+   * A worktree for every writing member of a wave, started from the wave's snapshot; false when one could not be made
+   * Without trees, steps whose places were not proven apart would write over each other: the wave does not start
+   */
+  private fun giveTrees(
+    run: PipelineRun,
+    trees: com.vibe.agent.pipelines.StepWorktrees,
+    snapshot: com.vibe.agent.checkpoints.Checkpoint?,
+    members: List<Int>,
+    stepTurns: Map<Int, TurnState>,
+    headers: Map<Int, String>,
+  ): Boolean {
+    for (i in members.filter { com.vibe.agent.pipelines.PipelineWaves.writes(run.pipeline.steps[it]) }) {
+      val tree = snapshot?.let { trees.create("${run.pipeline.id}-${run.runId ?: it.hash.take(8)}-s${i + 1}", it.hash) { reason ->
+        systemLine(t("pipeline.wave.worktreeFailed", "header" to headers.getValue(i), "reason" to reason))
+      } }
+      if (tree == null) {
+        if (snapshot == null) systemLine(t("pipeline.wave.worktreeFailed", "header" to headers.getValue(i), "reason" to t("checkpoint.unavailable")))
+        stepTurns.values.mapNotNull { it.worktree }.forEach(trees::remove)
+        run.failed = true
+        return false
+      }
+      stepTurns.getValue(i).worktree = tree
+      systemLine(t("pipeline.wave.worktree", "header" to headers.getValue(i), "path" to tree.path))
+    }
+    return true
+  }
+
+  /**
+   * The members' work back into the project, in the file's order; a tree that clashes stays for a merge by hand
+   * and stops the run: the steps after the wave would otherwise read files with conflict markers in them
+   */
+  private fun bringBack(
+    run: PipelineRun,
+    trees: com.vibe.agent.pipelines.StepWorktrees,
+    members: List<Int>,
+    stepTurns: Map<Int, TurnState>,
+    headers: Map<Int, String>,
+  ) {
+    for (i in members) {
+      val tree = stepTurns.getValue(i).worktree ?: continue
+      val header = headers.getValue(i)
+      when (val merge = trees.mergeBack(tree, t("pipeline.wave.commitMessage", "name" to run.pipeline.name, "step" to (i + 1)))) {
+        com.vibe.agent.pipelines.StepWorktrees.Merge.Clean -> {
+          systemLine(t("pipeline.wave.merged", "header" to header))
+          trees.remove(tree)
+        }
+        com.vibe.agent.pipelines.StepWorktrees.Merge.Nothing -> {
+          systemLine(t("pipeline.wave.mergeNothing", "header" to header))
+          trees.remove(tree)
+        }
+        is com.vibe.agent.pipelines.StepWorktrees.Merge.Conflict -> {
+          systemLine(t("pipeline.wave.mergeConflict", "header" to header, "files" to merge.files.joinToString(), "path" to tree.path))
+          run.failed = true
+        }
+        is com.vibe.agent.pipelines.StepWorktrees.Merge.Failed -> {
+          systemLine(t("pipeline.wave.mergeFailed", "header" to header, "reason" to merge.reason, "path" to tree.path))
+          run.failed = true
+        }
+      }
+    }
   }
 
   /** How a step is named in its block and in a permission dialog: «Шаг 2/5 [qa]». */
@@ -5532,15 +5610,15 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
    * A snapshot before a step or a wave. A pipeline runs unattended: without one before each step, one bad step could be
    * rolled back only together with everything before it — or not at all.
    */
-  private fun checkpoint(run: PipelineRun, label: String, steps: String) {
-    checkpoints?.create(label)?.let {
+  /** The snapshot before a step or a wave, or null when there is no git to take one */
+  private fun checkpoint(run: PipelineRun, label: String, steps: String): com.vibe.agent.checkpoints.Checkpoint? =
+    checkpoints?.create(label)?.also {
       checkpointLine(it)
       audit?.append(AuditEvent(System.currentTimeMillis(), AuditEvent.Action.CHECKPOINT, ok = true,
                                actor = com.vibe.agent.audit.AuditActor.IDE,
                                meta = mapOf("hash" to it.hash.take(12), "pipeline" to run.pipeline.id, "step" to steps)))
       if (run.runCheckpoint == null) run.runCheckpoint = it
     }
-  }
 
   /** The step's prompt from what the run knows so far. */
   private fun stepPrompt(run: PipelineRun, step: com.vibe.agent.pipelines.PipelineStep): String = buildString {
@@ -5589,7 +5667,8 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     // cannot open one fails the step with the reason — judging in the chat's session
     // instead would quietly break the very promise of the field.
     val session = if (step.context == com.vibe.agent.pipelines.StepContext.FRESH) {
-      c.openIsolatedSession().get(VibeAgentSettings.handshakeTimeoutSec.toLong(), TimeUnit.SECONDS)
+      // A step with a worktree works there: its agent's own tools then write where the step's boundary is
+      c.openIsolatedSession(turn.worktree?.path).get(VibeAgentSettings.handshakeTimeoutSec.toLong(), TimeUnit.SECONDS)
         .also { systemLine(t("pipeline.stepFresh", "header" to header)) }
     }
     else checkNotNull(c.sessionId) { "no session" }
@@ -6821,7 +6900,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
       val locations = (toolCall?.get("locations") as? JsonArray)?.mapNotNull { (it as? JsonObject)?.get("path")?.jsonPrimitive?.contentOrNull }
       val written = com.vibe.agent.acp.ToolWrites.writtenPaths(toolCall?.get("kind")?.jsonPrimitive?.contentOrNull ?: known?.kind, name,
                                  hookParams ?: known?.rawInput, locations ?: known?.locations.orEmpty())
-      val outside = written.filter { fileOps.scopeRefusal(fileOps.resolvePath(it), turn.role, turn.scope) != null }
+      val outside = written.filter { fileOps.scopeRefusal(fileOps.resolvePath(it), turn.role, turn.scope, turn.worktree?.path) != null }
       if (outside.isNotEmpty()) return refuseOutsideScope(params, turn, permissionCallId, title, outside)
     }
     // Deterministic destructive-command warning for the agent's own command tools (Claude runs Bash itself).
@@ -6927,7 +7006,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
       throw IllegalStateException(preHook.agentMessage ?: t("chat.write.rejectedByHook"))
     }
     path?.let { turn.changedPaths.add(it) }
-    val result = fileOps.writeTextFile(resolved, turn.role, turn.scope, request)
+    val result = fileOps.writeTextFile(resolved, turn.role, turn.scope, request, turn.worktree?.path)
     audit?.append(AuditEvent(System.currentTimeMillis(), AuditEvent.Action.FS_WRITE, ok = true, actor = agentActor(turn),
       turnId = turnId, sessionId = turnThreadId ?: currentThreadId, files = path?.let { listOf(it.take(ToolCallAudit.MAX_TARGET_LEN)) }))
     return result

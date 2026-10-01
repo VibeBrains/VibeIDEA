@@ -100,18 +100,19 @@ internal class IdeFileOps(
    * Why [target] lies outside the step's [scope], as the refusal to show; null when the scope lets it be written
    * One check for both ways a step writes: through the client ([writeTextFile]) and with its own tool after asking
    */
-  fun scopeRefusal(target: com.vibe.agent.context.AgentPath, role: String?, scope: com.vibe.agent.pipelines.RolePaths.Scope): String? {
+  fun scopeRefusal(target: com.vibe.agent.context.AgentPath, role: String?, scope: com.vibe.agent.pipelines.RolePaths.Scope,
+                   root: String?): String? {
     if (!scope.stated) return null
-    // A scope is written relative to the project root, so a place outside the project has no
-    // answer in it and is refused. The former fallback matched the absolute path as if it were
+    // A scope is written relative to the project root — or to the step's worktree, a copy of it — so a place outside
+    // it has no answer in the scope and is refused. The former fallback matched the absolute path as if it were
     // relative, and a scope of `**` let it through.
-    val relative = roots().projectBase?.let { com.vibe.agent.context.AccessPolicy.relativeTo(target.canonical.toString(), it) }
+    val relative = (root ?: roots().projectBase)?.let { com.vibe.agent.context.AccessPolicy.relativeTo(target.canonical.toString(), it) }
     if (relative != null && com.vibe.agent.pipelines.RolePaths.mayWrite(relative, scope)) return null
     return t("role.pathDenied", "role" to (role ?: "-"), "path" to (relative ?: target.canonical))
   }
 
   fun writeTextFile(params: JsonObject, role: String?, scope: com.vibe.agent.pipelines.RolePaths.Scope,
-                    request: PendingRequest?): JsonElement {
+                    request: PendingRequest?, root: String?): JsonElement {
     val target = resolvePath(params.getValue("path").jsonPrimitive.content)
     val path = target.normalized
     // A reviewer told «только отчёт» obeys most of the time, and «most of the time» is the whole
@@ -127,7 +128,7 @@ internal class IdeFileOps(
       throw IllegalStateException(t("access.writeDenied", "path" to target.canonical))
     }
     // Область шага: «пишет только тесты» — обещание ровно до тех пор, пока его кто-то проверяет.
-    scopeRefusal(target, role, scope)?.let { throw IllegalStateException(it) }
+    scopeRefusal(target, role, scope, root)?.let { throw IllegalStateException(it) }
     val content = params.getValue("content").jsonPrimitive.contentOrNull ?: ""
     val exists = Files.exists(path)
     val oldText = readCurrentText(path)

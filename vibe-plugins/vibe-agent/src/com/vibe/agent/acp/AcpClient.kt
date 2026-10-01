@@ -406,8 +406,10 @@ class AcpClient(
    * continues the conversation. In ACP every session has its own context, so a fresh context is
    * exactly a new session of the same agent — no second process, no second handshake.
    */
-  fun openIsolatedSession(): CompletableFuture<String> {
-    val params = sessionParams ?: return CompletableFuture.failedFuture(IllegalStateException("no session"))
+  /** A new session nobody resumes; [cwd] — another working directory for it, a step's worktree, or null for the project */
+  fun openIsolatedSession(cwd: String? = null): CompletableFuture<String> {
+    val base = sessionParams ?: return CompletableFuture.failedFuture(IllegalStateException("no session"))
+    val params = if (cwd == null) base else JsonObject(base + ("cwd" to JsonPrimitive(cwd)))
     return request("session/new", params).thenApply { result ->
       (result as? JsonObject)?.get("sessionId")?.jsonPrimitive?.contentOrNull ?: error("agent returned no sessionId")
     }

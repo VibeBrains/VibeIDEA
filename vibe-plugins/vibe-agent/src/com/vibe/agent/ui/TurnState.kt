@@ -46,6 +46,9 @@ internal class TurnState(
   /** The ACP session the turn runs in when it is not the chat's own; [TurnRouter] routes updates back by it. */
   @Volatile var sessionId: String? = null
 
+  /** The worktree a wave's step writes in ([com.vibe.agent.pipelines.StepWorktrees]); null — the project itself */
+  @Volatile var worktree: com.vibe.agent.pipelines.StepWorktrees.Tree? = null
+
   /** A step's own answer, for its report and for the next step; the chat does not keep one. */
   val answer: StringBuffer? = if (role != null) StringBuffer() else null
 

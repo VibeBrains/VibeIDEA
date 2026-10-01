@@ -41,8 +41,10 @@ object PipelineWaves {
   /**
    * Whether the waves of [steps] can run at once. [qa] is the project's boundary for the `qa` role, which a qa step
    * without its own `paths` writes under.
+   * [isolated] — writing steps run in worktrees of their own ([StepWorktrees]): their places need not be proven apart,
+   * an overlap shows as a conflict when their work comes back, as in VibeIDE
    */
-  fun check(steps: List<PipelineStep>, qa: RolePaths.Scope): Check {
+  fun check(steps: List<PipelineStep>, qa: RolePaths.Scope, isolated: Boolean = false): Check {
     val problems = ArrayList<String>()
     val warnings = ArrayList<String>()
     val finished = HashSet<String>()
@@ -57,7 +59,7 @@ object PipelineWaves {
       members.firstOrNull { it.escalation }?.let { problems += t("pipeline.warn.waveEscalation", "wave" to wave, "role" to it.role) }
       members.firstOrNull { it.offPeak }?.let { problems += t("pipeline.warn.waveOffPeak", "wave" to wave, "role" to it.role) }
       val writers = members.filter { writes(it) }
-      for (i in writers.indices) {
+      if (!isolated) for (i in writers.indices) {
         for (j in i + 1 until writers.size) {
           val first = writers[i]
           val second = writers[j]

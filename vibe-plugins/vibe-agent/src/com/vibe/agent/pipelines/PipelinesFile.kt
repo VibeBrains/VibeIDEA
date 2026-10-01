@@ -161,6 +161,7 @@ object PipelinesFile {
   fun planFromAnswer(
     answer: String,
     qa: RolePaths.Scope = RolePaths.Scope(allow = RolePaths.TEST_PATHS),
+    isolatedWaves: Boolean = false,
     onWarning: (String) -> Unit = {},
   ): Plan {
     val start = answer.indexOf('{')
@@ -176,7 +177,7 @@ object PipelinesFile {
         steps.size > MAX_STEPS -> Plan.Refused(t("pipeline.plan.invalid", "reason" to t("pipeline.warn.tooManySteps", "id" to "plan", "max" to MAX_STEPS)))
         steps.any { it.role == ORCHESTRATOR } -> Plan.Refused(t("pipeline.plan.nestedOrchestrator"))
         else -> {
-          val waves = PipelineWaves.check(steps, qa)
+          val waves = PipelineWaves.check(steps, qa, isolatedWaves)
           waves.warnings.forEach(onWarning)
           waves.problems.firstOrNull()?.let { Plan.Refused(t("pipeline.plan.invalid", "reason" to it)) } ?: Plan.Ok(steps)
         }
@@ -326,7 +327,8 @@ object PipelinesFile {
     return PackSpec(stringList(o["paths"]), stringList(o["exclude"]), maxTokens)
   }
 
-  fun load(projectBase: String?, onWarning: (String) -> Unit): List<Pipeline> {
+  /** [isolatedWaves] — writing steps of a wave get worktrees of their own, and their places need not be proven apart */
+  fun load(projectBase: String?, isolatedWaves: Boolean = false, onWarning: (String) -> Unit): List<Pipeline> {
     if (projectBase == null) return emptyList()
     val file = path(projectBase)
     if (!Files.isRegularFile(file)) return emptyList()
@@ -354,7 +356,7 @@ object PipelinesFile {
             onWarning(t("pipeline.warn.dynamicShape", "id" to id)); continue
           }
           if (steps.size > MAX_STEPS) { onWarning(t("pipeline.warn.tooManySteps", "id" to id, "max" to MAX_STEPS)); continue }
-          val waves = PipelineWaves.check(steps, qa)
+          val waves = PipelineWaves.check(steps, qa, isolatedWaves)
           waves.warnings.forEach { onWarning(t("pipeline.warn.inPipeline", "id" to id, "warning" to it)) }
           waves.problems.firstOrNull()?.let { throw IllegalArgumentException(t("pipeline.warn.inPipeline", "id" to id, "warning" to it)) }
           result.add(Pipeline(

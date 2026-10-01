@@ -202,6 +202,7 @@ object VibeAgentSettings {
   private const val KEY_METRIC_DIRECTION = "vibe.agent.metricDirection"
   private const val KEY_FAILOVER = "vibe.agent.failoverChain"
   private const val KEY_ESCALATE_TO = "vibe.agent.escalateTo"
+  private const val KEY_WAVE_WORKTREES = "vibe.agent.waveWorktrees"
   private const val KEY_AUTOPILOT = "vibe.agent.autopilot.enabled"
   private const val KEY_AUTOPILOT_MAX_TURNS = "vibe.agent.autopilot.maxTurns"
   private const val KEY_AUTOPILOT_CHECKPOINT = "vibe.agent.autopilot.checkpointEvery"
@@ -560,6 +561,14 @@ object VibeAgentSettings {
   var escalateTo: String
     get() = props.getValue(KEY_ESCALATE_TO, "")
     set(value) = props.setValue(KEY_ESCALATE_TO, value.trim(), "")
+
+  /**
+   * Writing steps of a pipeline wave run each in a git worktree of their own ([com.vibe.agent.pipelines.StepWorktrees])
+   * Off by default, as in VibeIDE: a tree costs a checkout, and starts without the project's installed dependencies
+   */
+  var waveWorktrees: Boolean
+    get() = props.getBoolean(KEY_WAVE_WORKTREES, false)
+    set(value) = props.setValue(KEY_WAVE_WORKTREES, value, false)
 
   var contextFilterMode: String
     get() = props.getValue(KEY_CONTEXT_FILTER, "auto")

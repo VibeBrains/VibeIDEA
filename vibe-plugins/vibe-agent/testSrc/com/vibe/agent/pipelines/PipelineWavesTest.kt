@@ -52,6 +52,14 @@ class PipelineWavesTest {
   }
 
   @Test
+  fun `writers in worktrees of their own need not be proven apart, but the other rules still hold`() {
+    val steps = listOf(step("backend-dev", "build"), step("frontend-dev", "build", listOf("web/**")))
+    assertTrue(PipelineWaves.check(steps, qa, isolated = true).problems.isEmpty())
+    val escalating = listOf(step("backend-dev", "build"), step("frontend-dev", "build").copy(escalation = true))
+    assertEquals(1, PipelineWaves.check(escalating, qa, isolated = true).problems.size)
+  }
+
+  @Test
   fun `a writer without paths writes anywhere and cannot share a wave with another writer`() {
     val check = PipelineWaves.check(listOf(step("backend-dev", "build"), step("frontend-dev", "build", listOf("web/**"))), qa)
     assertEquals(1, check.problems.size)

@@ -31,6 +31,8 @@
   </extensionPoints>
 
   <extensions defaultExtensionNs="com.intellij">
+    <!-- Agents' worktrees inside the project are second copies of the sources: kept out of the index -->
+    <directoryIndexExcludePolicy implementation="com.vibe.agent.pipelines.WorktreeExcludePolicy"/>
     <!-- Эвалы навыка без окна: отчёт в stdout, код выхода по порогу — чтобы гейт мог их звать. -->
     <appStarter id="vibe-evals" implementation="com.vibe.agent.skills.VibeSkillEvalsStarter"/>
     <toolWindow id="VibeDesign" anchor="right" factoryClass="com.vibe.agent.design.DesignToolWindowFactory"

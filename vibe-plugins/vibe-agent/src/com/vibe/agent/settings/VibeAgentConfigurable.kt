@@ -52,6 +52,7 @@ class VibeAgentConfigurable : Configurable, Configurable.NoScroll {
   private var metricDirection: com.intellij.openapi.ui.ComboBox<String>? = null
   private var failoverField: com.intellij.ui.components.JBTextField? = null
   private var escalateField: com.intellij.ui.components.JBTextField? = null
+  private var waveWorktreesBox: JBCheckBox? = null
   private var verifyMode: ComboBox<String>? = null
   private var verifyCommand: JBTextField? = null
   private var verifyMaxAttempts: JBIntSpinner? = null
@@ -123,6 +124,7 @@ class VibeAgentConfigurable : Configurable, Configurable.NoScroll {
     val proxyDirect = proxyDirectPanel()
     val failover = com.intellij.ui.components.JBTextField(VibeAgentSettings.failoverChain, 32).also { failoverField = it }
     val escalate = com.intellij.ui.components.JBTextField(VibeAgentSettings.escalateTo, 32).also { escalateField = it }
+    val waveWorktrees = JBCheckBox(t("settings.agent.waveWorktrees"), VibeAgentSettings.waveWorktrees).also { waveWorktreesBox = it }
     val filterMode = SettingsUi.combo(arrayOf("auto", "raw", "aggregate", "off")).also {
       it.selectedItem = VibeAgentSettings.contextFilterMode
       contextFilter = it
@@ -230,6 +232,8 @@ class VibeAgentConfigurable : Configurable, Configurable.NoScroll {
       .addComponent(hint(t("settings.agent.hint.failover")))
       .addLabeledComponent(t("settings.agent.escalateTo"), escalate)
       .addComponent(hint(t("settings.agent.hint.escalateTo")))
+      .addComponent(waveWorktrees)
+      .addComponent(hint(t("settings.agent.hint.waveWorktrees")))
       .addLabeledComponent(t("settings.agent.contextFilter"), filterMode)
       .addComponent(hint(t("settings.agent.hint.contextFilter")))
       .addLabeledComponent(t("settings.agent.council"), council)
@@ -352,6 +356,7 @@ class VibeAgentConfigurable : Configurable, Configurable.NoScroll {
     (metricDirection?.selectedItem as? String ?: VibeAgentSettings.metricDirection) != VibeAgentSettings.metricDirection ||
     (failoverField?.text?.trim() ?: VibeAgentSettings.failoverChain) != VibeAgentSettings.failoverChain ||
     (escalateField?.text?.trim() ?: VibeAgentSettings.escalateTo) != VibeAgentSettings.escalateTo ||
+    (waveWorktreesBox?.isSelected ?: VibeAgentSettings.waveWorktrees) != VibeAgentSettings.waveWorktrees ||
     (verifyMode?.item ?: VibeAgentSettings.verifyMode) != VibeAgentSettings.verifyMode ||
     (verifyCommand?.text?.trim() ?: VibeAgentSettings.verifyCommand) != VibeAgentSettings.verifyCommand ||
     verifyMaxAttempts?.number != VibeAgentSettings.verifyMaxAttempts ||
@@ -418,6 +423,7 @@ class VibeAgentConfigurable : Configurable, Configurable.NoScroll {
     (metricDirection?.selectedItem as? String)?.let { VibeAgentSettings.metricDirection = it }
     failoverField?.let { VibeAgentSettings.failoverChain = it.text }
     escalateField?.let { VibeAgentSettings.escalateTo = it.text }
+    waveWorktreesBox?.let { VibeAgentSettings.waveWorktrees = it.isSelected }
     verifyMode?.let { VibeAgentSettings.verifyMode = it.item }
     verifyCommand?.let { VibeAgentSettings.verifyCommand = it.text }
     verifyMaxAttempts?.let { VibeAgentSettings.verifyMaxAttempts = it.number }
@@ -495,6 +501,7 @@ class VibeAgentConfigurable : Configurable, Configurable.NoScroll {
     metricDirection?.selectedItem = VibeAgentSettings.metricDirection
     failoverField?.text = VibeAgentSettings.failoverChain
     escalateField?.text = VibeAgentSettings.escalateTo
+    waveWorktreesBox?.isSelected = VibeAgentSettings.waveWorktrees
     verifyMode?.item = VibeAgentSettings.verifyMode
     verifyCommand?.text = VibeAgentSettings.verifyCommand
     verifyMaxAttempts?.number = VibeAgentSettings.verifyMaxAttempts
