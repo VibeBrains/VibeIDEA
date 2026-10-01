@@ -6520,18 +6520,12 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
    * and harvest any declared edit path so turn-checks can scan it.
    */
   private fun harvestMutation(call: ToolCall, turn: TurnState) {
-    val kind = call.kind
-    val name = call.toolName
-    val isNamedEdit = name != null && name in EDIT_TOOLS
     // execute-kind (a command) may change files invisibly → mark the turn mutating so the gate runs…
-    if (isNamedEdit || kind in MUTATING_KINDS) turn.hadMutatingTool = true
-    // …but only tools that actually WRITE contribute paths. ACP `locations` is read-inclusive, so
-    // harvesting it for a command (`grep KEY .env`) would wrongly trip the protected-path breaker.
-    val isWrite = isNamedEdit || kind == "edit" || kind == "delete" || kind == "move"
-    if (isWrite) {
-      call.rawInput?.let { ri -> for (key in EDIT_PATH_KEYS) ri[key]?.jsonPrimitive?.contentOrNull?.let { turn.changedPaths.add(it) } }
-      turn.changedPaths.addAll(call.locations)
+    if ((call.toolName != null && call.toolName in com.vibe.agent.acp.ToolWrites.EDIT_TOOLS) || call.kind in MUTATING_KINDS) {
+      turn.hadMutatingTool = true
     }
+    // …but only tools that actually WRITE contribute paths
+    turn.changedPaths.addAll(com.vibe.agent.acp.ToolWrites.writtenPaths(call.kind, call.toolName, call.rawInput, call.locations))
   }
 
   /** Emit a privacy-filtered tool-call audit record (no args/command bodies — only tool + target path). */
@@ -6690,6 +6684,15 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
       systemLine("🪝 ${preHook.agentMessage}")
       return buildJsonObject { put("outcome", buildJsonObject { put("outcome", "cancelled") }) }
     }
+    // The step's write boundary holds for a write the agent makes with its own tool too: it asks first, and the
+    // question names the files. A write made without asking never reaches the client — only a worktree holds that
+    if (turn.scope.stated) {
+      val locations = (toolCall?.get("locations") as? JsonArray)?.mapNotNull { (it as? JsonObject)?.get("path")?.jsonPrimitive?.contentOrNull }
+      val written = com.vibe.agent.acp.ToolWrites.writtenPaths(toolCall?.get("kind")?.jsonPrimitive?.contentOrNull ?: known?.kind, name,
+                                 hookParams ?: known?.rawInput, locations ?: known?.locations.orEmpty())
+      val outside = written.filter { fileOps.scopeRefusal(fileOps.resolvePath(it), turn.role, turn.scope) != null }
+      if (outside.isNotEmpty()) return refuseOutsideScope(params, turn, permissionCallId, title, outside)
+    }
     // Deterministic destructive-command warning for the agent's own command tools (Claude runs Bash itself).
     val command = hookParams?.get("command")?.jsonPrimitive?.contentOrNull
     val destructive = command?.let { ShellSafetyAnalyzer.analyzeLine(it) }
@@ -6744,6 +6747,29 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
           // Closed dialog = refusal, never a silent allow.
           put("outcome", "cancelled")
         }
+      })
+    }
+  }
+
+  /**
+   * The answer to a step asking to write outside its scope: the refusing option, or `cancelled` when it offers none
+   * Named in the feed and the audit — a refusal the person never saw is still a decision made on their behalf
+   */
+  private fun refuseOutsideScope(params: JsonObject, turn: TurnState, callId: String?, title: String, outside: List<String>): JsonElement {
+    val options = params["options"]?.jsonArray?.map { it.jsonObject }.orEmpty()
+    val refusal = options.firstOrNull { it["kind"]?.jsonPrimitive?.contentOrNull?.startsWith("reject") == true }
+      ?.get("optionId")?.jsonPrimitive?.contentOrNull
+    systemLine(t("chat.permission.outsideScope", "step" to (turn.label ?: turn.role ?: "-"), "paths" to outside.joinToString()))
+    audit?.append(AuditEvent(System.currentTimeMillis(), AuditEvent.Action.PERMISSION, ok = false, actor = com.vibe.agent.audit.AuditActor.IDE,
+      callId = callId, turnId = turnId, sessionId = turnThreadId ?: currentThreadId,
+      meta = mapOf("title" to title.take(120), "outcome" to "outsideScope")))
+    return buildJsonObject {
+      put("outcome", buildJsonObject {
+        if (refusal != null) {
+          put("outcome", "selected")
+          put("optionId", refusal)
+        }
+        else put("outcome", "cancelled")
       })
     }
   }
@@ -7053,11 +7079,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     const val CHECKPOINT_LABEL_LEN = 48
     /** ACP tool kinds that can change files (gates run when a turn used one). */
     val MUTATING_KINDS = setOf("edit", "delete", "move", "execute")
-    /** Tool names known to write files — their declared path is harvested into the changed set. */
-    val EDIT_TOOLS = setOf("write_text_file", "Write", "Edit", "MultiEdit", "NotebookEdit",
-      "edit_file", "rewrite_file", "create_file_or_folder", "delete_file_or_folder")
-    /** Single source of truth for path-shaped input keys (shared with the audit filter). */
-    val EDIT_PATH_KEYS = ToolCallAudit.PATH_KEYS
+
     const val KEY_ACTIVE_TAB = "vibe.chat.activeTab"
     /** VibeIDE: the reveal highlight fades after 2600 ms. */
     const val REVEAL_HIGHLIGHT_MS = 2600

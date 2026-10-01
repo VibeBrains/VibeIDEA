@@ -96,6 +96,20 @@ internal class IdeFileOps(
    * Writes a file for the turn that asked — [role] and [scope] are that turn's, found by the session the request came
    * from: with steps running at once, the boundary in force «right now» is not one boundary.
    */
+  /**
+   * Why [target] lies outside the step's [scope], as the refusal to show; null when the scope lets it be written
+   * One check for both ways a step writes: through the client ([writeTextFile]) and with its own tool after asking
+   */
+  fun scopeRefusal(target: com.vibe.agent.context.AgentPath, role: String?, scope: com.vibe.agent.pipelines.RolePaths.Scope): String? {
+    if (!scope.stated) return null
+    // A scope is written relative to the project root, so a place outside the project has no
+    // answer in it and is refused. The former fallback matched the absolute path as if it were
+    // relative, and a scope of `**` let it through.
+    val relative = roots().projectBase?.let { com.vibe.agent.context.AccessPolicy.relativeTo(target.canonical.toString(), it) }
+    if (relative != null && com.vibe.agent.pipelines.RolePaths.mayWrite(relative, scope)) return null
+    return t("role.pathDenied", "role" to (role ?: "-"), "path" to (relative ?: target.canonical))
+  }
+
   fun writeTextFile(params: JsonObject, role: String?, scope: com.vibe.agent.pipelines.RolePaths.Scope,
                     request: PendingRequest?): JsonElement {
     val target = resolvePath(params.getValue("path").jsonPrimitive.content)
@@ -113,15 +127,7 @@ internal class IdeFileOps(
       throw IllegalStateException(t("access.writeDenied", "path" to target.canonical))
     }
     // Область шага: «пишет только тесты» — обещание ровно до тех пор, пока его кто-то проверяет.
-    if (scope.stated) {
-      // A scope is written relative to the project root, so a place outside the project has no
-      // answer in it and is refused. The former fallback matched the absolute path as if it were
-      // relative, and a scope of `**` let it through.
-      val relative = roots.projectBase?.let { com.vibe.agent.context.AccessPolicy.relativeTo(target.canonical.toString(), it) }
-      if (relative == null || !com.vibe.agent.pipelines.RolePaths.mayWrite(relative, scope)) {
-        throw IllegalStateException(t("role.pathDenied", "role" to (role ?: "-"), "path" to (relative ?: target.canonical)))
-      }
-    }
+    scopeRefusal(target, role, scope)?.let { throw IllegalStateException(it) }
     val content = params.getValue("content").jsonPrimitive.contentOrNull ?: ""
     val exists = Files.exists(path)
     val oldText = readCurrentText(path)

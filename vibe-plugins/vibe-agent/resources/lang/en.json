@@ -237,6 +237,7 @@
   "chat.permission.default": "An agent action",
   "chat.permission.destructive": "⚠️ Destructive command ({reasons})",
   "chat.permission.fromStep": "{step} asks: {text}",
+  "chat.permission.outsideScope": "🔒 {step}: a write outside its scope was refused — {paths}",
   "chat.permission.title": "Vibe Agent: permission",
   "chat.permission.trifecta": "⚠️ In this turn the agent read project files, received text that did not come from you, and is now opening an outbound channel ({channel}). Each on its own is ordinary work; together they are how data leaves.\n\n{title}",
   "chat.pin.done": "📌 message pinned — trimming the history will not touch it",
