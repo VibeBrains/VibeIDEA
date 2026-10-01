@@ -214,6 +214,14 @@ object FakeAcpAgent {
         notifyUpdate(chunk("terminal=" + (created["result"]?.toString() ?: "ошибка: " + created["error"].toString())))
         send(result(id, stop("end_turn")))
       }
+      "commands" -> {
+        notifyUpdate(buildJsonObject {
+          put("sessionUpdate", "available_commands_update")
+          put("availableCommands", JsonArray(listOf(buildJsonObject { put("name", "review"); put("description", "Ревью") })))
+        })
+        notifyUpdate(chunk("команды объявлены"))
+        send(result(id, stop("end_turn")))
+      }
       "stringId" -> {
         // JSON-RPC lets an id be a string; the answer must come back under the same string
         val answer = ask("session/request_permission", permissionParams(), JsonPrimitive("perm-text-id"))

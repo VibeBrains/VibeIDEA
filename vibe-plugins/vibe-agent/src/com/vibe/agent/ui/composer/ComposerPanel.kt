@@ -68,6 +68,9 @@ class ComposerPanel(
     fun onStop()
     /** Short status line for the feed (e.g. "the agent does not support images"). */
     fun onNotice(text: String)
+
+    /** The open agent session's own slash commands, for the `/` menu; none when the chat talks to a model */
+    fun agentCommands(): List<com.vibe.agent.acp.AgentCommand> = emptyList()
   }
 
   val queue = InjectionQueue()
@@ -380,7 +383,7 @@ class ComposerPanel(
     add(box, BorderLayout.CENTER)
 
     mention = MentionPopup(project, input, parentDisposable, { EditorContext.currentSelection(project) }) { addContext(it) }
-    slash = SlashPopup(project, input, parentDisposable)
+    slash = SlashPopup(project, input, parentDisposable) { listener.agentCommands() }
     installKeys(parentDisposable)
     installTransfer()
     input.document.addDocumentListener(object : DocumentListener {

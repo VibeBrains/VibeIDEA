@@ -125,7 +125,10 @@ class AcpClient(
     private set
 
   /** Modes and switches of one open session: each session has its own, and a thread's pickers show its own. */
-  private class SessionState(@Volatile var modes: SessionModes?, @Volatile var configOptions: List<SessionConfigOption>)
+  private class SessionState(@Volatile var modes: SessionModes?, @Volatile var configOptions: List<SessionConfigOption>) {
+    /** The agent's own slash commands for this session ([AgentCommand]); empty until it announces them */
+    @Volatile var commands: List<AgentCommand> = emptyList()
+  }
 
   /**
    * Sessions opened on this connection for the chat, by id — one per conversation thread. An isolated session of a
@@ -444,6 +447,9 @@ class AcpClient(
    */
   val configOptions: List<SessionConfigOption> get() = sessionId?.let { open[it]?.configOptions }.orEmpty()
 
+  /** The current session's own slash commands, as the agent last announced them */
+  val commands: List<AgentCommand> get() = sessionId?.let { open[it]?.commands }.orEmpty()
+
   /** Flips one boolean option; the agent answers with the full, current set. */
   fun setConfigOption(configId: String, value: Boolean): CompletableFuture<Unit> = sendConfigOption(buildJsonObject {
     put("configId", configId)
@@ -662,6 +668,7 @@ class AcpClient(
       state.configOptions = parseConfigOptions(update)
       if (current) handler.onConfigOptionsChanged(state.configOptions)
     }
+    if (state != null && update?.get("sessionUpdate")?.stringOrNull() == UPDATE_COMMANDS) state.commands = AgentCommand.parse(update)
     if (state != null && update?.get("sessionUpdate")?.stringOrNull() == UPDATE_CURRENT_MODE) {
       val modeId = update["currentModeId"]?.stringOrNull()
       if (modeId != null) {
@@ -772,6 +779,7 @@ class AcpClient(
     /** How long stopping waits for `session/close`; an agent that stays silent is stopped anyway. */
     private const val CLOSE_WAIT_MS = 1_000L
     private const val UPDATE_CONFIG_OPTIONS = "config_option_update"
+    private const val UPDATE_COMMANDS = "available_commands_update"
     /** The agent withdraws a request it sent (ACP v1 cancellation, stable since 29.06.2026) */
     private const val CANCEL_REQUEST = "\$/cancel_request"
     /** JSON-RPC error of a withdrawn request */

@@ -218,6 +218,16 @@ class AcpClientE2ETest {
   }
 
   @Test
+  fun `the agent's own commands are kept with its session`() {
+    val c = start("commands", TestHandler())
+    c.initializeAndOpenSession().get(30, TimeUnit.SECONDS)
+    c.prompt("что умеешь").get(30, TimeUnit.SECONDS)
+
+    await { texts().any { it == "команды объявлены" } }
+    assertEquals(listOf("review"), c.commands.map { it.name })
+  }
+
+  @Test
   fun `a request with a string id is answered under the same id`() {
     val handler = TestHandler()
     val c = start("stringId", handler)

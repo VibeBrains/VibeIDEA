@@ -403,6 +403,8 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     }
     override fun onStop() = cancelTurn()
     override fun onNotice(text: String) = systemLine(t("chat.composerNotice", "text" to text))
+    override fun agentCommands(): List<com.vibe.agent.acp.AgentCommand> =
+      if (target is ChatTarget.Agent) client?.commands.orEmpty() else emptyList()
   })
   private val modelPicker = ModelPicker({ selectTarget(it) }, { openSettings() })
   private val modePicker = ModePicker { modeId -> switchMode(modeId) }
@@ -3356,7 +3358,10 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     // The client first: whether the agent could resume its session is known only once it is open,
     // and a session it could not resume gets the unfinished plan in front of the prompt.
     val c = ensureClient(t.config, turnThreadId ?: currentThreadId)
-    val fullPrompt = prependTerse(c, prependMinimalism(prependProjectRules(prependKnowledge(prependCarriedPlan(designed), text), text, loaded)))
+    // The agent's own command runs only as the first words of the prompt: the IDE's context goes nowhere in front of it
+    val agentCommand = com.vibe.agent.acp.AgentCommand.of(text, c.commands)
+    val fullPrompt = if (agentCommand != null) text
+                     else prependTerse(c, prependMinimalism(prependProjectRules(prependKnowledge(prependCarriedPlan(designed), text), text, loaded)))
     // A fresh turn: its tool calls, changed files and ceilings started empty with its TurnState; what the panel keeps
     // besides them is reset here.
     trace.clear()

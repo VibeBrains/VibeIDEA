@@ -46,6 +46,8 @@ class SlashPopup(
   private val project: Project,
   private val textArea: JTextArea,
   parentDisposable: Disposable,
+  /** The agent's own commands for the open session, asked when the menu opens: they change as the agent loads */
+  private val agentCommands: () -> List<com.vibe.agent.acp.AgentCommand>,
 ) : Disposable {
 
   private class Row(val insert: String?, val title: String, val detail: String, val toSkills: Boolean = false)
@@ -174,7 +176,8 @@ class SlashPopup(
     }
     else {
       header.text = COMMANDS_HEADER
-      rows = COMMANDS.filter { it.title.lowercase().contains("$SLASH$query".lowercase()) || query.isEmpty() }
+      val matches = { title: String -> query.isEmpty() || title.lowercase().contains("$SLASH$query".lowercase()) }
+      rows = (COMMANDS.filter { matches(it.title) } + agentRows(matches))
         .ifEmpty { listOf(Row(null, t("slash.noCommandsFor", "filter" to filter()), "")) }
     }
     model.replaceAll(rows)
@@ -187,6 +190,19 @@ class SlashPopup(
         it.setLocation(placement(it.size))
       }
     }
+  }
+
+  /**
+   * The agent's commands under their own heading; one the IDE also has is shown but not offered:
+   * the IDE's command runs on that word, and a row inserting it would promise the agent's
+   */
+  private fun agentRows(matches: (String) -> Boolean): List<Row> {
+    val ours = com.vibe.agent.ui.ChatCommands.ALL.map { it.name }.toSet()
+    val rows = agentCommands().filter { matches(it.word) }.map { command ->
+      if (command.word in ours) Row(null, command.word, t("slash.agentCommandShadowed"))
+      else Row(command.word + " ", command.word, listOfNotNull(command.description.ifEmpty { null }, command.hint).joinToString(" · "))
+    }
+    return if (rows.isEmpty()) emptyList() else listOf(Row(null, t("slash.agentCommands"), "")) + rows
   }
 
   // ---- picking -------------------------------------------------------------------------------
