@@ -257,8 +257,12 @@ class LlmClient(
   @Volatile
   private var lastAnsweredModel: String? = null
 
+  /** The model a gateway named in [ModelEcho.ROUTED_MODEL_HEADER]: stronger than the body, which keeps the router's id */
+  @Volatile
+  private var lastRoutedModel: String? = null
+
   /** The model of the last completed request as the provider named it, or null when it named none. */
-  fun lastAnsweredModel(): String? = lastAnsweredModel
+  fun lastAnsweredModel(): String? = lastRoutedModel ?: lastAnsweredModel
 
   /**
    * Why the provider said the last answer ended, filled in as the stream reports it.
@@ -460,6 +464,7 @@ class LlmClient(
     this.cacheKey = promptCacheKey
     lastUsage = TokenUsage.NONE
     lastAnsweredModel = null
+    lastRoutedModel = null
     lastStopReason = null
     // The MODEL decides, falling back to the provider: one key can serve three formats (OpenCode Go: MiniMax and Qwen
     // over /v1/messages, GLM and Kimi over /v1/chat/completions, Grok and GPT over /v1/responses).
@@ -477,6 +482,9 @@ class LlmClient(
     // Its address alone would not say so: a proxy on localhost may lead to the cloud
     if (settings.offline && !provider.runsLocally) {
       throw IllegalStateException(t("offline.blocked", "provider" to provider.entry.id))
+    }
+    if (wire == ModelQuirks.WIRE_OPENAI && ModelQuirks.has(quirkIdOf(model), ModelQuirks.Quirk.RESPONSES_ONLY, quirks())) {
+      throw IllegalStateException(t("provider.responsesOnly", "model" to model.id))
     }
     var attempt = 1
     while (true) {
@@ -921,6 +929,7 @@ class LlmClient(
     val response = clients.of(provider).send(request, HttpResponse.BodyHandlers.ofString())
     lastRetryAfter = response.headers().firstValue("retry-after").orElse(null)
     lastRequestId = response.headers().firstValue(REQUEST_ID_HEADER).orElse(null)
+    response.headers().firstValue(ModelEcho.ROUTED_MODEL_HEADER).orElse(null)?.takeIf { it.isNotBlank() }?.let { lastRoutedModel = it }
     if (cancelled()) throw java.io.InterruptedIOException(STOPPED_BY_USER)
     if (response.statusCode() !in 200..299) {
       throw RuntimeException("HTTP " + response.statusCode() + ": " + response.body().take(500))
@@ -946,6 +955,7 @@ class LlmClient(
     // The provider knows its own window; guessing shorter means being refused again.
     lastRetryAfter = response.headers().firstValue("retry-after").orElse(null)
     lastRequestId = response.headers().firstValue(REQUEST_ID_HEADER).orElse(null)
+    response.headers().firstValue(ModelEcho.ROUTED_MODEL_HEADER).orElse(null)?.takeIf { it.isNotBlank() }?.let { lastRoutedModel = it }
     val body = response.body()
     activeBody = body
     try {

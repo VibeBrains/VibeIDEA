@@ -91,6 +91,7 @@ object AcpConfig {
    * the IDE handed to agents. Null when the file or the block is absent: then nothing was said, and the IDE offers its
    * servers as before. `use_idea_mcp` is not read: it names the upstream AI assistant's own built-in server, which this IDE does not
    * have, and applying it to our IDE tools would switch them off for everyone whose file carries the block (decision №95).
+   * The direct chat does not read it: the file configures ACP agents, and the chat is not one (decision №128)
    */
   fun useCustomMcp(): Boolean? = useCustomMcp(configPath().takeIf { Files.isRegularFile(it) }?.let { runCatching { Files.readString(it) }.getOrNull() })
 

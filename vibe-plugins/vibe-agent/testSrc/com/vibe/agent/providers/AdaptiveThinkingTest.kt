@@ -28,11 +28,19 @@ class AdaptiveThinkingTest {
   }
 
   @Test
-  fun `4-5 and 4-6 keep the token budget`() {
-    // На них адаптивного режима нет вовсе, и он тоже отвечает 400 — значит правило обязано
-    // остановиться ровно на границе поколений.
-    for (id in listOf("claude-sonnet-4-5", "claude-opus-4-5-20251101", "claude-haiku-4-5", "claude-opus-4-6")) {
+  fun `4-5 keeps the token budget`() {
+    // No adaptive mode there at all, and asking for it is a 400 too: the rule stops exactly at 4.6
+    for (id in listOf("claude-sonnet-4-5", "claude-opus-4-5-20251101", "claude-haiku-4-5")) {
       assertTrue(!ModelQuirks.has(id, ModelQuirks.Quirk.ADAPTIVE_THINKING), id)
+    }
+  }
+
+  @Test
+  fun `4-6 thinks only when asked for the adaptive mode, and keeps its sampling knobs`() {
+    // Thinking is off on 4.6 until the adaptive mode is asked for, and its token budget is deprecated
+    for (id in listOf("claude-opus-4-6", "claude-sonnet-4-6")) {
+      assertTrue(ModelQuirks.has(id, ModelQuirks.Quirk.ADAPTIVE_THINKING), id)
+      assertTrue(!ModelQuirks.has(id, ModelQuirks.Quirk.NO_SAMPLING), id)
     }
   }
 

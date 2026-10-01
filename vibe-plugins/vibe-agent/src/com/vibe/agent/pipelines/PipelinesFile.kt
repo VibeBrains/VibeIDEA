@@ -192,28 +192,52 @@ object PipelinesFile {
    * `roles` of a pipeline: the model each role runs on when its step names none (agreed with VibeIDE,
    * 13.09.2026 — names and the one-string model form are theirs).
    *
-   * Refused as a whole pipeline, not per entry, for the same reasons a step is: an unknown role is a
-   * typo that would otherwise quietly change nothing, and a model for a role that writes is a promise
-   * we cannot keep — a direct model request has no tools and no files. VibeIDE lets any role have a
-   * model; that difference is stated in the spec rather than hidden.
+   * An unknown role refuses the whole pipeline: it is a typo that would otherwise quietly change nothing
+   * An entry that cannot apply is dropped with a warning and the pipeline runs without it, as in VibeIDE:
+   * An entry that is not an object, and a model for a role that writes
+   * The latter is a promise we cannot keep — a direct model request has no tools and no files
+   * `@name` resolves through the project's routes, the same layer a step's own model uses
    */
-  private fun roleModelsOf(element: kotlinx.serialization.json.JsonElement?): Map<String, Pair<String?, String?>> {
+  private fun roleModelsOf(
+    element: kotlinx.serialization.json.JsonElement?,
+    routes: Map<String, String?>,
+    onWarning: (String) -> Unit,
+  ): Map<String, Pair<String?, String?>> {
     val obj = element as? kotlinx.serialization.json.JsonObject ?: return emptyMap()
-    return obj.entries.associate { (role, value) ->
+    val result = LinkedHashMap<String, Pair<String?, String?>>()
+    for ((role, value) in obj.entries) {
       if (role !in ROLES) throw IllegalArgumentException(t("pipeline.warn.unknownRole", "role" to role, "roles" to ROLES.joinToString()))
       val entry = value as? kotlinx.serialization.json.JsonObject
+      if (entry == null) {
+        onWarning(t("pipeline.warn.roleNotObject", "role" to role))
+        continue
+      }
       val resolved = StepModelRef.resolve(
-        entry?.get("provider")?.jsonPrimitive?.contentOrNull,
-        entry?.get("model")?.jsonPrimitive?.contentOrNull,
+        entry["provider"]?.jsonPrimitive?.contentOrNull,
+        entry["model"]?.jsonPrimitive?.contentOrNull,
+        routes,
       )
       if ((resolved.first == null) != (resolved.second == null)) {
         throw IllegalArgumentException(t("pipeline.warn.halfAddress", "role" to role))
       }
       if (resolved.second != null && !readOnly(role)) {
-        throw IllegalArgumentException(t("pipeline.warn.writingRoleOnOwnModel", "role" to role))
+        onWarning(t("pipeline.warn.roleModelDropped", "role" to role))
+        continue
       }
-      role to resolved
+      result[role] = resolved
     }
+    return result
+  }
+
+  /**
+   * A yes/no field of a step
+   * Only a JSON boolean counts: the string "true" read as false would turn the field off without a word
+   */
+  private fun flagOf(so: kotlinx.serialization.json.JsonObject, name: String, onWarning: (String) -> Unit): Boolean {
+    val value = so[name] ?: return false
+    val flag = (value as? kotlinx.serialization.json.JsonPrimitive)?.takeIf { !it.isString }?.booleanOrNull
+    if (flag == null) onWarning(t("pipeline.warn.flagNotBoolean", "field" to name))
+    return flag ?: false
   }
 
   /**
@@ -283,12 +307,12 @@ object PipelinesFile {
         onWarning(t("pipeline.warn.unknownContext", "role" to role, "value" to wire, "default" to it.wire))
       }
     } ?: defaultContext
-    val offPeak = so["offPeak"]?.jsonPrimitive?.booleanOrNull ?: false
+    val offPeak = flagOf(so, "offPeak", onWarning)
     if (offPeak && own.second == null) {
       throw IllegalArgumentException(t("pipeline.warn.offPeakNeedsModel", "role" to role))
     }
     val pack = packOf(so["pack"], role, model != null)
-    val againstBrief = so["againstBrief"]?.jsonPrimitive?.booleanOrNull ?: false
+    val againstBrief = flagOf(so, "againstBrief", onWarning)
     // Пишущая роль, сверяющая с брифом, дописала бы результат под приёмку — это не приёмка.
     if (againstBrief && !readOnly(role)) throw IllegalArgumentException(t("pipeline.warn.againstBriefWritingRole", "role" to role))
     return PipelineStep(
@@ -300,9 +324,9 @@ object PipelinesFile {
       acceptance = so["acceptance"]?.jsonPrimitive?.contentOrNull,
       maxTokens = so["maxTokens"]?.jsonPrimitive?.intOrNull,
       maxSteps = so["maxSteps"]?.jsonPrimitive?.intOrNull,
-      escalation = so["escalation"]?.jsonPrimitive?.booleanOrNull ?: false,
-      continueOnFailure = so["continueOnFailure"]?.jsonPrimitive?.booleanOrNull ?: false,
-      ignorePreviousArtifacts = so["ignorePreviousArtifacts"]?.jsonPrimitive?.booleanOrNull ?: false,
+      escalation = flagOf(so, "escalation", onWarning),
+      continueOnFailure = flagOf(so, "continueOnFailure", onWarning),
+      ignorePreviousArtifacts = flagOf(so, "ignorePreviousArtifacts", onWarning),
       paths = stringList(so["paths"]),
       denyPaths = stringList(so["denyPaths"]),
       context = context,
@@ -348,7 +372,7 @@ object PipelinesFile {
           val id = o["id"]?.jsonPrimitive?.contentOrNull
           if (id.isNullOrBlank()) { onWarning(t("pipeline.warn.noId")); continue }
           if (!seen.add(id)) { onWarning(t("pipeline.warn.duplicateId", "id" to id)); continue }
-          val roleModels = roleModelsOf(o["roles"])
+          val roleModels = roleModelsOf(o["roles"], routes) { onWarning(t("pipeline.warn.inPipeline", "id" to id, "warning" to it)) }
           val steps = o["steps"]?.jsonArray?.map { s -> parseStep(s.jsonObject, roleModels, routes, onWarning) } ?: emptyList()
           if (steps.isEmpty()) { onWarning(t("pipeline.warn.noSteps", "id" to id)); continue }
           val dynamic = o["dynamic"]?.jsonPrimitive?.booleanOrNull ?: false

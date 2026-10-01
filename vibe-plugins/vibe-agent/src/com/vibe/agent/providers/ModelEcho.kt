@@ -33,8 +33,34 @@ object ModelEcho {
 
   fun fromResponsesBody(response: JsonObject): String? = response.string("model")
 
+  /**
+   * The model id names a router, not a model: `cloudflare/auto`, `openrouter/auto`
+   * The router picks the model per request, so a different model in the answer is the service asked for
+   */
+  fun isRouter(requested: String): Boolean = tail(requested.trim().lowercase()) == ROUTER_TAIL
+
+  /**
+   * The entry the answer is priced by
+   * A router's own entry rarely has a price, and the bill comes for the model that answered:
+   * When the provider's catalogue has that model, its price counts; otherwise the router's entry stays
+   */
+  fun billedEntry(asked: ModelEntry, answered: String?, catalogue: List<ModelEntry>): ModelEntry {
+    if (!isRouter(asked.id) || answered.isNullOrBlank()) return asked
+    val got = tail(answered.trim().lowercase())
+    return catalogue.firstOrNull { tail(it.id.lowercase()) == got } ?: asked
+  }
+
+  /**
+   * Cloudflare AI Gateway names the routed model in a header and keeps the router's id in the body
+   * The header therefore wins over the body ([LlmClient] reads it per response)
+   */
+  const val ROUTED_MODEL_HEADER = "cf-aig-routed-model"
+
+  private const val ROUTER_TAIL = "auto"
+
   /** True when [answered] is a different model, not another spelling of [requested]. */
   fun substituted(requested: String, answered: String?): Boolean {
+    if (isRouter(requested)) return false
     val asked = tail(requested.trim().lowercase())
     val got = tail(answered?.trim()?.lowercase().orEmpty())
     if (asked.isEmpty() || got.isEmpty()) return false

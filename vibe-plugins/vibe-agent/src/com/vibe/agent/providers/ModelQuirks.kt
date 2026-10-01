@@ -178,6 +178,14 @@ object ModelQuirks {
     TOOLS_ONLY_ON_RESPONSES,
 
     /**
+     * The model answers on the Responses wire only: chat/completions refuses the request as a whole, with or without tools.
+     *
+     * The wire is never guessed ([ResponsesWire]), so the request is refused here, before it leaves, with words that name
+     * the fix — the entry's `"protocol": "openai-responses"` — instead of the vendor's 404.
+     */
+    RESPONSES_ONLY,
+
+    /**
      * On chat/completions the model calls functions only with reasoning off: a request with tools and any effort but
      * `none` is refused. There a turn with tools goes out at `none`, and the chat says once why the dial was not
      * honoured; the Responses wire takes both together.
@@ -212,6 +220,13 @@ object ModelQuirks {
       "o1/o3/o4 family: the model sets its own sampling, and the answer limit is named differently",
     ),
     Rule(
+      // Model cards on developers.openai.com list v1/responses and v1/batch only, Chat Completions «Not supported»
+      // (checked 2026-09-30)
+      Regex("^(o1-pro|o3-pro|gpt-5-pro)(-|$)"),
+      setOf(Quirk.RESPONSES_ONLY),
+      "o1-pro, o3-pro, gpt-5-pro: the Responses wire only, chat/completions refuses every request",
+    ),
+    Rule(
       // MiniMax's own documentation of its Anthropic-compatible API: `temperature` and `top_p`
       // work, `top_k` and `stop_sequences` are ignored. Nothing here is inferred from a symptom —
       // the reported SSE oddities are deliberately NOT encoded, because no source names the
@@ -222,9 +237,8 @@ object ModelQuirks {
     ),
     Rule(
       // The 5 line and Opus 4.7/4.8 reject a token budget with 400 and take the adaptive mode with an effort level;
-      // the pattern covers fable-5, fable-5-1, mythos-5, mythos-5-1, opus-5, opus-5-5 and sonnet-5, and stops short of
-      // 4.5/4.6, which reject the adaptive mode instead (platform.claude.com/docs/en/build-with-claude/extended-thinking,
-      // checked 2026-09-18). The same models reject `temperature`, `top_p` and `top_k` with 400
+      // the pattern covers fable-5, fable-5-1, mythos-5, mythos-5-1, opus-5, opus-5-5 and sonnet-5
+      // (platform.claude.com/docs/en/build-with-claude/extended-thinking, checked 2026-09-18). The same models reject `temperature`, `top_p` and `top_k` with 400
       // (platform.claude.com/docs/en/models/opus-5-5/migration-guide, checked 2026-09-23).
       Regex("^claude-(opus|sonnet|fable|mythos)-5"),
       setOf(Quirk.ADAPTIVE_THINKING, Quirk.NO_SAMPLING),
@@ -234,6 +248,15 @@ object ModelQuirks {
       Regex("^claude-opus-4-(7|8)"),
       setOf(Quirk.ADAPTIVE_THINKING, Quirk.NO_SAMPLING),
       "claude opus 4.7/4.8: thinking is adaptive plus output_config.effort; a token budget and sampling knobs are rejected",
+    ),
+    Rule(
+      // Opus 4.6 and Sonnet 4.6 still take a token budget, but it is deprecated, and thinking stays off until the adaptive
+      // mode is asked for; effort is low, medium, high or max, and the slider never sends xhigh
+      // (platform.claude.com/docs/en/build-with-claude/thinking and /effort, checked 2026-10-01)
+      // Sampling knobs are not listed as refused for 4.6, so they are left alone
+      Regex("^claude-(opus|sonnet)-4-6"),
+      setOf(Quirk.ADAPTIVE_THINKING),
+      "claude 4.6: thinking is adaptive plus output_config.effort; the token budget is deprecated",
     ),
     Rule(
       // Thinking is always on: `{"type": "disabled"}` is a 400, and an omitted field runs the default level — `medium`

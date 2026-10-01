@@ -9,8 +9,9 @@ import kotlin.test.assertTrue
 
 /** `roles`: the model a role runs on when its step names none — through the real loader. */
 class PipelineRolesTest {
-  private fun load(json: String): Pair<List<Pipeline>, List<String>> {
+  private fun load(json: String, routes: Map<String, String?> = emptyMap()): Pair<List<Pipeline>, List<String>> {
     val base = Files.createTempDirectory("roles")
+    com.vibe.agent.providers.ModelRoutesRegistry.install(base.toString(), routes)
     try {
       val file = PipelinesFile.path(base.toString())
       Files.createDirectories(file.parent)
@@ -48,10 +49,36 @@ class PipelineRolesTest {
   }
 
   @Test
-  fun `a model for a writing role refuses the pipeline`() {
+  fun `a model for a writing role is dropped with a warning, the pipeline stays`() {
     val (pipelines, warnings) = load("""{"pipelines":[{"id":"p","roles":{"backend-dev":{"model":"zai/glm-5.3-flash"}},
       "steps":[{"role":"backend-dev","task":"сделай"}]}]}""")
-    assertTrue(pipelines.isEmpty())
+    assertNull(pipelines.single().steps.single().model)
+    assertEquals(1, warnings.size)
+  }
+
+  @Test
+  fun `a role entry that is not an object is skipped with a warning`() {
+    val (pipelines, warnings) = load("""{"pipelines":[{"id":"p","roles":{"critic":"anthropic/claude-opus-5"},
+      "steps":[{"role":"critic","task":"оцени"}]}]}""")
+    assertNull(pipelines.single().steps.single().model)
+    assertEquals(1, warnings.size)
+  }
+
+  @Test
+  fun `a logical name in roles resolves through the project's routes`() {
+    val (pipelines, warnings) = load("""{"pipelines":[{"id":"p","roles":{"critic":{"model":"@smart"}},
+      "steps":[{"role":"critic","task":"оцени"}]}]}""", mapOf("smart" to "anthropic/claude-opus-5"))
+    assertTrue(warnings.isEmpty(), warnings.toString())
+    val step = pipelines.single().steps.single()
+    assertEquals("anthropic", step.provider)
+    assertEquals("claude-opus-5", step.model)
+  }
+
+  @Test
+  fun `a quoted flag is read as false and said so`() {
+    val (pipelines, warnings) = load("""{"pipelines":[{"id":"p","steps":[{"role":"explore","task":"изучи"},
+      {"role":"critic","task":"оцени","escalation":"true"}]}]}""")
+    assertEquals(false, pipelines.single().steps[1].escalation)
     assertEquals(1, warnings.size)
   }
 

@@ -331,8 +331,8 @@ class AcpClient(
       // Инструменты самой IDE предлагаются агенту, которого IDE и запустила: без этого он
       // работает в проекте, не видя ни графа импортов, ни поиска по корпусу, ни журнала решений.
       // Решение о том, можно ли, принимает [IdeToolsOffer]; здесь только форма запроса.
-      val servers = listOfNotNull(ideTools, handler.memoryServer()) +
-                    handler.teamMemoryServers(capabilities?.mcpHttp == true) + handler.configuredServers()
+      val servers = withOwnServers(listOfNotNull(ideTools, handler.memoryServer()) +
+                                   handler.teamMemoryServers(capabilities?.mcpHttp == true), handler.configuredServers())
       // Every header value handed to the agent is a credential it may print: its stderr goes to the chat, masked
       secrets.addAll(AgentSecrets.headerValues(servers))
       sessionParams = buildJsonObject {
@@ -763,6 +763,18 @@ class AcpClient(
   }
 
   companion object {
+    /**
+     * The servers the IDE found, then the person's own from `.vibe/mcp.json`
+     * An own entry replaces a found one of the same name, as in VibeIDE: two servers under one name reach the agent
+     * as a duplicate, and the one the person wrote down is the one they meant
+     */
+    internal fun withOwnServers(found: List<Map<String, Any>>, own: List<Map<String, Any>>): List<Map<String, Any>> {
+      // Names compare as McpServersFile compares them: case and stray spaces do not make another server
+      fun key(server: Map<String, Any>) = (server["name"] as? String)?.trim()?.lowercase()
+      val ownNames = own.mapNotNull { key(it) }.toSet()
+      return found.filterNot { key(it) in ownNames } + own
+    }
+
     /**
      * Версия ACP, на которой мы разговариваем.
      *

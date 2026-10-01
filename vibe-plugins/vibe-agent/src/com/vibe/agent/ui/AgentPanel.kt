@@ -4062,7 +4062,8 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
       turns.chat.usage = usage
       noteModelSubstitution(t.model.id, llmClient.lastAnsweredModel())
       // Цена берётся с оглядкой на срок: у модели с истёкшей акцией считать надо по costAfter.
-      turns.chat.pricing = com.vibe.agent.providers.PriceValidity.effective(t.model, java.time.LocalDate.now())
+      val billed = com.vibe.agent.providers.ModelEcho.billedEntry(t.model, llmClient.lastAnsweredModel(), t.provider.models)
+      turns.chat.pricing = com.vibe.agent.providers.PriceValidity.effective(billed, java.time.LocalDate.now())
       if (bounce != null) {
         // The answer stays in the thread, the gate's message after it as the person's turn: the next request carries both
         finishAgentBubble((System.currentTimeMillis() - startedAt) / 1000.0, t("chat.checkBounceLabel"))
@@ -4935,7 +4936,8 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
       put("step", index + 1)
       put("role", step.role)
       step.wave?.let { put("wave", it) }
-      step.model?.let { put("model", it) }
+      // Same form as VibeIDE: the full address, so a gate can tell two providers of one model apart
+      step.model?.let { put("model", step.provider?.let { provider -> "$provider/$it" } ?: it) }
       // What the step said about itself: a gate that judges only the diff cannot tell «could not» from «did».
       turn.report?.let { report ->
         put("status", report.status.name)
@@ -5071,7 +5073,8 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     turn.usage = llm.lastUsage()
     llm.lastStopReason()?.takeIf { it.abnormal }?.let { systemLine(stopNote(it)) }
     noteModelSubstitution(model.id, llm.lastAnsweredModel())
-    turn.pricing = com.vibe.agent.providers.PriceValidity.effective(model, java.time.LocalDate.now())
+    val billed = com.vibe.agent.providers.ModelEcho.billedEntry(model, llm.lastAnsweredModel(), provider.models)
+    turn.pricing = com.vibe.agent.providers.PriceValidity.effective(billed, java.time.LocalDate.now())
   }
 
   /**
@@ -5386,13 +5389,10 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
       systemLine(t("pipeline.stepSkipped", "header" to header))
       return
     }
-    // Шаг эскалации нужен ровно тогда, когда предыдущий черновик НЕ приняли.
-    val accepted = run.lastGateAccepted
-    // Ответ гейта относится к ОДНОМУ шагу — тому, который он проверил. Оставить его жить
-    // дальше значит однажды пропустить эскалацию из-за приёмки позапрошлого шага, между
-    // которыми был упавший: гасим сразу после использования, заново ставит только гейт.
-    run.lastGateAccepted = null
-    if (step.escalation && accepted == true) {
+    // An escalation step is needed exactly when the draft before it was NOT accepted
+    // A skipped step leaves the verdict standing: one accepted draft settles the whole ladder «cheap → middle → strong»,
+    // which is the point of the cascade. A step that ran or failed replaces it below
+    if (step.escalation && run.lastGateAccepted == true) {
       systemLine(t("pipeline.stepSkippedByGate", "header" to header))
       // Пропуск пишется в журнал наравне с вердиктом гейта: без него окупаемость каскада
       // нечем считать — видно «сколько раз приняли», но не «сколько дорогого не запустили».
