@@ -50,6 +50,11 @@ class VibeProvidersConfigurable(private val project: Project) : Configurable, Co
       list.add(SettingsUi.hint(t("settings.providers.empty")))
     }
     for (p in providers) {
+      // A ChatGPT plan has no key to type: the card signs in instead
+      if (p.auth.type == com.vibe.agent.providers.AuthSpec.CHATGPT) {
+        list.add(chatGptCard(p))
+        continue
+      }
       val field = JBPasswordField()
       // PasswordSafe и .env — это IO (@RequiresBackgroundThread): читаем в фоне, карточка
       // рождается с заглушкой и дозаполняется. На EDT чтение подвешивало открытие страницы
@@ -92,6 +97,79 @@ class VibeProvidersConfigurable(private val project: Project) : Configurable, Co
     return JPanel(BorderLayout()).apply {
       border = JBUI.Borders.empty(8)
       add(com.vibe.agent.settings.SettingsUi.page(list), BorderLayout.CENTER)
+    }
+  }
+
+  /**
+   * The card of a provider paid by a ChatGPT plan: sign in through the browser, sign out, the plan's usage page
+   * The vendor names the button «Continue with ChatGPT» and asks to show the account the plan is spent from
+   */
+  private fun chatGptCard(p: ProviderEntry): JComponent {
+    val status = JBLabel().apply {
+      font = com.intellij.util.ui.JBFont.label().deriveFont(11f)
+      foreground = com.intellij.ui.JBColor.GRAY
+      minimumSize = Dimension(0, 0)
+    }
+    val signIn = JButton()
+    val signOut = JButton(t("chatgpt.settings.signOut"))
+    val usage = com.intellij.ui.components.ActionLink(t("chatgpt.plan.manage")) {
+      com.intellij.ide.BrowserUtil.browse(com.vibe.agent.providers.chatgpt.ChatGptOAuth.USAGE_URL)
+    }
+    fun refresh(note: String? = null) {
+      val account = com.vibe.agent.providers.chatgpt.ChatGptAccounts.find(p.auth.account)
+      status.text = note ?: when {
+        account == null -> t("chatgpt.settings.none")
+        account.signedOut -> t("chatgpt.settings.signedOut", "account" to account.label)
+        !account.mayUsePlan -> t("chatgpt.settings.noPlan", "account" to account.label)
+        else -> t("chatgpt.settings.signedIn", "account" to account.label)
+      }
+      signIn.text = if (account == null || account.signedOut) t("chatgpt.settings.continue") else t("chatgpt.settings.signInAgain")
+      signOut.isEnabled = account != null && !account.signedOut
+    }
+    signIn.addActionListener {
+      val existing = com.vibe.agent.providers.chatgpt.ChatGptAccounts.find(p.auth.account)
+      status.text = t("chatgpt.settings.waiting")
+      com.intellij.openapi.application.ApplicationManager.getApplication().executeOnPooledThread {
+        val result = com.vibe.agent.providers.chatgpt.ChatGptSession.signIn(existing)
+        javax.swing.SwingUtilities.invokeLater {
+          when (result) {
+            is com.vibe.agent.providers.chatgpt.ChatGptSession.SignIn.Failed -> refresh(t("chatgpt.settings.failed", "reason" to result.reason))
+            is com.vibe.agent.providers.chatgpt.ChatGptSession.SignIn.Done -> {
+              refresh()
+              // Once, after the first sign-in, as the vendor asks: the person learns their plan pays from now on
+              if (!com.vibe.agent.providers.chatgpt.ChatGptAccounts.noticeShown()) {
+                com.intellij.openapi.ui.Messages.showDialog(project, t("chatgpt.notice.body"), t("chatgpt.notice.title"),
+                  arrayOf(t("chatgpt.notice.ok")), 0, com.intellij.openapi.ui.Messages.getInformationIcon())
+                com.vibe.agent.providers.chatgpt.ChatGptAccounts.markNoticeShown()
+              }
+              project.messageBus.syncPublisher(ProvidersChangeListener.TOPIC).providersChanged()
+            }
+          }
+        }
+      }
+    }
+    signOut.addActionListener {
+      val account = com.vibe.agent.providers.chatgpt.ChatGptAccounts.find(p.auth.account) ?: return@addActionListener
+      com.intellij.openapi.application.ApplicationManager.getApplication().executeOnPooledThread {
+        val revoked = com.vibe.agent.providers.chatgpt.ChatGptSession.signOut(account)
+        javax.swing.SwingUtilities.invokeLater {
+          refresh(if (revoked) null else t("chatgpt.settings.revokeFailed"))
+          project.messageBus.syncPublisher(ProvidersChangeListener.TOPIC).providersChanged()
+        }
+      }
+    }
+    refresh()
+    return JPanel(BorderLayout(0, JBUI.scale(4))).apply {
+      border = IdeBorderFactory.createTitledBorder(p.name, false)
+      add(JPanel(java.awt.FlowLayout(java.awt.FlowLayout.LEFT, JBUI.scale(6), 0)).apply {
+        add(signIn)
+        add(signOut)
+        add(usage)
+      }, BorderLayout.NORTH)
+      add(SettingsUi.hint(t("chatgpt.settings.hint", "id" to p.id)).apply {
+        font = com.intellij.util.ui.JBFont.label().deriveFont(11f)
+      }, BorderLayout.CENTER)
+      add(status, BorderLayout.SOUTH)
     }
   }
 

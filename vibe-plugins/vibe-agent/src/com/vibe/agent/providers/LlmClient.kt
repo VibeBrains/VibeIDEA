@@ -317,6 +317,9 @@ class LlmClient(
 
   @Volatile private var lastEffortMark: String? = null
 
+  /** The vendor's id of the last request, for a report about it; null when it sent none */
+  @Volatile private var lastRequestId: String? = null
+
   /** The effort the last request was sent at, for the answer to keep ([EffortUpdates]); null when not tracked */
   fun lastEffortMark(): String? = lastEffortMark
 
@@ -686,7 +689,8 @@ class LlmClient(
       ?.let { EffortUpdates.plan(messages, key, it) }
     lastEffortMark = plan?.mark
     val (instructions, input) = ResponsesWire.input(ModelQuirks.applyToMessages(quirkId, plan?.messages ?: messages, overrides), key)
-    val streaming = ModelQuirks.supportsStreaming(quirkId, overrides)
+    // The plan's route takes streamed requests only, whatever a quirk says about the model elsewhere
+    val streaming = ModelQuirks.supportsStreaming(quirkId, overrides) || onChatGptPlan(provider)
     val body = withExtras(ModelQuirks.applyToBody(quirkId, wire = ModelQuirks.WIRE_OPENAI_RESPONSES, overrides = overrides, body = buildJsonObject {
       put("model", model.id)
       put("stream", true)
@@ -702,7 +706,13 @@ class LlmClient(
     }.let { withReasoning(it, ModelQuirks.WIRE_OPENAI_RESPONSES, model) }.let { planned ->
       if (plan == null) planned
       else JsonObject(planned + (REASONING to JsonObject((planned[REASONING] as JsonObject) + (EFFORT to JsonPrimitive(plan.requestEffort)))))
-    }), model.extraBody)
+    }), model.extraBody).let { built ->
+      // The ChatGPT plan's route takes a narrower request than the API: shaped last, so nothing written by hand breaks it
+      if (!onChatGptPlan(provider)) built
+      else com.vibe.agent.providers.chatgpt.ChatGptPlanBody.shape(built, t("chatgpt.namespace.description")).also { shaped ->
+        if (shaped.removed.isNotEmpty()) logger<LlmClient>().info("ChatGPT plan route: fields taken out of the request: ${shaped.removed}")
+      }.body
+    }
     if (ModelQuirks.quirksOf(quirkId, overrides).isNotEmpty()) {
       logger<LlmClient>().info("Model quirks applied for " + quirkId + ": " + ModelQuirks.noteOf(quirkId, overrides))
     }
@@ -721,9 +731,28 @@ class LlmClient(
       onDelta(ResponsesWire.outputText(answer))
       return
     }
+    var completed = false
+    try {
+      streamResponses(provider, request, onDelta) { completed = true }
+    }
+    catch (e: RuntimeException) {
+      // The plan's codes in words a person can act on, with the code and the request id for a report
+      val said = if (onChatGptPlan(provider)) com.vibe.agent.providers.chatgpt.ChatGptErrors.describe(e.message, lastRequestId) else null
+      throw if (said != null) RuntimeException(said, e) else e
+    }
+    // On the plan's route only `response.completed` is success: a stream that just ended may have been cut by a limit
+    if (onChatGptPlan(provider) && !completed && !cancelled()) throw RuntimeException(t("chatgpt.error.incomplete"))
+  }
+
+  /** Whether [provider] spends a ChatGPT plan rather than an API key */
+  private fun onChatGptPlan(provider: ResolvedProvider): Boolean = provider.entry.auth.type == AuthSpec.CHATGPT
+
+  /** One streamed Responses answer: its events read into the accumulators, its text to [onDelta] */
+  private fun streamResponses(provider: ResolvedProvider, request: HttpRequest, onDelta: (String) -> Unit, onCompleted: () -> Unit) {
     streamSse(provider, request) { data ->
       val event = eventObject(data) ?: return@streamSse
       ResponsesWire.failure(event)?.let { throw RuntimeException(it) }
+      if (ResponsesWire.completed(event)) onCompleted()
       TokenUsage.fromResponsesEvent(event)?.let { lastUsage = lastUsage.merge(it) }
       ModelEcho.fromResponsesEvent(event)?.let { lastAnsweredModel = it }
       StopReason.fromResponsesEvent(event)?.let { lastStopReason = it }
@@ -891,6 +920,7 @@ class LlmClient(
   private fun sendWholeBody(provider: ResolvedProvider, request: HttpRequest): JsonObject {
     val response = clients.of(provider).send(request, HttpResponse.BodyHandlers.ofString())
     lastRetryAfter = response.headers().firstValue("retry-after").orElse(null)
+    lastRequestId = response.headers().firstValue(REQUEST_ID_HEADER).orElse(null)
     if (cancelled()) throw java.io.InterruptedIOException(STOPPED_BY_USER)
     if (response.statusCode() !in 200..299) {
       throw RuntimeException("HTTP " + response.statusCode() + ": " + response.body().take(500))
@@ -915,6 +945,7 @@ class LlmClient(
     val response = clients.of(provider).send(request, HttpResponse.BodyHandlers.ofInputStream())
     // The provider knows its own window; guessing shorter means being refused again.
     lastRetryAfter = response.headers().firstValue("retry-after").orElse(null)
+    lastRequestId = response.headers().firstValue(REQUEST_ID_HEADER).orElse(null)
     val body = response.body()
     activeBody = body
     try {
@@ -1038,6 +1069,7 @@ class LlmClient(
     private const val TEXT_CALL_ID = "text-call-"
 
     private const val REASONING = "reasoning"
+    private const val REQUEST_ID_HEADER = "x-request-id"
     private const val EFFORT = "effort"
 
     /** Anthropic requires max_tokens; used when the model entry does not set maxOutputTokens. */

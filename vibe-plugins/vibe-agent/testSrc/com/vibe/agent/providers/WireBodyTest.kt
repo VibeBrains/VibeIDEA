@@ -132,6 +132,33 @@ class WireBodyTest {
   }
 
   @Test
+  fun `a ChatGPT plan's request is shaped to its route, and a stream without completion is no answer`() {
+    val settings = object : LlmSettings {
+      override val offline: Boolean = false
+      override val reasoningLevel: String = "off"
+    }
+    val entry = ProviderEntry(id = "chatgpt", baseURL = baseUrl, protocol = ModelQuirks.WIRE_OPENAI_RESPONSES,
+                              declaredAuth = AuthSpec(AuthSpec.CHATGPT))
+    val provider = ResolvedProvider(entry, ModelQuirks.WIRE_OPENAI_RESPONSES, baseUrl, apiKey = "plan-token", localAddress = false)
+    val tool = ToolSpec("read_file", "Read a file", kotlinx.serialization.json.JsonObject(emptyMap()))
+    val failure = runCatching {
+      LlmClient({ http }, null, settings).chat(provider, ModelEntry(id = "gpt-6.1-sol", temperature = 0.2, maxOutputTokens = 4096),
+                                               messages, tools = listOf(tool)) { }
+    }.exceptionOrNull()
+    val request = seen.last()
+    assertEquals("Bearer plan-token", request.headers["Authorization"])
+    assertEquals(true, request.body["stream"]!!.jsonPrimitive.content.toBoolean())
+    assertEquals(false, request.body["store"]!!.jsonPrimitive.content.toBoolean())
+    assertEquals(null, request.body["temperature"], "поле, которое маршрут отвергает, ушло")
+    assertEquals(null, request.body["max_output_tokens"])
+    val tools = request.body["tools"]!!.jsonArray.single().jsonObject
+    assertEquals("namespace", tools["type"]!!.jsonPrimitive.content)
+    assertEquals("read_file", tools["tools"]!!.jsonArray.single().jsonObject["name"]!!.jsonPrimitive.content)
+    // The stub ends the stream without `response.completed`: on the plan's route that is not success
+    assertTrue(failure != null, "оборванный ответ на плане принят за успех")
+  }
+
+  @Test
   fun `gemini takes the system prompt as its instruction`() {
     val request = send("gemini")!!
     assertEquals("/v1/models/m:streamGenerateContent?alt=sse", request.path)

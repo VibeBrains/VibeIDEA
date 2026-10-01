@@ -97,6 +97,9 @@ object ResponsesWire {
    * Why the request failed, when the stream says so: an `error` event or a failed response. A stream that ends on one
    * without a word read as an empty answer that finished.
    */
+  /** The event that ends a successful answer; anything else ending the stream is not success */
+  fun completed(event: JsonObject): Boolean = type(event) == "response.completed"
+
   fun failure(event: JsonObject): String? = when (type(event)) {
     "error" -> described(event) ?: "error"
     "response.failed" -> event["response"].obj()?.get("error").obj()?.let(::described) ?: "response.failed"

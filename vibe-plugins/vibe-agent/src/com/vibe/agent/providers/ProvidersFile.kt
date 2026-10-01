@@ -120,16 +120,18 @@ data class ModelEntry(
 )
 
 /**
- * How the key reaches the endpoint: `bearer` (the default), `header` and `query` under [name], `none` — never sent
+ * How the key reaches the endpoint: `bearer` (the default), `header` and `query` under [name], `none` — never sent,
+ * `chatgpt` — no key at all: the access token of a ChatGPT sign-in as Bearer, of the [account] named or the only one
  * An unrecognised type is read as `bearer` and warned about at load ([ProvidersFile.parse])
  */
-data class AuthSpec(val type: String = BEARER, val name: String? = null) {
+data class AuthSpec(val type: String = BEARER, val name: String? = null, val account: String? = null) {
   companion object {
     const val BEARER = "bearer"
     const val HEADER = "header"
     const val QUERY = "query"
     const val NONE = "none"
-    val KNOWN = setOf(BEARER, HEADER, QUERY, NONE)
+    const val CHATGPT = "chatgpt"
+    val KNOWN = setOf(BEARER, HEADER, QUERY, NONE, CHATGPT)
   }
 }
 
@@ -337,6 +339,7 @@ object ProvidersFile {
               else AuthSpec(
                 type = a.jsonObject["type"]?.jsonPrimitive?.contentOrNull ?: AuthSpec.BEARER,
                 name = a.jsonObject["name"]?.jsonPrimitive?.contentOrNull,
+                account = a.jsonObject["account"]?.jsonPrimitive?.contentOrNull,
               )
     }
     // Read as bearer on the wire, as before; the warning is what changes: "None" or "basic" used to send the key

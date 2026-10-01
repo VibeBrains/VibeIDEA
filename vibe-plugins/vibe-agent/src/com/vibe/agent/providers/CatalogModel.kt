@@ -26,13 +26,20 @@ import kotlinx.serialization.json.intOrNull
 data class CatalogModel(val id: String, val vision: Boolean? = null, val floating: Boolean? = null, val maxOutput: Int? = null) {
   companion object {
     private const val IMAGE = "image"
+    private const val LISTED = "list"
 
-    /** openai-style `{data:[{id}]}` and gemini-style `{models:[{name}]}`, the two shapes catalogs come in. */
+    /**
+     * openai-style `{data:[{id}]}`, gemini-style `{models:[{name}]}` and the ChatGPT plan's `{models:[{slug}]}`
+     * The plan's catalog marks what a client may offer: only `visibility: "list"` is shown, the rest is not for a picker
+     */
     fun parse(root: JsonObject): List<CatalogModel> {
       val array = (root["data"] ?: root["models"]) as? JsonArray ?: return emptyList()
       return array.mapNotNull { element ->
         val model = element as? JsonObject ?: return@mapNotNull null
+        val visibility = (model["visibility"] as? JsonPrimitive)?.contentOrNull
+        if (visibility != null && visibility != LISTED) return@mapNotNull null
         val id = (model["id"] as? JsonPrimitive)?.contentOrNull
+          ?: (model["slug"] as? JsonPrimitive)?.contentOrNull
           ?: (model["name"] as? JsonPrimitive)?.contentOrNull?.removePrefix("models/")
           ?: return@mapNotNull null
         CatalogModel(id, visionOf(model), floatingOf(model, id), maxOutputOf(model))

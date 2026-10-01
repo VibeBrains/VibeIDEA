@@ -49,6 +49,8 @@ object ProviderAuth {
     if (declared == null) return if (native != null) header(native, key) else bearer(key)
     return when (declared.type) {
       AuthSpec.NONE -> NOTHING
+      // The sign-in's access token, the way the vendor takes it on any wire
+      AuthSpec.CHATGPT -> bearer(key)
       AuthSpec.QUERY -> Placement(emptyMap(), mapOf((declared.name ?: DEFAULT_KEY_PARAM) to key))
       AuthSpec.HEADER -> header(declared.name ?: native ?: DEFAULT_KEY_HEADER, key)
       // `bearer` and anything unrecognised (warned about at load)

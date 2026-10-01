@@ -238,6 +238,30 @@ class ComposerPanel(
     isOpaque = false
     border = JBUI.Borders.emptyBottom(PILL_GAP)
     add(statusDot, BorderLayout.CENTER)
+    add(planNotice, BorderLayout.EAST)
+  }
+
+  /**
+   * «The ChatGPT plan pays» beside the composer while the chosen model is spent from it, with the plan's usage page:
+   * the vendor asks for both while requests go on the plan
+   */
+  private val planNotice = JPanel(java.awt.FlowLayout(java.awt.FlowLayout.RIGHT, JBUI.scale(PILL_GAP), 0)).apply {
+    isOpaque = false
+    isVisible = false
+    add(javax.swing.JLabel(t("chatgpt.plan.using")).apply {
+      font = com.intellij.util.ui.JBFont.label().deriveFont(java.awt.Font.PLAIN, 11f)
+      foreground = USAGE_FG
+    })
+    add(PillButton(t("chatgpt.plan.manage"), outlined = true) {
+      com.intellij.ide.BrowserUtil.browse(com.vibe.agent.providers.chatgpt.ChatGptOAuth.USAGE_URL)
+    })
+  }
+
+  /** Shows the plan's notice while the chosen model is paid by a ChatGPT plan */
+  fun setPlanNotice(shown: Boolean) {
+    planNotice.isVisible = shown
+    revalidate()
+    repaint()
   }
 
   /**

@@ -691,6 +691,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     composer.targetAvailable = t != null
     when (t) {
       is ChatTarget.Agent -> {
+        composer.setPlanNotice(false)
         VibeChatSettings.rememberChoice(project, "acp:${t.config.name}", null)
         val c = client?.takeIf { clientConfig == t.config && it.isAlive }
         modePicker.setModes(c?.modes); configPicker.setOptions(c?.configOptions)
@@ -700,12 +701,14 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
         VibeChatSettings.rememberChoice(project, "llm:${t.provider.id}", t.model.id)
         modePicker.setModes(null)
         configPicker.setOptions(null)
+        composer.setPlanNotice(t.provider.auth.type == com.vibe.agent.providers.AuthSpec.CHATGPT)
         composer.setImagesAllowed(t.model.vision != false, com.vibe.agent.i18n.VibeI18n.t("chat.model.noVision", "model" to t.model.name))
       }
       null -> {
         modePicker.setModes(null)
         configPicker.setOptions(null)
         composer.setImagesAllowed(true, null)
+        composer.setPlanNotice(false)
       }
     }
     // The choice follows the thread (restored when its tab is activated).
@@ -3866,9 +3869,11 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
         return
       }
       if (resolved.missingKey) {
-        systemLine(com.vibe.agent.i18n.VibeI18n.t(
-          "chat.provider.noKey", "id" to t.provider.id,
-          "sources" to com.vibe.agent.providers.ApiKeyResolver.sourceNames(t.provider)))
+        // A plan has no key to look for: what is missing is the sign-in, and the line says where to make it
+        systemLine(if (t.provider.auth.type == com.vibe.agent.providers.AuthSpec.CHATGPT) t("chatgpt.chat.signIn", "id" to t.provider.id)
+                   else com.vibe.agent.i18n.VibeI18n.t(
+                     "chat.provider.noKey", "id" to t.provider.id,
+                     "sources" to com.vibe.agent.providers.ApiKeyResolver.sourceNames(t.provider)))
         return
       }
       // A privacy label, so the model decides and not the address: a proxy on localhost may lead to the cloud

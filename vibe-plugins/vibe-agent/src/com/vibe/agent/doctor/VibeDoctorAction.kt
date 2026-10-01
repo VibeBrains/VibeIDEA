@@ -123,6 +123,29 @@ class VibeDoctorAction : AnAction({ t("doctor.action") }) {
       if (conflicts.isEmpty()) t("doctor.detail.extraBodyNone", "count" to withExtra.size) else conflicts.joinToString("; "),
     ))
 
+    // A plan paid by a ChatGPT sign-in has no key to count: whether the sign-in stands, and may spend the plan, is said
+    // here; the tokens and the sign-in URL never are
+    val planProviders = providers.filter { it.auth.type == com.vibe.agent.providers.AuthSpec.CHATGPT }
+    if (planProviders.isNotEmpty()) {
+      val accounts = planProviders.map { com.vibe.agent.providers.chatgpt.ChatGptAccounts.find(it.auth.account) }
+      val dropped = planProviders.flatMap { p -> p.models.flatMap { m -> m.extraBody?.keys.orEmpty() } }
+        .filter { it in com.vibe.agent.providers.chatgpt.ChatGptPlanBody.REFUSED }.distinct().sorted()
+      val ready = accounts.all { it != null && !it.signedOut && it.mayUsePlan }
+      val state = accounts.joinToString("; ") { a ->
+        when {
+          a == null -> t("doctor.chatgpt.none")
+          a.signedOut -> t("doctor.chatgpt.signedOut", "account" to a.label)
+          !a.mayUsePlan -> t("doctor.chatgpt.noPlan", "account" to a.label)
+          else -> t("doctor.chatgpt.ready", "account" to a.label)
+        }
+      }
+      lines.add(VibeDiagnosis.Line(
+        t("doctor.line.chatgpt"),
+        if (ready && dropped.isEmpty()) VibeDiagnosis.State.OK else VibeDiagnosis.State.WARN,
+        state + (if (dropped.isEmpty()) "" else "; " + t("doctor.chatgpt.dropped", "fields" to dropped.joinToString())),
+      ))
+    }
+
     // A ceiling one cannot see the distance to is a ceiling one only meets by hitting it.
     val spendLimits = com.vibe.agent.settings.VibeChatSettings.spendLimits()
     if (spendLimits.any) {

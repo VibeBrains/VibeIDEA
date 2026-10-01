@@ -204,7 +204,12 @@ object ProvidersService {
       return null
     }
     val protocol = protocolFor(entry.protocol)
-    val key = if (quiet) ApiKeyResolver.resolveQuietly(entry, projectBase) else ApiKeyResolver.resolve(entry, projectBase)
+    val key = when {
+      // No key behind a ChatGPT sign-in: the account's access token, refreshed when it ran out
+      entry.auth.type == AuthSpec.CHATGPT -> com.vibe.agent.providers.chatgpt.ChatGptSession.accessToken(entry.auth.account, quiet)
+      quiet -> ApiKeyResolver.resolveQuietly(entry, projectBase)
+      else -> ApiKeyResolver.resolve(entry, projectBase)
+    }
     return ResolvedProvider(
       entry = entry,
       protocol = protocol,
