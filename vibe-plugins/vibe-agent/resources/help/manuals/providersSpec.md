@@ -52,7 +52,7 @@
       "name": "Ollama (локально)",
       "protocol": "openai",              // openai (дефолт) | openai-responses | anthropic | gemini
       "baseURL": "http://localhost:11434/v1",
-      "auth": "bearer",                  // "bearer" | "none" | {"type":"header","name":"x-api-key"} | {"type":"query","name":"key"}
+      "auth": "bearer",                  // "bearer" | "none" | "chatgpt" | {"type":"header","name":"x-api-key"} | {"type":"query","name":"key"}
       "apiKeyEnv": "OLLAMA_API_KEY",     // имя переменной: ищется в <проект>/.vibe/.env → ~/.vibe/.env → окружении ОС
       "apiKeyRef": "ollama",             // или ключ из защищённого хранилища ОС (PasswordSafe), сильнее apiKeyEnv
       "headers": {},                     // статические заголовки
@@ -256,6 +256,7 @@ LiteLLM на localhost перед облачной моделью объявля
 | `{"type":"header","name":"X"}` | заголовок `X`; без `name` — родной заголовок формата (`x-api-key` у openai) |
 | `{"type":"query","name":"k"}` | параметр `k` в адресе; без `name` — `key` |
 | `"none"` | никуда |
+| `"chatgpt"`, `{"type":"chatgpt","account":"метка"}` | ключа нет: `Authorization: Bearer <токен доступа>` входа в ChatGPT на любом формате |
 
 Запрос каталога моделей идёт на `<baseURL>/models` (или ровно на адрес `models.fetch`, если он строка) с теми же `headers`, `query` и ключом.
 Формату anthropic добавляется `anthropic-version`, если его нет в `headers`: объявленный в файле уходит один, без второго.
@@ -274,6 +275,14 @@ Google на API-ключ в `Authorization: Bearer` отвечает ошибк�
 - Провайдер пригоден без ключа **на любом адресе**, не только на localhost: так описывается vLLM в локальной сети (`http://192.168.1.50:8000/v1`)
 - Сервер ответил на каталог 401/403 — в чате и на странице «Провайдеры» строка «сервер требует ключ, а в файле none», а не «ключ отклонён»
 - Рядом с `none` объявлены `apiKeyEnv` или `apiKeyRef` — предупреждение при загрузке: ключ всё равно не уйдёт
+
+Про `"chatgpt"` — провайдер, которого оплачивает план ChatGPT Plus или Pro (Sign in with ChatGPT):
+- Ключа нет вовсе: вход — в Settings → Tools → VibeIDEA → Провайдеры, кнопкой «Продолжить с ChatGPT»; в браузере человек входит в свой аккаунт и разрешает оплату планом
+- `account` — метка аккаунта из карточки провайдера (обычно почта); без неё берётся единственный аккаунт. Несколько аккаунтов — несколько записей с разными метками
+- Формат — только `"openai-responses"`, `baseURL` — `https://api.openai.com/v1`, каталог — `"models": {"fetch": true}` (план отдаёт модели аккаунта)
+- Запрос IDE приводит к правилам плана сама: поток, без хранения у вендора, без `temperature`, `top_p`, `max_output_tokens`, `previous_response_id` и других полей из списка вендора; поле `extraBody` из этого списка тоже снимается, а доктор называет его заранее
+- `apiKeyEnv`, `apiKeyRef`, `promptCacheKey` и `quota` такому провайдеру не пишут: ключа и точки квоты у плана нет
+- Образец — засеянный `providers/chatgpt.jsonc`
 
 localhost-провайдер без ключа пропускается и без `"none"`.
 Незнакомое значение (`"None"`, `"basic"`) читается как `bearer`, и при загрузке об этом предупреждение.
