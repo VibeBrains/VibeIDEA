@@ -26,7 +26,7 @@
     },
     "authType": {
       "type": "string",
-      "enum": ["bearer", "header", "query", "none"]
+      "enum": ["bearer", "header", "query", "none", "chatgpt"]
     },
     "stringMap": {
       "type": "object",
@@ -49,14 +49,15 @@
           "description": "С версией пути: https://api.anthropic.com/v1. По http — только адрес этой машины."
         },
         "auth": {
-          "description": "Куда уходит ключ: \"bearer\", \"none\" или объект {\"type\": \"header\"|\"query\", \"name\": …}.",
+          "description": "Куда уходит ключ: \"bearer\", \"none\", \"chatgpt\" (ключа нет — токен входа в ChatGPT, план Plus или Pro) или объект {\"type\": \"header\"|\"query\", \"name\": …} / {\"type\": \"chatgpt\", \"account\": …}.",
           "anyOf": [
             { "$ref": "#/definitions/authType" },
             {
               "type": "object",
               "properties": {
                 "type": { "$ref": "#/definitions/authType" },
-                "name": { "type": "string" }
+                "name": { "type": "string" },
+                "account": { "type": "string", "description": "Для chatgpt: метка аккаунта из карточки провайдера; нет поля — единственный аккаунт." }
               }
             }
           ]
