@@ -78,8 +78,11 @@ class AcpClient(
      * путём его спросили.
      */
     fun configuredServers(): List<Map<String, Any>> = emptyList()
-    /** Called on the reader thread; must return the permission outcome (closed dialog = refusal). */
-    fun onRequestPermission(params: JsonObject): JsonElement
+    /**
+     * Must return the permission outcome (closed dialog = refusal); runs off the reader thread
+     * The dialog closes when [request] is dismissed: the agent withdrew the question, or the person pressed Stop
+     */
+    fun onRequestPermission(params: JsonObject, request: PendingRequest): JsonElement
 
     /**
      * `elicitation/create`: агент просит ДАННЫЕ, а не разрешение (ACP, стабилизировано 22.07.2026).
@@ -87,12 +90,12 @@ class AcpClient(
      * Умолчание — вежливый отказ, а не исключение: клиент, который не умеет показать форму, обязан
      * сказать об этом протоколом, иначе агент ждёт ответа, которого не будет.
      */
-    fun onElicit(params: JsonObject): JsonElement = Elicitation.response(Elicitation.Outcome.DECLINE)
+    fun onElicit(params: JsonObject, request: PendingRequest): JsonElement = Elicitation.response(Elicitation.Outcome.DECLINE)
 
     /** `elicitation/complete`: URL-режим завершён на стороне агента. Нотификация — ответа не ждут. */
     fun onElicitComplete(params: JsonObject) {}
     fun onReadTextFile(params: JsonObject): JsonElement
-    fun onWriteTextFile(params: JsonObject): JsonElement
+    fun onWriteTextFile(params: JsonObject, request: PendingRequest): JsonElement
     // Standard ACP terminal/… (for agents that delegate execution). Default = not supported.
     fun onCreateTerminal(params: JsonObject): JsonElement = throw UnsupportedOperationException("terminal not supported")
     fun onTerminalOutput(params: JsonObject): JsonElement = throw UnsupportedOperationException("terminal not supported")
@@ -110,6 +113,12 @@ class AcpClient(
   private var writer: BufferedWriter? = null
   private val nextId = AtomicLong(1)
   private val pending = ConcurrentHashMap<Long, CompletableFuture<JsonElement>>()
+
+  /**
+   * Requests of the agent still being answered, by their id as JSON text — a number and a string are different ids
+   * The one who removes an entry answers it: the worker with its result, or the cancellation with `-32800`
+   */
+  private val answering = ConcurrentHashMap<String, PendingRequest>()
 
   /** The current session: the one prompts, modes and switches go to. One of [open], or null. */
   @Volatile var sessionId: String? = null
@@ -599,13 +608,16 @@ class AcpClient(
             handler.onProtocolLog(t("acp.log.notJson", "line" to line.take(200)))
             return@forEachLine
           }
-          val id = (msg["id"] as? JsonPrimitive)?.longOrNull
+          // An id is a number or a string (JSON-RPC): ours are numbers, the agent's may be either, and an answer
+          // carries the agent's id back exactly as it came
+          val rawId = (msg["id"] as? JsonPrimitive)?.takeIf { it != JsonNull }
           val method = (msg["method"] as? JsonPrimitive)?.contentOrNull
           val params = msg["params"] as? JsonObject
           when {
-            method != null && id != null -> respond(id, method, params ?: JsonObject(emptyMap()))
+            method != null && rawId != null -> respond(rawId, method, params ?: JsonObject(emptyMap()))
             method != null -> when {
               method == "session/update" -> if (params != null) onSessionUpdateNotification(params)
+              method == CANCEL_REQUEST -> (params?.get("requestId") as? JsonPrimitive)?.let { cancelByAgent(it) }
               method == Elicitation.COMPLETE_METHOD -> handler.onElicitComplete(params ?: JsonObject(emptyMap()))
               // The Claude adapter's extension notification: how the turn is billed. Only its label
               // and detail are taken — the account (e-mail, organisation) stays where it came from.
@@ -616,8 +628,8 @@ class AcpClient(
               }
               else -> handler.onProtocolLog(t("acp.log.notification", "method" to method))
             }
-            id != null -> {
-              val future = pending.remove(id) ?: return@forEachLine
+            rawId != null -> {
+              val future = rawId.longOrNull?.let { pending.remove(it) } ?: return@forEachLine
               val error = msg["error"]
               // The code is kept so a caller can tell «sign in first» from a failure; the text stays whole.
               if (error != null && error != JsonNull) {
@@ -660,16 +672,16 @@ class AcpClient(
     handler.onSessionUpdate(params)
   }
 
-  private fun respond(id: Long, method: String, params: JsonObject) {
+  private fun respond(id: JsonPrimitive, method: String, params: JsonObject) {
     // Methods that block on a modal dialog or a subprocess must run OFF the reader thread, or the
     // whole session/update stream (including live terminal output) stalls behind them.
     when (method) {
-      "terminal/wait_for_exit" -> return respondAsync(id, "vibe-acp-terminal-wait") { handler.onWaitForTerminalExit(params) }
-      "session/request_permission" -> return respondAsync(id, "vibe-acp-permission") { handler.onRequestPermission(params) }
+      "terminal/wait_for_exit" -> return respondAsync(id, params, "vibe-acp-terminal-wait") { handler.onWaitForTerminalExit(params) }
+      "session/request_permission" -> return respondAsync(id, params, "vibe-acp-permission") { handler.onRequestPermission(params, it) }
       // Форма блокирует на модальном диалоге ровно так же, как разрешение, — значит, вне потока чтения.
-      Elicitation.METHOD -> return respondAsync(id, "vibe-acp-elicit") { handler.onElicit(params) }
-      "terminal/create" -> return respondAsync(id, "vibe-acp-terminal-create") { handler.onCreateTerminal(params) }
-      "fs/write_text_file" -> return respondAsync(id, "vibe-acp-fs-write") { handler.onWriteTextFile(params) }
+      Elicitation.METHOD -> return respondAsync(id, params, "vibe-acp-elicit") { handler.onElicit(params, it) }
+      "terminal/create" -> return respondAsync(id, params, "vibe-acp-terminal-create") { handler.onCreateTerminal(params) }
+      "fs/write_text_file" -> return respondAsync(id, params, "vibe-acp-fs-write") { handler.onWriteTextFile(params, it) }
     }
     // Fast, non-blocking methods answer inline.
     val result: JsonElement = try {
@@ -691,15 +703,38 @@ class AcpClient(
     sendResult(id, result)
   }
 
-  /** Run a blocking handler call off the reader thread, then answer the request (result or error). */
-  private fun respondAsync(id: Long, threadName: String, producer: () -> JsonElement) {
+  /**
+   * Run a blocking handler call off the reader thread, then answer the request (result or error)
+   * The request stays withdrawable while it runs; once withdrawn, its own answer is not sent: the agent has `-32800`
+   */
+  private fun respondAsync(id: JsonPrimitive, params: JsonObject, threadName: String, producer: (PendingRequest) -> JsonElement) {
+    val key = id.toString()
+    val request = PendingRequest(params["sessionId"]?.stringOrNull())
+    answering[key] = request
     Thread({
-      try { sendResult(id, producer()) }
-      catch (e: Exception) { sendError(id, -32603, e.message ?: e.javaClass.simpleName) }
+      val answer = runCatching { producer(request) }
+      if (answering.remove(key, request)) {
+        answer.fold({ sendResult(id, it) }, { e -> sendError(id, -32603, e.message ?: e.javaClass.simpleName) })
+      }
     }, threadName).apply { isDaemon = true }.start()
   }
 
-  private fun sendResult(id: Long, result: JsonElement) {
+  /** `$/cancel_request`: the agent withdrew a request; its dialog closes and the answer is `-32800` (ACP v1 cancellation) */
+  private fun cancelByAgent(id: JsonPrimitive) {
+    val request = answering.remove(id.toString()) ?: return
+    request.cancelByAgent()
+    sendError(id, REQUEST_CANCELLED, "Request cancelled")
+  }
+
+  /**
+   * Stop: the open questions of [sessions] close as refused, and the agent gets its usual answer for each
+   * ACP asks a client that cancels a turn to answer the turn's pending permission requests with `cancelled`
+   */
+  fun dismissPending(sessions: Set<String>) {
+    answering.values.filter { it.sessionId in sessions }.forEach { it.dismiss() }
+  }
+
+  private fun sendResult(id: JsonPrimitive, result: JsonElement) {
     send(buildJsonObject {
       put("jsonrpc", "2.0")
       put("id", id)
@@ -707,7 +742,7 @@ class AcpClient(
     })
   }
 
-  private fun sendError(id: Long, code: Int, message: String) {
+  private fun sendError(id: JsonPrimitive, code: Int, message: String) {
     send(buildJsonObject {
       put("jsonrpc", "2.0")
       put("id", id)
@@ -737,6 +772,10 @@ class AcpClient(
     /** How long stopping waits for `session/close`; an agent that stays silent is stopped anyway. */
     private const val CLOSE_WAIT_MS = 1_000L
     private const val UPDATE_CONFIG_OPTIONS = "config_option_update"
+    /** The agent withdraws a request it sent (ACP v1 cancellation, stable since 29.06.2026) */
+    private const val CANCEL_REQUEST = "\$/cancel_request"
+    /** JSON-RPC error of a withdrawn request */
+    private const val REQUEST_CANCELLED = -32800
 
     private val EXTRA_PATH: String = listOf(
       System.getProperty("user.home") + "/.local/bin",

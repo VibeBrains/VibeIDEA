@@ -39,7 +39,7 @@ class AcpClientE2ETest {
   // --- harness ---
 
   private inner class TestHandler(
-    val permission: (JsonObject) -> JsonElement = { allow() },
+    val permission: (JsonObject, PendingRequest) -> JsonElement = { _, _ -> allow() },
     val readFile: (JsonObject) -> JsonElement = { buildJsonObject { put("content", "старое содержимое") } },
     val writeFile: (JsonObject) -> JsonElement = { JsonObject(emptyMap()) },
     val createTerminal: ((JsonObject) -> JsonElement)? = null,
@@ -48,9 +48,12 @@ class AcpClientE2ETest {
     val writes = ConcurrentLinkedQueue<JsonObject>()
     override fun onSessionUpdate(update: JsonObject) { updates += update }
     override fun onModeChanged(modeId: String) { modeChanges += modeId }
-    override fun onRequestPermission(params: JsonObject): JsonElement { permissionCalls += params; return permission(params) }
+    override fun onRequestPermission(params: JsonObject, request: PendingRequest): JsonElement {
+      permissionCalls += params
+      return permission(params, request)
+    }
     override fun onReadTextFile(params: JsonObject): JsonElement = readFile(params)
-    override fun onWriteTextFile(params: JsonObject): JsonElement { writes += params; return writeFile(params) }
+    override fun onWriteTextFile(params: JsonObject, request: PendingRequest): JsonElement { writes += params; return writeFile(params) }
     override fun onCreateTerminal(params: JsonObject): JsonElement =
       createTerminal?.invoke(params) ?: super.onCreateTerminal(params)
     override fun onProtocolLog(line: String) { protocolLog += line }
@@ -215,9 +218,40 @@ class AcpClientE2ETest {
   }
 
   @Test
+  fun `a request with a string id is answered under the same id`() {
+    val handler = TestHandler()
+    val c = start("stringId", handler)
+    c.initializeAndOpenSession().get(30, TimeUnit.SECONDS)
+    c.prompt("удали файл").get(30, TimeUnit.SECONDS)
+
+    await { texts().any { it.startsWith("ответ на строковый id:") } }
+    assertTrue(texts().first { it.startsWith("ответ на строковый id:") }.contains("allow"))
+  }
+
+  @Test
+  fun `a question the agent withdraws closes and is answered -32800 once`() {
+    val dismissed = java.util.concurrent.atomic.AtomicBoolean(false)
+    // The open dialog: it waits until the request is dismissed, then answers as a closed dialog does
+    val handler = TestHandler(permission = { _, request ->
+      val waitUntil = System.currentTimeMillis() + 10_000
+      while (!request.dismissed && System.currentTimeMillis() < waitUntil) Thread.sleep(20)
+      dismissed.set(request.dismissed && request.cancelledByAgent)
+      buildJsonObject { put("outcome", buildJsonObject { put("outcome", "cancelled") }) }
+    })
+    val c = start("withdraw", handler)
+    c.initializeAndOpenSession().get(30, TimeUnit.SECONDS)
+    c.prompt("удали файл").get(30, TimeUnit.SECONDS)
+
+    await { texts().any { it.startsWith("второй ответ:") } }
+    assertTrue(texts().first { it.startsWith("отозван:") }.contains("-32800"))
+    assertEquals("второй ответ: нет", texts().first { it.startsWith("второй ответ:") })
+    assertTrue(dismissed.get(), "диалог не узнал, что вопрос отозван")
+  }
+
+  @Test
   fun `a refusal is delivered as an answer, never as silence`() {
     // A closed dialog is a refusal: the agent must get a response, otherwise the turn hangs forever.
-    val handler = TestHandler(permission = {
+    val handler = TestHandler(permission = { _, _ ->
       buildJsonObject { put("outcome", buildJsonObject { put("outcome", "cancelled") }) }
     })
     val c = start("permission", handler)
@@ -230,7 +264,7 @@ class AcpClientE2ETest {
 
   @Test
   fun `a handler that throws answers with a JSON-RPC error instead of hanging`() {
-    val handler = TestHandler(permission = { throw IllegalStateException("диалог сломался") })
+    val handler = TestHandler(permission = { _, _ -> throw IllegalStateException("диалог сломался") })
     val c = start("permission", handler)
     c.initializeAndOpenSession().get(30, TimeUnit.SECONDS)
     c.prompt("удали файл").get(30, TimeUnit.SECONDS)

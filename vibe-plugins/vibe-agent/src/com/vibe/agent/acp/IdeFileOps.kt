@@ -96,7 +96,8 @@ internal class IdeFileOps(
    * Writes a file for the turn that asked — [role] and [scope] are that turn's, found by the session the request came
    * from: with steps running at once, the boundary in force «right now» is not one boundary.
    */
-  fun writeTextFile(params: JsonObject, role: String?, scope: com.vibe.agent.pipelines.RolePaths.Scope): JsonElement {
+  fun writeTextFile(params: JsonObject, role: String?, scope: com.vibe.agent.pipelines.RolePaths.Scope,
+                    request: PendingRequest?): JsonElement {
     val target = resolvePath(params.getValue("path").jsonPrimitive.content)
     val path = target.normalized
     // A reviewer told «только отчёт» obeys most of the time, and «most of the time» is the whole
@@ -137,7 +138,7 @@ internal class IdeFileOps(
     com.vibe.agent.edits.WholeFileRewrite.check(if (exists) oldText else null, content)?.let { v ->
       onNotice(t("write.wholeFileRewrite", "path" to path.fileName, "changed" to v.changedLines, "total" to v.totalLines))
     }
-    if (!WritePreview.confirm(project, path.toString(), oldText, content)) {
+    if (!WritePreview.confirm(project, path.toString(), oldText, content, request)) {
       throw IllegalStateException(t("write.refused", "path" to path))
     }
     // Правка ACP-агента попадает в тот же журнал, что и правка прямого чата: полоска над вводом

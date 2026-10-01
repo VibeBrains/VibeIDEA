@@ -89,7 +89,7 @@ class VibeInlineEditAction : AnAction({ t("inline.action") }) {
     val path = file?.path ?: t("inline.title")
     val before = document.text
     val after = before.substring(0, start) + newCode + before.substring(end)
-    if (!com.vibe.agent.acp.WritePreview.confirm(project, path, before, after)) return
+    if (!com.vibe.agent.acp.WritePreview.confirm(project, path, before, after, request = null)) return
     WriteCommandAction.runWriteCommandAction(project, t("inline.title"), null, Runnable {
       document.replaceString(start, end, newCode)
     })

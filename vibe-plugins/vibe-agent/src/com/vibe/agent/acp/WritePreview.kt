@@ -19,7 +19,9 @@ import javax.swing.JComponent
  * allow. Returns true only on an explicit «Применить».
  */
 object WritePreview {
-  fun confirm(project: Project, path: String, oldText: String, newText: String): Boolean {
+  /** [request] withdrawn while the diff is open closes it as a refusal */
+  fun confirm(project: Project, path: String, oldText: String, newText: String, request: PendingRequest?): Boolean {
+    if (request?.dismissed == true) return false
     var approved = false
     ApplicationManager.getApplication().invokeAndWait {
       val dialog = object : DialogWrapper(project, true) {
@@ -46,7 +48,8 @@ object WritePreview {
           }
         }
       }
-      approved = dialog.showAndGet()
+      request?.closes(dialog)
+      approved = dialog.showAndGet() && request?.dismissed != true
     }
     return approved
   }

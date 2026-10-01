@@ -32,7 +32,8 @@ import kotlin.system.exitProcess
 object FakeAcpAgent {
   private val json = Json { ignoreUnknownKeys = true }
   private val out = System.out.bufferedWriter()
-  private val agentRequests = ConcurrentHashMap<Long, LinkedBlockingQueue<JsonObject>>()
+  /** Requests to the client awaiting an answer, by their id as text: the fake asks with numbers and with strings */
+  private val agentRequests = ConcurrentHashMap<String, LinkedBlockingQueue<JsonObject>>()
   private var nextAgentId = 1000L
   private val cancelled = CountDownLatch(1)
 
@@ -56,12 +57,13 @@ object FakeAcpAgent {
       val line = reader.readLine() ?: break
       if (line.isBlank()) continue
       val msg = runCatching { json.parseToJsonElement(line).jsonObject }.getOrNull() ?: continue
-      val id = (msg["id"] as? JsonPrimitive)?.longOrNull
+      val rawId = msg["id"] as? JsonPrimitive
+      val id = rawId?.longOrNull
       val method = (msg["method"] as? JsonPrimitive)?.contentOrNull
       val params = msg["params"] as? JsonObject ?: JsonObject(emptyMap())
       when {
         // A response to something WE asked the client.
-        method == null && id != null -> agentRequests[id]?.offer(msg)
+        method == null && rawId != null -> agentRequests[rawId.content]?.offer(msg)
         method == "session/cancel" -> {
           cancelledSession = (params["sessionId"] as? JsonPrimitive)?.contentOrNull
           cancelledSession?.let { sid -> sessionCancels.computeIfAbsent(sid) { CountDownLatch(1) }.countDown() }
@@ -212,6 +214,31 @@ object FakeAcpAgent {
         notifyUpdate(chunk("terminal=" + (created["result"]?.toString() ?: "ошибка: " + created["error"].toString())))
         send(result(id, stop("end_turn")))
       }
+      "stringId" -> {
+        // JSON-RPC lets an id be a string; the answer must come back under the same string
+        val answer = ask("session/request_permission", permissionParams(), JsonPrimitive("perm-text-id"))
+        notifyUpdate(chunk("ответ на строковый id: " + (answer["result"]?.toString() ?: answer["error"].toString())))
+        send(result(id, stop("end_turn")))
+      }
+      "withdraw" -> {
+        // The agent asks, changes its mind and withdraws the question with `$/cancel_request`
+        val requestId = JsonPrimitive("perm-withdrawn")
+        val queue = LinkedBlockingQueue<JsonObject>()
+        agentRequests[requestId.content] = queue
+        send(buildJsonObject {
+          put("jsonrpc", "2.0"); put("id", requestId); put("method", "session/request_permission"); put("params", permissionParams())
+        })
+        Thread.sleep(300)
+        send(buildJsonObject {
+          put("jsonrpc", "2.0"); put("method", "\$/cancel_request"); put("params", buildJsonObject { put("requestId", requestId) })
+        })
+        val answer = queue.poll(15, TimeUnit.SECONDS)
+        // A late answer after the withdrawal would be a second response to one request
+        val late = queue.poll(700, TimeUnit.MILLISECONDS)
+        notifyUpdate(chunk("отозван: " + (answer?.get("error")?.toString() ?: answer?.get("result").toString())))
+        notifyUpdate(chunk("второй ответ: " + (late?.toString() ?: "нет")))
+        send(result(id, stop("end_turn")))
+      }
       "unknown" -> {
         val answer = ask("vibe/no-such-method", JsonObject(emptyMap()))
         notifyUpdate(chunk("ответ на неизвестный метод: " + (answer["error"]?.toString() ?: "НЕТ ОШИБКИ")))
@@ -274,11 +301,19 @@ object FakeAcpAgent {
     }
   }
 
+  private fun permissionParams(): JsonObject = buildJsonObject {
+    put("sessionId", SESSION_ID)
+    put("toolCall", buildJsonObject { put("title", "rm -rf /tmp/x"); put("kind", "execute") })
+    put("options", JsonArray(listOf(
+      buildJsonObject { put("optionId", "allow"); put("name", "Разрешить"); put("kind", "allow_once") },
+      buildJsonObject { put("optionId", "reject"); put("name", "Отклонить"); put("kind", "reject_once") },
+    )))
+  }
+
   /** Sends a request to the CLIENT and blocks until its response arrives. */
-  private fun ask(method: String, params: JsonObject): JsonObject {
-    val id = nextAgentId++
+  private fun ask(method: String, params: JsonObject, id: JsonPrimitive = JsonPrimitive(nextAgentId++)): JsonObject {
     val queue = LinkedBlockingQueue<JsonObject>()
-    agentRequests[id] = queue
+    agentRequests[id.content] = queue
     send(buildJsonObject {
       put("jsonrpc", "2.0"); put("id", id); put("method", method); put("params", params)
     })

@@ -3172,6 +3172,8 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
         }
       }
       else {
+        // A question still open would outlive the turn it asks for: it closes as refused, and the agent hears that
+        c.dismissPending(stepSessions.toSet() + c.sessionId!!)
         c.cancel()
         stepSessions.filter { it != c.sessionId }.forEach { c.cancel(it) }
       }
@@ -6586,30 +6588,32 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
    * Sampling is not answered: the direct chat does not lend its model to a server
    */
   private fun answerMcpInput(request: com.vibe.agent.mcp.McpInputRequired.Request): JsonElement? = when (request.method) {
+    // An MCP server's question has no ACP request behind it, and nothing withdraws it
     com.vibe.agent.mcp.McpInputRequired.ELICITATION -> com.vibe.agent.mcp.McpInputRequired.elicitationResult(
-      onElicit(com.vibe.agent.mcp.McpInputRequired.elicitationParams(request.params)).jsonObject)
+      onElicit(com.vibe.agent.mcp.McpInputRequired.elicitationParams(request.params), com.vibe.agent.acp.PendingRequest(null)).jsonObject)
     com.vibe.agent.mcp.McpInputRequired.ROOTS ->
       com.vibe.agent.mcp.McpInputRequired.rootsResult(listOfNotNull(project.basePath?.let { java.nio.file.Path.of(it) }))
     else -> null
   }
 
-  override fun onElicit(params: JsonObject): JsonElement {
+  override fun onElicit(params: JsonObject, request: com.vibe.agent.acp.PendingRequest): JsonElement {
     com.vibe.agent.sound.VibeSoundService.getInstance()
       .play(com.vibe.agent.sound.SoundPolicy.Event.AWAITING_PERMISSION, project)
-    val request = com.vibe.agent.acp.Elicitation.parse(params)
-    return when (request.mode) {
+    val form = com.vibe.agent.acp.Elicitation.parse(params)
+    return when (form.mode) {
       com.vibe.agent.acp.Elicitation.Mode.FORM -> {
         var values: Map<String, String> = emptyMap()
         var accepted = false
-        ApplicationManager.getApplication().invokeAndWait {
-          val dialog = com.vibe.agent.acp.ElicitationDialog(project, request)
-          accepted = dialog.showAndGet()
+        if (!request.dismissed) ApplicationManager.getApplication().invokeAndWait {
+          val dialog = com.vibe.agent.acp.ElicitationDialog(project, form)
+          request.closes(dialog)
+          accepted = dialog.showAndGet() && !request.dismissed
           if (accepted) values = dialog.values()
         }
         // В журнал — ИМЕНА полей и исход, никогда значения: в форму вводят и токены тоже.
         audit?.append(AuditEvent(System.currentTimeMillis(), AuditEvent.Action.ELICITATION, ok = accepted,
                                  actor = agentActor(),
-                                 meta = mapOf("mode" to "form", "fields" to request.fields.joinToString { it.name })))
+                                 meta = mapOf("mode" to "form", "fields" to form.fields.joinToString { it.name })))
         if (!accepted) {
           systemLine(t("elicit.declined"))
           com.vibe.agent.acp.Elicitation.response(com.vibe.agent.acp.Elicitation.Outcome.DECLINE)
@@ -6617,25 +6621,30 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
         else {
           systemLine(t("elicit.sent", "fields" to values.keys.joinToString()))
           com.vibe.agent.acp.Elicitation.response(
-            com.vibe.agent.acp.Elicitation.Outcome.ACCEPT, values, request.fields)
+            com.vibe.agent.acp.Elicitation.Outcome.ACCEPT, values, form.fields)
         }
       }
       com.vibe.agent.acp.Elicitation.Mode.URL -> {
-        val url = request.url
+        val url = form.url
         if (url.isNullOrBlank()) {
           systemLine(t("elicit.unsupported"))
           return com.vibe.agent.acp.Elicitation.response(com.vibe.agent.acp.Elicitation.Outcome.DECLINE)
         }
         var open = false
-        ApplicationManager.getApplication().invokeAndWait {
-          open = com.intellij.openapi.ui.Messages.showYesNoDialog(
+        if (!request.dismissed) ApplicationManager.getApplication().invokeAndWait {
+          // A dialog the agent can withdraw: `Messages` shows one nobody holds, and a withdrawn question would wait for nobody
+          val dialog = com.intellij.openapi.ui.messages.MessageDialog(
             project,
-            t("elicit.url.body", "message" to (request.message ?: ""), "url" to url),
+            t("elicit.url.body", "message" to (form.message ?: ""), "url" to url),
             t("elicit.url.title"),
-            t("elicit.url.open"),
-            t("elicit.url.decline"),
+            arrayOf(t("elicit.url.open"), t("elicit.url.decline")),
+            0,
             com.intellij.icons.AllIcons.General.QuestionDialog,
-          ) == com.intellij.openapi.ui.Messages.YES
+            false,
+          )
+          request.closes(dialog, DIALOG_DISMISSED)
+          dialog.show()
+          open = dialog.exitCode == 0 && !request.dismissed
         }
         // Уход во внешний браузер — действие наружу, и в журнале ему место наравне с правкой файла.
         audit?.append(AuditEvent(System.currentTimeMillis(), AuditEvent.Action.ELICITATION, ok = open,
@@ -6657,7 +6666,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     }
   }
 
-  override fun onRequestPermission(params: JsonObject): JsonElement {
+  override fun onRequestPermission(params: JsonObject, request: com.vibe.agent.acp.PendingRequest): JsonElement {
     // Steps of a wave ask at once, each in its own session: the question is the asking step's, with its signals.
     val turn = turns.of(params["sessionId"]?.jsonPrimitive?.contentOrNull)
     val turnSignals = turn.signals
@@ -6703,7 +6712,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     // Two steps may ask at once: the dialog names the one that asks, or «разрешить» answers the wrong one.
     val dialogText = turn.label?.let { t("chat.permission.fromStep", "step" to it, "text" to asked) } ?: asked
     val options = params["options"]?.jsonArray?.map { it.jsonObject } ?: emptyList()
-    val chosen = askOnEdt {
+    val chosen = if (request.dismissed) null else askOnEdt {
       val names = options.map { it["name"]?.jsonPrimitive?.contentOrNull ?: it.getValue("optionId").jsonPrimitive.content }
       // Понижение доверия на ходу, где сошлись все три признака: диалог перестаёт выглядеть
       // рутинным и перестаёт предлагать «да».
@@ -6713,9 +6722,13 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
       // значок «?» и первая кнопка «разрешить», отвечается не глядя, а именно этот вопрос —
       // единственное место, где утечка выглядит как обычная работа.
       val defaultOption = if (trifecta) indexOfRefusal(options) else 0
-      val choice = Messages.showDialog(project, dialogText, t("chat.permission.title"), names.toTypedArray(), defaultOption,
-        if (destructive != null || trifecta) Messages.getWarningIcon() else Messages.getQuestionIcon())
-      if (choice >= 0) options[choice].getValue("optionId").jsonPrimitive.content else null
+      // A dialog held by the request: the agent may withdraw the question, Stop closes it, and either way it is a refusal
+      val dialog = com.intellij.openapi.ui.messages.MessageDialog(project, dialogText, t("chat.permission.title"), names.toTypedArray(),
+        defaultOption, if (destructive != null || trifecta) Messages.getWarningIcon() else Messages.getQuestionIcon(), false)
+      request.closes(dialog, DIALOG_DISMISSED)
+      dialog.show()
+      val choice = dialog.exitCode
+      if (choice >= 0 && !request.dismissed) options[choice].getValue("optionId").jsonPrimitive.content else null
     }
     audit?.append(AuditEvent(System.currentTimeMillis(), AuditEvent.Action.PERMISSION, ok = chosen != null, actor = com.vibe.agent.audit.AuditActor.HUMAN,
       callId = permissionCallId, turnId = turnId, sessionId = turnThreadId ?: currentThreadId,
@@ -6741,7 +6754,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     return fileOps.readTextFile(params)
   }
 
-  override fun onWriteTextFile(params: JsonObject): JsonElement {
+  override fun onWriteTextFile(params: JsonObject, request: com.vibe.agent.acp.PendingRequest): JsonElement {
     // The boundary is the asking step's: with steps running at once, «the step in force» is not one step.
     val turn = turns.of(params["sessionId"]?.jsonPrimitive?.contentOrNull)
     // The hook, the changed-files list and the audit get the path as it will be written: with the
@@ -6757,7 +6770,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
       throw IllegalStateException(preHook.agentMessage ?: t("chat.write.rejectedByHook"))
     }
     path?.let { turn.changedPaths.add(it) }
-    val result = fileOps.writeTextFile(resolved, turn.role, turn.scope)
+    val result = fileOps.writeTextFile(resolved, turn.role, turn.scope, request)
     audit?.append(AuditEvent(System.currentTimeMillis(), AuditEvent.Action.FS_WRITE, ok = true, actor = agentActor(turn),
       turnId = turnId, sessionId = turnThreadId ?: currentThreadId, files = path?.let { listOf(it.take(ToolCallAudit.MAX_TARGET_LEN)) }))
     return result
@@ -6915,6 +6928,9 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
   }
 
   private companion object {
+    /** Exit code of a question closed because its request was withdrawn or the turn stopped: no option has it */
+    private const val DIALOG_DISMISSED = -1
+
     /**
      * Said to a model whose call came as text that did not parse; model-facing, so plain and in English
      * The markup it wrote stays in the history it sees, so it knows which call is meant
