@@ -34,6 +34,15 @@ object ExtraBodyConflicts {
      * around it is a 400; this client keeps no such block and retries on its own chain instead
      */
     SERVER_FALLBACK,
+
+    /** `thinking: {"type": "between_tools"}` with another field of `thinking` beside it: the type takes none */
+    BETWEEN_TOOLS_FIELD,
+
+    /** `between_tools` with effort `xhigh` or `max`: the vendor takes it at `low`, `medium` and `high` only */
+    BETWEEN_TOOLS_EFFORT,
+
+    /** `between_tools` on a model without the mode: a vendor that does not name the type refuses it */
+    BETWEEN_TOOLS_MODEL,
   }
 
   data class Conflict(val field: String, val reason: Reason)
@@ -51,6 +60,7 @@ object ExtraBodyConflicts {
       if (ModelQuirks.Quirk.ADAPTIVE_THINKING in quirks && thinkingType == ENABLED) result.add(Conflict("$THINKING.$TYPE", Reason.BUDGET))
       val noSwitch = ModelQuirks.Quirk.THINKING_ALWAYS_ON in quirks || ModelQuirks.Quirk.OFF_THINKING_BETWEEN_TOOLS in quirks
       if (noSwitch && thinkingType == DISABLED) result.add(Conflict("$THINKING.$TYPE", Reason.SWITCH))
+      if (thinkingType == BETWEEN_TOOLS) result.addAll(betweenTools(extraBody, quirks))
     }
     val effort = (extraBody[REASONING_EFFORT] as? JsonPrimitive)?.contentOrNull
     if (wire == ModelQuirks.WIRE_OPENAI && ModelQuirks.Quirk.THINKING_ALWAYS_ON in quirks && effort == NONE) {
@@ -68,6 +78,21 @@ object ExtraBodyConflicts {
     return result
   }
 
+  /**
+   * What `between_tools` refuses on Sonnet 5.5 (platform.claude.com/docs/en/models/sonnet-5-5/whats-new-sonnet-5-5):
+   * «`between_tools` takes no other field: `display`, `budget_tokens`, or `block_binding` sent with it returns a 400»,
+   * and at `xhigh` or `max` effort the request is a 400 as well
+   */
+  private fun betweenTools(extraBody: JsonObject, quirks: Set<ModelQuirks.Quirk>): List<Conflict> {
+    val result = ArrayList<Conflict>()
+    if (ModelQuirks.Quirk.OFF_THINKING_BETWEEN_TOOLS !in quirks) result.add(Conflict("$THINKING.$TYPE", Reason.BETWEEN_TOOLS_MODEL))
+    val thinking = extraBody[THINKING] as JsonObject
+    thinking.keys.filter { it != TYPE }.sorted().forEach { result.add(Conflict("$THINKING.$it", Reason.BETWEEN_TOOLS_FIELD)) }
+    val effort = ((extraBody[OUTPUT_CONFIG] as? JsonObject)?.get(EFFORT) as? JsonPrimitive)?.contentOrNull
+    if (effort in DEEP_EFFORTS) result.add(Conflict("$OUTPUT_CONFIG.$EFFORT", Reason.BETWEEN_TOOLS_EFFORT))
+    return result
+  }
+
   private const val TEMPERATURE = "temperature"
   private const val TOP_P = "top_p"
   private const val TOP_K = "top_k"
@@ -75,6 +100,9 @@ object ExtraBodyConflicts {
   private const val TYPE = "type"
   private const val ENABLED = "enabled"
   private const val DISABLED = "disabled"
+  private const val BETWEEN_TOOLS = "between_tools"
+  private const val OUTPUT_CONFIG = "output_config"
+  private val DEEP_EFFORTS = setOf("xhigh", "max")
   private const val REASONING_EFFORT = "reasoning_effort"
   private const val REASONING = "reasoning"
   private const val EFFORT = "effort"

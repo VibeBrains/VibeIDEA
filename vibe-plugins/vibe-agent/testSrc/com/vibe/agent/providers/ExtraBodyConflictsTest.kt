@@ -76,4 +76,25 @@ class ExtraBodyConflictsTest {
                  conflicts("claude-sonnet-4-5", "anthropic", """{"fallbacks": "default"}"""))
     assertTrue(conflicts("gpt-6-sol", "openai", """{"fallbacks": "default"}""").isEmpty())
   }
+
+  @Test
+  fun `between_tools takes no other thinking field and no deep effort`() {
+    assertEquals(
+      listOf(
+        "thinking.block_binding" to ExtraBodyConflicts.Reason.BETWEEN_TOOLS_FIELD,
+        "thinking.display" to ExtraBodyConflicts.Reason.BETWEEN_TOOLS_FIELD,
+        "output_config.effort" to ExtraBodyConflicts.Reason.BETWEEN_TOOLS_EFFORT,
+      ),
+      conflicts("claude-sonnet-5-5", "anthropic",
+                """{"thinking": {"type": "between_tools", "display": "summarized", "block_binding": {}}, "output_config": {"effort": "max"}}"""))
+    // The bare type at a level it takes is the model's own «off»
+    assertTrue(conflicts("claude-sonnet-5-5", "anthropic",
+                         """{"thinking": {"type": "between_tools"}, "output_config": {"effort": "high"}}""").isEmpty())
+  }
+
+  @Test
+  fun `between_tools on a model without the mode is named`() {
+    assertEquals(listOf("thinking.type" to ExtraBodyConflicts.Reason.BETWEEN_TOOLS_MODEL),
+                 conflicts("claude-opus-5-5", "anthropic", """{"thinking": {"type": "between_tools"}}"""))
+  }
 }

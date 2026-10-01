@@ -57,15 +57,15 @@ class ThinkingBlocksTest {
   @Test
   fun `an answer that kept its reasoning only as text goes back with one unsigned block, to models that require it`() {
     val m = ChatMessage("assistant", "Done.", reasoning = "checked the file")
-    val wire = LlmMessages.anthropic(m, thinking = ThinkingReplay.ALL.blocksFor(m, "key"))
+    val wire = LlmMessages.anthropic(m, thinking = ThinkingReplay.ALL.blocksFor(m, "key", "p/m"))
     val content = wire["content"]!!.jsonArray.map { it.jsonObject }
     assertEquals(listOf("thinking", "text"), content.map { it["type"]!!.jsonPrimitive.content })
     assertEquals("checked the file", content[0]["thinking"]!!.jsonPrimitive.content)
     assertNull(content[0]["signature"])
     // Claude takes back only what it signed, and a model that did not ask gets nothing
-    assertEquals(emptyList(), ThinkingReplay.SAME_PREFIX.blocksFor(m, "key"))
-    assertEquals(emptyList(), ThinkingReplay.NONE.blocksFor(m, "key"))
-    assertEquals(emptyList(), ThinkingReplay.ALL.blocksFor(ChatMessage("user", "q", reasoning = "x"), "key"))
+    assertEquals(emptyList(), ThinkingReplay.SAME_PREFIX.blocksFor(m, "key", "p/m"))
+    assertEquals(emptyList(), ThinkingReplay.NONE.blocksFor(m, "key", "p/m"))
+    assertEquals(emptyList(), ThinkingReplay.ALL.blocksFor(ChatMessage("user", "q", reasoning = "x"), "key", "p/m"))
   }
 
   @Test
@@ -106,15 +106,16 @@ class ThinkingBlocksTest {
   private val blocks = listOf(ThinkingBlock("why", "sig"))
 
   /** One turn of a tool loop: the question, the round with its blocks produced after [before], the results, the answer */
-  private fun turn(question: String, keyBefore: String?) = listOf(
+  private fun turn(question: String, keyBefore: String?, by: String? = null) = listOf(
     ChatMessage("user", question),
-    ChatMessage("assistant", "", toolCalls = listOf(call), thinking = blocks, thinkingKey = keyBefore),
+    ChatMessage("assistant", "", toolCalls = listOf(call), thinking = blocks, thinkingKey = keyBefore, thinkingBy = by),
     ChatMessage(ToolCalls.ROLE, "", toolResults = listOf(ToolResult("t1", "read", "ok"))),
     ChatMessage("assistant", "done"),
   )
 
-  private fun request(wire: List<ChatMessage>, system: String = "sys") =
-    LlmMessages.anthropicMessages(wire, system, "[tools]", ThinkingReplay.SAME_PREFIX, boundary = null, ttl = null)
+  private fun request(wire: List<ChatMessage>, system: String = "sys", replay: ThinkingReplay = ThinkingReplay.SAME_PREFIX,
+                      requester: String = CLAUDE) =
+    LlmMessages.anthropicMessages(wire, system, "[tools]", replay, requester, boundary = null, ttl = null)
 
   private fun hasBlocks(message: kotlinx.serialization.json.JsonObject) =
     (message["content"] as? kotlinx.serialization.json.JsonArray).orEmpty().any { it.jsonObject["type"]?.jsonPrimitive?.content == "thinking" }
@@ -144,5 +145,37 @@ class ThinkingBlocksTest {
     val expanded = ToolRounds.expand(listOf(ChatMessage("assistant", "textanswer", toolRounds = listOf(stored))))
     assertEquals(round.thinking, expanded.first().thinking)
     assertEquals("k1", expanded.first().thinkingKey)
+  }
+
+  @Test
+  fun `a thread that changed model sends a signature back only to the vendor that made it`() {
+    val first = request(listOf(ChatMessage("user", "q1")))
+    // MiniMax on Anthropic's wire signed the round; the thread then moved to Claude with the same system and tools
+    val fromMiniMax = turn("q1", first.answerKey, by = MINIMAX) + ChatMessage("user", "q2")
+    assertFalse(hasBlocks(request(fromMiniMax).messages[1]), "подпись MiniMax ушла к Claude")
+    // Another Claude model drops a block it cannot read without an error, and keeps one it can
+    assertTrue(hasBlocks(request(turn("q1", first.answerKey, by = "anthropic/claude-sonnet-5-5") + ChatMessage("user", "q2")).messages[1]))
+    // The other way: Claude's blocks reach a model that requires its reasoning back as text, without the signature
+    val fromClaude = turn("q1", first.answerKey, by = CLAUDE) + ChatMessage("user", "q2")
+    val content = request(fromClaude, replay = ThinkingReplay.ALL, requester = MINIMAX).messages[1]["content"]!!.jsonArray
+    val thinking = content.map { it.jsonObject }.single { it["type"]?.jsonPrimitive?.content == "thinking" }
+    assertEquals("why", thinking["thinking"]?.jsonPrimitive?.content)
+    assertFalse("signature" in thinking, "подпись Claude ушла чужому вендору")
+    // Its own blocks go back to their producer as they came
+    val own = request(turn("q1", first.answerKey, by = MINIMAX) + ChatMessage("user", "q2"), replay = ThinkingReplay.ALL, requester = MINIMAX)
+    assertTrue(own.messages[1]["content"]!!.jsonArray.any { it.jsonObject["signature"]?.jsonPrimitive?.content == "sig" })
+  }
+
+  @Test
+  fun `the producer survives the thread file`() {
+    val round = ToolRound("text", listOf(ToolCall("t1", "read", "{}")), listOf(ToolResult("t1", "read", "ok")),
+                          thinking = listOf(ThinkingBlock("why", "sig")), thinkingKey = "k1", thinkingBy = CLAUDE)
+    val stored = ToolRounds.fromJson(ToolRounds.toJson(listOf(round))).single()
+    assertEquals(CLAUDE, ToolRounds.expand(listOf(ChatMessage("assistant", "textanswer", toolRounds = listOf(stored)))).first().thinkingBy)
+  }
+
+  private companion object {
+    const val CLAUDE = "anthropic/claude-opus-5-5"
+    const val MINIMAX = "minimax-anthropic/MiniMax-M3"
   }
 }

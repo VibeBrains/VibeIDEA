@@ -65,6 +65,7 @@ object VibeDefaults {
     "providers/anthropic.jsonc" to "providers/anthropic.jsonc",
     "providers/arbr.jsonc" to "providers/arbr.jsonc",
     "providers/atria.jsonc" to "providers/atria.jsonc",
+    "providers/cloudflare-ai-gateway.jsonc" to "providers/cloudflare-ai-gateway.jsonc",
     "providers/deepseek.jsonc" to "providers/deepseek.jsonc",
     "providers/stepfun.jsonc" to "providers/stepfun.jsonc",
     "providers/xai.jsonc" to "providers/xai.jsonc",

@@ -42,6 +42,8 @@ data class ChatMessage(
   val thinking: List<ThinkingBlock> = emptyList(),
   /** The [ThinkingBlock.PrefixKey] [thinking] was produced after; null when unknown, and then the blocks never reach Claude */
   val thinkingKey: String? = null,
+  /** Who produced [thinking], `provider/model` ([ResponsesReplay.keyOf]); null in a thread older than the field */
+  val thinkingBy: String? = null,
   /** Assistant only: this answer's output items on the Responses wire, in place of its text and calls for the same model. */
   val responses: ResponsesReplay? = null,
   /**
@@ -108,11 +110,11 @@ internal object LlmMessages {
    * The messages of an Anthropic request, each carrying the thinking blocks [replay] admits after its own prefix
    * A block's admission changes the bytes of its message and so the prefix of every later one: the key is fed in order
    */
-  fun anthropicMessages(wire: List<ChatMessage>, system: String, tools: String, replay: ThinkingReplay,
+  fun anthropicMessages(wire: List<ChatMessage>, system: String, tools: String, replay: ThinkingReplay, requester: String,
                         boundary: Int?, ttl: String?): AnthropicMessages {
     val key = ThinkingBlock.PrefixKey(system, tools)
     val messages = wire.mapIndexed { index, message ->
-      val blocks = replay.blocksFor(message, key.current())
+      val blocks = replay.blocksFor(message, key.current(), requester)
       key.add(anthropic(message, thinking = blocks).toString())
       anthropic(message, cacheable = index == boundary, ttl = ttl, thinking = blocks)
     }
@@ -269,6 +271,7 @@ class LlmClient(
 
   @Volatile private var thinking = ThinkingAccumulator()
   @Volatile private var lastThinkingKey: String? = null
+  @Volatile private var lastThinkingBy: String? = null
 
   /** Cache diagnostics asked for on the request in flight ([CacheDiagnostics]) */
   @Volatile private var diagnosticsAsk: CacheDiagnostics.Ask? = null
@@ -306,6 +309,9 @@ class LlmClient(
 
   /** The [ThinkingBlock.PrefixKey] the last Anthropic answer was produced after; null after a request on another wire */
   fun lastThinkingKey(): String? = lastThinkingKey
+
+  /** Who produced [lastThinking], `provider/model`; null after a request on another wire */
+  fun lastThinkingBy(): String? = lastThinkingBy
 
   @Volatile private var responses = ResponsesAccumulator()
   @Volatile private var lastResponsesKey: String? = null
@@ -472,6 +478,7 @@ class LlmClient(
         lastStopReason = null
         thinking = ThinkingAccumulator()
         lastThinkingKey = null
+        lastThinkingBy = null
         responses = ResponsesAccumulator()
         lastResponsesKey = null
         // Reasoning that arrives as tags inside the answer is taken out ONCE for every wire: a model writing `<think>` can
@@ -763,9 +770,11 @@ class LlmClient(
       val wire = messages.filter { it.role != "system" || it.toolAdditions.isNotEmpty() }
       val boundary = PromptCache.cacheBoundary(wire)
       val tools = if (offeredTools.isNotEmpty()) ToolCalls.anthropicTools(offeredTools) else null
+      val requester = ResponsesReplay.keyOf(provider.entry.id, model.id)
       val messages = LlmMessages.anthropicMessages(wire, system, tools?.toString().orEmpty(),
-                                                   ThinkingReplay.of(quirkIdOf(model), overrides), boundary, model.cacheTtl)
+                                                   ThinkingReplay.of(quirkIdOf(model), overrides), requester, boundary, model.cacheTtl)
       lastThinkingKey = messages.answerKey
+      lastThinkingBy = requester
       put("messages", JsonArray(messages.messages))
       tools?.let { put("tools", it) }
       creditToken?.let { put(FallbackCredit.FIELD, it) }

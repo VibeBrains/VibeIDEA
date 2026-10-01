@@ -60,9 +60,9 @@ class InlineToolsTest {
   @Test
   fun `an adding message stays among the messages, and its prefix key covers it`() {
     val wire = listOf(ChatMessage("user", "q"), ChatMessage("system", "", toolAdditions = listOf(spec)))
-    val built = LlmMessages.anthropicMessages(wire, "sys", "[]", ThinkingReplay.NONE, boundary = null, ttl = null)
+    val built = LlmMessages.anthropicMessages(wire, "sys", "[]", ThinkingReplay.NONE, "p/m", boundary = null, ttl = null)
     assertEquals(listOf("user", "system"), built.messages.map { (it as JsonObject)["role"]!!.jsonPrimitive.content })
-    val without = LlmMessages.anthropicMessages(wire.take(1), "sys", "[]", ThinkingReplay.NONE, boundary = null, ttl = null)
+    val without = LlmMessages.anthropicMessages(wire.take(1), "sys", "[]", ThinkingReplay.NONE, "p/m", boundary = null, ttl = null)
     assertTrue(built.answerKey != without.answerKey)
   }
 }

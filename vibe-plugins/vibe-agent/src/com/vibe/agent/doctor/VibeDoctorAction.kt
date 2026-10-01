@@ -112,6 +112,9 @@ class VibeDoctorAction : AnAction({ t("doctor.action") }) {
                                com.vibe.agent.providers.ExtraBodyConflicts.Reason.SWITCH -> t("doctor.extraBody.switch")
                                com.vibe.agent.providers.ExtraBodyConflicts.Reason.FORCED_TOOL -> t("doctor.extraBody.forcedTool")
                                com.vibe.agent.providers.ExtraBodyConflicts.Reason.SERVER_FALLBACK -> t("doctor.extraBody.serverFallback")
+                               com.vibe.agent.providers.ExtraBodyConflicts.Reason.BETWEEN_TOOLS_FIELD -> t("doctor.extraBody.betweenToolsField")
+                               com.vibe.agent.providers.ExtraBodyConflicts.Reason.BETWEEN_TOOLS_EFFORT -> t("doctor.extraBody.betweenToolsEffort")
+                               com.vibe.agent.providers.ExtraBodyConflicts.Reason.BETWEEN_TOOLS_MODEL -> t("doctor.extraBody.betweenToolsModel")
                              }) }
     }
     lines.add(VibeDiagnosis.Line(

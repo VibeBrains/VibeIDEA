@@ -3923,12 +3923,13 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
         // request, and Claude keeps its reasoning through the loop (ThinkingReplay decides which).
         val thinking = llmClient.lastThinking()
         val thinkingKey = llmClient.lastThinkingKey()
+        val thinkingBy = llmClient.lastThinkingBy()
         turns.chat.toolRounds.add(com.vibe.agent.providers.ToolRound(roundText.toString(), calls, results,
                                                                      roundReasoning.toString().ifEmpty { null }, thinking,
-                                                                     thinkingKey, replay, added))
+                                                                     thinkingKey, thinkingBy, replay, added))
         request = request +
           ChatMessage("assistant", roundText.toString(), reasoning = roundReasoning.toString().ifEmpty { null }, toolCalls = calls,
-                      thinking = thinking, thinkingKey = thinkingKey, responses = replay) +
+                      thinking = thinking, thinkingKey = thinkingKey, thinkingBy = thinkingBy, responses = replay) +
           ChatMessage(com.vibe.agent.providers.ToolCalls.ROLE, "", toolResults = results) +
           listOfNotNull(allTools.filter { it.name in added }.takeIf { inPlace && it.isNotEmpty() }
                           ?.let { ChatMessage("system", "", toolAdditions = it) })

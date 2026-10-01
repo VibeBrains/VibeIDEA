@@ -27,6 +27,9 @@ data class ThinkingBlock(
   /** The opaque payload of a `redacted_thinking` block; null for an ordinary one. */
   val redactedData: String? = null,
 ) {
+  /** The reasoning alone, for a vendor that cannot read this block's signature; null for a redacted or empty block */
+  fun unsigned(): ThinkingBlock? = if (redactedData != null || thinking.isNullOrEmpty()) null else ThinkingBlock(thinking = thinking)
+
   /** The block in the shape the wire takes it back. */
   fun toWire(): JsonObject = buildJsonObject {
     if (redactedData != null) {
@@ -93,6 +96,11 @@ data class ThinkingBlock(
  * that stops matching where a block used to be is a cache miss on everything after it
  * A block replayed after a changed prefix is a 400 on newer accounts, so a block without a matching key stays out
  * Any other vendor on this wire gets none: a block it did not ask for is a guess about its parser
+ *
+ * A signature is the producing vendor's, and only it can read one: Anthropic answers an undecryptable signature
+ * with a 400 on every request. A thread may change model mid-way, by hand or down the fallback chain, so a block goes
+ * back signed only to the vendor that signed it: Claude gets only Claude's blocks, and a model that requires its
+ * reasoning back gets another producer's blocks as plain text, which keeps the reasoning and drops what it cannot read
  */
 enum class ThinkingReplay {
   ALL, SAME_PREFIX, NONE;
@@ -104,16 +112,27 @@ enum class ThinkingReplay {
   }
 
   /**
-   * The blocks [m] carries back in a request whose prefix key is [requestKey]
+   * The blocks [m] carries back in a request whose prefix key is [requestKey], sent by [requester] (`provider/model`)
    *
    * A model that requires its reasoning back gets it from every answer, and an answer without tool calls kept only
    * the text of its reasoning: it goes back as one unsigned block, as vendors without signatures send it
    * Claude never gets such a block — its vendor takes back only what it signed
    */
-  fun blocksFor(m: ChatMessage, requestKey: String): List<ThinkingBlock> = when {
-    m.thinking.isNotEmpty() -> if (admits(m.thinkingKey, requestKey)) m.thinking else emptyList()
+  fun blocksFor(m: ChatMessage, requestKey: String, requester: String): List<ThinkingBlock> = when {
+    m.thinking.isNotEmpty() -> if (admits(m.thinkingKey, requestKey)) fromProducer(m.thinking, m.thinkingBy, requester) else emptyList()
     this == ALL && m.role == ASSISTANT && !m.reasoning.isNullOrBlank() -> listOf(ThinkingBlock(thinking = m.reasoning))
     else -> emptyList()
+  }
+
+  /**
+   * [blocks] as they may go back to [requester]: as they are to their producer, or when the producer is not recorded
+   * (a thread older than the field kept working as it did); otherwise Claude gets them only from another Claude —
+   * another Claude model drops a block it cannot read without an error — and the other models get the text alone
+   */
+  private fun fromProducer(blocks: List<ThinkingBlock>, producer: String?, requester: String): List<ThinkingBlock> = when {
+    producer == null || producer == requester -> blocks
+    this == SAME_PREFIX -> if (isClaude(producer.substringAfter('/'))) blocks else emptyList()
+    else -> blocks.mapNotNull { it.unsigned() }
   }
 
   companion object {
@@ -122,9 +141,11 @@ enum class ThinkingReplay {
 
     fun of(modelId: String, overrides: List<ModelQuirks.Rule> = emptyList()): ThinkingReplay = when {
       ModelQuirks.has(modelId, ModelQuirks.Quirk.ECHO_REASONING, overrides) -> ALL
-      modelId.trim().lowercase().substringAfterLast('/').startsWith(CLAUDE_PREFIX) -> SAME_PREFIX
+      isClaude(modelId) -> SAME_PREFIX
       else -> NONE
     }
+
+    private fun isClaude(modelId: String): Boolean = modelId.trim().lowercase().substringAfterLast('/').startsWith(CLAUDE_PREFIX)
   }
 }
 
