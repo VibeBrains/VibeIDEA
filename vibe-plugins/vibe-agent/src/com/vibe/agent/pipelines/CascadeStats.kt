@@ -19,7 +19,7 @@ package com.vibe.agent.pipelines
  */
 object CascadeStats {
   /** Одно решение гейта или один пропуск эскалации, вынутые из строки журнала. */
-  data class Event(val pipeline: String?, val accepted: Boolean?, val skipped: Boolean)
+  data class Event(val pipeline: String?, val accepted: Boolean?, val skipped: Boolean, val escalation: String? = null)
 
   data class Report(
     /** Сколько раз гейт вообще выносил вердикт. */
@@ -28,6 +28,8 @@ object CascadeStats {
     val accepted: Int,
     /** Шагов эскалации пропущено благодаря приёмке. */
     val skipped: Int,
+    /** Escalations of direct-chat turns to the strong model, by reason (`gates`, `textCall`, `thrash`) */
+    val direct: Map<String, Int> = emptyMap(),
   ) {
     /** Доля приёмок; null — гейт ни разу не срабатывал, и делить не на что. */
     val acceptedShare: Double? get() = if (gated > 0) accepted.toDouble() / gated else null
@@ -61,6 +63,7 @@ object CascadeStats {
   /** Метка вердикта гейта и метка пропуска эскалации — как они лежат в журнале. */
   const val GATE_EVENT = "pipelineStepEnd"
   const val SKIP_EVENT = "pipelineEscalationSkipped"
+  private const val ESCALATION_ACTION = com.vibe.agent.audit.AuditEvent.Action.ESCALATION
 
   /**
    * Вынимает события каскада из строк журнала.
@@ -71,6 +74,7 @@ object CascadeStats {
    */
   fun parse(lines: List<String>): List<Event> = lines.mapNotNull { line ->
     when {
+      field(line, "action") == ESCALATION_ACTION -> Event(null, accepted = null, skipped = false, escalation = field(line, "reason") ?: "")
       line.contains(SKIP_EVENT) -> Event(field(line, "pipeline"), accepted = null, skipped = true)
       line.contains(GATE_EVENT) ->
         // `ok` вердикта гейта: true — черновик принят, false — нет. Это ровно то поле, которое
@@ -110,6 +114,7 @@ object CascadeStats {
       gated = verdicts.size,
       accepted = verdicts.count { it.accepted == true },
       skipped = events.count { it.skipped },
+      direct = events.mapNotNull { it.escalation }.groupingBy { it }.eachCount(),
     )
   }
 }

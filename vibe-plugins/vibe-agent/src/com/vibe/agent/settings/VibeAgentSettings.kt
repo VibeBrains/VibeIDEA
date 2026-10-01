@@ -201,6 +201,7 @@ object VibeAgentSettings {
   private const val KEY_TELEGRAM_VOICE_CLEANUP = "vibe.agent.telegramVoiceCleanup"
   private const val KEY_METRIC_DIRECTION = "vibe.agent.metricDirection"
   private const val KEY_FAILOVER = "vibe.agent.failoverChain"
+  private const val KEY_ESCALATE_TO = "vibe.agent.escalateTo"
   private const val KEY_AUTOPILOT = "vibe.agent.autopilot.enabled"
   private const val KEY_AUTOPILOT_MAX_TURNS = "vibe.agent.autopilot.maxTurns"
   private const val KEY_AUTOPILOT_CHECKPOINT = "vibe.agent.autopilot.checkpointEvery"
@@ -551,6 +552,14 @@ object VibeAgentSettings {
   var failoverChain: String
     get() = props.getValue(KEY_FAILOVER, "")
     set(value) = props.setValue(KEY_FAILOVER, value.trim(), "")
+
+  /**
+   * `provider/model` a direct-chat turn moves to when its model fails by an objective sign; empty — no escalation
+   * Failover answers «the model is not there», this answers «the model did not manage»
+   */
+  var escalateTo: String
+    get() = props.getValue(KEY_ESCALATE_TO, "")
+    set(value) = props.setValue(KEY_ESCALATE_TO, value.trim(), "")
 
   var contextFilterMode: String
     get() = props.getValue(KEY_CONTEXT_FILTER, "auto")

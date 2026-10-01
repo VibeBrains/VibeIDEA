@@ -60,4 +60,13 @@ class CascadeStatsTest {
     val report = CascadeStats.Report(gated = 3, accepted = 0, skipped = 0)
     assertEquals(0.0, CascadeStats.savings(report, cheapCost = 0.1, strongCost = 1.0)!!, 1e-9)
   }
+
+  @Test
+  fun `escalations of the direct chat are counted by reason and are not gate verdicts`() {
+    fun escalation(reason: String) =
+      """{"ts":4,"action":"escalation","ok":true,"kind":"ide","meta":{"from":"cheap/m","to":"strong/m","reason":"$reason"}}"""
+    val report = CascadeStats.of(CascadeStats.parse(listOf(escalation("gates"), escalation("thrash"), escalation("gates"), gate(true))))
+    assertEquals(mapOf("gates" to 2, "thrash" to 1), report.direct)
+    assertEquals(1, report.gated)
+  }
 }

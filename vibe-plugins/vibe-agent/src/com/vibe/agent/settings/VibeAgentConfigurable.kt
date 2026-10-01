@@ -51,6 +51,7 @@ class VibeAgentConfigurable : Configurable, Configurable.NoScroll {
   private var telegramProjectField: com.intellij.ui.components.JBTextField? = null
   private var metricDirection: com.intellij.openapi.ui.ComboBox<String>? = null
   private var failoverField: com.intellij.ui.components.JBTextField? = null
+  private var escalateField: com.intellij.ui.components.JBTextField? = null
   private var verifyMode: ComboBox<String>? = null
   private var verifyCommand: JBTextField? = null
   private var verifyMaxAttempts: JBIntSpinner? = null
@@ -121,6 +122,7 @@ class VibeAgentConfigurable : Configurable, Configurable.NoScroll {
     val proxy = com.intellij.ui.components.JBTextField(VibeAgentSettings.llmProxyUrl, 32).also { proxyField = it }
     val proxyDirect = proxyDirectPanel()
     val failover = com.intellij.ui.components.JBTextField(VibeAgentSettings.failoverChain, 32).also { failoverField = it }
+    val escalate = com.intellij.ui.components.JBTextField(VibeAgentSettings.escalateTo, 32).also { escalateField = it }
     val filterMode = SettingsUi.combo(arrayOf("auto", "raw", "aggregate", "off")).also {
       it.selectedItem = VibeAgentSettings.contextFilterMode
       contextFilter = it
@@ -226,6 +228,8 @@ class VibeAgentConfigurable : Configurable, Configurable.NoScroll {
       .addComponent(hint(t("settings.agent.hint.proxyDirect")))
       .addLabeledComponent(t("settings.agent.failover"), failover)
       .addComponent(hint(t("settings.agent.hint.failover")))
+      .addLabeledComponent(t("settings.agent.escalateTo"), escalate)
+      .addComponent(hint(t("settings.agent.hint.escalateTo")))
       .addLabeledComponent(t("settings.agent.contextFilter"), filterMode)
       .addComponent(hint(t("settings.agent.hint.contextFilter")))
       .addLabeledComponent(t("settings.agent.council"), council)
@@ -347,6 +351,7 @@ class VibeAgentConfigurable : Configurable, Configurable.NoScroll {
     (telegramProjectField?.text?.trim() ?: VibeAgentSettings.telegramProject) != VibeAgentSettings.telegramProject ||
     (metricDirection?.selectedItem as? String ?: VibeAgentSettings.metricDirection) != VibeAgentSettings.metricDirection ||
     (failoverField?.text?.trim() ?: VibeAgentSettings.failoverChain) != VibeAgentSettings.failoverChain ||
+    (escalateField?.text?.trim() ?: VibeAgentSettings.escalateTo) != VibeAgentSettings.escalateTo ||
     (verifyMode?.item ?: VibeAgentSettings.verifyMode) != VibeAgentSettings.verifyMode ||
     (verifyCommand?.text?.trim() ?: VibeAgentSettings.verifyCommand) != VibeAgentSettings.verifyCommand ||
     verifyMaxAttempts?.number != VibeAgentSettings.verifyMaxAttempts ||
@@ -412,6 +417,7 @@ class VibeAgentConfigurable : Configurable, Configurable.NoScroll {
     telegramProjectField?.let { VibeAgentSettings.telegramProject = it.text }
     (metricDirection?.selectedItem as? String)?.let { VibeAgentSettings.metricDirection = it }
     failoverField?.let { VibeAgentSettings.failoverChain = it.text }
+    escalateField?.let { VibeAgentSettings.escalateTo = it.text }
     verifyMode?.let { VibeAgentSettings.verifyMode = it.item }
     verifyCommand?.let { VibeAgentSettings.verifyCommand = it.text }
     verifyMaxAttempts?.let { VibeAgentSettings.verifyMaxAttempts = it.number }
@@ -488,6 +494,7 @@ class VibeAgentConfigurable : Configurable, Configurable.NoScroll {
     telegramProjectField?.text = VibeAgentSettings.telegramProject
     metricDirection?.selectedItem = VibeAgentSettings.metricDirection
     failoverField?.text = VibeAgentSettings.failoverChain
+    escalateField?.text = VibeAgentSettings.escalateTo
     verifyMode?.item = VibeAgentSettings.verifyMode
     verifyCommand?.text = VibeAgentSettings.verifyCommand
     verifyMaxAttempts?.number = VibeAgentSettings.verifyMaxAttempts

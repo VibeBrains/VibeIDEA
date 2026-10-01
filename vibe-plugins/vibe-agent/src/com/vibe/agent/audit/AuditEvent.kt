@@ -95,6 +95,12 @@ data class AuditEvent(
     const val MODEL_SUBSTITUTED = "model_substituted"
 
     /**
+     * A direct-chat turn moved to the stronger model after its own failed by an objective sign
+     * `meta`: `from`, `to` and `reason` (`gates`, `textCall`, `thrash`); `/cascade` counts them
+     */
+    const val ESCALATION = "escalation"
+
+    /**
      * A key was found in what the person typed and replaced before the turn went anywhere.
      *
      * Recorded because the key is compromised the moment it is pasted: the answer to «when did this token last leave

@@ -296,6 +296,9 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
   @Volatile private var turnAttachments: List<com.vibe.agent.budget.FileSpend.Attachment> = emptyList()
   /** Outcomes of the recent tool calls, for the thrash and repeated-timeout breakers. */
   private val thrashHistory = ArrayList<com.vibe.agent.safety.ThrashDetector.Event>()
+
+  /** Set by [evaluateGates] when a gate used up its attempts and gave the turn back unfinished */
+  private val gatesGaveUp = java.util.concurrent.atomic.AtomicBoolean(false)
   /** The agent as the journal names it: the role it plays in [turn] and the target that runs it. */
   private fun agentActor(turn: TurnState = turns.chat): com.vibe.agent.audit.AuditActor =
     com.vibe.agent.audit.AuditActor.agent(turn.role, target?.auditName())
@@ -1323,6 +1326,10 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
       val lines = audit?.readRecent(CASCADE_JOURNAL_LINES).orEmpty()
       val report = com.vibe.agent.pipelines.CascadeStats.of(com.vibe.agent.pipelines.CascadeStats.parse(lines))
       val text = buildString {
+        if (report.direct.isNotEmpty()) {
+          appendLine(t("cascade.direct", "count" to report.direct.values.sum(), "gates" to (report.direct[ESCALATE_GATES] ?: 0),
+                       "textCall" to (report.direct[ESCALATE_TEXT_CALL] ?: 0), "thrash" to (report.direct[ESCALATE_THRASH] ?: 0)))
+        }
         if (report.gated == 0) {
           // Пустой отчёт объясняет, чего не хватает: гейта в hooks.json или самих прогонов.
           appendLine(t("cascade.none"))
@@ -2812,7 +2819,13 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
           return@executeOnPooledThread
         }
         when (t) {
-          is ChatTarget.Model -> sendToLlm(t, startedAt)
+          is ChatTarget.Model -> {
+            // A fresh turn: the fallback chain starts over, and what the model's tools write is undoable to here;
+            // without tools it writes nothing, and a snapshot of a big tree per question is seconds for no use
+            failoverTried.clear()
+            if (VibeAgentSettings.directToolsEnabled) turnCheckpoint(message.text)
+            sendToLlm(t, startedAt)
+          }
           is ChatTarget.Agent -> sendToAcp(t, message.text, loaded, message.images, startedAt, skills)
         }
       }
@@ -3083,6 +3096,24 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
       else -> com.vibe.agent.safety.ThrashDetector.Outcome.ERROR
     }
     val fingerprint = com.vibe.agent.safety.LoopDetector.fingerprint(call.toolName ?: call.kind, call.rawInput?.toString())
+    if (thrashed(fingerprint, outcome)) cancelTurn()
+  }
+
+  /**
+   * The same watch over a direct-chat tool: a failed result is a failure, one that names a timeout is a timeout
+   * True when the window tripped — the direct turn then stops calling and hands the work over ([escalate])
+   */
+  private fun thrashedDirect(call: com.vibe.agent.providers.ToolCall, result: com.vibe.agent.providers.ToolResult): Boolean {
+    val outcome = when {
+      !result.isError -> com.vibe.agent.safety.ThrashDetector.Outcome.OK
+      com.vibe.agent.safety.ThrashDetector.looksLikeTimeout(result.text.take(THRASH_TEXT_CHARS)) -> com.vibe.agent.safety.ThrashDetector.Outcome.TIMEOUT
+      else -> com.vibe.agent.safety.ThrashDetector.Outcome.ERROR
+    }
+    return thrashed(com.vibe.agent.safety.LoopDetector.fingerprint(call.name, call.arguments), outcome)
+  }
+
+  /** Records one outcome; true when the window tripped — said in the feed, the breaker set, the history cleared */
+  private fun thrashed(fingerprint: String, outcome: com.vibe.agent.safety.ThrashDetector.Outcome): Boolean {
     synchronized(thrashHistory) {
       thrashHistory.add(com.vibe.agent.safety.ThrashDetector.Event(fingerprint, outcome))
       val trimmed = com.vibe.agent.safety.ThrashDetector.trim(thrashHistory.toList())
@@ -3090,7 +3121,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
       thrashHistory.addAll(trimmed)
     }
     val finding = com.vibe.agent.safety.ThrashDetector.check(thrashHistory.toList())
-    if (finding.verdict == com.vibe.agent.safety.ThrashDetector.Verdict.OK) return
+    if (finding.verdict == com.vibe.agent.safety.ThrashDetector.Verdict.OK) return false
     val reason = when (finding.verdict) {
       com.vibe.agent.safety.ThrashDetector.Verdict.REPEATED_TIMEOUT ->
         t("thrash.timeout", "count" to finding.count, "call" to finding.detail.take(120))
@@ -3099,7 +3130,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     turnNote("⛔ " + reason)
     breakers.trip(com.vibe.agent.safety.ThrashDetector::class.java.simpleName.lowercase(), reason, System.currentTimeMillis())
     synchronized(thrashHistory) { thrashHistory.clear() }
-    cancelTurn()
+    return true
   }
 
   private fun noteLoop(call: com.vibe.agent.acp.ToolCall, turn: TurnState) {
@@ -3343,16 +3374,73 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     return t("plan.carryPrompt", "plan" to steps) + "\n\n" + prompt
   }
 
-  private fun sendToAcp(
-    t: ChatTarget.Agent, text: String, loaded: List<ContextSerializer.Loaded>,
-    images: List<ImageAttachment>, startedAt: Long,
-    skills: List<ContextSerializer.LoadedSkill> = emptyList(),
-  ) {
+  /**
+   * A direct-chat tool that writes files or runs a command, once allowed, makes the turn one the gates look at:
+   * a command may change files no journal sees
+   */
+  private fun noteDirectMutation(risk: com.vibe.agent.mcp.McpProtocol.Risk) {
+    if (risk != com.vibe.agent.mcp.McpProtocol.Risk.READ) turns.chat.hadMutatingTool = true
+  }
+
+  /**
+   * Hands the direct-chat turn to the strong model named in the settings when this one failed by an objective sign:
+   * the gates gave up, a call written as text failed twice, or the tool calls thrashed — never the model's own
+   * confidence, which nothing outside the model can read
+   * A continuation, not a restart: the thread keeps the answer and the rounds, and the strong model is told to check
+   * the working tree itself; the thread stays on it, since going back would drop its cache and its view of the work
+   */
+  private fun escalate(from: ChatTarget.Model, reason: String, startedAt: Long): Boolean {
+    val wanted = com.vibe.agent.resilience.FailoverPlan.parseChain(VibeAgentSettings.escalateTo).firstOrNull() ?: return false
+    if (wanted.providerId == from.provider.id && wanted.modelId == from.model.id) return false
+    val provider = providers.firstOrNull { it.id == wanted.providerId } ?: run {
+      systemLine(t("escalation.unknownProvider", "id" to wanted.providerId))
+      return false
+    }
+    val known = targets.filterIsInstance<ChatTarget.Model>().firstOrNull { it.provider.id == provider.id && it.model.id == wanted.modelId }
+    val target = known ?: ChatTarget.Model(provider, com.vibe.agent.providers.ModelEntry(id = wanted.modelId), static = true)
+    val why = when (reason) {
+      ESCALATE_GATES -> t("escalation.reason.gates")
+      ESCALATE_TEXT_CALL -> t("escalation.reason.textCall")
+      else -> t("escalation.reason.thrash")
+    }
+    val origin = com.vibe.agent.resilience.FailoverPlan.Target(from.provider.id, from.model.id)
+    // A model missing from the picker cannot be the thread's choice: it takes this turn, and the line says so
+    systemLine(if (known != null) t("escalation.switching", "from" to origin.toString(), "to" to wanted.toString(), "reason" to why)
+               else t("escalation.thisTurn", "from" to origin.toString(), "to" to wanted.toString(), "reason" to why))
+    audit?.append(AuditEvent(System.currentTimeMillis(), AuditEvent.Action.ESCALATION, ok = true, actor = com.vibe.agent.audit.AuditActor.IDE,
+      turnId = turnId, sessionId = turnThreadId ?: currentThreadId,
+      meta = mapOf("from" to origin.toString(), "to" to wanted.toString(), "reason" to reason)))
+    val threadId = turnThreadId
+    threadId?.let {
+      history.append(it, ChatMessageRecord(Role.USER, t("escalation.record", "to" to wanted.toString(), "reason" to why), at = nowIso(),
+                                           wireText = ESCALATION_PROMPT.replace("{reason}", ESCALATION_REASONS.getValue(reason))))
+    }
+    if (known != null && threadId != null) {
+      history.updateState(threadId, ThreadState(known.id))
+      if (threadId == currentThreadId) SwingUtilities.invokeLater {
+        modelPicker.setTargets(targets, known)
+        selectTarget(known, persistToThread = false)
+      }
+    }
+    sendToLlm(target, startedAt)
+    return true
+  }
+
+  /** The snapshot a turn can be rolled back to, taken before it starts; said in the feed and the audit */
+  private fun turnCheckpoint(text: String) {
     checkpoints?.create(t("chat.checkpointLabel", "text" to text.take(CHECKPOINT_LABEL_LEN)))?.let {
       checkpointLine(it)
       audit?.append(AuditEvent(System.currentTimeMillis(), AuditEvent.Action.CHECKPOINT, ok = true, actor = turnActor,
         meta = mapOf("hash" to it.hash.take(12))))
     }
+  }
+
+  private fun sendToAcp(
+    t: ChatTarget.Agent, text: String, loaded: List<ContextSerializer.Loaded>,
+    images: List<ImageAttachment>, startedAt: Long,
+    skills: List<ContextSerializer.LoadedSkill> = emptyList(),
+  ) {
+    turnCheckpoint(text)
     val design = DesignContextFile.load(project.basePath)
     val designed = if (design != null) DesignContextFile.promptBlock(design) + "\n" + text else text
     // The client first: whether the agent could resume its session is known only once it is open,
@@ -3526,6 +3614,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
         VerifyGateDecision.STOP -> {
           // Terminal: giving up hands control to the user — do not then bounce on turn checks.
           systemLine(t("chat.verify.stop", "max" to maxOf(1, VibeAgentSettings.verifyMaxAttempts)))
+          gatesGaveUp.set(true)
           com.vibe.agent.sound.VibeSoundService.getInstance()
             .play(com.vibe.agent.sound.SoundPolicy.Event.TURN_STOPPED, project)
           return null
@@ -3541,8 +3630,10 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
       TurnChecksDecision.BOUNCE -> return GateBounce(
         TurnChecks.renderCorrective(findings, checkAttempt + 1, maxOf(1, VibeAgentSettings.checksMaxAttempts)),
         verifyAttempt, checkAttempt + 1, designAttempt, slopAttempt)
-      TurnChecksDecision.STOP ->
+      TurnChecksDecision.STOP -> {
         systemLine(t("chat.checks.stop", "max" to maxOf(1, VibeAgentSettings.checksMaxAttempts)))
+        gatesGaveUp.set(true)
+      }
       TurnChecksDecision.NOTIFY_COMPLETE ->
         systemLine(t("chat.checks.notify", "items" to findings.joinToString("; ") { "${it.detail}: ${it.path}" }))
       TurnChecksDecision.COMPLETE -> {}
@@ -3568,7 +3659,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
             DesignHookPolicy.corrective(designFindings, designAttempt + 1, VibeAgentSettings.designMaxAttempts),
             verifyAttempt, checkAttempt, designAttempt + 1, slopAttempt)
           DesignHookPolicy.Decision.STOP ->
-            systemLine(t("chat.design.stop", "max" to VibeAgentSettings.designMaxAttempts))
+            systemLine(t("chat.design.stop", "max" to VibeAgentSettings.designMaxAttempts)).also { gatesGaveUp.set(true) }
           DesignHookPolicy.Decision.REPORT -> systemLine("🎨 " + DesignReview.summary(designFindings))
           DesignHookPolicy.Decision.SKIP -> {}
         }
@@ -3604,6 +3695,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
             verifyAttempt, checkAttempt, designAttempt, slopAttempt + 1)
           com.vibe.agent.slop.SlopGatePolicy.Decision.STOP ->
             systemLine(t("slop.gate.stop", "max" to maxAttempts, "files" to com.vibe.agent.slop.SlopGatePolicy.summary(reports)))
+              .also { gatesGaveUp.set(true) }
           com.vibe.agent.slop.SlopGatePolicy.Decision.REPORT ->
             systemLine(t("slop.gate.notify", "files" to com.vibe.agent.slop.SlopGatePolicy.summary(reports)))
           com.vibe.agent.slop.SlopGatePolicy.Decision.SKIP -> {}
@@ -3761,7 +3853,12 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     return listOf(ChatMessage("system", t("context.compacted.prefix", "summary" to summary))) + pinned + current.drop(cut)
   }
 
-  private fun sendToLlm(t: ChatTarget.Model, startedAt: Long) {
+  /**
+   * One direct-chat turn on [t]; [gates] — the gate that returned the turn and its attempts so far, or null on a fresh turn
+   * After the model answers, the same gates as an agent's turn run over what its tools wrote: a refusal comes back to
+   * the model as a message, and a model that failed by an objective sign hands the work to the strong one ([escalate])
+   */
+  private fun sendToLlm(t: ChatTarget.Model, startedAt: Long, gates: GateBounce? = null) {
     try {
       val resolved = ProvidersService.resolve(t.provider, project.basePath) { systemLine("[providers] $it") }
       if (resolved == null) {
@@ -3849,6 +3946,8 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
       var rounds = 0
       // A call written as text that did not parse is answered once with a request to use the tools; a second is the end
       var textCallAsked = false
+      // An objective sign that this model did not manage: the turn moves to the strong model when one is set
+      var escalation: String? = null
       turns.chat.responses = null
       // The tool loop: an answer that calls tools gets their results and is asked again, until the model
       // answers in words, the person stops, or the ceiling is reached. Without tools it is one pass, as before.
@@ -3904,6 +4003,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
         if (calls.isEmpty() && unparsed != null && !llmCancel.get()) {
           if (textCallAsked || rounds++ >= VibeAgentSettings.directToolMaxRounds) {
             turnNote(t("directTools.textCallFailed"))
+            if (textCallAsked) escalation = ESCALATE_TEXT_CALL
             break
           }
           textCallAsked = true
@@ -3923,7 +4023,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
           // the watchdog must not read a working turn as a hung one.
           noteActivity()
           if (call.name == com.vibe.agent.mcp.ToolSearch.NAME) searchTools(call, allTools, loaded)
-          else runDirectTool(call, t.model.id)
+          else runDirectTool(call, t.model.id).also { result -> if (thrashedDirect(call, result)) escalation = ESCALATE_THRASH }
         }
         // A search may have loaded tools: the next round offers them, in `tools` or in place
         val added = loaded.filter { it !in loadedBefore }
@@ -3942,6 +4042,15 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
           ChatMessage(com.vibe.agent.providers.ToolCalls.ROLE, "", toolResults = results) +
           listOfNotNull(allTools.filter { it.name in added }.takeIf { inPlace && it.isNotEmpty() }
                           ?.let { ChatMessage("system", "", toolAdditions = it) })
+        // The round is kept with the turn, then the work goes to the strong model, not round after futile round here
+        if (escalation != null) break
+      }
+      // The gates of an agent's turn, over what this model's tools wrote: a refusal comes back to it as a message
+      var bounce: GateBounce? = null
+      if (escalation == null && !llmCancel.get()) {
+        gatesGaveUp.set(false)
+        bounce = evaluateGates(gates?.verifyAttempt ?: 0, gates?.checkAttempt ?: 0, gates?.designAttempt ?: 0, gates?.slopAttempt ?: 0)
+        if (bounce == null && gatesGaveUp.get()) escalation = ESCALATE_GATES
       }
       // What the provider itself reported, and the price the owner of the key wrote down. Both may
       // be absent — then the accounting falls back to the old estimate, and says so by omission.
@@ -3949,7 +4058,16 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
       noteModelSubstitution(t.model.id, llmClient.lastAnsweredModel())
       // Цена берётся с оглядкой на срок: у модели с истёкшей акцией считать надо по costAfter.
       turns.chat.pricing = com.vibe.agent.providers.PriceValidity.effective(t.model, java.time.LocalDate.now())
+      if (bounce != null) {
+        // The answer stays in the thread, the gate's message after it as the person's turn: the next request carries both
+        finishAgentBubble((System.currentTimeMillis() - startedAt) / 1000.0, t("chat.checkBounceLabel"))
+        turnThreadId?.let { history.append(it, ChatMessageRecord(Role.USER, t("chat.gateBounceRecord"), at = nowIso(), wireText = bounce.message)) }
+        sendToLlm(t, startedAt, bounce)
+        return
+      }
       finishAgentBubble((System.currentTimeMillis() - startedAt) / 1000.0, t.model.id)
+      if (escalation != null && !llmCancel.get() && escalate(t, escalation, startedAt)) return
+      if (!llmCancel.get()) runTurnEndHooks()
     }
     catch (e: java.io.InterruptedIOException) {
       // The partial answer stays in the transcript — a stop is not amnesia.
@@ -4058,6 +4176,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     // Путь для полоски НЕ берётся из подписи вызова: она обрезает длинные пути многоточием, и
     // список изменённого хранил бы «…/main.ts» вместо файла. Единственный источник правды —
     // журнал правок: его пишет тот, кто реально изменил байты.
+    val writtenBefore = journal().all().associate { it.path to it.after }
     val result = directTools.execute(call) { asked, risk ->
       val verdict = com.vibe.agent.mcp.McpAccess.verdict(
         risk, com.intellij.ide.trustedProjects.TrustedProjects.isProjectTrusted(project), allowWrite = true, allowExecute = true)
@@ -4071,7 +4190,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
       val decision = if (danger != null) com.vibe.agent.mcp.PermissionMode.Decision.ASK else mode.decide(risk)
       when {
         refusal != null -> false.also { systemLine(refusal) }
-        decision == com.vibe.agent.mcp.PermissionMode.Decision.ALLOW -> true
+        decision == com.vibe.agent.mcp.PermissionMode.Decision.ALLOW -> true.also { noteDirectMutation(risk) }
         decision == com.vibe.agent.mcp.PermissionMode.Decision.DENY ->
           false.also { systemLine(t("permission.denied.plan")) }
         else -> askOnEdt {
@@ -4081,9 +4200,12 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
         }.also { approved ->
           audit?.append(AuditEvent(System.currentTimeMillis(), AuditEvent.Action.PERMISSION, ok = approved,
                                    actor = com.vibe.agent.audit.AuditActor.HUMAN, callId = asked.id, meta = mapOf("tool" to asked.name)))
+          if (approved) noteDirectMutation(risk)
         }
       }
     }
+    // The edit journal is written by whoever changed the bytes: what changed in it during the call is what the call wrote
+    journal().all().filter { writtenBefore[it.path] != it.after }.forEach { turns.chat.changedPaths.add(it.path) }
     // Полоска перечитывает журнал после каждого вызова: писать в неё отдельно значит завести
     // второй счётчик, который однажды разойдётся с первым.
     refreshChangedFiles()
@@ -6963,6 +7085,27 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
   }
 
   private companion object {
+    /** Objective signs a direct-chat model failed, as the audit and `/cascade` name them */
+    const val ESCALATE_GATES = "gates"
+    const val ESCALATE_TEXT_CALL = "textCall"
+    const val ESCALATE_THRASH = "thrash"
+
+    /** The reasons as the strong model reads them; model-facing, so in English */
+    val ESCALATION_REASONS = mapOf(
+      ESCALATE_GATES to "the project's checks still fail after the allowed attempts",
+      ESCALATE_TEXT_CALL to "its tool calls came as text that could not be read",
+      ESCALATE_THRASH to "its tool calls kept failing",
+    )
+
+    /** Said to the strong model taking the work over; model-facing, so plain and in English */
+    const val ESCALATION_PROMPT =
+      "The previous model could not finish this task: {reason}. Continue the task from where it stopped. " +
+      "Check the working tree yourself — read the changed files and run the checks — keep what is correct, " +
+      "and do not trust earlier claims that the work is done."
+
+    /** How much of a failed tool's text is searched for a timeout */
+    const val THRASH_TEXT_CHARS = 200
+
     /** Exit code of a question closed because its request was withdrawn or the turn stopped: no option has it */
     private const val DIALOG_DISMISSED = -1
 
