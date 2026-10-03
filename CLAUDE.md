@@ -22,6 +22,7 @@
 
 - Свой код — **только** в собственных модулях/плагинах с префиксом `vibe` (пакеты `com.vibe.*`). Максимум фич — через extension points, а не патчи платформы.
 - Платформенные файлы **запрещено** править ради стиля/линта/формата — merge-налог навсегда. Точечная правка платформы допустима только за реальный баг/проводку фичи/security — и **каждая** фиксируется записью в [FORK_CHANGES.md](FORK_CHANGES.md) (что, где, почему).
+- Лицензия: наш код — **AGPL-3.0** (решение №130): новый наш файл начинается шапкой `Copyright 2026 VibeBrains. Use of this source code is governed by the GNU AGPL-3.0 license.`, полный текст — [LICENSE-AGPL.txt](LICENSE-AGPL.txt). Апстрим остаётся под Apache 2.0, его файлы лицензий и уведомления не трогаем. Разбор — [knowledge/architecture/licenseSplit.md](docs/vibe/knowledge/architecture/licenseSplit.md).
 - Подробно: [docs/vibe/knowledge/architecture/upstreamBoundary.md](docs/vibe/knowledge/architecture/upstreamBoundary.md).
 
 ## Общие сиды `.vibe` — submodule VibeBrains

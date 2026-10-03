@@ -161,14 +161,22 @@ open class VibeIdeaProperties(communityHomeDir: Path) : IdeaCommunityProperties(
    * The file the upstream build ships is JetBrains' «Open-Source Build Terms»: it governs the
    * builds JetBrains distributes under the names IntelliJ IDEA and PyCharm, and it describes their
    * telemetry, their accounts and their obligations. Shipping it inside VibeIDEA would tell our
-   * users about a product they do not have. The SOURCES stay Apache 2.0 — that is what our file
-   * says, together with what this build is actually made of.
+   * users about a product they do not have. Our file says what this build is: our code under
+   * AGPL-3.0, the platform under its own Apache 2.0, and what third-party parts ride along.
+   *
+   * The full AGPL text travels with the binary as `license/AGPL-3.0.txt`: the summary names the
+   * license, and a named license whose text does not ship is an obligation without the document.
    */
   override suspend fun copyAdditionalFiles(targetDir: Path, context: BuildContext) {
     super.copyAdditionalFiles(targetDir, context)
     val ours = context.paths.communityHomeDir.resolve("vibe-plugins/legal/LICENSE.txt")
     check(Files.isRegularFile(ours)) { "VibeIDEA LICENSE.txt not found: $ours" }
     Files.copy(ours, targetDir.resolve("LICENSE.txt"), java.nio.file.StandardCopyOption.REPLACE_EXISTING)
+    val agpl = context.paths.communityHomeDir.resolve("LICENSE-AGPL.txt")
+    check(Files.isRegularFile(agpl)) { "AGPL-3.0 text not found: $agpl" }
+    val licenseDir = targetDir.resolve("license")
+    Files.createDirectories(licenseDir)
+    Files.copy(agpl, licenseDir.resolve("AGPL-3.0.txt"), java.nio.file.StandardCopyOption.REPLACE_EXISTING)
   }
 
   /** Files that are DATA rather than plugins: the language servers we ship next to our own plugin. */

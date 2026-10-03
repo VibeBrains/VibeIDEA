@@ -23,6 +23,8 @@
 - `CLAUDE.md`, `FORK_CHANGES.md` — дисциплина форка. **Причина:** свежий клон продолжает работу без внешнего состояния.
 - `docs/vibe/**` — пакет документации форка (свой неймспейс: у апстрима есть собственный `docs/`) (концепт, roadmap, решения, база знаний). **Причина:** та же.
 - `.gitmodules` (корень) — submodule `vibe-plugins/vibe-agent/resources/vibeDefaults` → репо VibeBrains (канонический образ `.vibe`, общий с VibeIDE; решение №25). **Причина:** один набор сидов на оба продукта; у апстрима `.gitmodules` нет — merge-конфликтов не даёт. После клона: `git submodule update --init`; URL — https://github.com/VibeBrains/VibeBrains.git.
+- `LICENSE-AGPL.txt` (корень) — полный текст GNU AGPL-3.0, под которой распространяется наш код (решение №130). **Причина:** апстримовские имена заняты — `LICENSE` в корне это каталог апстрима с текстами третьих лиц, `LICENSE.txt` — файл JetBrains, который сборка платформы копирует в дистрибутив (`IdeaCommunityProperties.kt:131`) и без которого падает. Текст сверен по sha256 с эталоном GNU; копия едет в дистрибутив как `license/AGPL-3.0.txt`.
+- `.github/CONTRIBUTING.md` — условия вклада форка: под AGPL-3.0 и с правом VibeBrains распространять вклад и под другой лицензией. **Причина:** корневой `CONTRIBUTING.md` — апстримовский (про IntelliJ Platform и YouTrack), а GitHub предпочитает файл в `.github/`: апстримный файл не тронут, а пришедший с pull request читает наши условия.
 
 ### platform/platform-impl/src/com/intellij/ui/AppUIUtil.kt
 **Причина:** латентный баг апстрима — `loadConsentsForEditing` получает от `ConsentOptions` иммутабельный список, когда у продукта нет бандленных согласий (вендор не JetBrains), и `removeTraceConsents`/`removeIf` падают с `UnsupportedOperationException`; ломает шаг `search_index` (traverseUI) при сборке нашего дистрибутива.
@@ -103,6 +105,7 @@
   - LSP4IJ поставляется через `getAdditionalPluginPaths()`, а НЕ копированием каталога: платформа грузит встроенные плагины только по `plugins/plugin-classpath.txt`, и скопированный мимо индекса плагин не загружается вовсе (разбор — [knowledge/build/bundledPluginIndex.md](docs/vibe/knowledge/build/bundledPluginIndex.md)).
   - `build/BUILD.bazel`: в зависимости модуля сборки добавлен `//platform/build-scripts/licenses` — `VibeIdeaProperties` объявляет лицензии поставляемых языковых серверов, а тип `LibraryLicense` без этой зависимости недоступен. Одна строка в списке deps, конфликтов при мерже не создаёт.
   - `README.md` заменён на наш: корневой README — лицо публичного репозитория, и апстримовский текст «IntelliJ Open Source Repository» на странице форка не отвечает на вопрос, куда человек попал. Оригинал сохранён рядом как `README.upstream.md` и на него стоит ссылка — инструкция по сборке платформы никуда не делась.
+  - `copyAdditionalFiles` кладёт в дистрибутив полный текст AGPL как `license/AGPL-3.0.txt` рядом с нашим кратким `LICENSE.txt`: лицензию отдают вместе с программой, а имя занято апстримовским файлом (решение №130).
 - [ ] Ревизия `bundledPluginModules` (вырезка ненужного — vendor AI, featuresTrainer и т.п.) — Фаза 1.
 - [ ] Бандл LSP4IJ + Phpactor + vtsls + DAP-адаптеры — Фаза 2.
 - [ ] Плагин агентской обвязки (ACP-клиент, `com.vibe.agent`) — Фаза 3.

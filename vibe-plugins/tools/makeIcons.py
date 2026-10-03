@@ -23,7 +23,7 @@ AGENT = "vibe-plugins/vibe-agent/resources/icons"
 HTTP = "vibe-plugins/vibe-http/resources/icons"
 DB = "vibe-plugins/vibe-db/resources/icons"
 SERVER = "vibe-plugins/vibe-server/resources/icons"
-HEADER = "<!-- Copyright 2026 VibeBrains. Use of this source code is governed by the Apache 2.0 license. -->"
+HEADER = "<!-- Copyright 2026 VibeBrains. Use of this source code is governed by the GNU AGPL-3.0 license. -->"
 
 # Каждый значок: имя → (каталог, тело 16×16, тело 20×20). {C} подставляется цветом.
 # Метафоры выбраны так, чтобы различаться в полосе шириной 20 px: искра, щит, линейка, пульс,

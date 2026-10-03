@@ -1,5 +1,5 @@
 <?php
-// Copyright 2026 VibeBrains. Use of this source code is governed by the Apache 2.0 license.
+// Copyright 2026 VibeBrains. Use of this source code is governed by the GNU AGPL-3.0 license.
 //
 // Starts the bundled Phpactor phar on Windows: `php phpactorLaunch.php language-server`.
 //
