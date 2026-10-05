@@ -196,6 +196,8 @@ Windows 11 (серверы и адаптеры стартуют из архив�
 Агент теперь показывает расход прямо в статусной строке. Расход автора на кофе показывать пока
 некуда, но кнопка ниже есть.
 
-<a href="https://raw.githubusercontent.com/VibeBrains/VibeIDEA/main/media/QR-Code.jpg" target="_blank">
-  <img src="https://raw.githubusercontent.com/VibeBrains/VibeIDEA/main/media/QR-Code.jpg" width="120" alt="QR-код для поддержки проекта">
-</a>
+Поддержать можно на [Boosty](https://boosty.to/borodatych/donate) — подписка или разовый донат, — либо переводом по СБП.
+
+| Boosty | Перевод |
+|:---:|:---:|
+| <a href="https://boosty.to/borodatych/donate" target="_blank"><img src="https://raw.githubusercontent.com/VibeBrains/VibeIDEA/main/media/QR-Boosty.png" width="120" alt="QR-код Boosty — поддержать проект"></a> | <a href="https://raw.githubusercontent.com/VibeBrains/VibeIDEA/main/media/QR-Code.jpg" target="_blank"><img src="https://raw.githubusercontent.com/VibeBrains/VibeIDEA/main/media/QR-Code.jpg" width="120" alt="QR-код для поддержки проекта"></a> |

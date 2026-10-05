@@ -142,6 +142,8 @@ PHP 8.1+ и Xdebug — для PHP и его отладки. Ради этого 
 Если VibeIDEA оказался полезным — буду рад благодарности.
 Этот выпуск не добавил функций — он выполнил обещание предыдущего.
 
-<a href="https://raw.githubusercontent.com/VibeBrains/VibeIDEA/main/media/QR-Code.jpg" target="_blank">
-  <img src="https://raw.githubusercontent.com/VibeBrains/VibeIDEA/main/media/QR-Code.jpg" width="120" alt="QR-код для поддержки проекта">
-</a>
+Поддержать можно на [Boosty](https://boosty.to/borodatych/donate) — подписка или разовый донат, — либо переводом по СБП.
+
+| Boosty | Перевод |
+|:---:|:---:|
+| <a href="https://boosty.to/borodatych/donate" target="_blank"><img src="https://raw.githubusercontent.com/VibeBrains/VibeIDEA/main/media/QR-Boosty.png" width="120" alt="QR-код Boosty — поддержать проект"></a> | <a href="https://raw.githubusercontent.com/VibeBrains/VibeIDEA/main/media/QR-Code.jpg" target="_blank"><img src="https://raw.githubusercontent.com/VibeBrains/VibeIDEA/main/media/QR-Code.jpg" width="120" alt="QR-код для поддержки проекта"></a> |

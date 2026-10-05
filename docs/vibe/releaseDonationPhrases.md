@@ -1,6 +1,6 @@
 # Фразы блока «Поддержать проект» в релизах
 
-База фраз для блока «Поддержать проект» в GitHub Releases. Механика перенята у VibeIDE
+База фраз и состав блока «Поддержать проект» в GitHub Releases. Механика перенята у VibeIDE
 (31.08.2026) — там же живёт родственный файл; фразы у продуктов **свои**, потому что подпись
 шутит про содержание конкретного релиза.
 
@@ -13,6 +13,27 @@
 продолжение фразы (правка владельца после v0.4.0). Хорошая подпись цепляется за
 то, что реально вышло в этом релизе, — тогда она читается как продолжение заметок, а не как
 попрошайничество в конце страницы.
+
+## Состав блока
+
+Блок собирается всегда одинаково, меняется в нём только подпись:
+
+```markdown
+### Поддержать проект
+
+Если VibeIDEA оказался полезным — буду рад благодарности.
+<!-- сюда вставляется одна активная фраза -->
+
+Поддержать можно на [Boosty](https://boosty.to/borodatych/donate) — подписка или разовый донат, — либо переводом по СБП.
+
+| Boosty | Перевод |
+|:---:|:---:|
+| <a href="https://boosty.to/borodatych/donate" target="_blank"><img src="https://raw.githubusercontent.com/VibeBrains/VibeIDEA/main/media/QR-Boosty.png" width="120" alt="QR-код Boosty — поддержать проект"></a> | <a href="https://raw.githubusercontent.com/VibeBrains/VibeIDEA/main/media/QR-Code.jpg" target="_blank"><img src="https://raw.githubusercontent.com/VibeBrains/VibeIDEA/main/media/QR-Code.jpg" width="120" alt="QR-код для поддержки проекта"></a> |
+```
+
+Ссылка на Boosty и **оба** QR обязательны: Boosty — подписка или разовый донат, второй QR — перевод
+по СБП. В теле релиза пути только абсолютные (`raw.githubusercontent.com`), относительные там не
+работают. Ссылку, оба QR и подпись проверяет `./vibe-plugins/tools/checkVibeReleaseNotes.sh`.
 
 ## Порядок перед каждым релизом
 

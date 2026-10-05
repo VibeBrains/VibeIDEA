@@ -18,6 +18,9 @@
 #   7. Текст проходит детектор нейрослопа — тот же, что в IDE (textSlopCli), с правками дома
 #      vibe-plugins/tools/slopHouseStyle.json. Заметки — первое, что человек читает о выпуске, и
 #      штамп в них виден раньше любой возможности.
+#   8. В блоке есть ссылка на Boosty и ОБА QR — Boosty и перевод по СБП — по абсолютным адресам.
+#      Второй QR жил в блоке одиннадцать выпусков, а Boosty появился 05.10.2026; ссылку и картинку
+#      проверяет гейт, а не память пишущего (состав блока — docs/vibe/releaseDonationPhrases.md).
 #
 # Использование: ./vibe-plugins/tools/checkVibeReleaseNotes.sh vX.Y.Z <файл-заметок>
 set -euo pipefail
@@ -48,6 +51,9 @@ for placeholder in ('__SHA256__', 'TODO', 'XXX'):
         problems.append(f'в заметках осталась заготовка {placeholder}')
 
 INTRO = 'Если VibeIDEA оказался полезным — буду рад благодарности.'
+BOOSTY_URL = 'https://boosty.to/borodatych/donate'
+BOOSTY_QR = 'https://raw.githubusercontent.com/VibeBrains/VibeIDEA/main/media/QR-Boosty.png'
+TRANSFER_QR = 'https://raw.githubusercontent.com/VibeBrains/VibeIDEA/main/media/QR-Code.jpg'
 heading = [i for i, line in enumerate(lines) if line.strip().lstrip('#').strip() == 'Поддержать проект']
 if not heading:
     problems.append('нет блока «Поддержать проект» — фраза поддержки обязательна на каждом релизе')
@@ -73,13 +79,17 @@ else:
                 problems.append(f'подпись не записана в историю использования: нет строки «{row}» в {phrases_path}')
             elif signature not in history:
                 problems.append('подпись в заметках не совпадает с записанной в истории использования')
-    if 'raw.githubusercontent.com' not in '\n'.join(lines[start:]):
+    tail = '\n'.join(lines[start:])
+    if 'raw.githubusercontent.com' not in tail:
         problems.append('ссылка на QR не абсолютная: в теле релиза относительные пути не работают')
+    for name, url in (('ссылки на Boosty', BOOSTY_URL), ('QR Boosty', BOOSTY_QR), ('QR перевода', TRANSFER_QR)):
+        if url not in tail:
+            problems.append(f'в блоке поддержки нет {name}: {url}')
 
 for problem in problems:
     print('✖ ' + problem)
 if not problems:
-    print(f'  заметки {version}: блок поддержки на месте, подпись записана в историю, QR абсолютный')
+    print(f'  заметки {version}: блок поддержки на месте — подпись в истории, Boosty и оба QR абсолютными ссылками')
 sys.exit(1 if problems else 0)
 PY
 FORMAT=$?

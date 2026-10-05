@@ -112,6 +112,8 @@
 Если VibeIDEA оказался полезным — буду рад благодарности.
 Модель теперь отвечает без воды, а детектор нейрослопа вычищает штампы из текста. Штамп «спасибо за поддержку» он пропускает — проверено. Автор тоже научился коротко: кофе.
 
-<a href="https://raw.githubusercontent.com/VibeBrains/VibeIDEA/main/media/QR-Code.jpg" target="_blank">
-  <img src="https://raw.githubusercontent.com/VibeBrains/VibeIDEA/main/media/QR-Code.jpg" width="120" alt="QR-код для поддержки проекта">
-</a>
+Поддержать можно на [Boosty](https://boosty.to/borodatych/donate) — подписка или разовый донат, — либо переводом по СБП.
+
+| Boosty | Перевод |
+|:---:|:---:|
+| <a href="https://boosty.to/borodatych/donate" target="_blank"><img src="https://raw.githubusercontent.com/VibeBrains/VibeIDEA/main/media/QR-Boosty.png" width="120" alt="QR-код Boosty — поддержать проект"></a> | <a href="https://raw.githubusercontent.com/VibeBrains/VibeIDEA/main/media/QR-Code.jpg" target="_blank"><img src="https://raw.githubusercontent.com/VibeBrains/VibeIDEA/main/media/QR-Code.jpg" width="120" alt="QR-код для поддержки проекта"></a> |

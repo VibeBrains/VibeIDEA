@@ -45,7 +45,7 @@
 - [manuals/auditSpec.md](manuals/auditSpec.md) — спека журнала `.vibe/audit.jsonl`: формат записей аудита агента (для парсеров/дашбордов).
 - [manuals/skillEvalsSpec.md](manuals/skillEvalsSpec.md) — спека `evals/evals.json`: случаи, которыми проверяется навык, и правила их написания (самодостаточная, для LLM).
 - [manuals/slopSpec.md](manuals/slopSpec.md) — детектор нейрослопа: где работает, как начать, правки проекта `.vibe/slop.json`, директива подавления, арифметика и список правил (самодостаточная, для LLM).
-- [releaseDonationPhrases.md](releaseDonationPhrases.md) — фразы блока «Поддержать проект» в релизах: пул, отложенные, история использования.
+- [releaseDonationPhrases.md](releaseDonationPhrases.md) — блок «Поддержать проект» в релизах: состав (строка, подпись, ссылка на Boosty, оба QR), пул фраз, отложенные, история использования.
 - [references/releaseNotes-v0.1.0.md](references/releaseNotes-v0.1.0.md) — заметки первого релиза: образец оформления, на который равняются следующие.
 - [references/phpstormParity.md](references/phpstormParity.md) — разбор паритета с PhpStorm: что включено, что проприетарно, что писать самим (03.09.2026).
 - [references/digest20260831.md](references/digest20260831.md) — разбор внешнего дайджеста 31.08.2026: фолбэк при отзыве доступа к модели, подстановка секретов, навыки как пакет, режимы отказа агентов, сравнение моделей; бэклог с приоритетами.
