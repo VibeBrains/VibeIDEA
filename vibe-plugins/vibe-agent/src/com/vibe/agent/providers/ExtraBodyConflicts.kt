@@ -71,11 +71,26 @@ object ExtraBodyConflicts {
       result.add(Conflict("$REASONING.$EFFORT", Reason.SWITCH))
     }
     if (wire == ModelQuirks.WIRE_ANTHROPIC && FALLBACKS in extraBody) result.add(Conflict(FALLBACKS, Reason.SERVER_FALLBACK))
-    if (wire == ModelQuirks.WIRE_ANTHROPIC && ModelQuirks.Quirk.NO_FORCED_TOOL_CHOICE in quirks) {
-      val choice = ((extraBody[TOOL_CHOICE] as? JsonObject)?.get(TYPE) as? JsonPrimitive)?.contentOrNull
-      if (choice in FORCED_CHOICES) result.add(Conflict("$TOOL_CHOICE.$TYPE", Reason.FORCED_TOOL))
-    }
+    if (ModelQuirks.Quirk.NO_FORCED_TOOL_CHOICE in quirks) forcedToolChoice(wire, extraBody[TOOL_CHOICE])?.let { result.add(it) }
     return result
+  }
+
+  /**
+   * A forced tool choice in the spelling of each wire
+   * Anthropic: an object with `type` `any` or `tool`
+   * OpenAI chat/completions: the string `required` or an object with `type` `function`
+   */
+  private fun forcedToolChoice(wire: String, choice: kotlinx.serialization.json.JsonElement?): Conflict? = when (wire) {
+    ModelQuirks.WIRE_ANTHROPIC -> {
+      val type = ((choice as? JsonObject)?.get(TYPE) as? JsonPrimitive)?.contentOrNull
+      if (type in FORCED_CHOICES) Conflict("$TOOL_CHOICE.$TYPE", Reason.FORCED_TOOL) else null
+    }
+    ModelQuirks.WIRE_OPENAI -> when {
+      (choice as? JsonPrimitive)?.contentOrNull == REQUIRED -> Conflict(TOOL_CHOICE, Reason.FORCED_TOOL)
+      ((choice as? JsonObject)?.get(TYPE) as? JsonPrimitive)?.contentOrNull == FUNCTION -> Conflict("$TOOL_CHOICE.$TYPE", Reason.FORCED_TOOL)
+      else -> null
+    }
+    else -> null
   }
 
   /**
@@ -110,4 +125,6 @@ object ExtraBodyConflicts {
   private const val TOOL_CHOICE = "tool_choice"
   private const val FALLBACKS = "fallbacks"
   private val FORCED_CHOICES = setOf("any", "tool")
+  private const val REQUIRED = "required"
+  private const val FUNCTION = "function"
 }

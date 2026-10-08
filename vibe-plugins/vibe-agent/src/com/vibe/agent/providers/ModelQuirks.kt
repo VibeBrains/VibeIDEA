@@ -114,7 +114,9 @@ object ModelQuirks {
     NO_REASONING_LEVELS,
 
     /**
-     * Forced tool use is refused: `tool_choice` `{"type": "any"}` or `{"type": "tool"}` is a 400 on every request
+     * Forced tool use is refused with a 400
+     * Anthropic wire: `tool_choice` `{"type": "any"}` or `{"type": "tool"}`
+     * OpenAI wire: `tool_choice` `"required"` or `{"type": "function"}`
      *
      * We never send `tool_choice`, so the quirk changes no request: it lets the doctor name the field in a hand-written
      * `extraBody` before the vendor answers 400 to every turn
@@ -284,6 +286,16 @@ object ModelQuirks {
       "claude sonnet 5.5: «off» sends thinking.type between_tools at effort low",
     ),
     Rule(
+      // Haiku 5.5, 07.10.2026: adaptive thinking is on by default and a token budget is a 400; non-default `temperature`,
+      // `top_p` or `top_k` is a 400 on every request; `disabled` is accepted at effort `high` or below, which is where
+      // «off» leaves it (platform.claude.com/docs/en/models/haiku-5-5/migration-guide, /build-with-claude/thinking and
+      // /effort, checked 2026-10-08)
+      // Forced tool use is accepted here, unlike Sonnet 5.5: the answer then starts with the call and has no thinking
+      Regex("^claude-haiku-5"),
+      setOf(Quirk.ADAPTIVE_THINKING, Quirk.NO_SAMPLING, Quirk.OFF_THINKING_DISABLED),
+      "claude haiku 5.5: thinking is adaptive and on by default; «off» sends thinking.type disabled; sampling knobs are rejected",
+    ),
+    Rule(
       // Mid-conversation system messages: «Claude Fable 5.1, Claude Mythos 5.1, Claude Fable 5, Claude Mythos 5,
       // Claude Opus 5.5, Claude Opus 4.8, Claude Opus 5, and Claude Sonnet 5.5», not Sonnet 5
       // (platform.claude.com/docs/en/build-with-claude/mid-conversation-system-messages, checked 2026-09-30)
@@ -424,6 +436,13 @@ object ModelQuirks {
       Regex("^deepseek"),
       setOf(Quirk.ECHO_REASONING),
       "deepseek: the reasoning_content of previous turns goes back with the tool calls",
+    ),
+    Rule(
+      // «Thinking mode does not support this tool_choice» — 400 on `tool_choice: "required"`, and thinking is on by
+      // default (api-docs.deepseek.com/guides/thinking_mode; reproduced live by VibeIDE on deepseek-flash, 01.10.2026)
+      Regex("^deepseek"),
+      setOf(Quirk.NO_FORCED_TOOL_CHOICE),
+      "deepseek: forced tool use (tool_choice required or a named function) is rejected in thinking mode",
     ),
   )
 

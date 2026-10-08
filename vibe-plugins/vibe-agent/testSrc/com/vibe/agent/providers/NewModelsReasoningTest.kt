@@ -58,6 +58,37 @@ class NewModelsReasoningTest {
   }
 
   @Test
+  fun `haiku 5-5 off is disabled, and above off it is adaptive with an explicit effort`() {
+    // Thinking is on by default there: without the rule «off» sent nothing and the model kept thinking
+    assertEquals(obj("""{"thinking":{"type":"disabled"}}"""), fields("anthropic", Level.OFF, "claude-haiku-5-5"))
+    val medium = fields("anthropic", Level.MEDIUM, "claude-haiku-5-5")
+    assertEquals("adaptive", medium["thinking"]!!.jsonObject["type"].toString().trim('"'))
+    assertEquals(obj("""{"effort":"medium"}"""), medium["output_config"])
+    assertEquals(null, medium["thinking"]!!.jsonObject["budget_tokens"])
+  }
+
+  @Test
+  fun `haiku 5-5 refuses sampling and a token budget, but takes forced tool use`() {
+    val conflicts = ExtraBodyConflicts.of("claude-haiku-5-5", "anthropic",
+      obj("""{"temperature":0.2,"tool_choice":{"type":"any"},"thinking":{"type":"enabled","budget_tokens":4000}}""")).map { it.reason }.toSet()
+    assertEquals(setOf(ExtraBodyConflicts.Reason.SAMPLING, ExtraBodyConflicts.Reason.BUDGET), conflicts)
+    // Haiku 4.5 keeps its budget and its knobs
+    assertEquals(emptyList(), ExtraBodyConflicts.of("claude-haiku-4-5", "anthropic",
+      obj("""{"temperature":0.2,"thinking":{"type":"enabled","budget_tokens":4000}}""")))
+  }
+
+  @Test
+  fun `deepseek refuses forced tool use in the openai spelling, auto is fine`() {
+    for (choice in listOf("\"required\"", """{"type":"function","function":{"name":"read_file"}}""")) {
+      val conflicts = ExtraBodyConflicts.of("deepseek-flash", "openai", obj("""{"tool_choice":$choice}""")).map { it.reason }
+      assertEquals(listOf(ExtraBodyConflicts.Reason.FORCED_TOOL), conflicts, choice)
+    }
+    assertEquals(emptyList(), ExtraBodyConflicts.of("deepseek-flash", "openai", obj("""{"tool_choice":"auto"}""")))
+    // The same spelling on a model without the quirk is not a conflict
+    assertEquals(emptyList(), ExtraBodyConflicts.of("gpt-5", "openai", obj("""{"tool_choice":"required"}""")))
+  }
+
+  @Test
   fun `sonnet 5-5 refuses forced tool use and the thinking switch in extraBody`() {
     val conflicts = ExtraBodyConflicts.of("claude-sonnet-5-5", "anthropic",
       obj("""{"tool_choice":{"type":"any"},"thinking":{"type":"disabled"}}""")).map { it.reason }.toSet()
