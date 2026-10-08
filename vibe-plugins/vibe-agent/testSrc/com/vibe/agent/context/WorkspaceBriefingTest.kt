@@ -29,6 +29,15 @@ class WorkspaceBriefingTest {
   }
 
   @Test
+  fun `the briefing names the model and its provider, so the model does not answer from its training`() {
+    val text = WorkspaceBriefing.text(workspace.copy(model = WorkspaceBriefing.Model("MiniMax M3.1 Flash Preview", "MiniMax-M3.1-Flash-Preview", "MiniMax")))
+    assertTrue("MiniMax M3.1 Flash Preview" in text, text)
+    assertTrue("MiniMax-M3.1-Flash-Preview" in text, text)
+    // A turn that is not a direct model request names no model
+    assertFalse("MiniMax" in WorkspaceBriefing.text(workspace), WorkspaceBriefing.text(workspace))
+  }
+
+  @Test
   fun `the briefing says which tool is about the open project and which is about the store`() {
     // The whole point: with both tools offered, the two endpoints of one vendor chose differently,
     // and the Anthropic one asked the person to type the path.

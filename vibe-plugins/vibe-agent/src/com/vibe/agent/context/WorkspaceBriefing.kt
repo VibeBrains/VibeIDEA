@@ -35,7 +35,20 @@ object WorkspaceBriefing {
      */
     val openFile: String? = null,
     val os: String = System.getProperty("os.name").orEmpty(),
+    /** The model this conversation runs on; null for a turn that is not a direct model request */
+    val model: Model? = null,
   )
+
+  /**
+   * Who answers: the model and its provider, as the person chose them
+   *
+   * Without it a model asked who it is answers from its training, and one trained on another vendor's output names
+   * that vendor: MiniMax M3.1 calls itself Claude. Any model can do the same, so it is said to every one
+   */
+  data class Model(val name: String, val id: String, val provider: String)
+
+  /** The line naming the model, for a request that carries nothing else about where it runs */
+  fun identity(model: Model): String = t("wire.model.identity", "name" to model.name, "id" to model.id, "provider" to model.provider)
 
   /**
    * The branch out of `.git/HEAD`, read as text.
@@ -54,6 +67,7 @@ object WorkspaceBriefing {
   /** The system message of the turn. */
   fun text(workspace: Workspace): String = buildString {
     appendLine(t("wire.workspace.header"))
+    workspace.model?.let { appendLine("- " + identity(it)) }
     appendLine(t("wire.workspace.project", "name" to workspace.name))
     appendLine(t("wire.workspace.root", "path" to workspace.root))
     workspace.branch?.let { appendLine(t("wire.workspace.branch", "name" to it)) }

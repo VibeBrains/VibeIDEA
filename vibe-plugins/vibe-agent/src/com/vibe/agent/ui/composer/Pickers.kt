@@ -60,7 +60,8 @@ class ModelPicker(private val onChoose: (ChatTarget) -> Unit, private val onOpen
     pill.text = current?.label ?: NONE_LABEL
     pill.toolTipText = when (current) {
       is ChatTarget.Agent -> t("picker.target.agentTooltip", "command" to current.config.command, "args" to current.config.args.joinToString(" "))
-      is ChatTarget.Model -> "${current.provider.name} · ${current.model.id}"
+      // The label first: a long name is cut with an ellipsis in a narrow row, and the tooltip is where it is read whole
+      is ChatTarget.Model -> "${current.label} — ${current.provider.name} · ${current.model.id}"
       null -> t("picker.target.emptyTooltip")
     }
   }

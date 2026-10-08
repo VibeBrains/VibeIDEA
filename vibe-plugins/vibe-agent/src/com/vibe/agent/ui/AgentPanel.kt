@@ -461,6 +461,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     composer.addPill(modePicker.pill)
     composer.addPill(configPicker.pill)
     composer.addPill(modelPicker.pill)
+    composer.setElasticPill(modelPicker.pill)
     composer.addPill(PillButton(icon = AllIcons.Actions.RunAll) { choosePipeline() }.apply { toolTipText = t("chat.pipelinePill") })
     // Шестерёнка уехала в шапку панели (VibeAgentToolWindowFactory): настройки открывают раз в
     // месяц, а место в ряду композера занимают всегда — там живёт то, что меняют по ходу работы.
@@ -3919,7 +3920,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
       var tools = offer()
       // Where the turn is happening goes FIRST and always: a model that is not told invents the
       // answer, and which tool it invents with differs from endpoint to endpoint (WorkspaceBriefing).
-      val wire = listOf(workspaceMessage()) + terseMessage(resolved.runsLocally) +
+      val wire = listOf(workspaceMessage(t)) + terseMessage(resolved.runsLocally) +
                  com.vibe.agent.providers.ToolRounds.expand(compactForWindow(t, resolved, threadId, transcript, uncompacted, tools)) {
                    name -> allTools.firstOrNull { it.name == name }
                  }
@@ -4105,7 +4106,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
    * Read from the open project and from `.git/HEAD` — no index, no VCS plugin, nothing that can
    * hang inside a turn. The branch is best-effort: an unreadable head simply leaves that line out.
    */
-  private fun workspaceMessage(): ChatMessage {
+  private fun workspaceMessage(target: ChatTarget.Model): ChatMessage {
     val root = project.basePath.orEmpty()
     val branch = root.takeIf { it.isNotEmpty() }?.let {
       runCatching { java.nio.file.Files.readString(java.nio.file.Path.of(it, ".git", "HEAD")) }.getOrNull()
@@ -4116,6 +4117,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
         root = root,
         branch = com.vibe.agent.context.WorkspaceBriefing.branchOfHead(branch),
         openFile = runCatching { com.vibe.agent.mcp.IdeEditorFacts.selected(project)?.path }.getOrNull(),
+        model = com.vibe.agent.context.WorkspaceBriefing.Model(target.label, target.model.id, target.provider.name),
       )))
   }
 
@@ -5050,8 +5052,11 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     // The step's own client: its last usage, its answered model and its cancel are this step's, not a neighbour's.
     val llm = LlmClient(projectBase = project.basePath)
     turn.llm = llm
+    // The step is told which model it is, as the direct chat is: asked about itself, a model otherwise answers from training
+    val identity = com.vibe.agent.context.WorkspaceBriefing.identity(
+      com.vibe.agent.context.WorkspaceBriefing.Model(model.name, model.id, provider.name))
     llm.chat(
-      resolved, model, listOf(ChatMessage(role = "user", text = prompt)),
+      resolved, model, listOf(ChatMessage(role = "system", text = identity), ChatMessage(role = "user", text = prompt)),
       {
         llmCancel.get() || (ceiling != null && spent.get() > ceiling).also {
           if (it && turn.limitHit == null) {

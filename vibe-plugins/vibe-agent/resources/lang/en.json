@@ -2438,6 +2438,7 @@
   "watch.toolsMissing": "not found: {tools}. Install with: brew install {install} (on Linux use your distribution's package manager). The binaries are not bundled: they are GPL builds that would have to be signed and updated together with the IDE.",
   "watch.transcript.clipped": "…(transcript truncated)",
   "watch.warn.noSubtitles": "no subtitles — the review will rely on frames only",
+  "wire.model.identity": "You are the model {name} ({id}), provider {provider}. Asked who you are, name it, not what your training suggests",
   "wire.workspace.branch": "- branch: {name}",
   "wire.workspace.header": "The workspace of this conversation (known to the IDE, no need to ask for it):",
   "wire.workspace.openFile": "- open in the editor: {path} (vibe_open_file returns its contents)",

@@ -23,7 +23,6 @@ import com.intellij.ui.components.JBTextArea
 import com.intellij.ui.components.TextComponentEmptyText
 import com.intellij.util.ui.JBFont
 import com.intellij.util.ui.JBUI
-import com.intellij.util.ui.WrapLayout
 import com.vibe.agent.settings.VibeChatSettings
 import java.awt.BorderLayout
 import java.awt.Color
@@ -191,7 +190,8 @@ class ComposerPanel(
    * живут часы истории и бегунок занятости, между которыми подпись терялась.
    */
   private val contextRing = ContextRing { onUsageClick?.invoke() }
-  private val pillsLeft = JPanel(WrapLayout(FlowLayout.LEFT, JBUI.scale(PILL_GAP), JBUI.scale(PILL_GAP))).apply { isOpaque = false }
+  private val pillsLayout = PillRowLayout(JBUI.scale(PILL_GAP), JBUI.scale(MIN_ELASTIC_PILL))
+  private val pillsLeft = JPanel(pillsLayout).apply { isOpaque = false }
   private val pillsRight = JPanel(FlowLayout(FlowLayout.RIGHT, JBUI.scale(PILL_GAP), 0)).apply { isOpaque = false }
 
   /**
@@ -393,10 +393,10 @@ class ComposerPanel(
       isOpaque = false
       border = JBUI.Borders.compound(JBUI.Borders.customLineTop(SEPARATOR), JBUI.Borders.emptyTop(PILL_GAP))
       add(pillsLeft, BorderLayout.CENTER)
-      // EAST stretches to the row height; GridBag keeps the history pill vertically centred in it.
-      add(JPanel(java.awt.GridBagLayout()).apply {
+      // On the first line of the row: centred in a row that had wrapped, the history pill stood between the lines
+      add(JPanel(BorderLayout()).apply {
         isOpaque = false
-        add(pillsRight)
+        add(pillsRight, BorderLayout.NORTH)
       }, BorderLayout.EAST)
     }
     val box = RoundedBox().apply {
@@ -434,6 +434,9 @@ class ComposerPanel(
   // --- public API for the panel ---
 
   fun addPill(component: JComponent) { pillsLeft.add(component); pillsLeft.revalidate() }
+
+  /** The pill that gives way first when the row runs out of width ([PillRowLayout]) */
+  fun setElasticPill(component: JComponent) { pillsLayout.elastic = component; pillsLeft.revalidate() }
   fun addRightPill(component: JComponent) { pillsRight.add(component, 0); pillsRight.revalidate() }
 
   fun focusInput() { input.requestFocusInWindow() }
@@ -788,6 +791,8 @@ class ComposerPanel(
     private const val INNER_GAP = 4
     private const val ICON_GAP = 2
     private const val PILL_GAP = 4
+    /** How narrow the elastic pill may get: a few letters and the ellipsis still say which model it is */
+    private const val MIN_ELASTIC_PILL = 72
     private const val ARC = 16
 
     val BG: Color = JBColor.namedColor("Vibe.Composer.background", JBColor.namedColor("TextArea.background", JBColor.PanelBackground))

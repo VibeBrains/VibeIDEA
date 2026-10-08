@@ -2438,6 +2438,7 @@
   "watch.toolsMissing": "не найдено: {tools}. Установите: brew install {install} (на Linux — пакетный менеджер дистрибутива). Бинари не бандлятся: это GPL-сборки, которые пришлось бы подписывать и обновлять вместе с IDE.",
   "watch.transcript.clipped": "…(транскрипт обрезан)",
   "watch.warn.noSubtitles": "субтитров нет — разбор пойдёт только по кадрам",
+  "wire.model.identity": "Вы — модель {name} ({id}), провайдер {provider}. Спросят, кто вы, — называйте её, а не то, что подсказывает обучение",
   "wire.workspace.branch": "- ветка: {name}",
   "wire.workspace.header": "Рабочее место этого разговора (данные IDE, спрашивать их не нужно):",
   "wire.workspace.openFile": "- открыт в редакторе: {path} (его содержимое даёт vibe_open_file)",
