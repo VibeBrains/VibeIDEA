@@ -126,6 +126,7 @@ internal object LlmMessages {
   fun anthropic(m: ChatMessage, cacheable: Boolean = false, ttl: String? = null,
                 thinking: List<ThinkingBlock> = emptyList()): JsonObject = when {
     m.toolAdditions.isNotEmpty() -> InlineTools.message(m.toolAdditions)
+    m.role == EffortUpdates.ROLE -> EffortUpdates.anthropicMessage(m.text)
     m.role == ToolCalls.ROLE -> ToolCalls.anthropicResults(m)
     m.toolCalls.isNotEmpty() -> ToolCalls.anthropicAssistant(m, thinking)
     thinking.isNotEmpty() -> buildJsonObject {
@@ -795,8 +796,16 @@ class LlmClient(
     }
   }
 
-  private fun anthropicChat(provider: ResolvedProvider, model: ModelEntry, messages: List<ChatMessage>, onDelta: (String) -> Unit) {
+  private fun anthropicChat(provider: ResolvedProvider, model: ModelEntry, asked: List<ChatMessage>, onDelta: (String) -> Unit) {
     val overrides = quirks()
+    // The effort the slider asks for now, as the request would carry it with extraBody laid over; with updates in the
+    // messages, the request keeps the thread's first one
+    val reasoning = withReasoning(JsonObject(emptyMap()), ModelQuirks.WIRE_ANTHROPIC, model)
+    val plan = EffortUpdates.anthropicEffort(JsonObject(reasoning + (model.extraBody ?: JsonObject(emptyMap()))))
+      ?.takeIf { EffortUpdates.anthropicSupported(provider.baseUrl, quirkIdOf(model), overrides) }
+      ?.let { EffortUpdates.plan(asked, ResponsesReplay.keyOf(provider.entry.id, model.id), it) }
+    lastEffortMark = plan?.mark
+    val messages = plan?.messages ?: asked
     // A system message that adds tools stays where it is in the conversation; only text goes to the top-level field
     val system = messages.filter { it.role == "system" && it.toolAdditions.isEmpty() }.joinToString("\n") { it.text }
     val body = withExtras(buildJsonObject {
@@ -833,7 +842,10 @@ class LlmClient(
       tools?.let { put("tools", it) }
       creditToken?.let { put(FallbackCredit.FIELD, it) }
       diagnosticsAsk?.takeIf { AnthropicApi.official(provider.baseUrl) }?.let { put(CacheDiagnostics.FIELD, CacheDiagnostics.field(it)) }
-    }.let { withReasoning(it, "anthropic", model) }
+    }.let { withReasoning(it, "anthropic", model) }.let { planned ->
+      if (plan == null) planned
+      else JsonObject(planned + (OUTPUT_CONFIG to JsonObject((planned[OUTPUT_CONFIG] as JsonObject) + (EFFORT to JsonPrimitive(plan.requestEffort)))))
+    }
       // Quirks were applied on the OpenAI path only, which left the Anthropic-compatible endpoints
       // — where MiniMax and Qwen actually live — sending exactly the fields those models ignore.
       .let { ModelQuirks.applyToBody(quirkIdOf(model), it, overrides, ModelQuirks.WIRE_ANTHROPIC) },
@@ -846,6 +858,7 @@ class LlmClient(
           PromptCache.EXTENDED_TTL_BETA.takeIf { PromptCache.needsExtendedBeta(model.cacheTtl) },
           FallbackCredit.BETA.takeIf { FallbackCredit.offered(provider.baseUrl) },
           InlineTools.BETA.takeIf { inlineTools },
+          EffortUpdates.ANTHROPIC_BETA.takeIf { plan != null },
         )
         if (betas.isNotEmpty()) header("anthropic-beta", betas.joinToString(","))
       }
@@ -1081,6 +1094,7 @@ class LlmClient(
     private const val REASONING = "reasoning"
     private const val REQUEST_ID_HEADER = "x-request-id"
     private const val EFFORT = "effort"
+    private const val OUTPUT_CONFIG = "output_config"
 
     /** Anthropic requires max_tokens; used when the model entry does not set maxOutputTokens. */
     const val DEFAULT_MAX_OUTPUT_TOKENS = 8192

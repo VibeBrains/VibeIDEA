@@ -5,6 +5,9 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
+import kotlin.test.assertNull
+import kotlin.test.assertTrue
 
 /** The effort moved mid-thread goes as an update in place, and the request keeps the thread's first effort */
 class EffortUpdatesTest {
@@ -57,5 +60,38 @@ class EffortUpdatesTest {
     val item = input.first().jsonObject
     assertEquals("configuration_update", item["type"]?.jsonPrimitive?.content)
     assertEquals("high", item["reasoning"]?.jsonObject?.get("effort")?.jsonPrimitive?.content)
+  }
+
+  @Test
+  fun `on anthropic's wire the update is a system message with no content and the new effort`() {
+    val wire = LlmMessages.anthropic(ChatMessage(EffortUpdates.ROLE, "high"))
+    assertEquals("""{"role":"system","content":[],"output_config":{"effort":"high"}}""", wire.toString())
+  }
+
+  @Test
+  fun `an anthropic request moves its effort by an update only in adaptive thinking`() {
+    fun fields(text: String) = kotlinx.serialization.json.Json.parseToJsonElement(text).jsonObject
+    assertEquals("high", EffortUpdates.anthropicEffort(fields("""{"thinking":{"type":"adaptive"},"output_config":{"effort":"high"}}""")))
+    // Thinking on by default with only the effort sent is adaptive too
+    assertEquals("low", EffortUpdates.anthropicEffort(fields("""{"output_config":{"effort":"low"}}""")))
+    // between_tools (Sonnet 5.5) and disabled (Haiku 5.5) refuse a mid-conversation change with a 400
+    assertNull(EffortUpdates.anthropicEffort(fields("""{"thinking":{"type":"between_tools"},"output_config":{"effort":"low"}}""")))
+    assertNull(EffortUpdates.anthropicEffort(fields("""{"thinking":{"type":"disabled"}}""")))
+    assertNull(EffortUpdates.anthropicEffort(fields("""{"thinking":{"type":"adaptive"}}""")))
+  }
+
+  @Test
+  fun `updates go to anthropic's own api, for the models the vendor names`() {
+    val api = "https://api.anthropic.com/v1"
+    for (id in listOf("claude-fable-5-1", "claude-mythos-5-1", "claude-opus-5-5", "claude-opus-5", "claude-sonnet-5-5", "claude-haiku-5-5")) {
+      assertTrue(EffortUpdates.anthropicSupported(api, id), id)
+    }
+    for (id in listOf("claude-fable-5", "claude-mythos-5", "claude-sonnet-5", "claude-opus-4-8", "gpt-6.1-sol")) {
+      assertFalse(EffortUpdates.anthropicSupported(api, id), id)
+    }
+    // Another address on the same wire never said it takes the field
+    assertFalse(EffortUpdates.anthropicSupported("https://openrouter.ai/api/v1", "claude-opus-5-5"))
+    // And a Claude behind a Responses wire gets no configuration_update: that quirk is another one
+    assertFalse(ModelQuirks.has("claude-opus-5-5", ModelQuirks.Quirk.EFFORT_BY_UPDATE))
   }
 }

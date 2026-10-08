@@ -135,6 +135,14 @@ object ModelQuirks {
      */
     EFFORT_BY_UPDATE,
 
+    /**
+     * On Anthropic's own API the effort changes mid-conversation by a system message with `output_config.effort`, and the
+     * request-level effort stays the thread's first ([EffortUpdates]); in adaptive thinking only
+     * Not [EFFORT_BY_UPDATE]: a quirk is chosen by the model's name, and the same Claude behind a router's Responses wire
+     * would then get an item that wire does not know
+     */
+    EFFORT_BY_SYSTEM_MESSAGE,
+
     /** The system role is not accepted; the instruction has to travel as the first user message. */
     NO_SYSTEM_ROLE,
 
@@ -326,6 +334,14 @@ object ModelQuirks {
       Regex("^gpt-6"),
       setOf(Quirk.EFFORT_BY_UPDATE),
       "gpt-6: a changed effort goes as a configuration_update item, the request keeps the thread's first",
+    ),
+    Rule(
+      // «On Claude Fable 5.1, Claude Mythos 5.1, Claude Opus 5.5, Claude Opus 5, Claude Sonnet 5.5, and Claude Haiku 5.5,
+      // use a per-message effort change, which keeps the prompt cache»; Fable 5 answers it with a 400
+      // (platform.claude.com/docs/en/build-with-claude/effort#change-effort-mid-conversation-beta, checked 2026-10-08)
+      Regex("^claude-(fable-5-1|mythos-5-1|opus-5|sonnet-5-5|haiku-5-5)"),
+      setOf(Quirk.EFFORT_BY_SYSTEM_MESSAGE),
+      "claude fable 5.1, mythos 5.1, opus 5, 5.5, sonnet 5.5, haiku 5.5: a changed effort goes as a system message in place",
     ),
     Rule(
       // Astra refuses `reasoning_effort: "none"` with 400, and «Chat Completions does not support function calling with

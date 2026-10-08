@@ -26,6 +26,13 @@ class PromptCacheTest {
   }
 
   @Test
+  fun `an effort update before the question does not take the marker`() {
+    // The update carries no text: a marker on it would cache nothing, and the turn would lose its cache write
+    val messages = listOf(user("x".repeat(3000)), assistant("ответ"), ChatMessage(EffortUpdates.ROLE, "high"), user("новый вопрос"))
+    assertEquals(1, PromptCache.cacheBoundary(messages))
+  }
+
+  @Test
   fun `a short conversation has nothing stable to cache`() {
     assertNull(PromptCache.cacheBoundary(listOf(user("вопрос"))))
     assertNull(PromptCache.cacheBoundary(emptyList()))

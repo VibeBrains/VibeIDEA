@@ -56,6 +56,8 @@ object PromptCache {
     if (messages.size < 2) return null
     val boundary = messages.indexOfLast { it.role == "user" }.takeIf { it > 0 } ?: return null
     val prefixChars = messages.take(boundary).sumOf { it.text.length }
-    return if (prefixChars >= minChars) boundary - 1 else null
+    if (prefixChars < minChars) return null
+    // An effort update stands right before the question it changes and carries no text to mark: the marker goes earlier
+    return (boundary - 1 downTo 0).firstOrNull { messages[it].role != EffortUpdates.ROLE }
   }
 }

@@ -132,6 +132,28 @@ class WireBodyTest {
   }
 
   @Test
+  fun `claude off anthropic's own api keeps the effort in the request and sends no update`() {
+    val settings = object : LlmSettings {
+      override val offline: Boolean = false
+      override val reasoningLevel: String = "high"
+    }
+    val provider = ResolvedProvider(ProviderEntry(id = "stub", baseURL = baseUrl, protocol = "anthropic"), "anthropic", baseUrl,
+                                    apiKey = KEY, localAddress = true)
+    val client = LlmClient({ http }, null, settings)
+    val history = listOf(
+      ChatMessage("user", "q1"),
+      ChatMessage("assistant", "a1", effortMark = EffortUpdates.mark("stub/claude-opus-5-5", "low")),
+      ChatMessage("user", "q2"),
+    )
+    client.chat(provider, ModelEntry(id = "claude-opus-5-5"), history) { }
+    val request = seen.last()
+    assertEquals("high", request.body["output_config"]!!.jsonObject["effort"]!!.jsonPrimitive.content)
+    assertEquals(listOf("user", "assistant", "user"), roles(request.body, "messages"))
+    assertTrue(EffortUpdates.ANTHROPIC_BETA !in request.headers["anthropic-beta"].orEmpty())
+    assertEquals(null, client.lastEffortMark())
+  }
+
+  @Test
   fun `a ChatGPT plan's request is shaped to its route, and a stream without completion is no answer`() {
     val settings = object : LlmSettings {
       override val offline: Boolean = false
@@ -224,6 +246,6 @@ class WireBodyTest {
   private companion object {
     const val KEY = "test-key"
     const val QUIRK_PROJECT = "/wire-body-test"
-    val HEADERS = listOf("Authorization", "x-api-key", "x-goog-api-key")
+    val HEADERS = listOf("Authorization", "x-api-key", "x-goog-api-key", "anthropic-beta")
   }
 }

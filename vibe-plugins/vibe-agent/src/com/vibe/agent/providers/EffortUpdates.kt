@@ -1,13 +1,23 @@
 // Copyright 2026 VibeBrains. Use of this source code is governed by the GNU AGPL-3.0 license.
 package com.vibe.agent.providers
 
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.put
+
 /**
- * A reasoning effort changed mid-conversation without breaking the prompt cache ([ModelQuirks.Quirk.EFFORT_BY_UPDATE])
+ * A reasoning effort changed mid-conversation without breaking the prompt cache
+ * ([ModelQuirks.Quirk.EFFORT_BY_UPDATE], [ModelQuirks.Quirk.EFFORT_BY_SYSTEM_MESSAGE])
  *
- * The request-level `reasoning.effort` is part of the prefix the cache matches: moving the slider mid-thread rewrote
- * it, and everything after was billed as fresh input. The vendor's way keeps the effort of the thread's first request
- * and puts a `configuration_update` item before the user message where the effort changed
- * (developers.openai.com/api/docs/guides/reasoning#change-reasoning-mid-conversation)
+ * The request-level effort is part of the prefix the cache matches: moving the slider mid-thread rewrote it,
+ * and everything after was billed as fresh input
+ * The vendors' way keeps the effort of the thread's first request and puts an update before the user message where it changed:
+ * Responses: a `configuration_update` item (developers.openai.com/api/docs/guides/reasoning#change-reasoning-mid-conversation)
+ * Anthropic: a system message with no content and `output_config.effort`, behind a beta header
+ * (platform.claude.com/docs/en/build-with-claude/effort#change-effort-mid-conversation-beta)
  *
  * History travels whole with every request here, and the vendor asks to replay each update at its original place:
  * an answer remembers the effort its request was sent at ([ChatMessage.effortMark], `provider/model#effort`), and the
@@ -53,7 +63,41 @@ object EffortUpdates {
     return Plan(base, planned, mark(key, current))
   }
 
+  /** The beta header the Anthropic spelling needs; without it the field is a 400 «Extra inputs are not permitted» */
+  const val ANTHROPIC_BETA = "mid-conversation-output-config-2026-07-01"
+
+  /**
+   * Whether an Anthropic request may carry updates: the vendor's own API and a model of [ModelQuirks.Quirk.EFFORT_BY_SYSTEM_MESSAGE]
+   * Other addresses on the same wire never said they take the field, and a refused field fails the whole turn
+   */
+  fun anthropicSupported(baseUrl: String, quirkModelId: String, overrides: List<ModelQuirks.Rule> = emptyList()): Boolean =
+    AnthropicApi.official(baseUrl) && ModelQuirks.has(quirkModelId, ModelQuirks.Quirk.EFFORT_BY_SYSTEM_MESSAGE, overrides)
+
+  /**
+   * The effort an Anthropic request can move by an update, from its reasoning fields with `extraBody` laid over them
+   * Null outside adaptive thinking: with `between_tools` (Sonnet 5.5) or `disabled` (Haiku 5.5) the vendor refuses any
+   * mid-conversation change with a 400, and a changed thinking mode restarts the cache anyway
+   */
+  fun anthropicEffort(fields: JsonObject): String? {
+    val type = ((fields[THINKING] as? JsonObject)?.get(TYPE))?.jsonPrimitive?.contentOrNull
+    if (type != null && type != ADAPTIVE) return null
+    return ((fields[OUTPUT_CONFIG] as? JsonObject)?.get(EFFORT))?.jsonPrimitive?.contentOrNull
+  }
+
+  /** The Anthropic spelling of an update: the new level holds from the next user turn until a later update */
+  fun anthropicMessage(effort: String): JsonObject = buildJsonObject {
+    put("role", SYSTEM)
+    put("content", JsonArray(emptyList()))
+    put(OUTPUT_CONFIG, buildJsonObject { put(EFFORT, effort) })
+  }
+
   private const val SEPARATOR = "#"
+  private const val SYSTEM = "system"
+  private const val THINKING = "thinking"
+  private const val TYPE = "type"
+  private const val ADAPTIVE = "adaptive"
+  private const val OUTPUT_CONFIG = "output_config"
+  private const val EFFORT = "effort"
   private const val USER = "user"
   private const val ASSISTANT = "assistant"
 }
