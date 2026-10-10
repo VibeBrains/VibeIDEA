@@ -19,11 +19,9 @@ import java.nio.file.Path
 object CodeGraphRefresh {
   data class Result(val graph: CodeGraphIndex.Graph, val files: Int, val parsed: Int, val file: Path)
 
-  /**
-   * [onProgress] is told how much will be parsed before the parsing starts: `stale` of `total`
-   * files, and whether this is the first run. The caller with a progress bar says it out loud —
-   * a refresh that takes minutes in silence reads as a hang.
-   */
+  /** A graph read back from `.vibe/codeGraph.json`, and when that file was last written */
+  data class Cached(val graph: CodeGraphIndex.Graph, val builtAtMs: Long)
+
   /**
    * Граф, УЖЕ построенный и лежащий в `.vibe/codeGraph.json`, без единого обращения к индексам проекта.
    *
@@ -34,29 +32,49 @@ object CodeGraphRefresh {
    *
    * Null — файла нет или он от другой ревизии формата: это «графа ещё нет», а не «в проекте нет связей».
    */
-  fun cached(project: Project): CodeGraphIndex.Graph? {
+  fun cached(project: Project): CodeGraphIndex.Graph? = loadCached(project)?.graph
+
+  /** The same as [cached], with the time the file was written: a picture of an old graph must say how old it is */
+  fun loadCached(project: Project): Cached? {
     val base = project.basePath ?: return null
     val file = Path.of(base, ".vibe", "codeGraph.json")
     if (!Files.exists(file)) return null
     val stored = runCatching { CodeGraphStore.decode(Files.readString(file)) }.getOrNull().orEmpty()
     if (stored.isEmpty()) return null
-    return CodeGraphIndex.build(stored.map { it.node })
+    val builtAt = runCatching { Files.getLastModifiedTime(file).toMillis() }.getOrDefault(0L)
+    return Cached(CodeGraphIndex.build(stored.map { it.node }), builtAt)
   }
 
+  /**
+   * [onProgress] is told how much will be parsed before the parsing starts: `stale` of `total`
+   * files, and whether this is the first run. The caller with a progress bar says it out loud —
+   * a refresh that takes minutes in silence reads as a hang.
+   *
+   * Every run is reported to [CodeGraphStatus] as well, whoever started it: a picture that is open meanwhile
+   * redraws when the build ends instead of staying as empty as it was.
+   */
   fun refresh(project: Project, onProgress: (stale: Int, total: Int, firstRun: Boolean) -> Unit = { _, _, _ -> }): Result? {
     val base = project.basePath ?: return null
-    val out = Path.of(base, ".vibe", "codeGraph.json")
-    val current = CodeGraphBuilder.scan(project)
-    val previous = runCatching { if (Files.exists(out)) CodeGraphStore.decode(Files.readString(out)) else emptyList() }
-      .getOrDefault(emptyList())
-    val (reused, stale) = CodeGraphStore.plan(current, previous)
-    onProgress(stale.size, current.size, previous.isEmpty())
-    val parsed = CodeGraphBuilder.buildSome(project, stale)
-    val nodes = (reused + parsed).sortedBy { it.path }
-    val stored = nodes.mapNotNull { node -> current[node.path]?.let { CodeGraphStore.StoredNode(node, it) } }
-    val graph = CodeGraphIndex.build(nodes)
-    Files.createDirectories(out.parent)
-    Files.writeString(out, CodeGraphStore.encode(stored, graph))
-    return Result(graph = graph, files = nodes.size, parsed = parsed.size, file = out)
+    val status = CodeGraphStatus.getInstance(project)
+    status.started()
+    try {
+      val out = Path.of(base, ".vibe", "codeGraph.json")
+      val current = CodeGraphBuilder.scan(project)
+      val previous = runCatching { if (Files.exists(out)) CodeGraphStore.decode(Files.readString(out)) else emptyList() }
+        .getOrDefault(emptyList())
+      val (reused, stale) = CodeGraphStore.plan(current, previous)
+      status.reported(CodeGraphStatus.Progress(stale.size, current.size, previous.isEmpty()))
+      onProgress(stale.size, current.size, previous.isEmpty())
+      val parsed = CodeGraphBuilder.buildSome(project, stale)
+      val nodes = (reused + parsed).sortedBy { it.path }
+      val stored = nodes.mapNotNull { node -> current[node.path]?.let { CodeGraphStore.StoredNode(node, it) } }
+      val graph = CodeGraphIndex.build(nodes)
+      Files.createDirectories(out.parent)
+      Files.writeString(out, CodeGraphStore.encode(stored, graph))
+      return Result(graph = graph, files = nodes.size, parsed = parsed.size, file = out)
+    }
+    finally {
+      status.finished()
+    }
   }
 }

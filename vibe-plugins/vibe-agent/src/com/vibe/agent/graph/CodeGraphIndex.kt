@@ -137,6 +137,13 @@ object CodeGraphIndex {
                else normalize(specifier.removePrefix("@").removePrefix("~").removePrefix("/"))
     if (base.isEmpty()) return null
     if (base in paths) return base
+    // TypeScript ESM: the source imports the file it will be compiled to, `./lifecycle.js`, while the file on disk is `lifecycle.ts`
+    // Without this mapping the graph of such a project had a handful of edges and called its whole core lone files
+    for ((compiled, sources) in COMPILED_TO_SOURCE) {
+      if (!base.endsWith(compiled)) continue
+      val stem = base.removeSuffix(compiled)
+      sources.map { stem + it }.firstOrNull { it in paths }?.let { return it }
+    }
     for (extension in EXTENSIONS) {
       (base + extension).takeIf { it in paths }?.let { return it }
       (base + "/index" + extension).takeIf { it in paths }?.let { return it }
@@ -158,4 +165,12 @@ object CodeGraphIndex {
   }
 
   private val EXTENSIONS = listOf(".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs", ".mts", ".cts", ".php", ".py")
+
+  /** The extension an ESM import is written with, and the sources it may stand for, in the order they are tried */
+  private val COMPILED_TO_SOURCE: List<Pair<String, List<String>>> = listOf(
+    ".js" to listOf(".ts", ".tsx"),
+    ".jsx" to listOf(".tsx"),
+    ".mjs" to listOf(".mts"),
+    ".cjs" to listOf(".cts"),
+  )
 }

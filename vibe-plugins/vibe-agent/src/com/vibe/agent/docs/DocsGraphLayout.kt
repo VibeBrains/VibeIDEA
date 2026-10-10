@@ -115,9 +115,9 @@ object DocsGraphLayout {
       )
     }
 
-    // Размеров полотна больше нет: координаты считает [DocsForceLayout], и полотно у него своё —
-    // оно меняется на каждом шаге симуляции, поэтому «ширина графа» перестала быть свойством
-    // модели. Ноль здесь честнее выдуманного числа.
+    // The canvas has no size of its own any more: positions are counted by [com.vibe.agent.graphview.ForceLayout]
+    // And its extent changes on every step of the simulation, so the width of a graph is no longer a property of the model
+    // Zero here is more honest than an invented number
     return Graph(nodes, edges, 0, 0)
   }
 

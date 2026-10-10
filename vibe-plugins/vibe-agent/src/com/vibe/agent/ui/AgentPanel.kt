@@ -1440,26 +1440,28 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
   }
 
   /**
-   * `/map` — the shape of the project as a diagram.
+   * `/map` — the subsystems of the project as a diagram, in the chat.
    *
-   * The graph already answers «кто кого импортирует», but a list of edges is read with a finger on
-   * the screen. Grouped by module and drawn as mermaid, the same data answers «как этот проект
-   * устроен» in one glance — and mermaid renders in the IDE, in the repository and in a chat
-   * without a single dependency.
+   * The picture of the project graph lives in an editor tab (brain menu → Project graph); this is its
+   * text form, for the one place a tab cannot go. Mermaid renders in the chat, in the repository and
+   * in a pull request without a single dependency. The nodes are the subsystems the links themselves
+   * found — grouping by the top-level folder said little about how a project is put together.
    */
   private fun handleMapCommand(message: ComposedMessage): Boolean {
     if (message.text.trim() != MAP_COMMAND) return false
     userBubble(message.text.trim())
     ApplicationManager.getApplication().executeOnPooledThread {
-      val nodes = com.vibe.agent.graph.CodeGraphBuilder.build(project)
-      val graph = com.vibe.agent.graph.CodeGraphIndex.build(nodes)
-      val edges = com.vibe.agent.graph.GraphDiagram.modules(graph.edges.map { it.from to it.to })
-      val diagram = com.vibe.agent.graph.GraphDiagram.mermaid(edges)
+      // The graph file when there is one: rebuilding it from scratch on every `/map` costs minutes on a large project
+      val graph = com.vibe.agent.graph.CodeGraphRefresh.cached(project)
+                  ?: com.vibe.agent.graph.CodeGraphRefresh.refresh(project)?.graph
+      val analysis = graph?.let { com.vibe.agent.graph.ProjectGraphAnalysis.analyze(it) }
+      val edges = analysis?.let { com.vibe.agent.graph.GraphDiagram.subsystems(it) }.orEmpty()
+      val diagram = analysis?.let { com.vibe.agent.graph.GraphDiagram.mermaid(it, edges) }.orEmpty()
       if (diagram.isEmpty()) {
         systemLine(t("map.empty"))
         return@executeOnPooledThread
       }
-      systemLine(t("map.built", "modules" to edges.flatMap { listOf(it.from, it.to) }.distinct().size,
+      systemLine(t("map.built", "subsystems" to edges.flatMap { listOf(it.from, it.to) }.distinct().size,
                    "edges" to edges.size))
       SwingUtilities.invokeLater {
         val console = TerminalConsole(t("map.title"))

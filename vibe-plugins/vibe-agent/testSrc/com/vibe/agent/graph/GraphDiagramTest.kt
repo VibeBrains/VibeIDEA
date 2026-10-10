@@ -1,71 +1,84 @@
 // Copyright 2026 VibeBrains. Use of this source code is governed by the GNU AGPL-3.0 license.
 package com.vibe.agent.graph
 
+import com.vibe.agent.graph.CodeGraphIndex.Provenance
+import com.vibe.agent.graph.ProjectGraphAnalysis.FileLink
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
+/** The text form of the subsystems, for the chat command `/map` */
 class GraphDiagramTest {
-  @Test
-  fun `a module is the first meaningful folder, not the wrapper everyone has`() {
-    // src/main/kotlin ничего не говорит о проекте: по нему все модули были бы одним.
-    assertEquals("agent", GraphDiagram.moduleOf("src/main/kotlin/agent/Panel.kt"))
-    assertEquals("ui", GraphDiagram.moduleOf("app/ui/Button.tsx"))
-    assertEquals(GraphDiagram.ROOT, GraphDiagram.moduleOf("README.md"))
-  }
+  private fun fact(from: String, to: String) = FileLink(from, to, Provenance.FACT)
+
+  private fun clique(prefix: String, size: Int = 6) =
+    (1..size).flatMap { i -> (i + 1..size).map { j -> fact("$prefix/f$i.ts", "$prefix/f$j.ts") } }
+
+  private fun names(prefix: String, size: Int = 6) = (1..size).map { "$prefix/f$it.ts" }
+
+  /** `app` and `my-app` of six files, a single link between them, and `core` joined to `app` by three */
+  private val analysis = ProjectGraphAnalysis.analyze(
+    names("app") + names("my-app") + names("core"),
+    clique("app") + clique("my-app") + clique("core") + fact("app/f1.ts", "my-app/f1.ts") +
+      fact("core/f1.ts", "app/f2.ts") + fact("core/f2.ts", "app/f3.ts") + fact("core/f3.ts", "app/f4.ts"),
+  )
+
+  private fun id(label: String) = analysis.subsystems.single { it.label == label }.id
 
   @Test
-  fun `edges inside one module are not drawn`() {
-    // Стрелка модуля в себя — это шум: она есть у всех и не говорит ничего.
-    val edges = GraphDiagram.modules(listOf("ui/A.kt" to "ui/B.kt"))
-    assertTrue(edges.isEmpty())
-  }
-
-  @Test
-  fun `repeated edges become one with a weight`() {
-    val edges = GraphDiagram.modules(listOf(
-      "ui/A.kt" to "http/Api.kt",
-      "ui/B.kt" to "http/Api.kt",
-      "http/Api.kt" to "util/X.kt",
-    ))
-    assertEquals(GraphDiagram.Edge("ui", "http", 2), edges.first())
+  fun `links inside one subsystem are not drawn, links between two are counted once each`() {
+    val edges = GraphDiagram.subsystems(analysis)
     assertEquals(2, edges.size)
+    assertEquals(3, edges.single { setOf(it.from, it.to) == setOf(id("core"), id("app")) }.weight)
+    assertEquals(1, edges.single { setOf(it.from, it.to) == setOf(id("my-app"), id("app")) }.weight)
   }
 
   @Test
-  fun `the heaviest dependencies come first`() {
-    val edges = GraphDiagram.modules(listOf(
-      "a/1.kt" to "b/1.kt",
-      "c/1.kt" to "d/1.kt", "c/2.kt" to "d/2.kt", "c/3.kt" to "d/3.kt",
-    ))
-    assertEquals("c", edges.first().from)
+  fun `the heaviest link comes first`() {
+    assertEquals(listOf(3, 1), GraphDiagram.subsystems(analysis).map { it.weight })
   }
 
   @Test
-  fun `an empty graph yields no diagram rather than an empty picture`() {
-    assertEquals("", GraphDiagram.mermaid(emptyList()))
+  fun `no links between subsystems yields no diagram rather than an empty picture`() {
+    assertEquals("", GraphDiagram.mermaid(analysis, emptyList()))
+    val apart = ProjectGraphAnalysis.analyze(names("a") + names("b"), clique("a") + clique("b"))
+    assertTrue(GraphDiagram.subsystems(apart).isEmpty())
   }
 
   @Test
-  fun `a folder with a hyphen does not break the syntax`() {
-    // Диаграмма, которая не рендерится, хуже отсутствующей.
-    val text = GraphDiagram.mermaid(listOf(GraphDiagram.Edge("my-app", "core", 1)))
-    assertTrue(text.contains("my_app[\"my-app\"]"))
+  fun `a node id is made of the number, so a folder with a hyphen cannot break the syntax`() {
+    val text = GraphDiagram.mermaid(analysis, GraphDiagram.subsystems(analysis))
+    assertTrue(text.contains("${GraphDiagram.id(id("my-app"))}[\"my-app · 6\"]"), text)
     assertFalse(text.contains("my-app -->"))
+    assertTrue(text.startsWith("flowchart LR"))
+  }
+
+  @Test
+  fun `a weight shows on a line only when it says more than one`() {
+    val text = GraphDiagram.mermaid(analysis, GraphDiagram.subsystems(analysis))
+    assertEquals(1, text.lines().count { it.contains("-->|3|") })
+    assertEquals(1, text.lines().count { it.contains("-->") && !it.contains("|") })
+  }
+
+  @Test
+  fun `a quote in a label does not close the label early`() {
+    val quoted = ProjectGraphAnalysis.analyze(
+      names("say \"hi\"") + names("b"),
+      clique("say \"hi\"") + clique("b") + fact("say \"hi\"/f1.ts", "b/f1.ts"),
+    )
+    val text = GraphDiagram.mermaid(quoted, GraphDiagram.subsystems(quoted))
+    assertTrue(text.lines().filter { it.contains("[\"") }.all { it.count { c -> c == '"' } == 2 }, text)
   }
 
   @Test
   fun `a diagram is capped so it stays readable`() {
-    val many = (1..50).map { GraphDiagram.Edge("from$it", "to$it", 1) }
-    val text = GraphDiagram.mermaid(many, maxNodes = 6, maxEdges = 10)
-    assertTrue(text.lines().count { it.contains("-->") } <= 10)
-    assertTrue(text.lines().count { it.contains("[\"") } <= 6)
-  }
-
-  @Test
-  fun `an id never starts with a digit`() {
-    assertEquals("m2core", GraphDiagram.id("2core"))
-    assertEquals("root", GraphDiagram.id("."))
+    val groups = (1..5).map { "g$it" }
+    val ring = groups.indices.map { fact("${groups[it]}/f1.ts", "${groups[(it + 1) % groups.size]}/f2.ts") }
+    val big = ProjectGraphAnalysis.analyze(groups.flatMap { names(it) }, groups.flatMap { clique(it) } + ring)
+    assertEquals(5, big.subsystems.size)
+    val text = GraphDiagram.mermaid(big, GraphDiagram.subsystems(big), maxNodes = 3, maxEdges = 10)
+    assertTrue(text.lines().count { it.contains("[\"") } <= 3)
+    assertTrue(text.lines().count { it.contains("-->") } <= 2)
   }
 }

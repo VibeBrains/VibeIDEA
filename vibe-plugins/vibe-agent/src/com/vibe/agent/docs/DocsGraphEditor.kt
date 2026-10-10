@@ -14,6 +14,7 @@ import com.intellij.testFramework.LightVirtualFile
 import com.intellij.ui.components.JBLabel
 import com.intellij.ui.components.JBTextField
 import com.intellij.util.ui.JBUI
+import com.vibe.agent.graphview.GraphCanvas
 import com.vibe.agent.i18n.VibeI18n.t
 import java.awt.BorderLayout
 import java.beans.PropertyChangeListener
@@ -32,7 +33,7 @@ import javax.swing.JPanel
  * открытии и зум колесом.
  */
 class DocsGraphEditor(private val project: Project, private val file: VirtualFile) : UserDataHolderBase(), FileEditor {
-  private val view = DocsGraphView { path -> openDocument(path) }
+  private val view = GraphCanvas(onClick = { node -> openDocument(node.id) }, fillOf = DocsGraphCanvas::colorOf)
   private val counts = JBLabel().apply { border = JBUI.Borders.empty(0, 8) }
   private val search = JBTextField(SEARCH_COLUMNS)
 
@@ -78,7 +79,7 @@ class DocsGraphEditor(private val project: Project, private val file: VirtualFil
       val layout = DocsGraphLayout.layout(analysis)
       val dropped = DocsGraphLayout.droppedCount(analysis)
       com.intellij.openapi.application.ApplicationManager.getApplication().invokeLater {
-        view.show(layout)
+        view.show(DocsGraphCanvas.toCanvas(layout))
         summary = t("docs.graph.counts",
                     "docs" to analysis.docs.size, "links" to layout.edges.size,
                     "unreachable" to analysis.unreachable.size, "broken" to analysis.brokenLinks.size) +

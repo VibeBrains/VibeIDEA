@@ -32,7 +32,8 @@ object CodeGraphBuilder {
     val result = LinkedHashMap<String, CodeGraphStore.Fingerprint>()
     ProjectRootManager.getInstance(project).fileIndex.iterateContent { vf ->
       if (!vf.isDirectory && vf.length in 1..MAX_FILE_SIZE && result.size < MAX_FILES) {
-        result[rel(base, vf)] = CodeGraphStore.Fingerprint(vf.length, vf.timeStamp)
+        val relative = rel(base, vf)
+        if (CodeGraphScope.isProjectFile(relative)) result[relative] = CodeGraphStore.Fingerprint(vf.length, vf.timeStamp)
       }
       result.size < MAX_FILES
     }
@@ -56,7 +57,7 @@ object CodeGraphBuilder {
     val base = project.basePath ?: return emptyList()
     val files = ArrayList<VirtualFile>()
     ProjectRootManager.getInstance(project).fileIndex.iterateContent { vf ->
-      if (!vf.isDirectory && vf.length in 1..MAX_FILE_SIZE && files.size < MAX_FILES) files.add(vf)
+      if (!vf.isDirectory && vf.length in 1..MAX_FILE_SIZE && files.size < MAX_FILES && CodeGraphScope.isProjectFile(rel(base, vf))) files.add(vf)
       files.size < MAX_FILES
     }
     return parse(project, base, files)

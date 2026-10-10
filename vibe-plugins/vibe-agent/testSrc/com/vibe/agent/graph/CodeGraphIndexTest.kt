@@ -87,4 +87,27 @@ class CodeGraphIndexTest {
     assertTrue(graph.path("a.kt", "lonely.kt").isEmpty())
     assertEquals(listOf("a.kt"), graph.path("a.kt", "a.kt"))
   }
+
+  @Test
+  fun `an ESM import written with the compiled extension finds the TypeScript source`() {
+    val paths = setOf("lib/app.ts", "lib/common/event.ts", "lib/view.tsx", "lib/worker.mts", "lib/shim.js", "lib/shim.ts")
+    assertEquals("lib/common/event.ts", CodeGraphIndex.resolveModule("lib/app.ts", "./common/event.js", paths))
+    assertEquals("lib/view.tsx", CodeGraphIndex.resolveModule("lib/app.ts", "./view.jsx", paths))
+    assertEquals("lib/view.tsx", CodeGraphIndex.resolveModule("lib/app.ts", "./view.js", paths))
+    assertEquals("lib/worker.mts", CodeGraphIndex.resolveModule("lib/app.ts", "./worker.mjs", paths))
+    // A real .js file on disk wins over the source it might stand for: the import names exactly that file
+    assertEquals("lib/shim.js", CodeGraphIndex.resolveModule("lib/app.ts", "./shim.js", paths))
+    assertEquals(null, CodeGraphIndex.resolveModule("lib/app.ts", "./missing.js", paths))
+  }
+
+  @Test
+  fun `a project of ESM imports is a connected graph, not a pile of lone files`() {
+    val graph = CodeGraphIndex.build(listOf(
+      node("src/main.ts", imports = listOf("./common/event.js", "./common/lifecycle.js")),
+      node("src/common/event.ts", imports = listOf("./lifecycle.js")),
+      node("src/common/lifecycle.ts"),
+    ))
+    assertEquals(3, graph.edges.size, graph.edges.toString())
+    assertTrue(graph.edges.all { it.provenance == CodeGraphIndex.Provenance.FACT })
+  }
 }
