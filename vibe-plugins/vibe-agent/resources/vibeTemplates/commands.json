@@ -1,0 +1,26 @@
+// Команды проекта: рутинные консольные команды одним кликом из меню «Команды» в заголовке окна
+// Файл едет в репозитории, формат общий с VibeIDE; спека формата — commandsSpec.md в справке VibeIDEA
+// Первый запуск команды и любая её правка спрашивают разрешение
+{
+  "vibeVersion": "1.0.0",
+  "commands": [
+    // Раскомментируйте и поправьте под проект
+    // {
+    //   "id": "build",
+    //   "name": "Сборка",
+    //   "command": "npm",
+    //   "args": ["run", "build"],
+    //   "pinned": true,
+    //   "order": 1,
+    //   "color": "terminal.ansiBlue",
+    //   "singleton": true
+    // },
+    // {
+    //   "id": "deploy",
+    //   "name": "Выкатить",
+    //   "command": "./deploy.sh",
+    //   "args": ["--token", "${secret:DEPLOY_TOKEN}"],
+    //   "confirm": true
+    // }
+  ]
+}

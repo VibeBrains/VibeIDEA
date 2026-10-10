@@ -32,6 +32,7 @@
   <actions>
     <action id="Vibe.Http.FromOpenApi" class="com.vibe.http.ui.VibeHttpFromOpenApiAction" icon="AllIcons.Actions.Download">
       <add-to-group group-id="ToolsMenu" anchor="last"/>
+      <add-to-group group-id="Vibe.BrainMenu.Project" anchor="last"/>
     </action>
     <action id="Vibe.Http.ImportCurl" class="com.vibe.http.ui.VibeHttpImportCurlAction" icon="AllIcons.Actions.Download">
       <add-to-group group-id="EditorPopupMenu" anchor="first"/>

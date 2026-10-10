@@ -126,6 +126,16 @@
         "endButtonHoverBackground": "SelBg",
         "endButtonBorder": "Border"
       },
+      "Commands": {
+        "red": "Error",
+        "green": "Ok",
+        "yellow": "#d4bb7c",
+        "blue": "#7f9fc4",
+        "magenta": "Warm",
+        "cyan": "#7fb5a8",
+        "orange": "Accent",
+        "purple": "Cool"
+      },
       "Chat": {
         "background": "DeepBg",
         "userBubbleBackground": "SelBg",

@@ -4516,8 +4516,8 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     if (thread.messages.isEmpty() && !(turnInFlight.get() && turnThreadId == threadId)) history.delete(threadId)
   }
 
-  /** «+»: an empty current thread is reused (restamped onto this project), otherwise a fresh one opens. */
-  private fun newChat() {
+  /** «+» and the «Новый чат» action: an empty current thread is reused (restamped onto this project), otherwise a fresh one opens. */
+  fun newChat() {
     val current = history.get(currentThreadId)
     if (current != null && current.messages.isEmpty() && !(turnInFlight.get() && turnThreadId == currentThreadId)) {
       history.reassign(current.id, project.basePath, project.name)

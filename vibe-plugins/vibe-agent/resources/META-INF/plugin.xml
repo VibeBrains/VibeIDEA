@@ -231,5 +231,82 @@
         <add-to-group group-id="EditorPopupMenu" anchor="last"/>
       </action>
     </group>
+    <!-- The header of the window. «Команды» — the project's pinned commands, a click each. The brain — everything of
+         ours in one place: before it these actions were reachable only through Find Action. -->
+    <group id="Vibe.CommandsMenu" class="com.vibe.agent.commands.VibeCommandsMenuGroup" popup="true" text="Команды"
+           description="Закреплённые команды проекта из .vibe/commands.json">
+      <add-to-group group-id="MainToolbarRight" anchor="first"/>
+    </group>
+    <action id="Vibe.NewChat" class="com.vibe.agent.menu.VibeNewChatAction" text="Новый чат"
+            description="Открыть панель агента с новым чатом"/>
+    <action id="Vibe.OpenSettings" class="com.vibe.agent.menu.VibeOpenSettingsAction" text="Настройки VibeIDEA"
+            description="Провайдеры, модели, агент, чат, интерфейс"/>
+    <group id="Vibe.BrainMenu" popup="true" text="VibeIDEA" description="Всё своё в одном месте" icon="/icons/vibeBrain.svg">
+      <add-to-group group-id="MainToolbarRight" anchor="after" relative-to-action="Vibe.CommandsMenu"/>
+      <group id="Vibe.BrainMenu.Chat">
+        <separator text="Чат"/>
+        <reference ref="Vibe.NewChat"/>
+        <reference ref="Vibe.ShowChatHistory"/>
+        <group id="Vibe.BrainMenu.History" text="История проекта" popup="true">
+          <reference ref="Vibe.ExportProjectHistory"/>
+          <reference ref="Vibe.ClaimUntaggedHistory"/>
+          <reference ref="Vibe.ClearProjectHistory"/>
+        </group>
+      </group>
+      <group id="Vibe.BrainMenu.Settings">
+        <separator text="Настройки"/>
+        <reference ref="Vibe.OpenSettings"/>
+        <group id="Vibe.BrainMenu.Spend" text="Ключи и расход" popup="true">
+          <reference ref="Vibe.SpendReport"/>
+          <reference ref="Vibe.SpendExport"/>
+          <reference ref="Vibe.ClearSpend"/>
+          <reference ref="Vibe.RefreshKeyAccess"/>
+          <reference ref="Vibe.DetectLocalModels"/>
+        </group>
+      </group>
+      <group id="Vibe.BrainMenu.Project">
+        <separator text="Проект"/>
+        <reference ref="Vibe.Specs"/>
+        <reference ref="Vibe.RecordDecision"/>
+        <reference ref="Vibe.Ingest"/>
+        <reference ref="Vibe.DocsReport"/>
+        <reference ref="Vibe.DailyDigest"/>
+        <reference ref="com.vibe.agent.exportCodeGraph"/>
+        <group id="Vibe.BrainMenu.Skills" text="Навыки" popup="true">
+          <reference ref="Vibe.SkillsCatalog"/>
+          <reference ref="Vibe.ValidateSkills"/>
+          <reference ref="Vibe.RunSkillEvals"/>
+        </group>
+        <group id="Vibe.BrainMenu.Context" text="Контекст агента" popup="true">
+          <reference ref="Vibe.PlaceAgentsFile"/>
+          <reference ref="Vibe.AddReferenceFolder"/>
+          <reference ref="Vibe.ManageReferenceFolders"/>
+        </group>
+      </group>
+      <group id="Vibe.BrainMenu.Agent">
+        <separator text="Агент"/>
+        <reference ref="Vibe.AgentRegistry"/>
+        <reference ref="Vibe.ReconnectAgent"/>
+        <reference ref="Vibe.LogoutAgent"/>
+        <reference ref="Vibe.ApproveMcpTools"/>
+        <reference ref="Vibe.Breakers"/>
+        <reference ref="Vibe.AuditLog"/>
+      </group>
+      <group id="Vibe.BrainMenu.Service">
+        <separator text="Сервис"/>
+        <reference ref="Vibe.ProjectCommands"/>
+        <reference ref="Vibe.Doctor"/>
+        <reference ref="Vibe.DesignDoctor"/>
+        <reference ref="Vibe.UiKitMap"/>
+        <reference ref="Vibe.Patrols"/>
+        <reference ref="Vibe.FimMetrics"/>
+        <reference ref="Vibe.Features"/>
+        <group id="Vibe.BrainMenu.Access" text="Доступ извне" popup="true">
+          <reference ref="Vibe.TelegramToken"/>
+          <reference ref="Vibe.ShowApiToken"/>
+          <reference ref="Vibe.RegenerateApiToken"/>
+        </group>
+      </group>
+    </group>
   </actions>
 </idea-plugin>

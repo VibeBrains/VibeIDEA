@@ -1,17 +1,24 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
-  "title": "Команды проекта VibeIDEA (.vibe/commands.json)",
+  "title": "Команды проекта (.vibe/commands.json), формат общий для VibeIDEA и VibeIDE",
   "type": [
     "object",
     "array"
   ],
   "properties": {
+    "vibeVersion": {
+      "type": "string",
+      "description": "Версия формата, любая непустая строка. VibeIDE без неё файл не читает."
+    },
     "commands": {
       "type": "array",
       "items": {
         "$ref": "#/definitions/command"
       }
     }
+  },
+  "patternProperties": {
+    "^_comment": {}
   },
   "items": {
     "$ref": "#/definitions/command"
@@ -24,31 +31,90 @@
         "command"
       ],
       "additionalProperties": false,
+      "patternProperties": {
+        "^_comment": {}
+      },
       "properties": {
         "id": {
           "type": "string",
-          "description": "Уникальный внутри файла; по нему запоминается разрешение на запуск."
+          "description": "Латиница в нижнем регистре, цифры, дефис; до 64 символов; уникален в файле. По нему запоминается разрешение.",
+          "pattern": "^[a-z0-9][a-z0-9-]{0,63}$"
         },
-        "command": {
+        "name": {
           "type": "string",
-          "description": "Ровно одна команда. Метасимволы оболочки (; & | ` $) и невидимые символы отклоняются целиком."
+          "description": "Подпись в меню. VibeIDE без неё файл не читает; у нас без неё показывается id."
         },
         "title": {
           "type": "string",
-          "description": "Подпись в списке; без неё показывается id."
+          "description": "Прежнее написание name, читается только VibeIDEA."
         },
-        "order": {
-          "type": "integer",
-          "description": "Позиция в списке; при равенстве — порядок в файле."
+        "command": {
+          "type": "string",
+          "description": "Программа: npm, ./gradlew, docker. Аргументы — в args. Без args строка делится на слова по пробелам."
+        },
+        "args": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Аргументы по одному элементу. Метасимволы оболочки без shell: true — отказ."
+        },
+        "description": {
+          "type": "string",
+          "description": "Подсказка в меню."
+        },
+        "cwd": {
+          "type": "string",
+          "description": "Папка запуска от корня проекта. Выход за проект через .. или ссылку отклоняется."
+        },
+        "env": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          },
+          "description": "Переменные окружения процесса. Секреты — ссылкой ${secret:KEY}."
+        },
+        "terminal": {
+          "enum": [
+            "integrated",
+            "background",
+            "external"
+          ],
+          "description": "integrated — окно Run выходит вперёд; background — не выходит; external у VibeIDEA идёт как integrated."
         },
         "pinned": {
           "type": "boolean",
-          "description": "Часто нужная команда."
+          "description": "true — команда в меню «Команды» и на клавишах Ctrl+Shift+Alt+1…9."
+        },
+        "order": {
+          "type": "number",
+          "description": "Место в списках по возрастанию; без поля — в конце, затем по name."
         },
         "color": {
           "type": "string",
-          "description": "Имя цвета для UI; незнакомое игнорируется."
-        }
+          "description": "Имя цвета темы: terminal.ansiBlue, terminal.ansiGreen, charts.red. Полоса-акцент в меню; незнакомое игнорируется."
+        },
+        "icon": {
+          "type": "string",
+          "description": "Имя значка codicon для VibeIDE. VibeIDEA значок не показывает."
+        },
+        "confirm": {
+          "type": "boolean",
+          "description": "true — спрашивать подтверждение при каждом запуске."
+        },
+        "singleton": {
+          "type": "boolean",
+          "description": "true — не запускать второй экземпляр, пока первый работает."
+        },
+        "shell": {
+          "type": "boolean",
+          "description": "true — строка уходит в оболочку вместе с метасимволами."
+        },
+        "workflowId": {
+          "type": "string",
+          "description": "Сценарий VibeIDE вместо команды. VibeIDEA такую команду не запускает и говорит об этом."
+        },
+        "_comment": {}
       }
     }
   }

@@ -56,6 +56,7 @@
             text="VibeIDEA: языковые серверы"
             description="Какие языковые серверы установлены и как поставить недостающие">
       <add-to-group group-id="ToolsMenu" anchor="last"/>
+      <add-to-group group-id="Vibe.BrainMenu.Service" anchor="last"/>
     </action>
   </actions>
 </idea-plugin>

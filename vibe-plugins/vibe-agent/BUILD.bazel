@@ -48,6 +48,9 @@ jvm_library(
         "//java/java-psi-api:psi",
         "//platform/diff-api:diff",
         "//platform/lang-impl",
+        # Project commands run in the Run tool window: RunContentExecutor and the process handlers.
+        "//platform/execution",
+        "//platform/execution-impl",
         "//platform/lang-api:lang",
         "//platform/platform-impl:ide-impl",
         # About dialog: the git revision of the build lives in product-info custom properties.
