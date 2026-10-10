@@ -136,6 +136,14 @@
         "orange": "Accent",
         "purple": "Cool"
       },
+      "Review": {
+        "added": "#2c3020",
+        "changed": "#322b1f",
+        "removed": "#3b1917",
+        "current": "#4b402e",
+        "accept": "Ok",
+        "reject": "Error"
+      },
       "Chat": {
         "background": "DeepBg",
         "userBubbleBackground": "SelBg",

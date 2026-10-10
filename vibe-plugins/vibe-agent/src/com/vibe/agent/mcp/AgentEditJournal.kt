@@ -32,6 +32,8 @@ class AgentEditJournal(private val onRefresh: (File) -> Unit = {}) {
 
   private val entries = ConcurrentHashMap<String, Entry>()
 
+  private val listeners = java.util.concurrent.CopyOnWriteArrayList<(Change) -> Unit>()
+
   /** Порядок появления сохраняется: список читается сверху вниз, как шла работа. */
   private val order = java.util.concurrent.CopyOnWriteArrayList<String>()
 
@@ -45,6 +47,7 @@ class AgentEditJournal(private val onRefresh: (File) -> Unit = {}) {
       // Прежний снимок сохраняется, обновляется только «после»: откат ведёт к состоянию до начала.
       entries[path] = existing.copy(after = after)
     }
+    announce(Change.Recorded(path, after))
   }
 
   fun all(): List<Entry> = order.mapNotNull { entries[it] }
@@ -55,13 +58,77 @@ class AgentEditJournal(private val onRefresh: (File) -> Unit = {}) {
 
   /** Принять: изменение остаётся, из списка уходит. */
   fun accept(path: String) {
-    entries.remove(path)
+    val removed = entries.remove(path)
     order.remove(path)
+    if (removed != null) announce(Change.Removed(path))
   }
 
   fun acceptAll() {
+    val paths = order.toList()
     entries.clear()
     order.clear()
+    paths.forEach { announce(Change.Removed(it)) }
+  }
+
+  /**
+   * A person accepted part of the file's changes in the editor: the baseline moves to [before], which has those lines in it
+   *
+   * The entry leaves the journal when nothing is left to decide ([settled]), exactly as with [accept]
+   * The text the agent wrote is not touched: an edit made on top of it stays visible to the drift check of [reject]
+   */
+  fun rebase(path: String, before: String, settled: Boolean) {
+    if (settled) {
+      accept(path)
+      return
+    }
+    if (entries.computeIfPresent(path) { _, entry -> entry.copy(before = before) } != null) announce(Change.Resolved(path))
+  }
+
+  /**
+   * A person rejected part of the file's changes in the editor: the document now holds a text without those lines
+   *
+   * The recorded text moves to [after] unless it is null: the caller passes null when the file had been edited by a person already,
+   * so that edit still reads as drift to the check in [reject]
+   * The entry leaves the journal when nothing is left to decide ([settled]), exactly as with [accept]
+   */
+  fun follow(path: String, after: String?, settled: Boolean) {
+    if (settled) {
+      accept(path)
+      return
+    }
+    val kept = entries.computeIfPresent(path) { _, entry -> if (after == null) entry else entry.copy(after = after) }
+    if (kept != null) announce(Change.Resolved(path))
+  }
+
+  /** What happened to the journal, for whoever shows the entries: the editor marks, the strip over the chat input */
+  sealed interface Change {
+    val path: String
+
+    /** The agent wrote the file ([after] is what it wrote) */
+    data class Recorded(override val path: String, val after: String) : Change
+
+    /** A person accepted or rejected a part of the file's changes */
+    data class Resolved(override val path: String) : Change
+
+    /** The entry left the journal: accepted or rejected as a whole */
+    data class Removed(override val path: String) : Change
+  }
+
+  /** Listens for [Change]s on whatever thread made them; close the result to stop */
+  fun subscribe(listener: (Change) -> Unit): AutoCloseable {
+    listeners.add(listener)
+    return AutoCloseable { listeners.remove(listener) }
+  }
+
+  private fun announce(change: Change) {
+    for (listener in listeners) {
+      // A subscriber that fails must not fail the write that was being recorded: the file is already changed
+      try {
+        listener(change)
+      }
+      catch (_: Exception) {
+      }
+    }
   }
 
   /** Результат отката — словами, потому что каждый отказ здесь означает разное. */

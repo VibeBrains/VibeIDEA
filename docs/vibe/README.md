@@ -19,6 +19,7 @@
 - [manuals/teamMemory.md](manuals/teamMemory.md) — память команды VibeMemory: подключение агента `vibeidea` в кабинете, где токен, инструменты команды в прямом чате и у внешних агентов
 - [manuals/telegramBridge.md](manuals/telegramBridge.md) — мост в Telegram: свой бот, разрешение чата владельцем, команды, прокси и чего пока нет.
 - [manuals/commandsSpec.md](manuals/commandsSpec.md) — спека команд проекта `.vibe/commands.json`: формат, что отклоняется и почему, разрешение по хешу, секреты по имени (самодостаточная, для LLM).
+- [manuals/editReview.md](manuals/editReview.md) — разбор правок агента по одной: как начать, что делает каждое решение, куда переходит ход, клавиши
 - [manuals/skillsSpec.md](manuals/skillsSpec.md) — спека Agent Skills `.vibe/skills/<id>/SKILL.md`: формат, шесть ключей шапки, валидатор, пример (самодостаточная, для LLM).
 - [manuals/httpApiSpec.md](manuals/httpApiSpec.md) — спека входящего HTTP API (loopback + Bearer): как дёрнуть агента из CI/бота/крона (самодостаточная, для LLM).
 - [manuals/mcpSpec.md](manuals/mcpSpec.md) — спека MCP-сервера в IDE: адрес, версии протокола, инструменты, ошибки (самодостаточная, для LLM).

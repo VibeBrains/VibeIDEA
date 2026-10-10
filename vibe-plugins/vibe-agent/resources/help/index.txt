@@ -13,6 +13,7 @@ manuals/debugging.md
 manuals/decisionsSpec.md
 manuals/designSpec.md
 manuals/directChatTools.md
+manuals/editReview.md
 manuals/hooksSpec.md
 manuals/httpApiSpec.md
 manuals/httpClientSpec.md

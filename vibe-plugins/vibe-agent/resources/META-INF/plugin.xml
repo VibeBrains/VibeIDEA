@@ -18,6 +18,11 @@
     <listener class="com.vibe.agent.ui.EditorScrollBarWidthLafListener"
               topic="com.intellij.ide.ui.LafManagerListener"/>
   </applicationListeners>
+  <projectListeners>
+    <!-- The review of the agent's edits goes into an editor when its file is opened -->
+    <listener class="com.vibe.agent.review.ReviewEditorListener"
+              topic="com.intellij.openapi.fileEditor.FileEditorManagerListener"/>
+  </projectListeners>
 
   <extensionPoints>
     <!-- Плагин рассказывает о СВОЕЙ части IDE сам: vibe-lsp зависит от нас, и обратная зависимость
@@ -81,6 +86,8 @@
     <postStartupActivity implementation="com.vibe.agent.features.FeaturesStartup"/>
     <postStartupActivity implementation="com.vibe.agent.patrol.PatrolStartup"/>
     <postStartupActivity implementation="com.vibe.agent.history.VibeHistoryWarmUp"/>
+    <!-- Gives the edit journal a listener from the agent's first write, not from the first opened file -->
+    <postStartupActivity implementation="com.vibe.agent.review.ReviewStartup"/>
     <postStartupActivity implementation="com.vibe.agent.guard.ConfigGuardStartup"/>
     <postStartupActivity implementation="com.vibe.agent.providers.LocalProbeStartup"/>
     <postStartupActivity implementation="com.vibe.agent.digest.DailyDigestStartup"/>
@@ -231,6 +238,26 @@
         <add-to-group group-id="EditorPopupMenu" anchor="last"/>
       </action>
     </group>
+    <!-- Review of the agent's edits one hunk at a time, in the editor. The keys are Ctrl+Alt+Shift with a bracket for the
+         steps and Enter / Backspace for the verdict: none of them is bound in platform/platform-resources/src/keymaps -->
+    <group id="Vibe.Review">
+      <action id="Vibe.Review.NextHunk" class="com.vibe.agent.review.VibeReviewNextAction"
+              text="Следующая правка агента" description="Перейти к следующей правке агента в этом файле">
+        <keyboard-shortcut keymap="$default" first-keystroke="control alt shift CLOSE_BRACKET"/>
+      </action>
+      <action id="Vibe.Review.PreviousHunk" class="com.vibe.agent.review.VibeReviewPreviousAction"
+              text="Предыдущая правка агента" description="Перейти к предыдущей правке агента в этом файле">
+        <keyboard-shortcut keymap="$default" first-keystroke="control alt shift OPEN_BRACKET"/>
+      </action>
+      <action id="Vibe.Review.AcceptHunk" class="com.vibe.agent.review.VibeReviewAcceptAction"
+              text="Принять правку агента" description="Принять текущую правку агента: она остаётся в файле">
+        <keyboard-shortcut keymap="$default" first-keystroke="control alt shift ENTER"/>
+      </action>
+      <action id="Vibe.Review.RejectHunk" class="com.vibe.agent.review.VibeReviewRejectAction"
+              text="Отклонить правку агента" description="Отклонить текущую правку агента: файл возвращается к прежнему тексту в этом месте">
+        <keyboard-shortcut keymap="$default" first-keystroke="control alt shift BACK_SPACE"/>
+      </action>
+    </group>
     <!-- The header of the window. «Команды» — the project's pinned commands, a click each. The brain — everything of
          ours in one place: before it these actions were reachable only through Find Action. -->
     <group id="Vibe.CommandsMenu" class="com.vibe.agent.commands.VibeCommandsMenuGroup" popup="true" text="Команды"
@@ -291,6 +318,10 @@
         <reference ref="Vibe.ApproveMcpTools"/>
         <reference ref="Vibe.Breakers"/>
         <reference ref="Vibe.AuditLog"/>
+        <reference ref="Vibe.Review.NextHunk"/>
+        <reference ref="Vibe.Review.PreviousHunk"/>
+        <reference ref="Vibe.Review.AcceptHunk"/>
+        <reference ref="Vibe.Review.RejectHunk"/>
       </group>
       <group id="Vibe.BrainMenu.Service">
         <separator text="Сервис"/>

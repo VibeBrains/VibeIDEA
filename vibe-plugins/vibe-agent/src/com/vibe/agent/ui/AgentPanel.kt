@@ -322,6 +322,9 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
   /** CAS-guarded: concurrent finishers (reader/exit/pooled threads) must not double-finish. */
   private val turnInFlight = java.util.concurrent.atomic.AtomicBoolean(false)
   @Volatile private var disposed = false
+
+  /** The strip over the input counts the journal's entries; the editor review settles them too, and must move the count */
+  private val journalSubscription: AutoCloseable = journal().subscribe { refreshChangedFiles() }
   private var target: ChatTarget? = null
   private var targets: List<ChatTarget> = emptyList()
   /** A thread's saved target that is not in [targets] yet (model catalogs load async). */
@@ -558,6 +561,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
 
   override fun dispose() {
     disposed = true
+    journalSubscription.close()
     silenceTimer.stop()
     commandsTimer.stop()
     com.vibe.agent.http.VibeAgentGateway.getInstance().unregister(this)
@@ -838,6 +842,9 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
       row.add(name)
       row.add(com.vibe.agent.ui.composer.PillButton(icon = AllIcons.Actions.Diff) { showEditDiff(entry) }
                 .apply { toolTipText = t("chat.changes.diff") })
+      row.add(com.vibe.agent.ui.composer.PillButton(icon = AllIcons.Actions.EditSource) {
+        com.vibe.agent.review.AgentReviewService.getInstance(project).open(entry.path)
+      }.apply { toolTipText = t("chat.changes.review") })
       row.add(com.vibe.agent.ui.composer.PillButton(icon = AllIcons.Actions.Commit) {
         journal().accept(entry.path); refreshChangedFiles()
       }.apply { toolTipText = t("chat.changes.accept") })

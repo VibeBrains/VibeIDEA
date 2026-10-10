@@ -47,6 +47,8 @@ jvm_library(
         "//uast/uast-common:uast",
         "//java/java-psi-api:psi",
         "//platform/diff-api:diff",
+        # In-editor review of the agent's edits: the platform line comparison (ByLineRt) without an application behind it.
+        "//platform/util/diff",
         "//platform/lang-impl",
         # Project commands run in the Run tool window: RunContentExecutor and the process handlers.
         "//platform/execution",
