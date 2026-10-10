@@ -47,6 +47,22 @@ class EffortUpdatesTest {
   }
 
   @Test
+  fun `a round of tool results is not a question, mid-loop or in the history`() {
+    val round = listOf(answer("low"), ChatMessage(ToolCalls.ROLE, ""), answer("low"))
+    // Mid-loop: the last message is tool results, and the update still stands before the person's question
+    val midLoop = EffortUpdates.plan(listOf(ChatMessage("user", "q1")) + round + ChatMessage("user", "q2") +
+                                     listOf(answer(null), ChatMessage(ToolCalls.ROLE, "")), key, "high")
+    assertEquals("low", midLoop.requestEffort)
+    assertEquals(listOf("user", "assistant", "tool", "assistant", "update:high", "user", "assistant", "tool"), roles(midLoop))
+    // Later: the question keeps the effort of the first answer that followed it, tool rounds do not shift the count
+    val later = EffortUpdates.plan(listOf(ChatMessage("user", "q1")) + round + ChatMessage("user", "q2") +
+                                   listOf(answer("high"), ChatMessage(ToolCalls.ROLE, ""), answer("high"), ChatMessage("user", "q3")),
+                                   key, "high")
+    assertEquals(listOf("user", "assistant", "tool", "assistant", "update:high", "user", "assistant", "tool", "assistant", "user"),
+                 roles(later))
+  }
+
+  @Test
   fun `answers of another model say nothing about this one`() {
     val history = listOf(ChatMessage("user", "q1"), answer("max", by = "openai/gpt-6-astra"), ChatMessage("user", "q2"))
     val plan = EffortUpdates.plan(history, key, "low")

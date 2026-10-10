@@ -18,6 +18,27 @@ class ModelCatalogCacheTest {
   }
 
   @Test
+  fun `a refreshed catalog names the models the previous one did not have`() {
+    assertEquals(listOf("glm-5.3"), ModelCatalogCache.newModels(entry("glm-5", "glm-4.7"), entry("glm-5", "glm-5.3", "glm-4.7")))
+    assertEquals(emptyList(), ModelCatalogCache.newModels(entry("glm-5"), entry("glm-5")))
+  }
+
+  @Test
+  fun `a first fetch and a moved endpoint name nothing`() {
+    assertEquals(emptyList(), ModelCatalogCache.newModels(null, entry("glm-5", "glm-4.7")))
+    assertEquals(emptyList(), ModelCatalogCache.newModels(entry("glm-5", fingerprint = "https://old/v1|"), entry("glm-5", "glm-4.7")))
+  }
+
+  @Test
+  fun `the line names a few new models per provider and counts the rest`() {
+    assertEquals(null, ModelCatalogCache.newModelsLine(mapOf("Z.ai" to emptyList())))
+    val line = ModelCatalogCache.newModelsLine(mapOf("Z.ai" to listOf("a", "b"), "OpenRouter" to (1..8).map { "m$it" }))!!
+    assertTrue("Z.ai — a, b" in line, line)
+    assertTrue("m5" in line && "m6" !in line, line)
+    assertTrue("3" in line, line)
+  }
+
+  @Test
   fun `a provider without a cache entry is untouched`() {
     val merged = ModelCatalogCache.merge(listOf(zai), emptyMap())
     assertEquals(listOf("glm-5"), merged.single().models.map { it.id })

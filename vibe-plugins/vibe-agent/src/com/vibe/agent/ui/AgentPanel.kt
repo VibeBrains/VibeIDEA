@@ -5849,6 +5849,8 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
       val keyRequired = java.util.Collections.synchronizedList(ArrayList<String>())
       val localDown = java.util.Collections.synchronizedList(ArrayList<String>())
       val failed = java.util.Collections.synchronizedList(ArrayList<Pair<String, String>>())
+      val previous = ModelCatalogCache.load()
+      val added = java.util.Collections.synchronizedMap(LinkedHashMap<String, List<String>>())
       val pending = snapshot.mapNotNull { p ->
         if (p.modelsFetch?.enabled == false) return@mapNotNull null // absent = fetch on (default)
         // quiet: обновление каталогов — фон, и в связку ключей оно не ходит. Иначе шесть обращений
@@ -5866,8 +5868,12 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
         ApplicationManager.getApplication().executeOnPooledThread {
           try {
             val models = llm.listModels(resolved, p.modelsFetch?.url)
-            fresh[p.id] = ModelCatalogCache.entryOf(p, models, System.currentTimeMillis())
+            val entry = ModelCatalogCache.entryOf(p, models, System.currentTimeMillis())
+            fresh[p.id] = entry
             updated += p.id
+            // Hand-declared models are in the picker already: only what the catalog alone brought is news
+            val declared = staticModelIds[p.id].orEmpty()
+            added[p.name] = ModelCatalogCache.newModels(previous[p.id], entry).filter { it !in declared }
             SwingUtilities.invokeLater { if (!disposed) addCatalogModels(p.id, models) }
           }
           catch (e: Exception) {
@@ -5895,6 +5901,8 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
         // Rebuild on ANY change of the set: a key added in Settings must bring the models back.
         if (keylessChanged) rebuildTargets()
         report.summary().takeIf { it.isNotEmpty() }?.let { systemLine(it) }
+        // A new catalog model arrives hidden: unnamed, a refresh looks like it brought nothing
+        ModelCatalogCache.newModelsLine(added.toMap())?.let { systemLine(it) }
         // Catalog models are hidden by default (curated picker) — say where to turn them on.
         val dormant = providers.filter { p ->
           p.id !in keylessProviders && p.models.isNotEmpty() && p.models.none { m ->
@@ -5906,7 +5914,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
           }
         }
         if (dormant.isNotEmpty()) {
-          systemLine(t("providers.dormant", "providers" to dormant.joinToString { it.name }))
+          systemLine(t("providers.dormant", "names" to dormant.joinToString { it.name }))
         }
       }
     }

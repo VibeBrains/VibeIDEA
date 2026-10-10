@@ -54,9 +54,23 @@ class SeedRevisionsTest {
 
   @Test
   fun contentMovedWithoutABumpIsSetDrift() {
-    // Journal says we already carry revision 3, the copy is our own untouched seed, yet the
-    // release content differs → somebody edited the set without running bump.mjs.
+    // Journal says we already carry revision 3, the copy is our own untouched seed that `history`
+    // never saw, yet the release content differs → somebody edited the set without running bump.mjs.
     assertEquals(SeedVerdict.SET_DRIFT,
+                 SeedRevisions.verdict(rev, localSha = "unbumped", journalSha = "unbumped", journalVersion = 3))
+    // The same seed recorded at an older revision is simply behind.
+    assertEquals(SeedVerdict.UPDATE,
+                 SeedRevisions.verdict(rev, localSha = "unbumped", journalSha = "unbumped", journalVersion = 2))
+  }
+
+  @Test
+  fun oldRevisionBroughtBackByGitIsUpdatedWhateverTheJournalRemembers() {
+    // `.vibe` is under git, the journal in `local/` is not: a branch switch returns revision 2
+    // while the journal still says «seeded at 3».
+    assertEquals(SeedVerdict.UPDATE,
+                 SeedRevisions.verdict(rev, localSha = "release2", journalSha = "release3", journalVersion = 3))
+    // The journal may even remember that very copy — a past revision is still a past revision.
+    assertEquals(SeedVerdict.UPDATE,
                  SeedRevisions.verdict(rev, localSha = "release2", journalSha = "release2", journalVersion = 3))
   }
 

@@ -95,6 +95,31 @@ object ModelCatalogCache {
       if (extra.isEmpty() && declared == p.models) p else p.copy(models = declared + extra)
     }
 
+  /**
+   * Model ids a refreshed catalog brought that the previous one did not have
+   * Empty without a previous catalog of the same endpoint: on a first fetch every model is new, and naming them all says nothing
+   */
+  fun newModels(previous: Entry?, fresh: Entry): List<String> {
+    if (previous == null || previous.fingerprint != fresh.fingerprint) return emptyList()
+    val known = previous.modelIds.toSet()
+    return fresh.modelIds.filter { it !in known }
+  }
+
+  /**
+   * The feed line naming new catalog models per provider, null when there are none
+   * A catalog may grow by dozens at once, so each provider names its first [NEW_MODELS_NAMED] and counts the rest
+   */
+  fun newModelsLine(added: Map<String, List<String>>): String? {
+    val parts = added.filterValues { it.isNotEmpty() }.map { (provider, ids) ->
+      val named = ids.take(NEW_MODELS_NAMED).joinToString(", ")
+      val rest = ids.size - NEW_MODELS_NAMED
+      "$provider — " + if (rest > 0) t("providers.newModels.more", "list" to named, "count" to rest) else named
+    }
+    return if (parts.isEmpty()) null else t("providers.newModels", "list" to parts.joinToString("; "))
+  }
+
+  private const val NEW_MODELS_NAMED = 5
+
   /** Human-readable age of a cached catalog, for the log line that explains where models came from. */
   fun ageText(fetchedAtMs: Long, nowMs: Long): String {
     val minutes = (nowMs - fetchedAtMs).coerceAtLeast(0L) / 60_000L

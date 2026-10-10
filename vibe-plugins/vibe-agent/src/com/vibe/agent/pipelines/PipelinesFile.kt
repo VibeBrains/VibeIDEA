@@ -231,13 +231,13 @@ object PipelinesFile {
 
   /**
    * A yes/no field of a step
-   * Only a JSON boolean counts: the string "true" read as false would turn the field off without a word
+   * Only a JSON boolean counts, and anything else refuses the step:
+   * The string "true" read as false changes what the pipeline does, and a warning in the feed is easy to miss
    */
-  private fun flagOf(so: kotlinx.serialization.json.JsonObject, name: String, onWarning: (String) -> Unit): Boolean {
+  private fun flagOf(so: kotlinx.serialization.json.JsonObject, name: String): Boolean {
     val value = so[name] ?: return false
-    val flag = (value as? kotlinx.serialization.json.JsonPrimitive)?.takeIf { !it.isString }?.booleanOrNull
-    if (flag == null) onWarning(t("pipeline.warn.flagNotBoolean", "field" to name))
-    return flag ?: false
+    return (value as? kotlinx.serialization.json.JsonPrimitive)?.takeIf { !it.isString }?.booleanOrNull
+           ?: throw IllegalArgumentException(t("pipeline.warn.flagNotBoolean", "field" to name))
   }
 
   /**
@@ -307,12 +307,12 @@ object PipelinesFile {
         onWarning(t("pipeline.warn.unknownContext", "role" to role, "value" to wire, "default" to it.wire))
       }
     } ?: defaultContext
-    val offPeak = flagOf(so, "offPeak", onWarning)
+    val offPeak = flagOf(so, "offPeak")
     if (offPeak && own.second == null) {
       throw IllegalArgumentException(t("pipeline.warn.offPeakNeedsModel", "role" to role))
     }
     val pack = packOf(so["pack"], role, model != null)
-    val againstBrief = flagOf(so, "againstBrief", onWarning)
+    val againstBrief = flagOf(so, "againstBrief")
     // Пишущая роль, сверяющая с брифом, дописала бы результат под приёмку — это не приёмка.
     if (againstBrief && !readOnly(role)) throw IllegalArgumentException(t("pipeline.warn.againstBriefWritingRole", "role" to role))
     return PipelineStep(
@@ -324,9 +324,9 @@ object PipelinesFile {
       acceptance = so["acceptance"]?.jsonPrimitive?.contentOrNull,
       maxTokens = so["maxTokens"]?.jsonPrimitive?.intOrNull,
       maxSteps = so["maxSteps"]?.jsonPrimitive?.intOrNull,
-      escalation = flagOf(so, "escalation", onWarning),
-      continueOnFailure = flagOf(so, "continueOnFailure", onWarning),
-      ignorePreviousArtifacts = flagOf(so, "ignorePreviousArtifacts", onWarning),
+      escalation = flagOf(so, "escalation"),
+      continueOnFailure = flagOf(so, "continueOnFailure"),
+      ignorePreviousArtifacts = flagOf(so, "ignorePreviousArtifacts"),
       paths = stringList(so["paths"]),
       denyPaths = stringList(so["denyPaths"]),
       context = context,

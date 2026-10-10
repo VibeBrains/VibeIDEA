@@ -75,11 +75,16 @@ class PipelineRolesTest {
   }
 
   @Test
-  fun `a quoted flag is read as false and said so`() {
-    val (pipelines, warnings) = load("""{"pipelines":[{"id":"p","steps":[{"role":"explore","task":"изучи"},
-      {"role":"critic","task":"оцени","escalation":"true"}]}]}""")
-    assertEquals(false, pipelines.single().steps[1].escalation)
-    assertEquals(1, warnings.size)
+  fun `a flag that is not a boolean refuses the pipeline and names the field`() {
+    for (field in listOf("escalation", "continueOnFailure", "ignorePreviousArtifacts", "offPeak", "againstBrief")) {
+      for (value in listOf("\"true\"", "1", "null")) {
+        val (pipelines, warnings) = load("""{"pipelines":[{"id":"p","steps":[{"role":"explore","task":"изучи"},
+          {"role":"critic","task":"оцени","$field":$value}]}]}""")
+        assertTrue(pipelines.isEmpty(), "$field: $value прочитан как флаг")
+        assertEquals(1, warnings.size, "$field: $value")
+        assertTrue(warnings.single().contains(field), warnings.single())
+      }
+    }
   }
 
   @Test

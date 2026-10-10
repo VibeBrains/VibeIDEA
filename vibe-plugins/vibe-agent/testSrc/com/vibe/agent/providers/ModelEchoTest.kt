@@ -5,11 +5,12 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonObject
 import kotlin.test.Test
 import kotlin.test.assertEquals
-import kotlin.test.assertFalse
 import kotlin.test.assertNull
-import kotlin.test.assertTrue
 
-/** Кто ответил на самом деле: чтение имени модели с каждого провода и сравнение с запрошенной. */
+/**
+ * Who actually answered: the model name read off each wire
+ * The comparison with the requested id is pinned by the shared vectors ([ModelEchoVectorsTest]); a new case goes there
+ */
 class ModelEchoTest {
   private fun obj(text: String) = Json.parseToJsonElement(text).jsonObject
 
@@ -26,69 +27,5 @@ class ModelEchoTest {
     assertNull(ModelEcho.fromAnthropicEvent(obj("""{"type":"content_block_delta"}""")))
     assertNull(ModelEcho.fromGeminiEvent(obj("""{"candidates":[]}""")))
     assertNull(ModelEcho.fromOpenAiChunk(obj("""{"model":"  "}""")))
-  }
-
-  @Test
-  fun `the same model spelled differently is not a substitution`() {
-    // Псевдоним, разрешённый в датированную сборку, и пространство имён агрегатора.
-    assertFalse(ModelEcho.substituted("gpt-4o", "gpt-4o-2024-08-06"))
-    assertFalse(ModelEcho.substituted("openai/gpt-4o", "gpt-4o"))
-    assertFalse(ModelEcho.substituted("gpt-4o", "openai/gpt-4o"))
-    assertFalse(ModelEcho.substituted("claude-opus-5", "Claude-Opus-5"))
-    assertFalse(ModelEcho.substituted("qwen3-max", "qwen3-max@2026-01-01"))
-    // Хвост-сборка может начинаться с цифр и продолжаться словом.
-    assertFalse(ModelEcho.substituted("kimi-k2", "kimi-k2-0905-preview"))
-    assertFalse(ModelEcho.substituted("gemini-3.8-flash", "gemini-3.8-flash-002"))
-  }
-
-  @Test
-  fun `another model is a substitution`() {
-    assertTrue(ModelEcho.substituted("claude-opus-5", "claude-haiku-4-5"))
-    // Хвост-слово — другая модель, и прятать это за «переименованием» нельзя.
-    assertTrue(ModelEcho.substituted("gpt-4o", "gpt-4o-mini"))
-    assertTrue(ModelEcho.substituted("gpt-4o", "gpt-4o-mini-2024-07-18"))
-    assertTrue(ModelEcho.substituted("openai/gpt-4o", "anthropic/claude-opus-5"))
-  }
-
-  @Test
-  fun `silence is not an accusation`() {
-    // Провод, который своё имя не называет, не повод пугать владельца строкой о подмене.
-    assertFalse(ModelEcho.substituted("gpt-4o", null))
-    assertFalse(ModelEcho.substituted("gpt-4o", "   "))
-    assertFalse(ModelEcho.substituted("", "gpt-4o"))
-  }
-  @Test
-  fun `плавающий алиас не считается подменой`() {
-    // Просьба «дай текущую сборку» и датированный ответ — одна модель. Иначе предупреждение
-    // срабатывало бы на каждом ходу через алиас и перестало бы что-либо значить.
-    assertFalse(ModelEcho.substituted("~openai/gpt-5-latest", "gpt-5-2026-08-01"))
-    assertFalse(ModelEcho.substituted("openai/gpt-5-latest", "openai/gpt-5"))
-    assertFalse(ModelEcho.substituted("claude-opus-5:latest", "claude-opus-5-20260801"))
-  }
-
-  @Test
-  fun `за алиасом другая модель по-прежнему подмена`() {
-    assertTrue(ModelEcho.substituted("~openai/gpt-5-latest", "gpt-5-mini-2026-08-01"))
-    assertTrue(ModelEcho.substituted("openai/gpt-5-latest", "claude-opus-5"))
-  }
-
-  @Test
-  fun `quirks follow the snapshot behind a floating alias`() {
-    assertEquals("gpt-5-2026-08-01", ModelEcho.quirkId("~openai/gpt-5-latest", "gpt-5-2026-08-01"))
-  }
-
-  @Test
-  fun `quirks stay on the requested id when another model answered or nothing is known`() {
-    assertEquals("gpt-5-latest", ModelEcho.quirkId("gpt-5-latest", "claude-opus-5"))
-    assertEquals("gpt-5-latest", ModelEcho.quirkId("gpt-5-latest", null))
-    assertEquals("gpt-5-latest", ModelEcho.quirkId("gpt-5-latest", " "))
-  }
-
-  @Test
-  fun `a retired alias served by the next generation is a substitution`() {
-    // DeepSeek routes deepseek-v4-flash to V4.1 Flash and answers with its own id (api-docs.deepseek.com/updates,
-    // 10.09.2026); the price and quirks of the requested id no longer describe what answered.
-    assertTrue(ModelEcho.substituted("deepseek-v4-flash", "deepseek-flash"))
-    assertTrue(ModelEcho.substituted("deepseek/deepseek-v4-flash", "deepseek-flash"))
   }
 }

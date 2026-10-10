@@ -89,11 +89,16 @@ object SeedRevisions {
       return if (journalSha != null && matches(journalSha)) SeedVerdict.SAME else SeedVerdict.USER_EDIT
     }
     if (matches(revision.sha256)) return SeedVerdict.SAME
-    val pristine = revision.history.any(matches) || (journalSha != null && matches(journalSha))
+    val pastRevision = revision.history.any(matches)
+    val ownSeed = journalSha != null && matches(journalSha)
     // The set never moved past what the user settled on — do not re-ask.
     if (reconciledVersion != null && reconciledVersion >= revision.version) return SeedVerdict.USER_EDIT
-    if (pristine) {
-      // An untouched copy at the CURRENT revision that still differs means the set was edited
+    // A copy of a past revision is an old seed whatever the journal remembers
+    // The journal lives outside git and the seed may live inside it:
+    // A branch switch or a reset brings the old file back while the journal stays at the new revision
+    if (pastRevision) return SeedVerdict.UPDATE
+    if (ownSeed) {
+      // Our own untouched seed, unknown to `history`, at the CURRENT revision: the set was edited
       // without bumping — a discipline error, not a user edit: report, do not overwrite.
       val knownRevision = journalVersion ?: 0
       return if (knownRevision >= revision.version) SeedVerdict.SET_DRIFT else SeedVerdict.UPDATE
