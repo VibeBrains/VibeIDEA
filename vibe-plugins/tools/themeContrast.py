@@ -58,6 +58,9 @@ UI_PAIRS = (
     ('Composer.usageForeground', 'Composer.background'),
     ('Composer.usageWarnForeground', 'Composer.background'),
     ('Tabs.activeForeground', 'Tabs.activeBackground'),
+    ('Journal.badgeForeground', 'Journal.badgeBackground'),
+    ('Journal.warningForeground', 'Journal.warning'),
+    ('Journal.chipForeground', 'Journal.chipBackground'),
 )
 # Текст на полупрозрачной заливке: меряется к цвету, который получается ПОВЕРХ фона чата, а не к записи темы.
 # Время и «Вы» в пузыре пользователя шли на 3.4–3.8 — ниже планки, хотя на самом фоне чата были выше 4.5.

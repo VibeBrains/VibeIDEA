@@ -80,6 +80,13 @@ jvm_library(
         "@lib//:kotlin-test-junit5",
         # Чтобы тест мог МЕРЯТЬ настоящие компоненты страницы настроек, а не их описание.
         "//platform/platform-api:ide",
+        # The journal service is a PersistentStateComponent, and the journal panel names Configurable: a test sees both types.
+        "//platform/core-api:core",
+        "//platform/projectModel-api:projectModel",
+        "//platform/ide-core",
+        "//platform/util",
+        # The XML of the workspace file the journal state goes through
+        "//platform/util/jdom",
         "//platform/util:util-ui",
         "//platform/core-ui",
         "//libraries/zxing-core",

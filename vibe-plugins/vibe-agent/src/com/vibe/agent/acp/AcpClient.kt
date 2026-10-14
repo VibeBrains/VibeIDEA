@@ -104,6 +104,8 @@ class AcpClient(
     fun onKillTerminal(params: JsonObject): JsonElement = throw UnsupportedOperationException("terminal not supported")
     fun onReleaseTerminal(params: JsonObject): JsonElement = throw UnsupportedOperationException("terminal not supported")
     fun onProtocolLog(line: String)
+    /** A line of the protocol layer that a person acts on: [page] is the settings page where it is fixed */
+    fun onProtocolWarning(line: String, page: com.vibe.agent.journal.SettingsPage) = onProtocolLog(line)
     /** The process of [client] ended on its own; deliberate [stop] calls do not report. */
     fun onProcessExit(client: AcpClient, code: Int)
   }
@@ -168,7 +170,7 @@ class AcpClient(
     val path = (pb.environment()["PATH"] ?: "") + File.pathSeparator + EXTRA_PATH
     pb.environment()["PATH"] = path
     // The route first and the entry's `env` after it: a variable the record sets by hand is the person's final word
-    val route = AgentProxyRoute.of(config.name) { handler.onProtocolLog("[acp] $it") }
+    val route = AgentProxyRoute.of(config.name) { handler.onProtocolWarning("[acp] $it", com.vibe.agent.journal.SettingsPage.AGENT) }
     AgentProxyEnv.apply(pb.environment(), route)
     when (route) {
       AgentProxyEnv.Route.Direct -> handler.onProtocolLog("[acp] " + com.vibe.agent.i18n.VibeI18n.t("acp.proxy.direct"))

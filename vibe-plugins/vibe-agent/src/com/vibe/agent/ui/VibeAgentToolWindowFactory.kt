@@ -2,6 +2,7 @@
 package com.vibe.agent.ui
 
 import com.intellij.icons.AllIcons
+import com.intellij.ide.ActivityTracker
 import com.intellij.openapi.actionSystem.ActionUpdateThread
 import com.intellij.openapi.actionSystem.AnActionEvent
 import com.intellij.openapi.options.ShowSettingsUtil
@@ -9,6 +10,7 @@ import com.intellij.openapi.project.DumbAwareAction
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.wm.ex.ToolWindowEx
 import com.vibe.agent.i18n.VibeI18n.t
+import com.vibe.agent.journal.ChatJournalService
 import com.vibe.agent.settings.VibeProvidersConfigurable
 import com.intellij.openapi.wm.ToolWindow
 import com.intellij.openapi.wm.ToolWindowFactory
@@ -23,6 +25,8 @@ class VibeAgentToolWindowFactory : ToolWindowFactory {
     content.preferredFocusableComponent = panel.preferredFocusComponent
     toolWindow.contentManager.addContent(content)
     installTitleActions(project, toolWindow, panel)
+    // The toolbar re-asks the journal icon only when it hears about activity: a new line must be one
+    ChatJournalService.getInstance(project).addListener(panel) { ActivityTracker.getInstance().inc() }
   }
 
   /**
@@ -38,6 +42,7 @@ class VibeAgentToolWindowFactory : ToolWindowFactory {
     ex.setTitleActions(listOf(
       action(t("export.title"), AllIcons.ToolbarDecorator.Export) { panel.exportConversation() },
       action(t("import.title"), AllIcons.ToolbarDecorator.Import) { panel.importConversation() },
+      ChatJournalAction(project),
       action(t("chat.settingsPill"), AllIcons.General.Settings) {
         ShowSettingsUtil.getInstance().showSettingsDialog(project, VibeProvidersConfigurable::class.java)
       },

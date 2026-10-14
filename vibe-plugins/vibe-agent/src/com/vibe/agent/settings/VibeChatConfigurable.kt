@@ -2,6 +2,7 @@
 package com.vibe.agent.settings
 
 import com.vibe.agent.i18n.VibeI18n.t
+import com.vibe.agent.journal.ChatJournalService
 import com.intellij.openapi.options.Configurable
 import com.intellij.ui.JBIntSpinner
 import com.intellij.ui.components.JBTextField
@@ -27,6 +28,7 @@ class VibeChatConfigurable : Configurable, Configurable.NoScroll {
   private var soundVolume: JBIntSpinner? = null
   private var soundPath: JBTextField? = null
   private var codeFold: JBIntSpinner? = null
+  private var journalSpinner: JBIntSpinner? = null
   private var voiceModel: com.intellij.openapi.ui.TextFieldWithBrowseButton? = null
   private var voiceLanguage: JBTextField? = null
 
@@ -76,6 +78,8 @@ class VibeChatConfigurable : Configurable, Configurable.NoScroll {
       .addComponent(hint(t("settings.chat.spendHint")))
       .addLabeledComponent(t("settings.chat.codeFold"), JBIntSpinner(VibeChatSettings.codeFoldLines, 0, VibeChatSettings.MAX_CODE_FOLD_LINES).also { codeFold = it })
       .addComponent(hint(t("settings.chat.codeFoldHint")))
+      .addLabeledComponent(t("settings.chat.journalMax"), JBIntSpinner(VibeChatSettings.journalMaxEntries, VibeChatSettings.MIN_JOURNAL_MAX_ENTRIES, VibeChatSettings.MAX_JOURNAL_MAX_ENTRIES).also { journalSpinner = it })
+      .addComponent(hint(t("settings.chat.journalMaxHint")))
       .addComponent(com.intellij.ui.components.JBCheckBox(t("settings.sound.enabled"), VibeChatSettings.soundEnabled).also { soundEnabled = it })
       .addComponent(com.intellij.ui.components.JBCheckBox(t("settings.sound.onFinished"), VibeChatSettings.soundOnTurnFinished).also { soundFinished = it })
       .addComponent(com.intellij.ui.components.JBCheckBox(t("settings.sound.onStopped"), VibeChatSettings.soundOnTurnStopped).also { soundStopped = it })
@@ -116,6 +120,7 @@ class VibeChatConfigurable : Configurable, Configurable.NoScroll {
 
   override fun isModified(): Boolean =
     codeFold?.number != VibeChatSettings.codeFoldLines ||
+    (journalSpinner?.number ?: VibeChatSettings.journalMaxEntries) != VibeChatSettings.journalMaxEntries ||
     soundEnabled?.isSelected != VibeChatSettings.soundEnabled ||
     soundFinished?.isSelected != VibeChatSettings.soundOnTurnFinished ||
     soundStopped?.isSelected != VibeChatSettings.soundOnTurnStopped ||
@@ -137,6 +142,11 @@ class VibeChatConfigurable : Configurable, Configurable.NoScroll {
     voiceModel?.let { VibeAgentSettings.voiceModelPath = it.text }
     voiceLanguage?.let { VibeAgentSettings.telegramVoiceLanguage = it.text }
     codeFold?.let { VibeChatSettings.codeFoldLines = it.number }
+    journalSpinner?.let {
+      VibeChatSettings.journalMaxEntries = it.number
+      // A lowered limit cuts the buffers of the open projects now, not at the next line
+      ChatJournalService.applyLimitEverywhere()
+    }
     soundEnabled?.let { VibeChatSettings.soundEnabled = it.isSelected }
     soundFinished?.let { VibeChatSettings.soundOnTurnFinished = it.isSelected }
     soundStopped?.let { VibeChatSettings.soundOnTurnStopped = it.isSelected }
@@ -158,6 +168,7 @@ class VibeChatConfigurable : Configurable, Configurable.NoScroll {
     voiceModel?.text = VibeAgentSettings.voiceModelPath
     voiceLanguage?.text = VibeAgentSettings.telegramVoiceLanguage
     codeFold?.number = VibeChatSettings.codeFoldLines
+    journalSpinner?.number = VibeChatSettings.journalMaxEntries
     soundEnabled?.isSelected = VibeChatSettings.soundEnabled
     soundFinished?.isSelected = VibeChatSettings.soundOnTurnFinished
     soundStopped?.isSelected = VibeChatSettings.soundOnTurnStopped

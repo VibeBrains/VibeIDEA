@@ -172,6 +172,15 @@
         "terminalOk": "Ok",
         "terminalError": "Error"
       },
+      "Journal": {
+        "warning": "Warn",
+        "warningForeground": "DeepBg",
+        "badgeBackground": "Accent",
+        "badgeForeground": "DeepBg",
+        "unreadStripe": "Accent",
+        "chipBackground": "SelBg",
+        "chipForeground": "Text"
+      },
       "Composer": {
         "background": "PanelBg",
         "border": "Border",

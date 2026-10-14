@@ -13,12 +13,27 @@ class CatalogReportTest {
   }
 
   @Test
-  fun `keyless providers are not called failures and point at the settings`() {
-    val text = CatalogReport(updated = listOf("zai"), keyless = listOf("openai", "kimi")).summary()
+  fun `keyless providers are not called failures, and they are a key problem for the page of the providers`() {
+    val report = CatalogReport(updated = listOf("zai"), keyless = listOf("openai", "kimi"))
+    val text = report.summary()
     assertTrue(text.contains("обновлено 1 (zai)"), text)
     assertTrue(text.contains("без ключа 2 (openai, kimi)"), text)
-    assertTrue(text.contains("Провайдеры"), text)
+    // The page is a button of the journal entry, so the text names no path
+    assertFalse(text.contains("Settings"), text)
     assertFalse(text.contains("не получен"), text)
+    assertTrue(report.hasProblems)
+    assertTrue(report.needsKeys)
+  }
+
+  @Test
+  fun `a round that only updated has no problems, and a dead server is a problem without a key`() {
+    assertFalse(CatalogReport(updated = listOf("zai")).hasProblems)
+    assertFalse(CatalogReport().hasProblems)
+    assertTrue(CatalogReport(rejected = listOf("deepseek")).needsKeys)
+    assertTrue(CatalogReport(keyRequired = listOf("gpu")).needsKeys)
+    val down = CatalogReport(localDown = listOf("ollama"), failed = listOf("zai" to "timeout"))
+    assertTrue(down.hasProblems)
+    assertFalse(down.needsKeys)
   }
 
   @Test

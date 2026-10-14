@@ -30,6 +30,14 @@ data class CatalogReport(
   val isEmpty: Boolean
     get() = updated.isEmpty() && keyless.isEmpty() && rejected.isEmpty() && keyRequired.isEmpty() && localDown.isEmpty() && failed.isEmpty()
 
+  /** Something in the round needs a person: a key is missing or refused, a server is down or did not answer */
+  val hasProblems: Boolean
+    get() = keyless.isNotEmpty() || rejected.isNotEmpty() || keyRequired.isNotEmpty() || localDown.isNotEmpty() || failed.isNotEmpty()
+
+  /** The trouble is a key, which is fixed on the page of the providers */
+  val needsKeys: Boolean
+    get() = keyless.isNotEmpty() || rejected.isNotEmpty() || keyRequired.isNotEmpty()
+
   /** The whole round in one line; empty string when there is nothing to say. */
   fun summary(): String {
     if (isEmpty) return ""

@@ -29,8 +29,10 @@ internal class IdeFileOps(
   private val project: Project,
   /** What the agent has read, so a write over someone else's change can be recognised. */
   private val seen: com.vibe.agent.edits.WriteGuard.Seen = com.vibe.agent.edits.WriteGuard.Seen(),
-  /** One line into the feed: conflicts and applied editor fixes are told, never silent. */
+  /** One line for the person: whole-file rewrites and applied editor fixes are told, never silent */
   private val onNotice: (String) -> Unit = {},
+  /** A write over someone else's change needs a person's look, so it is a warning and not a notice */
+  private val onWarning: (String) -> Unit = onNotice,
   /** Reports what the context guard found in a file the agent read; the panel turns it into a line. */
   private val onFinding: (String, List<com.vibe.agent.security.ContextSanitizer.Finding>) -> Unit = { _, _ -> },
 ) {
@@ -138,7 +140,7 @@ internal class IdeFileOps(
     // Nothing errors; the human's work just disappears, looking like the agent's own edit.
     val verdict = com.vibe.agent.edits.WriteGuard.check(path.toString(), if (exists) oldText else null, seen)
     if (verdict == com.vibe.agent.edits.WriteGuard.Verdict.CONFLICT) {
-      onNotice(t("write.conflict", "path" to path))
+      onWarning(t("write.conflict", "path" to path))
     }
     // Named, never blocked: a rewrite that produces the right file is not a defect, but a cost
     // nobody can see is a cost nobody can decide about.

@@ -138,6 +138,17 @@ object VibeChatSettings {
     get() = props.getValue(KEY_SOUND_PATH, "")
     set(value) = props.setValue(KEY_SOUND_PATH, value.trim(), "")
 
+  // --- chat journal ---
+  /** Entries the chat journal keeps per project; the oldest leave when the buffer is over this */
+  const val DEFAULT_JOURNAL_MAX_ENTRIES = 200
+  const val MIN_JOURNAL_MAX_ENTRIES = 10
+  const val MAX_JOURNAL_MAX_ENTRIES = 2000
+  private const val KEY_JOURNAL_MAX_ENTRIES = "vibe.chat.journalMaxEntries"
+
+  var journalMaxEntries: Int
+    get() = props.getInt(KEY_JOURNAL_MAX_ENTRIES, DEFAULT_JOURNAL_MAX_ENTRIES).coerceIn(MIN_JOURNAL_MAX_ENTRIES, MAX_JOURNAL_MAX_ENTRIES)
+    set(value) = props.setValue(KEY_JOURNAL_MAX_ENTRIES, value.coerceIn(MIN_JOURNAL_MAX_ENTRIES, MAX_JOURNAL_MAX_ENTRIES), DEFAULT_JOURNAL_MAX_ENTRIES)
+
   // --- code block folding ---
   /** Lines beyond which a listing is folded; 0 disables folding entirely. */
   const val DEFAULT_CODE_FOLD_LINES = 24
