@@ -214,6 +214,23 @@ for base, _, files in os.walk(os.path.join(root, 'vibe-plugins')):
             text = io.open(os.path.join(base, name), encoding='utf-8').read()
             used |= set(re.findall(r'namedColor\("(Vibe\.[^"]+)"', text))
 missing = sorted(used - declared)
+# Ключ, оканчивающийся на Border, платформа разбирает как РАМКУ: hex-литерал под ним становится объектом Border,
+# UIManager.getColor отдаёт по нему null, а JBColor.namedColor молча берёт запасной цвет — в теме цвет записан, на
+# экране его нет (Vibe.Composer.queueBorder не применялся ни в одной из восьми тем, найдено 15.10.2026).
+# Обход один: значение — имя записи палитры `colors`, она подставляется ДО разбора. Поэтому здесь не просто «не hex»,
+# а «имя, которое есть в палитре этой темы»: опечатка в имени ведёт к тому же молчанию.
+border_traps = []
+for theme_name, body in sorted(themes.items()):
+    palette = body.get('colors', {})
+    for key, value in sorted(flat({'Vibe': body['ui'].get('Vibe', {})}).items()):
+        if (key.endswith('Border') or key.endswith('border')) and value not in palette:
+            border_traps.append('%s: %s = %s' % (theme_name, key, value))
+if border_traps:
+    print('ОШИБКА: ключ на Border читается платформой как рамка — цвет из темы не применится, код возьмёт запасной:')
+    for line in border_traps:
+        print('  ' + line)
+    print('  Заведите запись в палитре «colors» темы и укажите её имя: см. knowledge/ui/chatMessageLayout.md')
+    sys.exit(1)
 for theme_name, theme_tokens in sorted(declared_per_theme.items()):
     gaps = sorted(used - theme_tokens)
     if gaps:

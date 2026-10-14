@@ -23,6 +23,7 @@
     "ButtonBg": "#2A3550",
     "UserMsgBg": "#00E5FF26",
     "UserMsgBorder": "#00E5FF8c",
+    "QueueBorder": "#6B5A2E",
     "AssistantRule": "#E6E8EF40",
     "ScrollThumb": "#9d8bca30"
   },
@@ -197,7 +198,7 @@
         "pillBorder": "BorderControl",
         "pillBorderHover": "Accent",
         "queueBackground": "#3A3220",
-        "queueBorder": "#6B5A2E",
+        "queueBorder": "QueueBorder",
         "queueForeground": "#F2E6C4",
         "usageForeground": "TextDim",
         "usageWarnForeground": "Warn",

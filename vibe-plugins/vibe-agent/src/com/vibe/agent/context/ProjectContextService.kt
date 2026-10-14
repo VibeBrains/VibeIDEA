@@ -70,11 +70,6 @@ class ProjectContextService(private val project: Project) {
   }
 
   /**
-   * Every rule the project declares, in a stable order: `.cursor/rules` first (declaration order
-   * by file name), the legacy `.cursorrules` last, as a rule that always applies — that is what
-   * the file meant before the folder format existed.
-   */
-  /**
    * Rules for this turn: the root ones plus those of the folders the touched files live in.
    *
    * Nested rules are read on demand rather than cached: the set of folders changes with every turn,
@@ -90,41 +85,30 @@ class ProjectContextService(private val project: Project) {
       // Вложенный AGENTS.md — та же конвенция близости: у пакета своё соглашение, и оно бьёт
       // корневое для файлов внутри пакета.
       agentsRule(Path.of(base, dir, ProjectRules.AGENTS_FILE), dir)?.let { nested.add(it) }
-      val rulesDir = Path.of(base, dir, ProjectRules.RULES_DIR)
-      if (!Files.isDirectory(rulesDir)) continue
-      val files = runCatching { Files.list(rulesDir).use { stream -> stream.toList() } }.getOrDefault(emptyList())
-      for (path in files.sortedBy { it.fileName.toString() }) {
-        if (!path.fileName.toString().endsWith(ProjectRules.RULE_EXTENSION)) continue
-        val text = runCatching { Files.readString(path) }.getOrNull() ?: continue
-        nested.add(ProjectRules.parse(path.fileName.toString().removeSuffix(ProjectRules.RULE_EXTENSION), text, dir))
-      }
+      nested.addAll(ProjectRuleFiles.read(Path.of(base), dir))
     }
     return if (nested.isEmpty()) root else ProjectRules.nearestWins(root + nested)
   }
 
+  /**
+   * Every rule the project declares, in a stable order: `.cursor/rules` and `.vibe/rules` (see [ProjectRuleFiles]),
+   * then the legacy `.cursorrules` as a rule that always applies — that is what the file meant before
+   * the folder format existed — and `AGENTS.md` last
+   */
   fun rules(): List<ProjectRules.Rule> {
     val base = project.basePath ?: return emptyList()
-    val dir = Path.of(base, ProjectRules.RULES_DIR)
     val legacy = Path.of(base, ProjectRules.LEGACY_FILE)
     val agents = Path.of(base, ProjectRules.AGENTS_FILE)
     // Отпечаток считает и AGENTS.md: без этого правка файла не долетела бы до следующего хода —
     // кэш правил остался бы прежним, и человек решил бы, что агент его не слушает.
-    val stamp = stampOf(dir) * 31 + stampOf(legacy) + stampOf(agents) * 17 + fileStamps(dir)
+    val stamp = ProjectRuleFiles.stamp(Path.of(base)) + stampOf(legacy) + stampOf(agents) * 17
     rules?.let { if (it.stamp == stamp) return it.value }
 
-    val loaded = ArrayList<ProjectRules.Rule>()
-    if (Files.isDirectory(dir)) {
-      val files = runCatching { Files.list(dir).use { stream -> stream.toList() } }.getOrDefault(emptyList())
-      for (path in files.sortedBy { it.fileName.toString() }) {
-        if (!path.fileName.toString().endsWith(ProjectRules.RULE_EXTENSION)) continue
-        val text = runCatching { Files.readString(path) }.getOrNull() ?: continue
-        loaded.add(ProjectRules.parse(path.fileName.toString().removeSuffix(ProjectRules.RULE_EXTENSION), text))
-      }
-    }
+    val loaded = ArrayList(ProjectRuleFiles.read(Path.of(base)))
     if (Files.isRegularFile(legacy)) {
       runCatching { Files.readString(legacy) }.getOrNull()?.takeIf { it.isNotBlank() }?.let {
         loaded.add(ProjectRules.Rule(ProjectRules.LEGACY_FILE, dir = "", description = null, globs = emptyList(),
-                                     alwaysApply = true, body = it.trim()))
+                                     alwaysApply = true, body = it.trim(), source = ProjectRules.LEGACY_FILE))
       }
     }
     agentsRule(Path.of(base, ProjectRules.AGENTS_FILE), dir = "")?.let { loaded.add(it) }
@@ -154,16 +138,10 @@ class ProjectContextService(private val project: Project) {
       description = null,
       globs = emptyList(),
       alwaysApply = true,
+      source = if (dir.isEmpty()) ProjectRules.AGENTS_FILE else "$dir/${ProjectRules.AGENTS_FILE}",
       // Планку длины держит `promptBlock` — обрезать ещё и здесь значит завести ей второе место.
       body = text,
     )
-  }
-
-  private fun fileStamps(dir: Path): Long {
-    if (!Files.isDirectory(dir)) return 0L
-    return runCatching {
-      Files.list(dir).use { stream -> stream.toList() }.sumOf { stampOf(it) }
-    }.getOrDefault(0L)
   }
 
   private fun stampOf(path: Path): Long =

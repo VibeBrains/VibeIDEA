@@ -2,7 +2,8 @@
 package com.vibe.agent.context
 
 /**
- * Project rules the agent must obey: `.cursor/rules` files with the `.mdc` extension (and the legacy `.cursorrules`).
+ * Project rules the agent must obey: `.vibe/rules` (the family's own folder) and `.cursor/rules` files with the `.mdc`
+ * extension (and the legacy `.cursorrules`)
  *
  * The format is not ours, and that is the point: a repository cloned from a colleague already
  * carries its rules, and an agent that cannot see them argues with the project on every turn.
@@ -12,20 +13,37 @@ package com.vibe.agent.context
  * ---
  * description: how we name things
  * globs: src per-file globs
+ * triggers: phrase one, phrase two
  * alwaysApply: true
  * ---
  * body
  * ```
  *
- * Three kinds of rule, and mixing them up is what makes rule systems useless:
+ * Four kinds of rule, and mixing them up is what makes rule systems useless:
  * - `alwaysApply: true` — goes into every turn;
  * - `globs` — goes in when the turn touches a matching file;
- * - neither — waits to be called by name (`@rule-name`), like Cursor's "agent requested" rules.
+ * - `triggers` — goes in when the user's message contains one of the phrases (see [matchesAnyTrigger]);
+ * - none of these — waits to be called by name (`@rule-name`), like Cursor's "agent requested" rules.
+ *
+ * Any one of the four is enough, they do not veto each other: `alwaysApply: false` next to `triggers` means
+ * "off until a phrase or a name asks for it". The `triggers` key is the same one VibeIDE reads from the shared set
  *
  * `@name` inside a body pulls in another rule, once and without cycles. Left unresolved it
  * would be a silent hole: the model would read a reference to instructions it never receives.
  */
 object ProjectRules {
+  /**
+   * The family's native rules folder, shared with VibeIDE and seeded from the common `.vibe` set
+   * Read recursively, and wins over [RULES_DIR] when both carry a rule of the same name
+   */
+  const val NATIVE_RULES_DIR = ".vibe/rules"
+
+  /** How deep [NATIVE_RULES_DIR] is walked: 1 means only the files directly inside it */
+  const val NATIVE_MAX_DEPTH = 6
+
+  /** Cap on rule files taken from [NATIVE_RULES_DIR] per folder, so a stray tree cannot flood the prompt */
+  const val NATIVE_MAX_FILES = 50
+
   const val RULES_DIR = ".cursor/rules"
   const val LEGACY_FILE = ".cursorrules"
   const val RULE_EXTENSION = ".mdc"
@@ -63,8 +81,12 @@ object ProjectRules {
     val globs: List<String>,
     val alwaysApply: Boolean,
     val body: String,
+    /** Path of the file the rule was read from, relative to the project root; empty when it has no file of its own */
+    val source: String = "",
+    /** Phrases of the user's message that switch the rule on, lowercased; see [matchesAnyTrigger] */
+    val triggers: List<String> = emptyList(),
   ) {
-    val requestedOnly: Boolean get() = !alwaysApply && globs.isEmpty()
+    val requestedOnly: Boolean get() = !alwaysApply && globs.isEmpty() && triggers.isEmpty()
   }
 
   /**
@@ -72,15 +94,16 @@ object ProjectRules {
    * rule, just one without metadata — refusing to read it would punish the user for a typo in
    * a format they did not invent.
    */
-  fun parse(name: String, text: String, dir: String = ""): Rule {
+  fun parse(name: String, text: String, dir: String = "", source: String = ""): Rule {
     val normalized = text.replace("\r\n", "\n")
-    if (!normalized.startsWith("---")) return Rule(name, dir, null, emptyList(), false, normalized.trim())
+    if (!normalized.startsWith("---")) return Rule(name, dir, null, emptyList(), false, normalized.trim(), source)
     val end = normalized.indexOf("\n---", 3)
-    if (end < 0) return Rule(name, dir, null, emptyList(), false, normalized.trim())
+    if (end < 0) return Rule(name, dir, null, emptyList(), false, normalized.trim(), source)
     val header = normalized.substring(3, end)
     val body = normalized.substring(end + 4).trim()
     var description: String? = null
     var globs = emptyList<String>()
+    var triggers = emptyList<String>()
     var always = false
     for (line in header.lines()) {
       val colon = line.indexOf(':')
@@ -89,24 +112,34 @@ object ProjectRules {
       val value = line.substring(colon + 1).trim().trim('"', '\'')
       when (key) {
         "description" -> description = value.ifBlank { null }
-        "globs" -> globs = value.trim('[', ']').split(',').map { it.trim().trim('"', '\'') }.filter { it.isNotEmpty() }
+        "globs" -> globs = splitList(value)
+        "triggers" -> triggers = splitList(value).map { it.lowercase() }
         "alwaysapply" -> always = value.equals("true", ignoreCase = true)
       }
     }
-    return Rule(name, dir, description, globs, always, body)
+    return Rule(name, dir, description, globs, always, body, source, triggers)
   }
 
+  /** Comma-separated header list; quotes around items and square brackets around the whole list are optional */
+  private fun splitList(value: String): List<String> =
+    value.trim('[', ']').split(',').map { it.trim().trim('"', '\'') }.filter { it.isNotEmpty() }
+
   /**
-   * Which rules apply to this turn: always-on ones, those whose globs match a touched file, and
-   * those called by name in the text. Order is stable (declaration order) so the prompt does not
-   * reshuffle between turns and break prompt caching for no reason.
+   * Which rules apply to this turn:
+   * always-on ones, those whose globs match a touched file, those whose trigger phrase is in the user's text
+   * and those called by name in the text
+   *
+   * Order is stable (declaration order) so the prompt does not reshuffle between turns
+   * and break prompt caching for no reason
    */
   fun applicable(rules: List<Rule>, touchedPaths: List<String>, text: String): List<Rule> {
     val mentioned = mentioned(text)
     val chosen = LinkedHashMap<String, Rule>()
     for (rule in rules) {
       val matchesGlob = rule.globs.any { glob -> touchedPaths.any { matchesGlob(it, glob) } }
-      if (rule.alwaysApply || matchesGlob || rule.name in mentioned) chosen[rule.name] = rule
+      if (rule.alwaysApply || matchesGlob || matchesAnyTrigger(rule.triggers, text) || rule.name in mentioned) {
+        chosen[rule.name] = rule
+      }
     }
     // A rule may call another rule; pulled-in rules follow the ones that asked for them.
     var frontier = chosen.values.toList()
@@ -123,6 +156,21 @@ object ProjectRules {
       frontier = next
     }
     return chosen.values.toList()
+  }
+
+  /**
+   * Whole-phrase, case-insensitive match of any trigger inside [text]
+   *
+   * Boundaries are Unicode letters and digits, because the regex word boundary knows only ASCII
+   * A phrase must not match inside a longer word, and a plain substring test would fire on every word that contains it
+   * Case folding is Unicode-aware but keeps the two Russian letters apart, the same as in VibeIDE
+   */
+  fun matchesAnyTrigger(triggers: List<String>, text: String): Boolean {
+    if (text.isEmpty()) return false
+    return triggers.any { trigger ->
+      trigger.isNotEmpty() &&
+        Regex("(?<![\\p{L}\\p{N}])${Regex.escape(trigger)}(?![\\p{L}\\p{N}])", RegexOption.IGNORE_CASE).containsMatchIn(text)
+    }
   }
 
   /** `@name` references. Emails and `@` inside words are not references — only a whole token. */

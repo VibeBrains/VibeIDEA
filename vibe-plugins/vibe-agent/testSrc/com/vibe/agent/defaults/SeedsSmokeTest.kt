@@ -2,6 +2,7 @@
 package com.vibe.agent.defaults
 
 import com.vibe.agent.pipelines.PipelinesFile
+import com.vibe.agent.skills.SkillEvals
 import com.vibe.agent.skills.SkillPackage
 import com.vibe.agent.skills.SkillValidator
 import kotlin.test.Test
@@ -82,11 +83,38 @@ class SeedsSmokeTest {
     )
   }
 
+  @Test
+  fun `эвалы набора читаются разбором продукта и не пусты`() {
+    val broken = StringBuilder()
+    for (id in skillIds()) {
+      val text = resource("skills/$id/evals/evals.json") ?: continue
+      when (val read = SkillEvals.read(text)) {
+        is SkillEvals.Read.Ok -> {
+          val suite = read.suite
+          // The folder name is the skill id; a copied file with a stale name would run against the wrong skill
+          if (suite.skillName != id) broken.append("\n  $id: skill_name is ${suite.skillName}")
+          for (case in suite.cases) {
+            // A case with a prompt and no check is a stub: it would pass with any answer
+            if (case.expectations.isEmpty() && case.assertions.isEmpty() && case.expectedOutput == null) {
+              broken.append("\n  $id/${case.id}: no expectations, no assertions")
+            }
+            for (file in case.files) {
+              if (resource("skills/$id/evals/$file") == null) broken.append("\n  $id/${case.id}: fixture $file is not in the set")
+            }
+          }
+        }
+        is SkillEvals.Read.Broken -> broken.append("\n  $id: ${read.reason}")
+        SkillEvals.Read.Missing -> broken.append("\n  $id: file listed but not readable")
+      }
+    }
+    if (broken.isNotEmpty()) fail("эвалы набора не читаются или пусты:$broken")
+  }
+
   private companion object {
     /** Меньше этого числа означает, что манифест прочитан неверно, а не что набор похудел. */
     const val MIN_SKILLS = 10
 
-    /** Сколько навыков набора пока живут без случаев. Опускать, не поднимать. */
+    /** How many skills of the set still live without cases. Lower it, never raise it */
     const val WITHOUT_EVALS_LIMIT = 16
   }
 }

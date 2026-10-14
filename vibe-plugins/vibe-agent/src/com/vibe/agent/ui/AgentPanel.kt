@@ -542,7 +542,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     relayout()
     applyRailVisibility()
     history.addListener(this) { onHistoryChanged() }
-    systemLine(t("chat.greeting.keys", "acp" to AcpConfig.configPath()), KEYS, page = SettingsPage.PROVIDERS)
+    systemLine(t("chat.greeting.keys", "acp" to AcpConfig.configPath()), KEYS, page = SettingsPage.PROVIDERS, read = true)
     // Config files live on disk — never read (or seed) them on the EDT; publish results back here.
     ApplicationManager.getApplication().executeOnPooledThread {
       val loadedAgents = AcpConfig.load(project.basePath) { systemLine(t("chat.configNotice", "text" to it), CONFIG, WARNING) }
@@ -562,7 +562,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
         providers = applyCatalogCache(loadedProviders, catalogCache)
         systemLine(t("chat.greeting.ready",
           "agents" to loadedAgents.joinToString { it.name },
-          "providers" to loadedProviders.joinToString { it.name }.ifEmpty { t("chat.greeting.none") }), AGENTS)
+          "providers" to loadedProviders.joinToString { it.name }.ifEmpty { t("chat.greeting.none") }), AGENTS, read = true)
         guardFindings.forEach { f -> systemLine("[guard:${f.severity}] ${f.message}", PROVIDERS, WARNING) }
         // A repository seen for the first time gets one line about what its files can and cannot do.
         if (com.vibe.agent.security.ForeignProjectNotice.noticeOnce(project.basePath)) {
@@ -1534,7 +1534,8 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     userBubble(message.text.trim())
     val all = com.vibe.agent.context.ProjectContextService.getInstance(project).rules()
     if (all.isEmpty()) {
-      feedNotice(t("rules.none", "dir" to com.vibe.agent.context.ProjectRules.RULES_DIR))
+      val dirs = listOf(com.vibe.agent.context.ProjectRules.NATIVE_RULES_DIR, com.vibe.agent.context.ProjectRules.RULES_DIR)
+      feedNotice(t("rules.none", "dir" to dirs.joinToString(", ")))
       return true
     }
     val text = all.joinToString("\n") { rule ->
@@ -3298,7 +3299,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     if (applicable.isEmpty()) return prompt
     val guarded = applicable.map { rule ->
       val clean = com.vibe.agent.security.ContextSanitizer.sanitize(rule.body)
-      if (clean.findings.isNotEmpty()) reportContextFindings("${com.vibe.agent.context.ProjectRules.RULES_DIR}/${rule.name}", clean.findings)
+      if (clean.findings.isNotEmpty()) reportContextFindings(rule.source.ifEmpty { rule.name }, clean.findings)
       rule.copy(body = clean.text)
     }
     systemLine(t("rules.applied", "names" to guarded.joinToString { it.name }), MISC)
@@ -5879,7 +5880,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
       val now = System.currentTimeMillis()
       val freshest = used.mapNotNull { cache[it.id]?.fetchedAtMs }.maxOrNull() ?: now
       systemLine(t("providers.fromCache", "count" to used.size, "word" to providersWord(used.size),
-                   "age" to ModelCatalogCache.ageText(freshest, now)), PROVIDERS)
+                   "age" to ModelCatalogCache.ageText(freshest, now)), PROVIDERS, read = true)
     }
     return merged
   }
@@ -5960,7 +5961,9 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
         // Rebuild on ANY change of the set: a key added in Settings must bring the models back.
         if (keylessChanged) rebuildTargets()
         report.summary().takeIf { it.isNotEmpty() }?.let {
-          systemLine(it, PROVIDERS, if (report.hasProblems) WARNING else INFO, page = SettingsPage.PROVIDERS.takeIf { report.needsKeys })
+          // A summary without problems is information; with problems it is exactly what the badge is for
+          systemLine(it, PROVIDERS, if (report.hasProblems) WARNING else INFO, page = SettingsPage.PROVIDERS.takeIf { report.needsKeys },
+                     read = !report.hasProblems)
         }
         // A new catalog model arrives hidden: unnamed, a refresh looks like it brought nothing
         ModelCatalogCache.newModelsLine(added.toMap())?.let { systemLine(it, PROVIDERS, page = SettingsPage.MODELS) }
@@ -6461,12 +6464,19 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
    * The journal is the icon in the header of this window: it counts the unread entries and takes the warning colour
    * [WARNING] is for what needs a person to act, or says that a feature does not work
    * [page] puts a button on the entry that opens the settings page where the cause is fixed, so the text names no path
+   * [read] writes background information that every start of the IDE repeats already read, so the badge does not light up for it
    * What stops a turn, answers a command the person typed or is addressed to the agent stays in the feed: see [feedNotice]
    */
-  private fun systemLine(text: String, category: JournalCategory, level: JournalLevel = INFO, page: SettingsPage? = null) {
+  private fun systemLine(
+    text: String,
+    category: JournalCategory,
+    level: JournalLevel = INFO,
+    page: SettingsPage? = null,
+    read: Boolean = false,
+  ) {
     // A reader thread of the agent can report after the project is gone: the journal is a service of the project
     if (project.isDisposed) return
-    chatJournal.append(JournalInput(category, level, text, page))
+    chatJournal.append(JournalInput(category, level, text, page, read))
   }
 
   /**

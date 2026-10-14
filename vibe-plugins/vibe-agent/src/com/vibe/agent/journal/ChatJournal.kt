@@ -70,6 +70,12 @@ data class JournalInput(
   val level: JournalLevel,
   val text: String,
   val page: SettingsPage? = null,
+  /**
+   * The line is background information that the person did not ask for, and it enters the journal already read
+   *
+   * The greeting that every start of the IDE writes is the case: the badge counts what is news, and a start is not news
+   */
+  val read: Boolean = false,
 )
 
 data class JournalEntry(
@@ -131,6 +137,7 @@ object ChatJournal {
    * [entries] plus one more line
    *
    * A line equal to the newest entry joins it: the counter grows, the time moves to [now], and the entry is unread again
+   * unless both the entry and the repeat are read: a repeat of information does not turn it into news
    * The oldest entries leave when the buffer is over [maxEntries]
    * A line without text is not an entry
    */
@@ -139,9 +146,9 @@ object ChatJournal {
     if (line.text.isEmpty()) return entries
     val last = entries.lastOrNull()
     if (last != null && last.isSameLine(line)) {
-      return entries.dropLast(1) + last.copy(count = last.count + 1, at = now, read = false)
+      return entries.dropLast(1) + last.copy(count = last.count + 1, at = now, read = last.read && line.read)
     }
-    val entry = JournalEntry((last?.id ?: 0L) + 1, now, 1, false, line.category, line.level, line.text, line.page)
+    val entry = JournalEntry((last?.id ?: 0L) + 1, now, 1, line.read, line.category, line.level, line.text, line.page)
     return trim(entries + entry, maxEntries)
   }
 

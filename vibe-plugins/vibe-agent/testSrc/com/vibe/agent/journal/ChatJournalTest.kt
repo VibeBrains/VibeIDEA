@@ -39,6 +39,37 @@ class ChatJournalTest {
   }
 
   @Test
+  fun `a line given as read does not count as unread`() {
+    val entries = journalOf(info("greeting").copy(read = true), info("news"))
+    assertEquals(listOf(true, false), entries.map { it.read })
+    assertEquals(JournalSummary(total = 2, unread = 1, hasUnreadWarning = false), ChatJournal.summarize(entries))
+    assertEquals(0, ChatJournal.summarize(journalOf(info("greeting").copy(read = true))).unread)
+  }
+
+  @Test
+  fun `a repeat of a read line stays read, and an unread repeat makes it unread again`() {
+    val seen = info("greeting").copy(read = true)
+    val twice = journalOf(seen, seen)
+    assertEquals(listOf(2), twice.map { it.count })
+    assertEquals(0, ChatJournal.summarize(twice).unread)
+    // The same text as news, not as information: the person has not seen this occurrence
+    val asNews = ChatJournal.append(twice, info("greeting"), 9000, limit)
+    assertEquals(1, ChatJournal.summarize(asNews).unread)
+  }
+
+  @Test
+  fun `a read repeat does not mark an unread entry as read`() {
+    val entries = journalOf(info("a"), info("a").copy(read = true))
+    assertEquals(listOf(false), entries.map { it.read })
+  }
+
+  @Test
+  fun `a warning given as unread keeps the badge lit`() {
+    val summary = ChatJournal.summarize(journalOf(info("catalog").copy(read = true), warning("a key was rejected")))
+    assertEquals(JournalSummary(total = 2, unread = 1, hasUnreadWarning = true), summary)
+  }
+
+  @Test
   fun `the same text with another level, category or page is a different line`() {
     val entries = journalOf(
       info("a"),

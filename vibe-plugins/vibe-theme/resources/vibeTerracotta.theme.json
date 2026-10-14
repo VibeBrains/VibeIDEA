@@ -22,6 +22,7 @@
     "TextDim": "#c46d4b",
     "UserMsgBg": "#d98a6826",
     "UserMsgBorder": "#d98a688c",
+    "QueueBorder": "#4d5f5f",
     "AssistantRule": "#e7dccd40",
     "UserMsgLabel": "#cb8365",
     "ScrollThumb": "#94826c33"
@@ -197,7 +198,7 @@
         "pillBorder": "Border",
         "pillBorderHover": "Accent",
         "queueBackground": "#3c4340",
-        "queueBorder": "#4d5f5f",
+        "queueBorder": "QueueBorder",
         "queueForeground": "Text",
         "usageForeground": "TextDim",
         "usageWarnForeground": "Warn",

@@ -69,6 +69,20 @@ class VibeDefaultsTest {
   }
 
   @Test
+  fun cloneSwitchesOffAModelItsRouteDoesNotAccept() {
+    // The Anthropic-compatible route of MiniMax has a closed model list without Text-01; the seed writes
+    // `{ "id": ..., "active": false }` on the clone to turn off the model it inherits from the parent
+    val base = tempProject()
+    VibeDefaults.seed(base)
+    val providers = com.vibe.agent.providers.ProvidersService.loadFrom(
+      Files.createTempDirectory("vibe-empty-global"), java.nio.file.Path.of(base, ".vibe")) { }
+    fun textModel(providerId: String) =
+      providers.first { it.id == providerId }.models.first { it.id == "MiniMax-Text-01" }
+    assertTrue(textModel("minimax").active)
+    assertTrue(!textModel("minimax-anthropic").active)
+  }
+
+  @Test
   fun manifestMatchesEmbeddedResourcesExactly() {
     // The seed set will live in a shared submodule (VibeBrains): a file added there without a
     // manifest entry would silently never be seeded, and a manifest entry without a file would
