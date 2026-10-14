@@ -126,9 +126,12 @@ import javax.swing.Timer
 class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGateway.Target, JPanel(BorderLayout()), AcpClient.Handler, Disposable {
   private val messages = JPanel().apply {
     layout = BoxLayout(this, BoxLayout.Y_AXIS)
-    border = JBUI.Borders.empty(6)
+    border = JBUI.Borders.empty(ChatLayoutSpec.FEED_PAD)
     background = CHAT_BG
   }
+
+  /** Visible width of the feed and the message layout it selects; every message row reads it while laying itself out */
+  private val feedMetrics = ChatFeedMetrics()
   /** Scroll view tracks the viewport width so rows wrap instead of growing sideways. */
   private class FeedView : JPanel(BorderLayout()), javax.swing.Scrollable {
     init { isOpaque = false }
@@ -147,6 +150,25 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
 
   /** Лента со стрелкой «в конец»: сама вниз не ездит, поэтому вернуться вниз можно кнопкой. */
   private val feedEnd = FeedEndButton(scroll)
+
+  init {
+    scroll.viewport.addComponentListener(object : java.awt.event.ComponentAdapter() {
+      override fun componentResized(e: java.awt.event.ComponentEvent) = onFeedResized()
+    })
+  }
+
+  /**
+   * The feed changed its width: the layout of the messages follows it
+   *
+   * Rows get their gutters and bubble widths from the feed's layout, and the layout manager does not know that
+   * So the rows are invalidated by hand
+   */
+  private fun onFeedResized() {
+    if (!feedMetrics.update(scroll.viewport.width)) return
+    messages.components.forEach { it.invalidate() }
+    messages.revalidate()
+    messages.repaint()
+  }
 
   /**
    * Выделение текста ЧЕРЕЗ границы сообщений: Ctrl+A на весь разговор, протяжка мышью через
@@ -250,6 +272,15 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
 
   /** Анимированная строка «сейчас работаю» в конце ленты; живёт ровно ход. */
   private var workingLine: WorkingLine? = null
+
+  /** The card of the pause between two attempts of the request in flight: one for all of them, off the feed when it ends */
+  private var retryCard: RetryPauseCard? = null
+
+  /** What the request in flight tells about its pauses; the client calls it on its own thread, the card lives on the UI one */
+  private val retryObserver = object : com.vibe.agent.resilience.RetryObserver {
+    override fun onPause(pause: com.vibe.agent.resilience.RetryPause) = SwingUtilities.invokeLater { showRetryPause(pause) }
+    override fun onResume() = SwingUtilities.invokeLater { hideRetryPause() }
+  }
 
 
   private val verifyRunner: VerifyGateRunner? = project.basePath?.let { VerifyGateRunner(it) }
@@ -574,6 +605,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     composer.queue.clear()
     turnInFlight.set(false)
     workingLine?.stop()
+    retryCard?.dispose()
     composer.disposeStatus()
     terminals.disposeAll()
     // audit is owned by VibeAuditService (project-scoped) — do not close it here.
@@ -2874,6 +2906,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     SwingUtilities.invokeLater {
       if (disposed) return@invokeLater
       composer.busy = false
+      hideRetryPause()
       hideWorking()
       // Queued notes belong to the thread whose turn just ended, not to whichever tab is open now.
       val stalled = noteProgressAndWarn(endedThreadId ?: currentThreadId)
@@ -3971,12 +4004,9 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
         val roundReasoning = StringBuilder()
         llmClient.chat(
           resolved, t.model, request, { llmCancel.get() },
-          onWaiting = { attempt, delayMs, reason ->
-            // Said out loud: a silent wait is indistinguishable from a hang, and the user reaches
-            // for Stop exactly when the provider was about to let us back in.
-            systemLine(t("retry.waiting", "attempt" to attempt, "seconds" to (delayMs / 1000),
-                         "reason" to (reason ?: "")))
-          },
+          // Said out loud: a silent wait is indistinguishable from a hang
+          // And the user reaches for Stop exactly when the provider was about to let us back in
+          retries = retryObserver,
           // Мысль модели идёт в тот же сворачиваемый блок, что и мысль ACP-агента: у прямого LLM
           // рассуждение выглядело молчанием, потому что показывать его было некуда.
           // It is also kept with the answer: a model that requires it back (ECHO_REASONING) gets it
@@ -4718,7 +4748,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     chat.uiConsumed = 0
     for ((index, record) in thread.messages.withIndex()) {
       val row = when (record.role) {
-        Role.USER -> buildUserRow(record.text, timeOf(record.at), index, record.pinned)
+        Role.USER -> buildUserRow(record.text, timeOf(record.at), index, record.pinned, record.at)
         Role.ASSISTANT -> buildAssistantRow(record.text, timeOf(record.at))
         Role.OTHER -> buildToolRow(record.text)
       }
@@ -4731,6 +4761,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
       // streams (appendThought / appendTerminalOutput) keep landing in the visible feed. Exact
       // interleaving with the text is lost on a mid-turn switch; that is acceptable.
       chat.thoughts?.let { messages.add(it) }
+      retryCard?.let { messages.add(it) }
       // A console inside the block of a wave's step went away with that block; it comes back here, in the feed itself.
       terminalConsoles.values.filter { it.parent?.parent == null }.forEach { messages.add(it) }
     }
@@ -5075,8 +5106,9 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
           }
         }
       },
-      onWaiting = { attempt, delayMs, reason ->
-        systemLine(t("retry.waiting", "attempt" to attempt, "seconds" to (delayMs / 1000), "reason" to (reason ?: "")))
+      // Steps of a wave run side by side, so a card of the feed would speak for none of them: the pause is a line
+      retries = object : com.vibe.agent.resilience.RetryObserver {
+        override fun onPause(pause: com.vibe.agent.resilience.RetryPause) = systemLine(RetryPauseText.line(pause))
       },
       onThought = { appendThought(it, turn) },
     ) { delta ->
@@ -5982,17 +6014,17 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     }
   }
 
-  private fun metaLabel(text: String, right: Boolean): JLabel = JLabel(text).apply {
+  private fun metaLabel(text: String): JLabel = JLabel(text).apply {
     font = com.intellij.util.ui.JBFont.label().deriveFont(Font.PLAIN, 11f)
     foreground = META_FG
-    horizontalAlignment = if (right) JLabel.RIGHT else JLabel.LEFT
+    horizontalAlignment = JLabel.LEFT
   }
 
   internal inner class AgentMessage {
     /** Raw streamed text lives here; on finish it may be re-rendered into prose + code blocks. */
     val text = proseArea()
     private var fullText = ""
-    val meta = metaLabel(t("chat.role.agentAt", "time" to now()), right = false)
+    val meta = metaLabel(t("chat.role.agentAt", "time" to now()))
     private val metaRow = JPanel(BorderLayout()).apply {
       isOpaque = false
       add(meta, BorderLayout.WEST)
@@ -6011,13 +6043,20 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
         add(copyLink { fullText.ifEmpty { text.text } })
       }, BorderLayout.EAST)
     }
+
+    /** The answer itself, behind the rule: prose and the blocks it grows into stay inside, the byline below does not */
+    private val body = JPanel(BorderLayout()).apply {
+      isOpaque = false
+      border = AssistantRuleBorder(feedMetrics) { ChatTheme.ASSISTANT_RULE }
+      add(text, BorderLayout.CENTER)
+    }
     val row: JPanel = object : ChatRow(BorderLayout(0, JBUI.scale(2))) {
       // better than the original: cap the text column so lines stay readable in a wide panel
       override fun getMaximumSize(): java.awt.Dimension =
-        java.awt.Dimension(JBUI.scale(720), preferredSize.height)
+        java.awt.Dimension(JBUI.scale(ChatLayoutSpec.ASSISTANT_MAX_WIDTH), preferredSize.height)
     }.apply {
-      border = JBUI.Borders.empty(4, 4, 8, 4)
-      add(text, BorderLayout.CENTER)
+      border = AssistantRowBorder(feedMetrics)
+      add(body, BorderLayout.CENTER)
       add(metaRow, BorderLayout.SOUTH)
     }
     fun append(s: String) { text.append(s) }
@@ -6052,77 +6091,52 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
 
   private fun now(): String = LocalTime.now().format(DateTimeFormatter.ofPattern("HH:mm"))
 
-  private fun buildUserRow(text: String, time: String, recordIndex: Int = -1, pinned: Boolean = false): JPanel {
-    val bubble = RoundedPanel(USER_BUBBLE, radius = 8).apply {
-      layout = BorderLayout()
-      border = JBUI.Borders.empty(6, 8)
-      add(proseArea().also { it.text = text }, BorderLayout.CENTER)
-    }
-    return ChatRow(BorderLayout(0, JBUI.scale(2))).apply {
-      border = JBUI.Borders.empty(4, 4, 8, 4)
-      add(bubble, BorderLayout.CENTER)
-      add(messageFooter(time, recordIndex, pinned), BorderLayout.SOUTH)
-      // width-fit вправо: слева распорка съедает всё лишнее (мин. четверть ширины)
-      add(Box.createHorizontalStrut(JBUI.scale(160)), BorderLayout.WEST)
-    }
+  /**
+   * The user's message: a bubble on the right whose layout follows the feed's width, with the time inside it
+   *
+   * [atIso] is the record's stamp; the clock time shows in the bubble and the full date in its tooltip
+   * The chips (pin, back, branch) lie over the bubble's corner and appear while the pointer is over the row
+   */
+  private fun buildUserRow(text: String, time: String, recordIndex: Int = -1, pinned: Boolean = false, atIso: String? = null): JPanel {
+    val bubble = UserBubble(
+      text = proseArea().also { it.text = text },
+      time = time,
+      caption = t("chat.role.you", "time" to time),
+      dateTooltip = ChatTimeText.dateTooltip(atIso),
+      metrics = feedMetrics,
+    )
+    return UserMessageRow(bubble, if (recordIndex < 0) null else messageChips(recordIndex, pinned), feedMetrics)
   }
 
   /**
-   * Time plus the two things one wants to do with a message that already happened: keep it from
-   * being forgotten, and try another path from it.
+   * The two things one wants to do with a message that already happened — keep it from being forgotten, and try another path from it
+   * And the way back to the moment before it
    *
-   * Both need the record index, so a live row created before the record is stored (index -1) shows
-   * the time alone rather than buttons that would act on the wrong message.
+   * All need the record index
+   * So a live row created before the record is stored (index -1) has no chips rather than ones that would act on the wrong message
    */
-  private fun messageFooter(time: String, recordIndex: Int, pinned: Boolean): JComponent {
-    val meta = metaLabel(t("chat.role.you", "time" to time), right = true)
-    if (recordIndex < 0) return meta
-    val strip = JPanel(java.awt.FlowLayout(java.awt.FlowLayout.RIGHT, JBUI.scale(4), 0)).apply { isOpaque = false }
-    val pin = JLabel(if (pinned) PIN_ON else PIN_OFF).apply {
-      toolTipText = if (pinned) t("chat.pin.off") else t("chat.pin.on")
-      cursor = java.awt.Cursor.getPredefinedCursor(java.awt.Cursor.HAND_CURSOR)
-      foreground = META_FG
-      font = com.intellij.util.ui.JBFont.label().deriveFont(11f)
-    }
-    pin.addMouseListener(object : java.awt.event.MouseAdapter() {
-      override fun mouseClicked(e: java.awt.event.MouseEvent) {
-        val threadId = currentThreadId ?: return
-        val now = history.setPinned(threadId, recordIndex, !pinned) ?: return
-        systemLine(if (now) t("chat.pin.done") else t("chat.pin.undone"))
-        history.get(threadId)?.let { renderTranscript(it) }
-      }
-    })
-    val branch = JLabel(BRANCH_ICON).apply {
-      toolTipText = t("chat.branch.tooltip")
-      cursor = java.awt.Cursor.getPredefinedCursor(java.awt.Cursor.HAND_CURSOR)
-      foreground = META_FG
-      font = com.intellij.util.ui.JBFont.label().deriveFont(11f)
-    }
-    branch.addMouseListener(object : java.awt.event.MouseAdapter() {
-      override fun mouseClicked(e: java.awt.event.MouseEvent) {
-        val threadId = currentThreadId ?: return
-        val copy = history.branch(threadId, recordIndex) ?: return
-        activateThread(copy.id)
-        systemLine(t("chat.branch.done"))
-      }
-    })
-    val rewind = JLabel(REWIND_ICON).apply {
-      toolTipText = t("chat.rewind.tooltip")
-      cursor = java.awt.Cursor.getPredefinedCursor(java.awt.Cursor.HAND_CURSOR)
-      foreground = META_FG
-      font = com.intellij.util.ui.JBFont.label().deriveFont(11f)
-    }
-    rewind.addMouseListener(object : java.awt.event.MouseAdapter() {
-      override fun mouseClicked(e: java.awt.event.MouseEvent) {
-        rewindTo(recordIndex)
-      }
-    })
-    strip.add(pin)
-    strip.add(rewind)
-    strip.add(branch)
-    strip.add(meta)
-    return strip
-  }
+  private fun messageChips(recordIndex: Int, pinned: Boolean): MessageChipStrip = MessageChipStrip(
+    pinned,
+    mapOf(
+      MessageChip.PIN to MessageChipAction(if (pinned) t("chat.pin.off") else t("chat.pin.on")) {
+        val threadId = currentThreadId
+        val now = history.setPinned(threadId, recordIndex, !pinned)
+        if (now != null) {
+          systemLine(if (now) t("chat.pin.done") else t("chat.pin.undone"))
+          history.get(threadId)?.let { renderTranscript(it) }
+        }
+      },
+      MessageChip.REWIND to MessageChipAction(t("chat.rewind.tooltip")) { rewindTo(recordIndex) },
+      MessageChip.BRANCH to MessageChipAction(t("chat.branch.tooltip")) {
+        val threadId = currentThreadId
+        val copy = history.branch(threadId, recordIndex)
+        if (copy != null) {
+          activateThread(copy.id)
+          systemLine(t("chat.branch.done"))
+        }
+      },
+    ),
+  )
 
   /**
    * Back to the moment before this message: the files to the checkpoint its turn took, and the conversation to a branch
@@ -6189,7 +6203,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     // makes the pin and the branch act on THIS message and not on a neighbour.
     val index = currentThreadId?.let { history.get(it)?.messages?.lastIndex } ?: -1
     SwingUtilities.invokeLater {
-      val row = buildUserRow(text, now(), index)
+      val row = buildUserRow(text, now(), index, atIso = nowIso())
       messages.add(row)
       recordRows.add(row)
       revalidateScroll()
@@ -6709,6 +6723,41 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
       }
       line.setKind(kind, detail)
       revalidateScroll()
+    }
+  }
+
+  /**
+   * The request waits before it is sent again: the card says why, for how long and which repeat it is
+   *
+   * The card sits above the working line, and the line and the status dot say «waiting for the provider» meanwhile
+   * Stop is on the card and in the composer, and both end the wait at once
+   */
+  private fun showRetryPause(pause: com.vibe.agent.resilience.RetryPause) {
+    if (disposed || !turnInFlight.get()) return
+    val card = retryCard ?: RetryPauseCard { cancelTurn() }.also { retryCard = it }
+    card.show(pause)
+    // Another thread is open: the feed on screen is not this turn's, and the card is put back when its thread returns
+    if (turnThreadId != currentThreadId) return
+    if (card.parent == null) {
+      val at = workingLine?.let { messages.components.indexOf(it) } ?: -1
+      messages.add(card, at)
+    }
+    composer.setStatus(com.vibe.agent.ui.composer.StatusDot.State.WAITING)
+    showWorking(WorkingLine.Kind.WAITING)
+    revalidateScroll()
+  }
+
+  /** The wait is over, or the turn ended during it: the card goes, and a turn still running goes back to «working» */
+  private fun hideRetryPause() {
+    val card = retryCard ?: return
+    retryCard = null
+    card.dispose()
+    messages.remove(card)
+    messages.revalidate()
+    messages.repaint()
+    if (turnInFlight.get() && !disposed) {
+      composer.setStatus(com.vibe.agent.ui.composer.StatusDot.State.THINKING)
+      showWorking(WorkingLine.Kind.THINKING)
     }
   }
 
@@ -7312,10 +7361,6 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     const val HELP_DOC_CHARS = 20_000
     const val COUNCIL_TIMEOUT_MS = 180_000L
     const val GIT_REPORT_LIMIT = 25
-    const val PIN_ON = "📌"
-    const val PIN_OFF = "📍"
-    const val BRANCH_ICON = "⑂"
-    const val REWIND_ICON = "↶"
     /** How long an external caller waits just for the turn to START (EDT hop + validation). */
     const val SUBMIT_TIMEOUT_SEC = 30L
     val NO_IMAGE_AGENT: String get() = t("chat.noImagesCapability")
@@ -7344,8 +7389,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     val REVEAL_BG = JBColor.namedColor("Vibe.History.revealBackground", JBColor(0xDCE7F8, 0x28324A))
     // Theme tokens: any theme (ours or third-party) recolours the chat via these
     // keys; the JBColor defaults keep stock light/dark themes sensible.
-    val CHAT_BG = JBColor.namedColor("Vibe.Chat.background", JBColor.namedColor("Panel.background", JBColor.PanelBackground))
-    val USER_BUBBLE = JBColor.namedColor("Vibe.Chat.userBubbleBackground", JBColor(0xD8ECF8, 0x2A3550))
+    val CHAT_BG = ChatTheme.BACKGROUND
     val TOOL_CARD = JBColor.namedColor("Vibe.Chat.toolCardBackground", JBColor(0xF2F2F2, 0x26282E))
     val META_FG = JBColor.namedColor("Vibe.Chat.metaForeground", JBColor.namedColor("Label.infoForeground", JBColor.GRAY))
   }

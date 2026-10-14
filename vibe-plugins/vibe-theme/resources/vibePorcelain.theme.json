@@ -19,7 +19,11 @@
     "Ok": "#3f7a34",
     "Warn": "#9a6b12",
     "ButtonBg": "#dce8f1",
-    "TextDim": "#5b707f"
+    "TextDim": "#5b707f",
+    "UserMsgBg": "#2f6f9e26",
+    "UserMsgBorder": "#2f6f9e8c",
+    "AssistantRule": "#2b2f3340",
+    "UserMsgLabel": "#546674"
   },
   "ui": {
     "*": {
@@ -146,7 +150,10 @@
       },
       "Chat": {
         "background": "DeepBg",
-        "userBubbleBackground": "SelBg",
+        "userMessageBackground": "UserMsgBg",
+        "userMessageBorder": "UserMsgBorder",
+        "userMessageLabel": "UserMsgLabel",
+        "assistantRule": "AssistantRule",
         "toolCardBackground": "PanelBg",
         "metaForeground": "TextDim",
         "terminalBackground": "#f4f1ec",

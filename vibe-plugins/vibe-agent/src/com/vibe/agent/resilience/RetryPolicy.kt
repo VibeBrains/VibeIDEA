@@ -33,11 +33,23 @@ object RetryPolicy {
     FATAL,
   }
 
-  const val MAX_ATTEMPTS = 3
+  /** The first request and three repeats: the pauses are 1, 2 and 4 seconds, the way VibeIDE paces them */
+  const val MAX_ATTEMPTS = 4
 
-  /** Long enough for a real limit window, short enough that a person does not think it hung. */
-  const val MAX_DELAY_MS = 60_000L
-  const val BASE_DELAY_MS = 2_000L
+  /** A pause the client makes up itself never exceeds this: longer is the provider's call, and only its header makes it */
+  const val MAX_DELAY_MS = 5_000L
+  const val BASE_DELAY_MS = 1_000L
+
+  /** A rate limit is not a hiccup: the first repeat waits a little longer, so it does not run into the same window */
+  const val RATE_LIMIT_BASE_DELAY_MS = 2_000L
+
+  /**
+   * The longest `Retry-After` the client sits out
+   *
+   * Beyond it the turn stops and says how long the provider asked for
+   * Half a minute of a frozen chat is the most a person takes for «it is working», and a longer wait is theirs to decide
+   */
+  const val MAX_RETRY_AFTER_SECONDS = 30L
 
   fun classify(statusCode: Int?, exception: Throwable? = null): Kind {
     if (statusCode != null) {
@@ -65,21 +77,49 @@ object RetryPolicy {
   }
 
   /**
-   * How long to wait before attempt [attempt] (1-based).
+   * How long to wait after the failed attempt [attempt] (1-based)
    *
-   * [retryAfterSeconds] from the response wins: the provider knows its own window, and guessing
-   * shorter means being refused again, guessing longer means idling. Without it — a deterministic
-   * doubling, deterministic because a backoff nobody can test is a backoff nobody trusts.
+   * The doubling is the floor, deterministic because a backoff nobody can test is a backoff nobody trusts
+   * [retryAfterSeconds] from the response lifts it: the provider knows its own window, and guessing shorter means being refused again
+   * A header longer than [MAX_RETRY_AFTER_SECONDS] is not waited out here ([verdict] stops first)
    */
   fun delayMs(attempt: Int, kind: Kind, retryAfterSeconds: Long? = null): Long {
     if (kind == Kind.FATAL || kind == Kind.UNAVAILABLE) return 0
-    retryAfterSeconds?.let { return (it * 1000).coerceIn(0, MAX_DELAY_MS) }
-    val doubled = BASE_DELAY_MS shl (attempt - 1).coerceIn(0, 10)
-    return doubled.coerceAtMost(MAX_DELAY_MS)
+    val base = if (kind == Kind.RATE_LIMIT) RATE_LIMIT_BASE_DELAY_MS else BASE_DELAY_MS
+    val doubled = (base shl (attempt - 1).coerceIn(0, 10)).coerceAtMost(MAX_DELAY_MS)
+    val asked = (retryAfterSeconds ?: 0) * 1000
+    return maxOf(doubled, asked.coerceIn(0, MAX_RETRY_AFTER_SECONDS * 1000))
   }
 
   fun shouldRetry(kind: Kind, attempt: Int, maxAttempts: Int = MAX_ATTEMPTS): Boolean =
     kind != Kind.FATAL && kind != Kind.UNAVAILABLE && attempt < maxAttempts
+
+  /** What to do after a failed attempt */
+  sealed interface Verdict {
+    /** Sit out [delayMs] and send the request again */
+    data class Wait(val delayMs: Long) : Verdict
+
+    /** The provider asked for [retryAfterSeconds], more than the client waits on its own: stop and say so */
+    data class TooLong(val retryAfterSeconds: Long) : Verdict
+
+    /** Nothing about waiting helps, or the attempts are used up */
+    data object Stop : Verdict
+  }
+
+  /**
+   * The one decision after attempt [attempt] failed
+   *
+   * A request that is not worth repeating stops at once
+   * Then a `Retry-After` beyond the ceiling stops with its length named, even on the last attempt
+   * Because «asked for 45 s» says more than «failed»
+   * Only then the count of attempts and the pause
+   */
+  fun verdict(kind: Kind, attempt: Int, retryAfterSeconds: Long?, maxAttempts: Int = MAX_ATTEMPTS): Verdict = when {
+    kind == Kind.FATAL || kind == Kind.UNAVAILABLE -> Verdict.Stop
+    retryAfterSeconds != null && retryAfterSeconds > MAX_RETRY_AFTER_SECONDS -> Verdict.TooLong(retryAfterSeconds)
+    attempt >= maxAttempts -> Verdict.Stop
+    else -> Verdict.Wait(delayMs(attempt, kind, retryAfterSeconds))
+  }
 
   /** `Retry-After` is either seconds or an HTTP date; only the seconds form is worth honouring. */
   fun retryAfterSeconds(header: String?): Long? = header?.trim()?.toLongOrNull()?.coerceAtLeast(0)

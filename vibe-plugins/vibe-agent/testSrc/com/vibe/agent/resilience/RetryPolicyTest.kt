@@ -53,16 +53,57 @@ class RetryPolicyTest {
   }
 
   @Test
-  fun `the backoff doubles and is capped`() {
-    assertEquals(2_000, RetryPolicy.delayMs(1, RetryPolicy.Kind.TRANSIENT))
-    assertEquals(4_000, RetryPolicy.delayMs(2, RetryPolicy.Kind.TRANSIENT))
-    assertEquals(8_000, RetryPolicy.delayMs(3, RetryPolicy.Kind.TRANSIENT))
+  fun `the backoff is 1, 2, 4 seconds and capped at 5`() {
+    assertEquals(1_000, RetryPolicy.delayMs(1, RetryPolicy.Kind.TRANSIENT))
+    assertEquals(2_000, RetryPolicy.delayMs(2, RetryPolicy.Kind.TRANSIENT))
+    assertEquals(4_000, RetryPolicy.delayMs(3, RetryPolicy.Kind.TRANSIENT))
+    assertEquals(5_000, RetryPolicy.delayMs(4, RetryPolicy.Kind.TRANSIENT))
     assertEquals(RetryPolicy.MAX_DELAY_MS, RetryPolicy.delayMs(20, RetryPolicy.Kind.TRANSIENT))
   }
 
   @Test
+  fun `a rate limit starts its backoff higher so the first repeat does not meet the same window`() {
+    assertEquals(2_000, RetryPolicy.delayMs(1, RetryPolicy.Kind.RATE_LIMIT))
+    assertEquals(4_000, RetryPolicy.delayMs(2, RetryPolicy.Kind.RATE_LIMIT))
+    assertEquals(5_000, RetryPolicy.delayMs(3, RetryPolicy.Kind.RATE_LIMIT))
+  }
+
+  @Test
+  fun `retry-after is a floor under the backoff, not a replacement for it`() {
+    // 503 with Retry-After 2: the pauses are 2, 2, 4 — never below what the provider asked, never below our own
+    assertEquals(2_000, RetryPolicy.delayMs(1, RetryPolicy.Kind.TRANSIENT, retryAfterSeconds = 2))
+    assertEquals(2_000, RetryPolicy.delayMs(2, RetryPolicy.Kind.TRANSIENT, retryAfterSeconds = 2))
+    assertEquals(4_000, RetryPolicy.delayMs(3, RetryPolicy.Kind.TRANSIENT, retryAfterSeconds = 2))
+  }
+
+  @Test
   fun `an absurd retry-after is clamped instead of freezing the chat`() {
-    assertEquals(RetryPolicy.MAX_DELAY_MS, RetryPolicy.delayMs(1, RetryPolicy.Kind.RATE_LIMIT, retryAfterSeconds = 86_400))
+    assertEquals(RetryPolicy.MAX_RETRY_AFTER_SECONDS * 1000,
+                 RetryPolicy.delayMs(1, RetryPolicy.Kind.RATE_LIMIT, retryAfterSeconds = 86_400))
+  }
+
+  @Test
+  fun `the verdict waits, up to three repeats`() {
+    for (attempt in 1..3) {
+      assertEquals(RetryPolicy.Verdict.Wait(RetryPolicy.delayMs(attempt, RetryPolicy.Kind.TRANSIENT)),
+                   RetryPolicy.verdict(RetryPolicy.Kind.TRANSIENT, attempt, retryAfterSeconds = null))
+    }
+    assertEquals(RetryPolicy.Verdict.Stop, RetryPolicy.verdict(RetryPolicy.Kind.TRANSIENT, attempt = 4, retryAfterSeconds = null))
+    assertEquals(3, RetryPolicy.MAX_ATTEMPTS - 1)
+  }
+
+  @Test
+  fun `a retry-after up to thirty seconds is waited out, a longer one stops the turn with its length`() {
+    assertEquals(RetryPolicy.Verdict.Wait(30_000), RetryPolicy.verdict(RetryPolicy.Kind.TRANSIENT, 1, retryAfterSeconds = 30))
+    assertEquals(RetryPolicy.Verdict.TooLong(45), RetryPolicy.verdict(RetryPolicy.Kind.TRANSIENT, 1, retryAfterSeconds = 45))
+    assertEquals(RetryPolicy.Verdict.TooLong(31), RetryPolicy.verdict(RetryPolicy.Kind.RATE_LIMIT, 1, retryAfterSeconds = 31))
+  }
+
+  @Test
+  fun `a long retry-after is named even on the last attempt, a fatal one never is`() {
+    assertEquals(RetryPolicy.Verdict.TooLong(45), RetryPolicy.verdict(RetryPolicy.Kind.TRANSIENT, attempt = 4, retryAfterSeconds = 45))
+    assertEquals(RetryPolicy.Verdict.Stop, RetryPolicy.verdict(RetryPolicy.Kind.FATAL, 1, retryAfterSeconds = 45))
+    assertEquals(RetryPolicy.Verdict.Stop, RetryPolicy.verdict(RetryPolicy.Kind.UNAVAILABLE, 1, retryAfterSeconds = 2))
   }
 
   @Test

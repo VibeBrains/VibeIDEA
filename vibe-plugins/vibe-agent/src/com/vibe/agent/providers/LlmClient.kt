@@ -6,6 +6,9 @@ import com.vibe.agent.util.arr
 import com.intellij.openapi.diagnostic.logger
 import com.vibe.agent.i18n.VibeI18n.t
 import com.vibe.agent.resilience.ProxySettings
+import com.vibe.agent.resilience.InterruptiblePause
+import com.vibe.agent.resilience.RetryObserver
+import com.vibe.agent.resilience.RetryPause
 import com.vibe.agent.resilience.RetryPolicy
 
 import kotlinx.serialization.json.Json
@@ -412,9 +415,13 @@ class LlmClient(
   /** `Retry-After` of the last response, if the provider sent one. */
   @Volatile private var lastRetryAfter: String? = null
 
+  /** The wait between two attempts: a stop ends it at once instead of at the next polling step */
+  private val retryPause = InterruptiblePause(SLEEP_STEP_MS)
+
   /** Aborts the in-flight stream from any thread: closing the body wakes a read blocked on a silent server. */
   fun cancel() {
     activeBody?.let { runCatching { it.close() } }
+    retryPause.wake()
   }
 
   /** Blocking call; invoke from a pooled thread. onDelta receives text chunks as they stream. */
@@ -423,8 +430,8 @@ class LlmClient(
     model: ModelEntry,
     messages: List<ChatMessage>,
     isCancelled: () -> Boolean = { false },
-    /** Told when a wait starts, so the chat can say «жду провайдера» instead of looking frozen. */
-    onWaiting: (attempt: Int, delayMs: Long, reason: String?) -> Unit = { _, _, _ -> },
+    /** Told when a pause between two attempts starts and when it ends, so the chat can show it instead of looking frozen */
+    retries: RetryObserver = RetryObserver.NONE,
     /**
      * Рассуждение модели, если провод его присылает.
      *
@@ -490,6 +497,9 @@ class LlmClient(
     var attempt = 1
     while (true) {
       try {
+        // A header belongs to the response that carried it: an attempt that gets no response, a dropped connection
+        // Must not inherit the `Retry-After` of an earlier request and stop the turn over a wait nobody asked for
+        lastRetryAfter = null
         // A retry starts a new answer: calls half-collected from the failed stream are not calls.
         toolCalls = ToolCallAccumulator()
         textToolCalls = emptyList()
@@ -525,29 +535,31 @@ class LlmClient(
       catch (e: Exception) {
         // A rate limit is a queue, not an error: the provider said «через тридцать секунд», and
         // turning that into a red line throws away a turn the user already paid to compose.
-        val kind = RetryPolicy.classify(RetryPolicy.statusFromMessage(e.message), e)
-        if (cancelled() || !RetryPolicy.shouldRetry(kind, attempt)) throw e
+        val status = RetryPolicy.statusFromMessage(e.message)
+        val kind = RetryPolicy.classify(status, e)
+        if (cancelled()) throw e
+        val delay = when (val verdict = RetryPolicy.verdict(kind, attempt, RetryPolicy.retryAfterSeconds(lastRetryAfter))) {
+          RetryPolicy.Verdict.Stop -> throw e
+          // The status stays in the text: the failover decision downstream classifies the failure by it
+          is RetryPolicy.Verdict.TooLong -> throw RuntimeException(
+            (status?.let { "HTTP $it: " } ?: "") +
+              t("retry.tooLong", "seconds" to verdict.retryAfterSeconds, "limit" to RetryPolicy.MAX_RETRY_AFTER_SECONDS), e)
+          is RetryPolicy.Verdict.Wait -> verdict.delayMs
+        }
         // Anything already streamed stays on screen; the retry appends to it rather than replacing
         // it, which is honest — those tokens were produced and paid for.
-        val delay = RetryPolicy.delayMs(attempt, kind, RetryPolicy.retryAfterSeconds(lastRetryAfter))
-        onWaiting(attempt, delay, e.message?.take(200))
-        val slept = sleepInterruptibly(delay)
-        if (!slept) throw e
+        retries.onPause(RetryPause(attempt, RetryPolicy.MAX_ATTEMPTS - 1, delay, status, kind, e.message?.take(PAUSE_DETAIL_CHARS)))
+        val slept = try {
+          retryPause.await(delay, cancelled)
+        }
+        finally {
+          retries.onResume()
+        }
+        // A stop during the wait is a stop, not the failure that caused the wait
+        if (!slept) throw java.io.InterruptedIOException(STOPPED_BY_USER)
         attempt++
       }
     }
-  }
-
-  /** Sleeps in short steps so a stop pressed during a wait is honoured immediately. */
-  private fun sleepInterruptibly(delayMs: Long): Boolean {
-    var left = delayMs
-    while (left > 0) {
-      if (cancelled()) return false
-      val step = minOf(left, SLEEP_STEP_MS)
-      Thread.sleep(step)
-      left -= step
-    }
-    return !cancelled()
   }
 
   /**
@@ -994,8 +1006,11 @@ class LlmClient(
   }
 
   internal companion object {
-    /** Waking up this often makes a stop during a wait feel immediate without busy-waiting. */
+    /** The longest a wait goes without looking at the stop flag; [InterruptiblePause.wake] ends it sooner */
     const val SLEEP_STEP_MS = 250L
+
+    /** How much of the provider's own message travels with a pause */
+    const val PAUSE_DETAIL_CHARS = 200
 
     /**
      * The reasoning fields of one request: the person's level, brought to what this model accepts.

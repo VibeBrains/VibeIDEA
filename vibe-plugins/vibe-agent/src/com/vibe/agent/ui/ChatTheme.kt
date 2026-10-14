@@ -2,8 +2,10 @@
 package com.vibe.agent.ui
 
 import com.intellij.openapi.ide.CopyPasteManager
+import com.intellij.ui.ColorUtil
 import com.intellij.ui.JBColor
 import com.intellij.util.ui.JBUI
+import com.intellij.util.ui.UIUtil
 import java.awt.Font
 import java.awt.datatransfer.StringSelection
 import javax.swing.JLabel
@@ -15,6 +17,8 @@ import javax.swing.JLabel
  * the surfaces can never drift apart.
  */
 internal object ChatTheme {
+  /** The chat's own background: the feed, and whatever has to match it, such as the chips over a bubble */
+  val BACKGROUND = JBColor.namedColor("Vibe.Chat.background", JBColor.namedColor("Panel.background", JBColor.PanelBackground))
   val TERMINAL_BG = JBColor.namedColor("Vibe.Chat.terminalBackground", JBColor(0xF7F7F7, 0x1E1F22))
   val TERMINAL_FG = JBColor.namedColor("Vibe.Chat.terminalForeground", JBColor(0x2B2B2B, 0xBCBEC4))
   val TERMINAL_BORDER = JBColor.namedColor("Vibe.Chat.terminalBorder", JBColor(0xD8D8D8, 0x2B2D30))
@@ -22,6 +26,22 @@ internal object ChatTheme {
   val TERMINAL_ERR = JBColor.namedColor("Vibe.Chat.terminalError", JBColor(0xC0392B, 0xE06C5A))
   val META_FG = JBColor.namedColor("Vibe.Chat.metaForeground", JBColor.namedColor("Label.infoForeground", JBColor.GRAY))
   val CARD_BG = JBColor.namedColor("Vibe.Chat.toolCardBackground", JBColor(0xF2F2F2, 0x26282E))
+
+  /** Opacities of the user's bubble over the chat background, and of the reply's rule */
+  private const val USER_MESSAGE_FILL_ALPHA = 0.15
+  private const val USER_MESSAGE_OUTLINE_ALPHA = 0.55
+  private const val ASSISTANT_RULE_ALPHA = 0.25
+
+  // A third-party theme has none of the tokens below, so the defaults are derived from keys every theme has:
+  // the focus colour for the bubble, the label colour for the rule
+  // Our themes name them explicitly: their focus colour is deliberately dim, and a bubble drawn from it would not show
+  private fun focusTint(alpha: Double): JBColor = JBColor.lazy { ColorUtil.withAlpha(JBUI.CurrentTheme.Focus.focusColor(), alpha) }
+
+  val USER_MESSAGE_BG = JBColor.namedColor("Vibe.Chat.userMessageBackground", focusTint(USER_MESSAGE_FILL_ALPHA))
+  val USER_MESSAGE_BORDER = JBColor.namedColor("Vibe.Chat.userMessageBorder", focusTint(USER_MESSAGE_OUTLINE_ALPHA))
+  val USER_MESSAGE_LABEL = JBColor.namedColor("Vibe.Chat.userMessageLabel", META_FG)
+  val ASSISTANT_RULE = JBColor.namedColor("Vibe.Chat.assistantRule",
+                                          JBColor.lazy { ColorUtil.withAlpha(UIUtil.getLabelForeground(), ASSISTANT_RULE_ALPHA) })
 
   /** Caption font size for small affordances (copy links, block headers). */
   const val CAPTION_FONT_PT = 10f

@@ -19,7 +19,12 @@
     "Ok": "#96c171",
     "Warn": "#7caeb6",
     "ButtonBg": "#533a2c",
-    "TextDim": "#c46d4b"
+    "TextDim": "#c46d4b",
+    "UserMsgBg": "#d98a6826",
+    "UserMsgBorder": "#d98a688c",
+    "AssistantRule": "#e7dccd40",
+    "UserMsgLabel": "#cb8365",
+    "ScrollThumb": "#94826c33"
   },
   "ui": {
     "*": {
@@ -75,7 +80,16 @@
       "underlinedTabBackground": "Hover"
     },
     "ScrollBar": {
-      "track": "PanelBg"
+      "track": "PanelBg",
+      "Mac": {
+        "Transparent": {
+          "hoverThumbColor": "ScrollThumb"
+        }
+      },
+      "Transparent": {
+        "thumbColor": "ScrollThumb",
+        "hoverThumbColor": "ScrollThumb"
+      }
     },
     "CompletionPopup": {
       "background": "PanelBg"
@@ -146,7 +160,10 @@
       },
       "Chat": {
         "background": "DeepBg",
-        "userBubbleBackground": "SelBg",
+        "userMessageBackground": "UserMsgBg",
+        "userMessageBorder": "UserMsgBorder",
+        "userMessageLabel": "UserMsgLabel",
+        "assistantRule": "AssistantRule",
         "toolCardBackground": "PanelBg",
         "metaForeground": "TextDim",
         "terminalBackground": "#15110f",

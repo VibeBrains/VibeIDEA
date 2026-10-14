@@ -59,6 +59,11 @@ UI_PAIRS = (
     ('Composer.usageWarnForeground', 'Composer.background'),
     ('Tabs.activeForeground', 'Tabs.activeBackground'),
 )
+# Текст на полупрозрачной заливке: меряется к цвету, который получается ПОВЕРХ фона чата, а не к записи темы.
+# Время и «Вы» в пузыре пользователя шли на 3.4–3.8 — ниже планки, хотя на самом фоне чата были выше 4.5.
+OVER_PAIRS = (
+    ('Chat.userMessageLabel', 'Chat.userMessageBackground', 'Chat.background'),
+)
 # Не цвета текста: подчёркивание, полоса ошибок и заливки меряются к другому и по другим правилам.
 NOT_TEXT = {'FOREGROUND', 'BACKGROUND', 'EFFECT_COLOR', 'ERROR_STRIPE_COLOR'}
 
@@ -144,6 +149,15 @@ def token(theme, path):
     return theme['colors'].get(node, node)
 
 
+def composite(tinted, base):
+    """Цвет `#RRGGBBAA` поверх непрозрачного `#RRGGBB`: то, что глаз видит на экране, а не запись в теме."""
+    value = tinted.strip().lstrip('#')
+    alpha = int(value[6:8], 16) / 255 if len(value) == 8 else 1.0
+    over = base.strip().lstrip('#')
+    return '#' + ''.join('%02x' % round(int(value[i:i + 2], 16) * alpha + int(over[i:i + 2], 16) * (1 - alpha))
+                         for i in (0, 2, 4))
+
+
 def measure_ui(path):
     """Пары «токен → контраст» одной темы, от худшей к лучшей."""
     theme = json.loads(io.open(path, encoding='utf-8').read())
@@ -152,6 +166,11 @@ def measure_ui(path):
         measured = contrast(token(theme, foreground), token(theme, background))
         if measured:
             found.append((measured, foreground, background))
+    for foreground, tinted, base in OVER_PAIRS:
+        screen = composite(token(theme, tinted), token(theme, base))
+        measured = contrast(token(theme, foreground), screen)
+        if measured:
+            found.append((measured, foreground, '%s поверх Vibe.%s' % (tinted, base)))
     found.sort()
     return found
 
@@ -207,7 +226,7 @@ def main():
         print('  Осветлите цвет, сохранив тон: ниже %.1f текст не читается ни у кого' % FLOOR)
         return 1
     print('  контраст: все цвета текста выше планки %.1f — и в схемах редактора, и в наших панелях (%d пар)'
-          % (FLOOR, len(UI_PAIRS)))
+          % (FLOOR, len(UI_PAIRS) + len(OVER_PAIRS)))
     print('  различимость: цвет ошибки отстоит от тёплого акцента не меньше чем на ΔE %.0f' % DISTANCE_FLOOR)
     return 0
 
