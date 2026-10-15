@@ -4,6 +4,7 @@ package com.vibe.agent.ui
 import java.time.ZoneId
 import java.util.Locale
 import kotlin.test.Test
+import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
@@ -31,5 +32,12 @@ class ChatTimeTextTest {
     assertNull(ChatTimeText.dateTooltip(null))
     assertNull(ChatTimeText.dateTooltip(""))
     assertNull(ChatTimeText.dateTooltip("yesterday"))
+  }
+
+  @Test
+  fun `every message carries the date with its time`() {
+    val instant = java.time.Instant.parse("2026-10-15T09:55:00Z")
+    assertEquals("15.10.2026 12:55", ChatTimeText.stamp(instant, ZoneId.of("Europe/Moscow")))
+    assertEquals("05.01.2026 03:07", ChatTimeText.stamp(java.time.Instant.parse("2026-01-05T03:07:00Z"), ZoneId.of("UTC")))
   }
 }

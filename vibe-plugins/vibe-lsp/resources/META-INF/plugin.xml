@@ -53,10 +53,10 @@
 
   <actions>
     <action id="Vibe.LspDoctor" class="com.vibe.lsp.VibeLspDoctorAction"
-            text="VibeIDEA: языковые серверы"
+            text="Языковые серверы"
             description="Какие языковые серверы установлены и как поставить недостающие">
       <add-to-group group-id="ToolsMenu" anchor="last"/>
-      <add-to-group group-id="Vibe.BrainMenu.Service" anchor="last"/>
+      <add-to-group group-id="Vibe.BrainMenu.Diagnostics" anchor="last"/>
     </action>
   </actions>
 </idea-plugin>

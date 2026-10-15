@@ -63,6 +63,11 @@ internal class AssistantRuleBorder(private val metrics: ChatFeedMetrics, private
 
 /** Time and date texts of a message */
 internal object ChatTimeText {
+  /** Date and time on every message: a thread spans days, and a clock time alone does not say which day */
+  private val STAMP: DateTimeFormatter = DateTimeFormatter.ofPattern("dd.MM.yyyy HH:mm")
+
+  fun stamp(instant: Instant, zone: ZoneId = ZoneId.systemDefault()): String = STAMP.withZone(zone).format(instant)
+
   /** The full date and time of a message, for the tooltip of its clock time; null when the record has no usable stamp */
   fun dateTooltip(atIso: String?, zone: ZoneId = ZoneId.systemDefault(), locale: Locale = Locale.getDefault()): String? {
     val instant = atIso?.let { runCatching { Instant.parse(it) }.getOrNull() } ?: return null

@@ -109,7 +109,6 @@ import java.awt.Component
 import java.awt.Font
 import java.awt.KeyboardFocusManager
 import java.time.Instant
-import java.time.LocalTime
 import java.time.ZoneId
 import java.util.Base64
 import java.util.concurrent.Callable
@@ -4490,7 +4489,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
       .format(DateTimeFormatter.ofPattern("HH:mm"))
 
   private fun timeOf(atIso: String): String = try {
-    Instant.parse(atIso).atZone(ZoneId.systemDefault()).toLocalTime().format(DateTimeFormatter.ofPattern("HH:mm"))
+    ChatTimeText.stamp(Instant.parse(atIso))
   } catch (ignored: Exception) { "" }
 
   private fun restoreTabs() {
@@ -6112,7 +6111,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
   private fun copyLink(textSupplier: () -> String): JLabel =
     ChatTheme.copyLabel(t("chat.copyMessage"), textSupplier)
 
-  private fun now(): String = LocalTime.now().format(DateTimeFormatter.ofPattern("HH:mm"))
+  private fun now(): String = ChatTimeText.stamp(Instant.now())
 
   /**
    * The user's message: a bubble on the right whose layout follows the feed's width, with the time inside it

@@ -20,7 +20,6 @@ import com.intellij.openapi.ui.Messages
 import com.intellij.openapi.vfs.LocalFileSystem
 import com.intellij.openapi.vfs.VirtualFile
 import com.intellij.ui.JBColor
-import com.intellij.util.ui.EmptyIcon
 import com.intellij.util.ui.JBUI
 import com.vibe.agent.i18n.VibeI18n.t
 import java.awt.Color
@@ -182,8 +181,11 @@ class VibeCommandsMenuGroup : ActionGroup(), DumbAware {
       documents.saveDocument(document)
     }
 
-    private fun stripe(command: ProjectCommands.Command): Icon =
-      colorOf(ProjectCommands.colorKey(command.color))?.let { StripeIcon(it) } ?: EmptyIcon.create(JBUI.scale(ICON_SIZE))
+    /**
+     * The colour stripe, or no icon at all: a blank placeholder made the popup reserve an icon column for every row,
+     * and a menu of uncoloured commands opened with a wide empty margin on the left
+     */
+    private fun stripe(command: ProjectCommands.Command): Icon? = colorOf(ProjectCommands.colorKey(command.color))?.let { StripeIcon(it) }
 
     /** Theme tokens, written out literally: a key assembled from parts cannot be found by searching the code */
     private fun colorOf(key: String?): Color? = when (key) {
