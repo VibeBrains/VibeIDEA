@@ -123,7 +123,8 @@ fi
 # Unit tests and the live engine test load the libraries from vibe-plugins/deps; only the image says whether they shipped
 SHERPA_JAR=""
 for jar in "$APP_PLUGINS"/vibe-agent/lib/*.jar; do
-  if unzip -l "$jar" 2>/dev/null | grep -q 'com/k2fsa/sherpa/onnx/OnlineRecognizer.class'; then SHERPA_JAR="$jar"; break; fi
+  # Not `grep -q`: it quits at the first match, unzip dies on the closed pipe, and pipefail reports the jar as empty
+  if unzip -l "$jar" 2>/dev/null | grep 'com/k2fsa/sherpa/onnx/OnlineRecognizer.class' >/dev/null; then SHERPA_JAR="$jar"; break; fi
 done
 if [ -z "$SHERPA_JAR" ]; then
   say "✖ классов sherpa-onnx нет ни в одном jar vibe-agent/lib — локальное распознавание речи не загрузится."
