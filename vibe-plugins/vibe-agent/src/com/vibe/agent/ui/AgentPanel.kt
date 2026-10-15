@@ -4465,7 +4465,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     openTabIds.addAll(saved)
     if (openTabIds.isEmpty()) openTabIds.add(history.create(project.basePath, project.name).id)
     currentThreadId = props.getValue(KEY_ACTIVE_TAB)?.takeIf { it in openTabIds } ?: openTabIds.first()
-    history.get(currentThreadId)?.let { renderTranscript(it) }
+    history.get(currentThreadId)?.let { renderTranscript(it); feedEnd.pinToEnd() }
     updateTabsStrip()
   }
 
@@ -4502,6 +4502,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     currentThreadId = id
     val thread = history.get(id) ?: return
     renderTranscript(thread)
+    feedEnd.pinToEnd()
     // The model belongs to the TAB. A tab that has one is restored to it; a fresh tab adopts the
     // one in the picker and writes it down at once, so a later switch in a neighbouring tab cannot
     // move it (the choice used to exist only as the panel's, and the store's record followed

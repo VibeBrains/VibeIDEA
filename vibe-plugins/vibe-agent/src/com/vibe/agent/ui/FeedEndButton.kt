@@ -43,7 +43,44 @@ class FeedEndButton(private val scroll: JScrollPane) : JLayeredPane() {
     add(button, PALETTE_LAYER)
     button.onClick = { scrollToEnd() }
     scroll.verticalScrollBar.addAdjustmentListener { update() }
-    scroll.viewport.addChangeListener { update() }
+    scroll.viewport.addChangeListener {
+      if (endPending) scroll.verticalScrollBar.let { it.value = it.maximum }
+      update()
+    }
+    // A wheel or a drag is the person taking over: the pending pin must not pull them back down
+    scroll.addMouseWheelListener { endPending = false }
+    scroll.addHierarchyListener { e ->
+      val shown = e.changeFlags and java.awt.event.HierarchyEvent.SHOWING_CHANGED.toLong() != 0L && scroll.isShowing
+      if (shown && shownAgain) {
+        shownAgain = false
+        scrollToEnd()
+        releasePinLater()
+      }
+    }
+    scroll.verticalScrollBar.addMouseListener(object : java.awt.event.MouseAdapter() {
+      override fun mousePressed(e: java.awt.event.MouseEvent) { endPending = false }
+    })
+  }
+
+  /** True while an opened thread is still being laid out and must end up at its bottom */
+  private var endPending = false
+
+  /**
+   * Opens the feed at its end, the way a chat is read
+   * A restored thread is laid out late: the panel may be hidden at start and its height arrives in several passes,
+   * so one scroll lands at the top of a list that keeps growing. The pin follows the layout for a short while
+   */
+  fun pinToEnd() {
+    endPending = true
+    scrollToEnd()
+    // A hidden panel has no height yet: the short pin starts only once the feed is on screen
+    if (scroll.isShowing) releasePinLater() else shownAgain = true
+  }
+
+  private var shownAgain = false
+
+  private fun releasePinLater() {
+    javax.swing.Timer(PIN_MS) { endPending = false }.apply { isRepeats = false; start() }
   }
 
   /** Вниз до упора; `maximum` меняется по мере досчёта раскладки, поэтому шаг повторяется. */
@@ -122,5 +159,8 @@ class FeedEndButton(private val scroll: JScrollPane) : JLayeredPane() {
 
     /** Тот же допуск «считается низом», что у следования за потоком: два правила о низе — два низа. */
     const val SLACK = 24
+
+    // How long an opened thread keeps following its own layout down; long enough for a hidden panel shown at start
+    const val PIN_MS = 3000
   }
 }
