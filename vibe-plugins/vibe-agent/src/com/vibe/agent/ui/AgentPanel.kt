@@ -2596,10 +2596,16 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     override val disposed: Boolean get() = this@AgentPanel.disposed
     override val modelPath: String get() = VibeAgentSettings.voiceModelPath
     override val language: String get() = VibeAgentSettings.telegramVoiceLanguage
+    override val modelsPath: String get() = VibeAgentSettings.voiceModelsPath
+    override val keepAliveSec: Int get() = VibeAgentSettings.voiceKeepAliveSec
 
     override var pythonConsent: Boolean
       get() = VibeAgentSettings.voicePythonConsent
       set(value) { VibeAgentSettings.voicePythonConsent = value }
+
+    override var localEnabled: Boolean
+      get() = VibeAgentSettings.voiceLocalEnabled
+      set(value) { VibeAgentSettings.voiceLocalEnabled = value }
 
     override fun face(state: VoiceFlow.State) = voiceFace.show(state)
 
@@ -2612,11 +2618,29 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
       if (notice.level == WARNING) systemLine(notice.text, MISC, WARNING, page = notice.page)
     }
 
-    override fun deliver(text: String) = putIntoComposer(text)
+    override fun draft(text: String) = composer.voiceDraft(text)
+
+    override fun phrase(text: String) = composer.voicePhrase(text)
+
+    override fun close(keep: Boolean) = composer.voiceClose(keep)
 
     override fun cue(cue: VoiceCue.Kind) = IdeVoiceEnv.playCue(cue)
 
     override fun askPython(offer: VoiceEngines.Choice.AskPython) = VoiceChoice.ask(project, offer.cliInstalled)
+
+    override fun askModels(offer: VoiceEngines.Choice.OfferModels) = VoiceChoice.askModels(project, offer)
+
+    override fun withProgress(title: String, work: (VoiceDictation.Progress) -> Unit) {
+      object : com.intellij.openapi.progress.Task.Backgroundable(project, title, true) {
+        override fun run(indicator: com.intellij.openapi.progress.ProgressIndicator) {
+          indicator.isIndeterminate = false
+          work(object : VoiceDictation.Progress {
+            override fun fraction(value: Double) { indicator.fraction = value }
+            override val cancelled: Boolean get() = indicator.isCanceled
+          })
+        }
+      }.queue()
+    }
   })
 
   /** What a button under a line about the dictation does */
@@ -2625,6 +2649,8 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
       VoiceAction.MICROPHONE_SETTINGS -> MicrophoneSettings.open()
       VoiceAction.CHOOSE_MODEL -> com.vibe.agent.settings.VibeSettingsPages.open(project, SettingsPage.CHAT)
       VoiceAction.RECORD_AGAIN -> voice.start()
+      VoiceAction.DOWNLOAD_AGAIN -> voice.downloadAgain()
+      VoiceAction.VOICE_SETTINGS -> com.vibe.agent.settings.VibeSettingsPages.open(project, SettingsPage.CHAT)
     }
   }
 

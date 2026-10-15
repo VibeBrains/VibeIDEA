@@ -67,19 +67,29 @@ object WhisperModels {
   fun englishOnly(candidate: Candidate): Boolean = ENGLISH_ONLY.containsMatchIn(candidate.name.lowercase())
 
   /**
+   * The largest model loaded in seconds rather than tens of them: [AUTO_MAX_BYTES], about the size of a quantised medium
+   * tiny and base are quick, and on Russian they mishear one word in three; a model past this one loads for long enough
+   * to read as a hang at the first stop
+   */
+  const val AUTO_MAX_BYTES = 600L * 1024 * 1024
+
+  /**
    * The model to use among [candidates], or null
    *
    * A multilingual model first and an English-only one only when nothing else is there and the person speaks English:
    * an `.en` model fed Russian does not fail, it answers with confident nonsense
-   * Among equals the smaller file, because the first transcription loads the model and the smaller loads sooner
-   * The smaller is also the less accurate one, and that is the price of a first answer in seconds; a model the person
-   * names themselves is never second-guessed
+   * Among those the largest that is not larger than [AUTO_MAX_BYTES], because the larger hears better; when every one
+   * is larger, the smallest of them, which still answers
+   * A model the person names themselves is never second-guessed
    */
   fun pick(candidates: List<Candidate>, language: String): Candidate? {
     val models = candidates.filter { isModel(it) }
     val multilingual = models.filterNot { englishOnly(it) }
     val pool = multilingual.ifEmpty { if (language.trim().lowercase() == ENGLISH) models else emptyList() }
-    return pool.minWithOrNull(compareBy<Candidate>({ it.bytes }, { it.path }))
+    // Equal sizes are decided by the path in both directions, so the answer does not depend on the order of the folders
+    val larger = compareBy<Candidate> { it.bytes }.thenByDescending { it.path }
+    val smaller = compareBy<Candidate>({ it.bytes }, { it.path })
+    return pool.filter { it.bytes <= AUTO_MAX_BYTES }.maxWithOrNull(larger) ?: pool.minWithOrNull(smaller)
   }
 
   /** Every regular file of [folders], one level deep; a folder that is missing or unreadable has none */

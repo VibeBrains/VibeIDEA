@@ -515,28 +515,39 @@ class VibeDoctorAction : AnAction({ t("doctor.action") }) {
    * The answer is the real one, including the case the button answers with a question about whisper (Python)
    */
   private fun voiceLine(): VibeDiagnosis.Line {
-    val manual = VibeAgentSettings.voiceModelPath
-    val language = VibeAgentSettings.telegramVoiceLanguage
-    val choice = com.vibe.agent.voice.VoiceEngines.choose(manual, language, VibeAgentSettings.voicePythonConsent)
+    val settings = com.vibe.agent.voice.IdeVoiceEnv.settings()
+    val manual = settings.manualModel
+    val choice = com.vibe.agent.voice.VoiceEngines.choose(settings)
     val name = t("doctor.line.voice")
     return when (choice) {
       is com.vibe.agent.voice.VoiceEngines.Choice.Use -> {
         val engine = choice.engine
+        val live = engine.live
+        if (live == com.vibe.agent.voice.VoiceEngine.LivePreview.Frames) {
+          return VibeDiagnosis.Line(name, VibeDiagnosis.State.OK, t("doctor.detail.voiceLocal", "models" to engine.model))
+        }
         val model = engine.model?.let { java.io.File(it).name }
         val found = if (manual.isBlank() && model != null) " (" + t("doctor.detail.voiceFoundNote") + ")" else ""
         val detail = when {
-          engine.live != null -> t("doctor.detail.voiceLive", "model" to model)
+          live != null -> t("doctor.detail.voiceLive", "model" to model)
           model != null -> t("doctor.detail.voiceOnce", "tool" to engine.name)
           else -> t("doctor.detail.voicePython")
         }
         VibeDiagnosis.Line(name, VibeDiagnosis.State.OK, detail + found)
       }
+      is com.vibe.agent.voice.VoiceEngines.Choice.OfferModels -> VibeDiagnosis.Line(name, VibeDiagnosis.State.WARN, t(
+        "doctor.detail.voiceLocalMissing",
+        "mb" to com.vibe.agent.voice.VoiceDictation.megabytes(choice.bytes),
+        "folder" to choice.store.root.toString(),
+      ))
       is com.vibe.agent.voice.VoiceEngines.Choice.AskPython ->
         VibeDiagnosis.Line(name, VibeDiagnosis.State.WARN, t("doctor.detail.voiceAsk"))
       is com.vibe.agent.voice.VoiceEngines.Choice.Unavailable -> when (val problem = choice.problem) {
         is com.vibe.agent.voice.VoiceProblem.ModelMissing ->
           VibeDiagnosis.Line(name, VibeDiagnosis.State.WARN, t("doctor.detail.voiceModelMissing", "path" to problem.path))
         com.vibe.agent.voice.VoiceProblem.NoModel -> VibeDiagnosis.Line(name, VibeDiagnosis.State.WARN, t("doctor.detail.voiceNoModel"))
+        is com.vibe.agent.voice.VoiceProblem.LocalEngineFailed ->
+          VibeDiagnosis.Line(name, VibeDiagnosis.State.WARN, t("doctor.detail.voiceLocalFailed", "reason" to problem.reason))
         else -> VibeDiagnosis.Line(name, VibeDiagnosis.State.ABSENT, t("doctor.detail.voiceNone"))
       }
     }

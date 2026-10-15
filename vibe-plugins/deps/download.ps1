@@ -126,7 +126,38 @@ Remove-Item -Recurse -Force $vsixTemp
 "vscode-js-debug $($pins.JS_DEBUG_V) (MIT) and vscode-php-debug $($pins.PHP_DEBUG_V) (MIT), bundled from project releases.`nLicences: vibeJsDebug\js-debug\LICENSE, vibePhpDebug\extension\LICENSE.txt" |
     Set-Content -Path 'extracted\servers\dap\README.txt' -Encoding UTF8
 
+# --- sherpa-onnx: the native half of local speech recognition (voice input without Python) ---
+#
+# One pinned jar of native libraries per platform we build; only the libraries are kept, laid out the way the plugin
+# looks for them (plugins/vibe-agent/native/<os-arch>/). Both platforms are fetched, as in download.sh.
+$sherpaBase = "https://github.com/k2-fsa/sherpa-onnx/releases/download/v$($pins.SHERPA_ONNX_V)"
+$sherpaDir = 'extracted\sherpa-onnx'
+if (Test-Path $sherpaDir) { Remove-Item -Recurse -Force $sherpaDir }
+$sherpaPlatforms = [ordered]@{ 'osx-aarch64' = $pins.SHERPA_NATIVE_OSX_AARCH64_SHA; 'win-x64' = $pins.SHERPA_NATIVE_WIN_X64_SHA }
+Get-File "https://raw.githubusercontent.com/k2-fsa/sherpa-onnx/v$($pins.SHERPA_ONNX_V)/LICENSE" 'sherpa-onnx-LICENSE'
+Assert-Sha256 'sherpa-onnx-LICENSE' $pins.SHERPA_LICENSE_SHA
+Get-File "https://raw.githubusercontent.com/microsoft/onnxruntime/v$($pins.ONNXRUNTIME_V)/LICENSE" 'onnxruntime-LICENSE'
+Assert-Sha256 'onnxruntime-LICENSE' $pins.ONNXRUNTIME_LICENSE_SHA
+foreach ($platform in $sherpaPlatforms.Keys) {
+    $jar = "sherpa-onnx-native-lib-$platform-$($pins.SHERPA_ONNX_V).jar"
+    Get-File "$sherpaBase/$jar" $jar
+    Assert-Sha256 $jar $sherpaPlatforms[$platform]
+    $target = Join-Path $sherpaDir $platform
+    $unpacked = Join-Path $sherpaDir "_$platform"
+    New-Item -ItemType Directory -Path $target -Force | Out-Null
+    # A jar is a zip; Expand-Archive takes only the .zip extension, and the libraries sit two folders deep inside it
+    Copy-Item $jar "$jar.zip" -Force
+    Expand-Archive -Path "$jar.zip" -DestinationPath $unpacked -Force
+    Remove-Item "$jar.zip" -Force
+    Get-ChildItem -Path (Join-Path $unpacked "sherpa-onnx\native\$platform") -File | Copy-Item -Destination $target -Force
+    Remove-Item -Recurse -Force $unpacked
+    Copy-Item 'sherpa-onnx-LICENSE', 'onnxruntime-LICENSE' -Destination $target -Force
+    "sherpa-onnx $($pins.SHERPA_ONNX_V) (Apache-2.0) with ONNX Runtime $($pins.ONNXRUNTIME_V) (MIT), native libraries from the project release.`nLicences: sherpa-onnx-LICENSE, onnxruntime-LICENSE" |
+        Set-Content -Path (Join-Path $target 'README.txt') -Encoding UTF8
+}
+
 Write-Host ''
 Write-Host 'Зависимости на месте:'
 Write-Host "  LSP4IJ $($pins.LSP4IJ_V), Phpactor $($pins.PHPACTOR_V)"
 Write-Host "  js-debug $($pins.JS_DEBUG_V), php-debug $($pins.PHP_DEBUG_V)"
+Write-Host "  sherpa-onnx $($pins.SHERPA_ONNX_V)"

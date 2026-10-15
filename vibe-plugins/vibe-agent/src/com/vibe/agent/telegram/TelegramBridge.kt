@@ -1,6 +1,10 @@
 // Copyright 2026 VibeBrains. Use of this source code is governed by the GNU AGPL-3.0 license.
 package com.vibe.agent.telegram
 
+import com.vibe.agent.voice.IdeVoiceEnv
+import com.vibe.agent.voice.VoiceAudio
+import com.vibe.agent.voice.VoiceEngine
+import com.vibe.agent.voice.VoiceEngines
 import com.vibe.agent.voice.VoiceTranscription
 
 import com.intellij.credentialStore.CredentialAttributes
@@ -149,18 +153,23 @@ class TelegramBridge {
    * outcome here: the person hears nothing, and finds out from the diff.
    */
   private fun handleVoice(token: String, chatId: Long, voice: TelegramProtocol.Command.Voice) {
-    // A Telegram note is Opus in OGG: openai-whisper decodes it through ffmpeg, whisper.cpp is the fallback.
-    val transcriber = VoiceTranscription.find(VibeAgentSettings.voiceModelPath) ?: run {
-      send(token, TelegramProtocol.sendMessage(chatId, t("telegram.voice.noTranscriber")))
-      return
+    // The same choice the microphone button makes, so the bridge never runs what the button would not:
+    // whisper (Python) without the person's yes, or a download of models nobody agreed to
+    val engine = when (val choice = VoiceEngines.choose(IdeVoiceEnv.settings())) {
+      is VoiceEngines.Choice.Use -> choice.engine
+      is VoiceEngines.Choice.OfferModels -> return reply(token, chatId, t("telegram.voice.needModels"))
+      is VoiceEngines.Choice.AskPython -> return reply(token, chatId, t("telegram.voice.askPython"))
+      is VoiceEngines.Choice.Unavailable -> return reply(token, chatId, t("telegram.voice.noTranscriber"))
     }
+    // A Telegram note is Opus in OGG, and every engine takes a WAV of the microphone's format: ffmpeg makes one
+    if (!VoiceAudio.canConvert()) return reply(token, chatId, t("telegram.voice.noFfmpeg"))
     if (voice.durationSec > MAX_VOICE_SECONDS) {
       send(token, TelegramProtocol.sendMessage(chatId,
         t("telegram.voice.tooLong", "seconds" to voice.durationSec, "max" to MAX_VOICE_SECONDS)))
       return
     }
     send(token, TelegramProtocol.sendMessage(chatId, t("telegram.voice.recognising")))
-    val text = runCatching { transcribe(token, transcriber, voice) }.getOrNull()
+    val text = runCatching { transcribe(token, engine, voice) }.getOrNull()
     val task = text?.let { VoiceTranscription.taskFrom(it) }
     if (task == null) {
       send(token, TelegramProtocol.sendMessage(chatId, t("telegram.voice.empty")))
@@ -209,8 +218,15 @@ class TelegramBridge {
     return if (ok) VoiceCleanup.accept(raw, answer.toString()) else raw
   }
 
-  /** Downloads the note and runs the transcriber over it; the temporary directory is always removed. */
-  private fun transcribe(token: String, transcriber: VoiceTranscription.Transcriber, voice: TelegramProtocol.Command.Voice): String? {
+  private fun reply(token: String, chatId: Long, text: String) {
+    send(token, TelegramProtocol.sendMessage(chatId, text))
+  }
+
+  /**
+   * Downloads the note, makes a WAV of it and gives it to the engine; the temporary directory is always removed
+   * The engine bounds its own time: a one-shot whisper run is stopped at its cap, local recognition is faster than speech
+   */
+  private fun transcribe(token: String, engine: VoiceEngine, voice: TelegramProtocol.Command.Voice): String? {
     val dir = java.nio.file.Files.createTempDirectory("vibe-voice").toFile()
     try {
       val meta = httpGet(VoiceNote.getFileUrl(token, voice.fileId)) ?: return null
@@ -218,14 +234,20 @@ class TelegramBridge {
       val audio = java.io.File(dir, path.substringAfterLast('/'))
       val bytes = httpBytes(VoiceNote.downloadUrl(token, path)) ?: return null
       audio.writeBytes(bytes)
-      val command = VoiceTranscription.command(transcriber, audio, dir, VibeAgentSettings.telegramVoiceLanguage)
-      val process = VoiceTranscription.processOf(command).start()
-      if (!process.waitFor(TRANSCRIBE_TIMEOUT_SEC, java.util.concurrent.TimeUnit.SECONDS)) {
-        process.destroyForcibly()
+      val wav = java.io.File(dir, WAV_NAME)
+      VoiceAudio.convert(audio, wav)?.let { reason ->
+        log.warn("telegram voice: $reason")
         return null
       }
-      val out = VoiceTranscription.outputFile(audio, dir)
-      return if (out.isFile) out.readText() else null
+      val outcome = engine.transcribe(wav, cancelled = { false }) { problem -> log.warn("telegram voice: ${problem.notice().text}") }
+      return when (outcome) {
+        is VoiceEngine.Outcome.Text -> outcome.text
+        is VoiceEngine.Outcome.Failed -> {
+          log.warn("telegram voice: ${outcome.problem.notice().text}")
+          null
+        }
+        VoiceEngine.Outcome.Cancelled -> null
+      }
     }
     finally {
       dir.deleteRecursively()
@@ -361,8 +383,8 @@ class TelegramBridge {
      */
     private const val MAX_VOICE_SECONDS = 180
 
-    /** Local recognition on a laptop is minutes, not seconds — but not tens of minutes either. */
-    private const val TRANSCRIBE_TIMEOUT_SEC = 300L
+    /** The note converted for the engine, beside the downloaded one in the temporary folder */
+    private const val WAV_NAME = "note.wav"
     private const val ERROR_PAUSE_MS = 5_000L
 
     fun getInstance(): TelegramBridge = ApplicationManager.getApplication().service()

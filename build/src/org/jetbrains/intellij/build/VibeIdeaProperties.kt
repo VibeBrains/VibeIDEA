@@ -120,6 +120,15 @@ open class VibeIdeaProperties(communityHomeDir: Path) : IdeaCommunityProperties(
       LibraryLicense(name = "vscode-php-debug", version = "1.40.1", attachedTo = "intellij.vibe.lsp",
                      url = "https://github.com/xdebug/vscode-php-debug")
         .mit("https://github.com/xdebug/vscode-php-debug/blob/main/LICENSE"),
+      // Local speech recognition for voice input: the Java half is a module library of our plugin, the native half
+      // (the JNI library and ONNX Runtime inside it) rides per platform in plugins/vibe-agent/native, see the layout below
+      // The speech models are not shipped: the IDE downloads them with the person's consent, each archive with its licence
+      LibraryLicense(name = "sherpa-onnx", libraryName = "sherpa-onnx-jvm", version = "1.13.4",
+                     url = "https://github.com/k2-fsa/sherpa-onnx")
+        .apache("https://github.com/k2-fsa/sherpa-onnx/blob/master/LICENSE"),
+      LibraryLicense(name = "ONNX Runtime", version = "1.27.0", attachedTo = "intellij.vibe.agent",
+                     url = "https://github.com/microsoft/onnxruntime")
+        .mit("https://github.com/microsoft/onnxruntime/blob/main/LICENSE"),
     )
 
     productLayout.pluginLayouts = productLayout.pluginLayouts + persistentListOf(
@@ -128,7 +137,18 @@ open class VibeIdeaProperties(communityHomeDir: Path) : IdeaCommunityProperties(
       // when somebody's layout asks for it, and the first real dmg proved that a dependency in
       // BUILD.bazel (compilation) and in the .iml (project model) is not that somebody. Packaging is
       // decided here, and nowhere else.
-      PluginLayout.pluginAuto("intellij.vibe.agent") { it.withModule("intellij.libraries.zxing.core") },
+      //
+      // The native half of local speech recognition goes per platform: a library built for one OS in the image of
+      // another is dead weight, and a platform we do not build has no folder, which the plugin reports as such
+      // Missing folders fail the build: vibe-plugins/deps/download.sh (or download.ps1) puts them there
+      // The spec of the full layout, for withPlatformBin; the folder and the jar keep the names pluginAuto gives
+      PluginLayout.pluginAutoWithCustomDirName("intellij.vibe.agent") {
+        it.withModule("intellij.libraries.zxing.core")
+        it.withPlatformBin(OsFamily.MACOS, JvmArchitecture.aarch64, MacLibcImpl.DEFAULT,
+                           "vibe-plugins/deps/extracted/sherpa-onnx/osx-aarch64", "native/osx-aarch64")
+        it.withPlatformBin(OsFamily.WINDOWS, JvmArchitecture.x64, WindowsLibcImpl.DEFAULT,
+                           "vibe-plugins/deps/extracted/sherpa-onnx/win-x64", "native/win-x64")
+      },
       PluginLayout.pluginAuto("intellij.vibe.theme") {},
       PluginLayout.pluginAuto("intellij.vibe.server") {},
       PluginLayout.pluginAuto("intellij.vibe.http") {},

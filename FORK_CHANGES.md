@@ -69,6 +69,11 @@
 ### Добавлено для Фазы 3 (агентская обвязка)
 - `vibe-plugins/vibe-agent/` — плагин `com.vibe.agent`: ACP-клиент (ndjson JSON-RPC/stdio), ToolWindow-чат, permission-гейты, маппинг fs-запросов на Document/VFS. **Причина:** ACP-клиент JetBrains закрыт и в IC отсутствует.
 
+### Добавлено для голосового ввода без Python (локальное распознавание, sherpa-onnx)
+- `vibe-plugins/vibe-agent/lib/sherpa-onnx-jvm-1.13.4.jar` + `lib/BUILD.bazel` — Java-часть sherpa-onnx (Apache-2.0) module-library плагина (`sherpa-onnx-jvm` в `intellij.vibe.agent.iml`): пакуется в плагин без правки раскладки, платформу не трогает.
+- `vibe-plugins/deps/` (`pins.env`, `download.sh`, `download.ps1`) — пиненные нативные библиотеки sherpa-onnx с ONNX Runtime (MIT) под macOS arm64 и Windows x64, с sha256 и текстами лицензий; раскладываются в `extracted/sherpa-onnx/<os-arch>/`.
+- `build/src/.../VibeIdeaProperties.kt` (наш файл) — `withPlatformBin` кладёт нативные библиотеки только в образ своей платформы (`plugins/vibe-agent/native/<os-arch>/`), записи лицензий sherpa-onnx и ONNX Runtime. Проверка упаковки — раздел 3a `checkVibeDist.sh`/`.ps1`.
+
 ## Зависимости от непубличного API платформы
 
 Платформу здесь мы НЕ правим — но опираемся на её внутренние классы, которые апстрим может

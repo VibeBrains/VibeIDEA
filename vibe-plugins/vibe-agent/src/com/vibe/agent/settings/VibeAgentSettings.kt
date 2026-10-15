@@ -632,6 +632,33 @@ object VibeAgentSettings {
     get() = props.getBoolean(KEY_VOICE_PYTHON, false)
     set(value) = props.setValue(KEY_VOICE_PYTHON, value, false)
 
+  private const val KEY_VOICE_LOCAL = "vibe.agent.voiceLocalEnabled"
+  private const val KEY_VOICE_MODELS_PATH = "vibe.agent.voiceModelsPath"
+  private const val KEY_VOICE_KEEP_ALIVE = "vibe.agent.voiceKeepAliveSec"
+
+  /** VibeIDE's default: a dictation a few minutes after the last one starts without loading the models again */
+  const val DEFAULT_VOICE_KEEP_ALIVE_SEC = 300
+  const val MAX_VOICE_KEEP_ALIVE_SEC = 3600
+
+  /**
+   * Local recognition (sherpa-onnx inside the IDE) for the microphone and the Telegram bridge
+   * On by default: it needs no program on the machine, only its models, downloaded once with consent
+   * Off when the person chose whisper.cpp instead at the offer of the download, which then is not made again
+   */
+  var voiceLocalEnabled: Boolean
+    get() = props.getBoolean(KEY_VOICE_LOCAL, true)
+    set(value) = props.setValue(KEY_VOICE_LOCAL, value, true)
+
+  /** The folder of the speech models; empty — `<system>/vibe/stt/models` ([com.vibe.agent.voice.SttModelStore]) */
+  var voiceModelsPath: String
+    get() = props.getValue(KEY_VOICE_MODELS_PATH, "")
+    set(value) = props.setValue(KEY_VOICE_MODELS_PATH, value.trim(), "")
+
+  /** Seconds the loaded models wait for the next dictation before they leave memory; 0 lets them go at once */
+  var voiceKeepAliveSec: Int
+    get() = props.getInt(KEY_VOICE_KEEP_ALIVE, DEFAULT_VOICE_KEEP_ALIVE_SEC).coerceIn(0, MAX_VOICE_KEEP_ALIVE_SEC)
+    set(value) = props.setValue(KEY_VOICE_KEEP_ALIVE, value.coerceIn(0, MAX_VOICE_KEEP_ALIVE_SEC), DEFAULT_VOICE_KEEP_ALIVE_SEC)
+
   /**
    * Run voice transcripts through a LOCAL model before using them. On by default because it only
    * ever uses a local provider: nothing leaves the machine, and without one the step is skipped.

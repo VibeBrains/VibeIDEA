@@ -8,13 +8,35 @@ import java.io.File
 /**
  * The engines this machine can use, and the choice among them
  *
- * whisper.cpp comes first and needs a model file: the person's own, or one found by [WhisperModels]
+ * Local recognition (sherpa-onnx inside the IDE) comes first: it needs no program on the machine, only its models,
+ * which are downloaded once with the person's consent; until they are, the person is offered the download and
+ * whatever the earlier engines would give, and no recording starts behind their back
+ * whisper.cpp comes next and needs a model file: the person's own, or one found by [WhisperModels]
  * whisper (Python) is the other tool that answers to the name; it fetches a model of over a gigabyte on its first run,
- * and so it never runs unasked: with no model for whisper.cpp the person is offered the choice, and only a yes
- * that has been remembered lets it run on its own
- * A machine with neither gets the problem that names what to install or to set
+ * and so it never runs unasked: only a yes that has been remembered lets it run on its own
+ * A machine with none of them gets the problem that names what to install or to set
+ * The button, the Telegram bridge and the doctor all ask here, so they cannot disagree about the machine
  */
 object VoiceEngines {
+  /**
+   * What the settings say about voice, read at the click
+   *
+   * @property manualModel the field «whisper.cpp model» as typed; blank means none
+   * @property language the language hint of the settings; blank means automatic
+   * @property pythonConsent the person has agreed to whisper (Python) downloading its model
+   * @property localEnabled local recognition may be used and offered
+   * @property modelsPath the folder of the speech models as typed; blank means the system folder of the IDE
+   * @property keepAliveSec how long the loaded models wait for the next dictation
+   */
+  data class Settings(
+    val manualModel: String,
+    val language: String,
+    val pythonConsent: Boolean,
+    val localEnabled: Boolean,
+    val modelsPath: String,
+    val keepAliveSec: Int,
+  )
+
   /** What the machine and the settings leave to a dictation */
   sealed interface Choice {
     data class Use(val engine: VoiceEngine) : Choice
@@ -24,6 +46,20 @@ object VoiceEngines {
      * [cliInstalled] tells whether a model for whisper.cpp would help
      */
     data class AskPython(val cliInstalled: Boolean) : Choice
+
+    /**
+     * Local recognition can run once [archives] are downloaded into [store]
+     * [fallback] is what the earlier engines would give meanwhile; its [Use] is offered as the other button
+     */
+    data class OfferModels(
+      val profile: SttCatalog.Profile,
+      val archives: List<SttCatalog.Archive>,
+      val store: SttModelStore,
+      val fallback: Choice,
+    ) : Choice {
+      val bytes: Long get() = archives.sumOf { it.sizeBytes }
+    }
+
     data class Unavailable(val problem: VoiceProblem) : Choice
   }
 
@@ -32,19 +68,41 @@ object VoiceEngines {
     val lookup: (String) -> String? = WatchTools::find,
     val hasFile: (String) -> Boolean = { File(it).isFile },
     val findModel: (String) -> WhisperModels.Candidate? = { WhisperModels.find(it) },
+    val native: () -> SherpaNative.Status = SherpaNative::status,
+    val catalog: () -> SttCatalog? = { SttCatalog.bundled },
+    val store: (String) -> SttModelStore = { SttModelStore.of(it) },
   )
 
-  /**
-   * @param manualModel the field «whisper.cpp model» as typed; blank means none
-   * @param language the language hint of the settings; blank means detect
-   * @param pythonConsent the person has agreed to whisper (Python) downloading its model
-   */
-  fun choose(manualModel: String, language: String, pythonConsent: Boolean, tools: Tools = Tools()): Choice {
+  fun choose(settings: Settings, tools: Tools = Tools()): Choice {
+    val earlier = chooseEarlier(settings, tools)
+    if (!settings.localEnabled) return earlier
+    val catalog = tools.catalog() ?: return earlier
+    val profile = catalog.profileFor(settings.language) ?: return earlier
+    // A catalogue for another rate than the microphone's would feed the models audio they do not expect
+    if (catalog.sampleRate != VoiceCapture.SAMPLE_RATE.toInt()) return earlier
+    when (val native = tools.native()) {
+      SherpaNative.Status.Ready -> Unit
+      is SherpaNative.Status.Unsupported -> return earlier
+      // Broken libraries are a defect to name, but only when nothing else can take the dictation
+      is SherpaNative.Status.Failed ->
+        return if (earlier is Choice.Unavailable) Choice.Unavailable(VoiceProblem.LocalEngineFailed(native.reason)) else earlier
+    }
+    val store = tools.store(settings.modelsPath)
+    val missing = store.missing(profile)
+    if (missing.isNotEmpty()) return Choice.OfferModels(profile, missing, store, earlier)
+    val keepAliveMs = settings.keepAliveSec.toLong() * MS_PER_SECOND
+    return Choice.Use(SherpaEngine(profile, store) { keepAliveMs })
+  }
+
+  private const val MS_PER_SECOND = 1000L
+
+  /** whisper.cpp, then whisper (Python): the engines that need a program on the machine */
+  private fun chooseEarlier(settings: Settings, tools: Tools): Choice {
     val cli = tools.lookup(VoiceTranscription.CPP_BINARY)
     if (cli != null) {
-      when (val model = WhisperModels.resolve(manualModel, language, tools.hasFile, tools.findModel)) {
-        is WhisperModels.Resolved.Manual -> return Choice.Use(cppEngine(cli, model.path, language, tools))
-        is WhisperModels.Resolved.Found -> return Choice.Use(cppEngine(cli, model.path, language, tools))
+      when (val model = WhisperModels.resolve(settings.manualModel, settings.language, tools.hasFile, tools.findModel)) {
+        is WhisperModels.Resolved.Manual -> return Choice.Use(cppEngine(cli, model.path, settings.language, tools))
+        is WhisperModels.Resolved.Found -> return Choice.Use(cppEngine(cli, model.path, settings.language, tools))
         // A path the person typed is not replaced by a guess: the wrong one is named so it can be fixed
         is WhisperModels.Resolved.ManualMissing -> return Choice.Unavailable(VoiceProblem.ModelMissing(model.path))
         WhisperModels.Resolved.None -> Unit
@@ -52,7 +110,8 @@ object VoiceEngines {
     }
     val python = tools.lookup(VoiceTranscription.OPENAI_BINARY)
     if (python != null) {
-      return if (pythonConsent) Choice.Use(PythonEngine(python, language)) else Choice.AskPython(cliInstalled = cli != null)
+      return if (settings.pythonConsent) Choice.Use(PythonEngine(python, settings.language))
+             else Choice.AskPython(cliInstalled = cli != null)
     }
     return Choice.Unavailable(if (cli != null) VoiceProblem.NoModel else VoiceProblem.NoTranscriber)
   }
@@ -87,11 +146,14 @@ object VoiceEngines {
     private val server: VoiceServer.Config?,
   ) : VoiceEngine {
     override val name = "whisper.cpp"
-    override val live = server?.let { VoiceEngine.LivePreview(VoiceServer.PREVIEW_INTERVAL_MS, VoiceServer.PREVIEW_MAX_MS) }
+    override val live = server?.let { VoiceEngine.LivePreview.Snapshots(VoiceServer.PREVIEW_INTERVAL_MS, VoiceServer.PREVIEW_MAX_MS) }
     override val waitHint: String? = null
 
     override fun preview(wav: ByteArray): String =
       VoiceServer.getInstance().transcribe(wav, checkNotNull(server) { "no live server" }, VoiceServer.PREVIEW_TIMEOUT_MS)
+
+    override fun listen(onText: (VoiceEngine.LiveText) -> Unit, onProblem: (VoiceProblem) -> Unit): VoiceEngine.Listening =
+      error("snapshots, not frames")
 
     override fun transcribe(audio: File, cancelled: () -> Boolean, note: (VoiceProblem) -> Unit): VoiceEngine.Outcome {
       if (server != null) {
@@ -115,6 +177,9 @@ object VoiceEngines {
     override val waitHint: String get() = t("chat.voice.transcribingPython")
 
     override fun preview(wav: ByteArray): String = error("no live text")
+
+    override fun listen(onText: (VoiceEngine.LiveText) -> Unit, onProblem: (VoiceProblem) -> Unit): VoiceEngine.Listening =
+      error("no live text")
 
     override fun transcribe(audio: File, cancelled: () -> Boolean, note: (VoiceProblem) -> Unit): VoiceEngine.Outcome =
       oneShot(VoiceTranscription.Transcriber(binary, VoiceTranscription.Kind.OPENAI_WHISPER), audio, language, cancelled)

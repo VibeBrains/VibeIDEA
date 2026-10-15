@@ -78,6 +78,23 @@ try {
         Say  '  Зависимость в BUILD.bazel на упаковку не влияет: её решает раскладка плагина.'
     }
 
+    # --- Local speech recognition: the Java half in the plugin, the native half for Windows x64 ---
+    $sherpaJar = Get-ChildItem -Path (Join-Path $app 'plugins\vibe-agent\lib') -Filter '*.jar' -ErrorAction SilentlyContinue |
+        Where-Object {
+            Add-Type -AssemblyName System.IO.Compression.FileSystem
+            $zip = [System.IO.Compression.ZipFile]::OpenRead($_.FullName)
+            try { $zip.Entries | Where-Object { $_.FullName -eq 'com/k2fsa/sherpa/onnx/OnlineRecognizer.class' } } finally { $zip.Dispose() }
+        } | Select-Object -First 1
+    if (-not $sherpaJar) {
+        Fail '✖ классов sherpa-onnx нет ни в одном jar vibe-agent\lib — локальное распознавание речи не загрузится.'
+    }
+    $native = Join-Path $app 'plugins\vibe-agent\native\win-x64'
+    foreach ($lib in @('sherpa-onnx-jni.dll', 'onnxruntime.dll', 'sherpa-onnx-LICENSE', 'onnxruntime-LICENSE')) {
+        if (-not (Test-Path (Join-Path $native $lib))) {
+            Fail "✖ нет win-x64\$lib в vibe-agent\native — голос без Python на Windows не заработает"
+        }
+    }
+
     # --- 3a. Задачи и трекеры как в PhpStorm: приезжают плагином intellij.tasks.core ---
     if (-not (Test-Path (Join-Path $app 'plugins\tasks'))) {
         Fail '✖ нет плагина задач (plugins\tasks) — Open Task и трекеры не появятся'

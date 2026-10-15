@@ -3,6 +3,7 @@ package com.vibe.agent.settings
 
 import com.vibe.agent.i18n.VibeI18n.t
 import com.vibe.agent.journal.ChatJournalService
+import com.vibe.agent.voice.SttModelStore
 import com.vibe.agent.voice.WhisperModels
 import com.intellij.openapi.options.Configurable
 import com.intellij.ui.DocumentAdapter
@@ -38,6 +39,9 @@ class VibeChatConfigurable : Configurable, Configurable.NoScroll {
   private var voicePython: JBCheckBox? = null
   private var voiceSound: JBCheckBox? = null
   private var voiceVolume: JBIntSpinner? = null
+  private var voiceLocal: JBCheckBox? = null
+  private var voiceModels: com.intellij.openapi.ui.TextFieldWithBrowseButton? = null
+  private var voiceKeepAlive: JBIntSpinner? = null
 
   override fun getDisplayName(): String = t("settings.chat.title")
 
@@ -68,6 +72,15 @@ class VibeChatConfigurable : Configurable, Configurable.NoScroll {
   }
 
   private fun voiceVolumeSpinner() = JBIntSpinner(VibeChatSettings.voiceSoundVolume, 0, 100).also { voiceVolume = it }
+
+  /** The folder of the speech models: empty means the system folder of the IDE, which the empty field shows in grey */
+  private fun voiceModelsField() = com.intellij.openapi.ui.TextFieldWithBrowseButton().apply {
+    text = VibeAgentSettings.voiceModelsPath
+    addBrowseFolderListener(null, com.intellij.openapi.fileChooser.FileChooserDescriptorFactory
+      .createSingleFolderDescriptor().withTitle(t("settings.voice.modelsChooser")))
+    (textField as? JBTextField)?.emptyText?.text = SttModelStore.defaultRoot().toString()
+    voiceModels = this
+  }
 
   private fun voiceLanguageField() = JBTextField(VibeAgentSettings.telegramVoiceLanguage, 8).also { field ->
     voiceLanguage = field
@@ -116,6 +129,15 @@ class VibeChatConfigurable : Configurable, Configurable.NoScroll {
       .addLabeledComponent(t("settings.sound.customPath"), JBTextField(VibeChatSettings.soundCustomPath, 24).also { soundPath = it })
       .addComponent(com.intellij.ui.components.ActionLink(t("settings.sound.preview")) { previewSound() })
       .addComponent(hint(t("settings.sound.hint")))
+      .addComponent(JBCheckBox(t("settings.voice.local"), VibeAgentSettings.voiceLocalEnabled).also { voiceLocal = it })
+      .addComponent(hint(t("settings.voice.localHint")))
+      .addLabeledComponent(t("settings.voice.models"), voiceModelsField())
+      .addComponent(hint(t("settings.voice.modelsHint")))
+      .addLabeledComponent(
+        t("settings.voice.keepAlive"),
+        JBIntSpinner(VibeAgentSettings.voiceKeepAliveSec, 0, VibeAgentSettings.MAX_VOICE_KEEP_ALIVE_SEC).also { voiceKeepAlive = it },
+      )
+      .addComponent(hint(t("settings.voice.keepAliveHint")))
       .addLabeledComponent(t("settings.voice.model"), voiceModelField())
       .addComponent(hint(t("settings.voice.modelHint")))
       .addComponent(JBCheckBox(t("settings.voice.python"), VibeAgentSettings.voicePythonConsent).also { voicePython = it })
@@ -163,6 +185,9 @@ class VibeChatConfigurable : Configurable, Configurable.NoScroll {
     (voiceModel?.text?.trim() ?: VibeAgentSettings.voiceModelPath) != VibeAgentSettings.voiceModelPath ||
     (voiceLanguage?.text?.trim() ?: VibeAgentSettings.telegramVoiceLanguage) != VibeAgentSettings.telegramVoiceLanguage ||
     voicePython?.isSelected != VibeAgentSettings.voicePythonConsent ||
+    voiceLocal?.isSelected != VibeAgentSettings.voiceLocalEnabled ||
+    (voiceModels?.text?.trim() ?: VibeAgentSettings.voiceModelsPath) != VibeAgentSettings.voiceModelsPath ||
+    (voiceKeepAlive?.number ?: VibeAgentSettings.voiceKeepAliveSec) != VibeAgentSettings.voiceKeepAliveSec ||
     voiceSound?.isSelected != VibeChatSettings.voiceSoundEnabled ||
     voiceVolume?.number != VibeChatSettings.voiceSoundVolume ||
     (continueField?.text?.trim() ?: VibeChatSettings.continueText) != VibeChatSettings.continueText ||
@@ -177,6 +202,9 @@ class VibeChatConfigurable : Configurable, Configurable.NoScroll {
     voiceModel?.let { VibeAgentSettings.voiceModelPath = it.text }
     voiceLanguage?.let { VibeAgentSettings.telegramVoiceLanguage = it.text }
     voicePython?.let { VibeAgentSettings.voicePythonConsent = it.isSelected }
+    voiceLocal?.let { VibeAgentSettings.voiceLocalEnabled = it.isSelected }
+    voiceModels?.let { VibeAgentSettings.voiceModelsPath = it.text }
+    voiceKeepAlive?.let { VibeAgentSettings.voiceKeepAliveSec = it.number }
     voiceSound?.let { VibeChatSettings.voiceSoundEnabled = it.isSelected }
     voiceVolume?.let { VibeChatSettings.voiceSoundVolume = it.number }
     codeFold?.let { VibeChatSettings.codeFoldLines = it.number }
@@ -206,6 +234,9 @@ class VibeChatConfigurable : Configurable, Configurable.NoScroll {
     voiceModel?.text = VibeAgentSettings.voiceModelPath
     voiceLanguage?.text = VibeAgentSettings.telegramVoiceLanguage
     voicePython?.isSelected = VibeAgentSettings.voicePythonConsent
+    voiceLocal?.isSelected = VibeAgentSettings.voiceLocalEnabled
+    voiceModels?.text = VibeAgentSettings.voiceModelsPath
+    voiceKeepAlive?.number = VibeAgentSettings.voiceKeepAliveSec
     voiceSound?.isSelected = VibeChatSettings.voiceSoundEnabled
     voiceVolume?.number = VibeChatSettings.voiceSoundVolume
     codeFold?.number = VibeChatSettings.codeFoldLines

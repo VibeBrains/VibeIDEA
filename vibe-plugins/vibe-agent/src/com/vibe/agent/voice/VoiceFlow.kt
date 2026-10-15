@@ -25,6 +25,9 @@ object VoiceFlow {
 
     /** The text is in the draft; the button shows it for [DONE_SHOW_MS] and is idle again */
     DONE,
+
+    /** The models of local recognition are being downloaded; no recording starts before they are in place */
+    DOWNLOADING,
   }
 
   /** What a click on the button asks for in a given state */
@@ -44,11 +47,12 @@ object VoiceFlow {
     State.IDLE, State.DONE -> Click.OPEN
     State.OPENING -> Click.CANCEL_OPEN
     State.RECORDING -> Click.STOP
-    State.TRANSCRIBING -> Click.NONE
+    State.TRANSCRIBING, State.DOWNLOADING -> Click.NONE
   }
 
-  /** Whether there is something in progress that the Esc key drops: the device opening, the recording, the text being made */
-  fun cancellable(state: State): Boolean = state == State.OPENING || state == State.RECORDING || state == State.TRANSCRIBING
+  /** Whether there is something in progress that the Esc key drops: the device opening, the recording, the text, a download */
+  fun cancellable(state: State): Boolean =
+    state == State.OPENING || state == State.RECORDING || state == State.TRANSCRIBING || state == State.DOWNLOADING
 
   fun tooltip(state: State): String = when (state) {
     State.IDLE -> t("chat.voice.start")
@@ -56,26 +60,31 @@ object VoiceFlow {
     State.RECORDING -> t("chat.voice.stop")
     State.TRANSCRIBING -> t("chat.voice.transcribingTip")
     State.DONE -> t("chat.voice.doneTip")
+    State.DOWNLOADING -> t("chat.voice.downloadingTip")
   }
 
   /** The microphone is red only while it is really recording */
   fun micOn(state: State): Boolean = state == State.RECORDING
 
   /** The states in which the button turns, because the person is waiting for something that has no picture of its own */
-  fun spinning(state: State): Boolean = state == State.OPENING || state == State.TRANSCRIBING
+  fun spinning(state: State): Boolean = state == State.OPENING || state == State.TRANSCRIBING || state == State.DOWNLOADING
 
   /**
    * The line under the input for a state; null hides it
    *
-   * While recording it is the live transcript's, which replaces the first words as soon as there are some
+   * The live text itself goes into the input, not here: this line says what the dictation is doing
    */
   fun status(state: State): String? = when (state) {
     State.OPENING -> line(t("chat.voice.opening"))
     State.RECORDING -> line(t("chat.voice.recording"))
     State.TRANSCRIBING -> line(t("chat.voice.transcribing"))
     State.DONE -> line(t("chat.voice.done"))
+    State.DOWNLOADING -> downloading(0)
     State.IDLE -> null
   }
+
+  /** The line while the models download, with how much of them is here */
+  fun downloading(percent: Int): String = line(t("chat.voice.downloading", "percent" to percent))
 
   /** The line while the final text is made by an engine that has something to say about the wait, such as a download */
   fun waiting(hint: String): String = line(t("chat.voice.transcribingWith", "hint" to hint))

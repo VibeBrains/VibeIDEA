@@ -13,9 +13,9 @@ import java.util.concurrent.TimeUnit
  * это кашель» rule serve both, and two copies of the rule would have drifted the first time one of
  * them was fixed.
  *
- * The transcriber is NOT bundled: shipping model weights and GPL builds is a licensing and release
- * problem this fork has not solved. So the feature uses what the machine has, and when the machine
- * has nothing it says exactly what to install — silence would be the worst of the three behaviours.
+ * These transcribers are NOT bundled: they are what the machine has, and when it has nothing the
+ * person is told exactly what to install. The bundled way is local recognition ([SherpaEngine]),
+ * whose models are downloaded with consent; these two remain for a machine that declined it.
  *
  * Two transcribers answer to «whisper», and they share nothing but the name. openai-whisper
  * (`whisper`, Python) takes the audio as an operand and fetches its own model; whisper.cpp
@@ -35,25 +35,6 @@ object VoiceTranscription {
 
   /** whisper.cpp assumes English when told nothing; «auto» is what openai-whisper does unasked. */
   const val AUTO_LANGUAGE = "auto"
-
-  /**
-   * The transcriber for a note that arrived as a file (a Telegram note is Opus in OGG), or null when the machine has none that can run.
-   *
-   * openai-whisper first, which decodes through ffmpeg; whisper.cpp is the fallback, and only with a model file the person set.
-   * The microphone in the IDE does not come this way: its choice, with the consent that openai-whisper needs, is [VoiceEngines.choose].
-   *
-   * @param modelPath the whisper.cpp model from the settings; without one whisper.cpp cannot run.
-   */
-  fun find(
-    modelPath: String?,
-    lookup: (String) -> String? = WatchTools::find,
-    hasFile: (String) -> Boolean = { File(it).isFile },
-  ): Transcriber? {
-    val model = modelPath?.trim()?.takeIf { it.isNotEmpty() && hasFile(it) }
-    val cpp = model?.let { m -> lookup(CPP_BINARY)?.let { Transcriber(it, Kind.WHISPER_CPP, m) } }
-    val openai = lookup(OPENAI_BINARY)?.let { Transcriber(it, Kind.OPENAI_WHISPER) }
-    return openai ?: cpp
-  }
 
   /**
    * The command that writes a plain-text transcript next to the audio.

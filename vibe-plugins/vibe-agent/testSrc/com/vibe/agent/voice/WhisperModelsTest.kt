@@ -67,9 +67,24 @@ class WhisperModelsTest {
   }
 
   @Test
-  fun `among multilingual models the smaller wins, so the first transcription starts sooner`() {
+  fun `among multilingual models the largest under the cap wins, and one past the cap is left alone`() {
     val models = listOf(model("ggml-medium.bin", 1500), model("ggml-base-q5_1.bin", 57), model("ggml-small.bin", 466))
-    assertEquals("ggml-base-q5_1.bin", WhisperModels.pick(models, "ru")?.name)
+    assertEquals("ggml-small.bin", WhisperModels.pick(models, "ru")?.name)
+  }
+
+  @Test
+  fun `base wins over tiny, because tiny mishears Russian`() {
+    val models = listOf(model("ggml-tiny.bin", 75), model("ggml-base.bin", 142))
+    assertEquals("ggml-base.bin", WhisperModels.pick(models, "ru")?.name)
+    assertEquals("ggml-base.bin", WhisperModels.pick(models.reversed(), "ru")?.name)
+  }
+
+  @Test
+  fun `a model exactly at the cap is taken, and when every model is past it the smallest still answers`() {
+    val atCap = Candidate("/m/ggml-medium-q5_0.bin", WhisperModels.AUTO_MAX_BYTES)
+    assertEquals(atCap, WhisperModels.pick(listOf(atCap, model("ggml-base.bin", 142)), "ru"))
+    val large = listOf(model("ggml-large-v3.bin", 3000), model("ggml-medium.bin", 1500))
+    assertEquals("ggml-medium.bin", WhisperModels.pick(large, "ru")?.name)
   }
 
   @Test
@@ -130,7 +145,7 @@ class WhisperModelsTest {
       File(cache, "nested/ggml-deep.bin").sparse(10 * mib)
       val candidates = WhisperModels.scan(listOf(cache, File(root, "missing")))
       assertEquals(setOf("ggml-big.bin", "ggml-small.bin", "readme.txt"), candidates.map { it.name }.toSet())
-      assertEquals("ggml-small.bin", WhisperModels.find("ru") { candidates }?.name)
+      assertEquals("ggml-big.bin", WhisperModels.find("ru") { candidates }?.name, "the larger of two under the cap")
     }
     finally {
       root.deleteRecursively()

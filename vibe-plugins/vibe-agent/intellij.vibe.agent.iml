@@ -41,6 +41,15 @@
     <orderEntry type="module" module-name="intellij.platform.buildData" />
     <orderEntry type="module" module-name="intellij.platform.util.text.matching" />
     <orderEntry type="module" module-name="intellij.libraries.zxing.core" />
+    <orderEntry type="module-library">
+      <library name="sherpa-onnx-jvm">
+        <CLASSES>
+          <root url="jar://$MODULE_DIR$/lib/sherpa-onnx-jvm-1.13.4.jar!/" />
+        </CLASSES>
+        <JAVADOC />
+        <SOURCES />
+      </library>
+    </orderEntry>
     <orderEntry type="library" scope="TEST" name="kotlin-test" level="project" />
     <orderEntry type="library" scope="TEST" name="kotlin-test-junit5" level="project" />
     <orderEntry type="module" module-name="intellij.libraries.junit5" scope="TEST" />

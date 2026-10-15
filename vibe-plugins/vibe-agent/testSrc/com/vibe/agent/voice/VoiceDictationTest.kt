@@ -1,6 +1,7 @@
 // Copyright 2026 VibeBrains. Use of this source code is governed by the GNU AGPL-3.0 license.
 package com.vibe.agent.voice
 
+import com.vibe.agent.voice.VoiceDictation.ModelsAnswer
 import com.vibe.agent.voice.VoiceDictation.PythonAnswer
 import com.vibe.agent.voice.VoiceFlow.State
 import java.io.File
@@ -21,24 +22,47 @@ class VoiceDictationTest {
     override var disposed = false
     override var modelPath = ""
     override var language = "ru"
+    override var modelsPath = ""
+    override var keepAliveSec = 300
     override var pythonConsent = false
+    override var localEnabled = true
     var answer = PythonAnswer.CANCEL
+    var modelsAnswer = ModelsAnswer.CANCEL
     val asked = mutableListOf<VoiceEngines.Choice.AskPython>()
+    val offered = mutableListOf<VoiceEngines.Choice.OfferModels>()
     val faces = mutableListOf<State>()
     val statuses = mutableListOf<String?>()
     val notices = mutableListOf<VoiceNotice>()
+    val drafts = mutableListOf<String>()
+
+    /** The final phrases put into the input, in order: the text of the dictation */
     val delivered = mutableListOf<String>()
+    val closes = mutableListOf<Boolean>()
     val cues = mutableListOf<VoiceCue.Kind>()
+    val progressTitles = mutableListOf<String>()
+    val fractions = mutableListOf<Double>()
+    var barCancelled = false
 
     override fun face(state: State) { faces += state }
     override fun status(text: String?) { statuses += text }
     override fun notice(notice: VoiceNotice) { notices += notice }
-    override fun deliver(text: String) { delivered += text }
+    override fun draft(text: String) { drafts += text }
+    override fun phrase(text: String) { delivered += text }
+    override fun close(keep: Boolean) { closes += keep }
     override fun cue(cue: VoiceCue.Kind) { cues += cue }
     override fun askPython(offer: VoiceEngines.Choice.AskPython): PythonAnswer { asked += offer; return answer }
+    override fun askModels(offer: VoiceEngines.Choice.OfferModels): ModelsAnswer { offered += offer; return modelsAnswer }
+
+    override fun withProgress(title: String, work: (VoiceDictation.Progress) -> Unit) {
+      progressTitles += title
+      work(object : VoiceDictation.Progress {
+        override fun fraction(value: Double) { fractions += value }
+        override val cancelled: Boolean get() = barCancelled
+      })
+    }
   }
 
-  private class Recording(val onEnded: (VoiceCapture.End) -> Unit) : VoiceCapture.Recording {
+  private class Recording(val onEnded: (VoiceCapture.End) -> Unit, val onFrame: ((ByteArray, Int) -> Unit)?) : VoiceCapture.Recording {
     var cancelled = false
     var stopped = false
     override var elapsedMs = 1_000L
@@ -59,7 +83,28 @@ class VoiceDictationTest {
     val previews = mutableListOf<ByteArray>()
     var work: (cancelled: () -> Boolean, note: (VoiceProblem) -> Unit) -> VoiceEngine.Outcome = { _, _ -> VoiceEngine.Outcome.Text(TASK) }
 
+    /** What a frame engine says, and what its finish answers */
+    var listened: Listening? = null
+    var finishWith: (Listening) -> VoiceEngine.Outcome = { VoiceEngine.Outcome.Text(it.phrases.joinToString(" ")) }
+
+    inner class Listening(val onText: (VoiceEngine.LiveText) -> Unit, val onProblem: (VoiceProblem) -> Unit) : VoiceEngine.Listening {
+      val fed = mutableListOf<Int>()
+      val phrases = mutableListOf<String>()
+      var finished = false
+      var cancelled = false
+      override fun feed(pcm: ByteArray, length: Int) { fed += length }
+      override fun finish(): VoiceEngine.Outcome { finished = true; return finishWith(this) }
+      override fun cancel() { cancelled = true }
+
+      fun say(text: VoiceEngine.LiveText) {
+        if (text is VoiceEngine.LiveText.Phrase) phrases += text.text
+        onText(text)
+      }
+    }
+
     override fun preview(wav: ByteArray): String { previews += wav; previewFails?.let { throw it }; return previewText }
+    override fun listen(onText: (VoiceEngine.LiveText) -> Unit, onProblem: (VoiceProblem) -> Unit): VoiceEngine.Listening =
+      Listening(onText, onProblem).also { listened = it }
     override fun transcribe(audio: File, cancelled: () -> Boolean, note: (VoiceProblem) -> Unit) = work(cancelled, note)
   }
 
@@ -71,21 +116,36 @@ class VoiceDictationTest {
     val later = mutableListOf<() -> Unit>()
     val opened = mutableListOf<Recording>()
     var openFails: Throwable? = null
-    var choice: (model: String, language: String, consent: Boolean) -> VoiceEngines.Choice = { _, _, _ -> VoiceEngines.Choice.Use(engine) }
-    val chosenWith = mutableListOf<Triple<String, String, Boolean>>()
+    var choice: (VoiceEngines.Settings) -> VoiceEngines.Choice = { VoiceEngines.Choice.Use(engine) }
+    val chosenWith = mutableListOf<VoiceEngines.Settings>()
+    var installWith: (progress: (Long, Long) -> Unit, cancelled: () -> Boolean) -> SttInstaller.Outcome = { progress, _ ->
+      progress(50, 100)
+      progress(100, 100)
+      SttInstaller.Outcome.Done
+    }
+    val installed = mutableListOf<VoiceEngines.Choice.OfferModels>()
 
     override fun background(task: () -> Unit) { if (deferred) queue.addLast(task) else task() }
     override fun ui(task: () -> Unit) = task()
     override fun every(periodMs: Long, task: () -> Unit): () -> Unit { every += task; return { every -= task } }
     override fun later(delayMs: Long, task: () -> Unit): () -> Unit { later += task; return { later -= task } }
-    override fun open(onEnded: (VoiceCapture.End) -> Unit): VoiceCapture.Recording {
+    override fun open(onEnded: (VoiceCapture.End) -> Unit, onFrame: ((ByteArray, Int) -> Unit)?): VoiceCapture.Recording {
       openFails?.let { throw it }
-      return Recording(onEnded).also { opened += it }
+      return Recording(onEnded, onFrame).also { opened += it }
     }
 
-    override fun choose(model: String, language: String, pythonConsent: Boolean): VoiceEngines.Choice {
-      chosenWith += Triple(model, language, pythonConsent)
-      return choice(model, language, pythonConsent)
+    override fun choose(settings: VoiceEngines.Settings): VoiceEngines.Choice {
+      chosenWith += settings
+      return choice(settings)
+    }
+
+    override fun install(
+      offer: VoiceEngines.Choice.OfferModels,
+      progress: (Long, Long) -> Unit,
+      cancelled: () -> Boolean,
+    ): SttInstaller.Outcome {
+      installed += offer
+      return installWith(progress, cancelled)
     }
 
     fun drain() { while (queue.isNotEmpty()) queue.removeFirst()() }
@@ -124,8 +184,11 @@ class VoiceDictationTest {
     host.modelPath = "/m/ggml-small.bin"
     host.language = "en"
     host.pythonConsent = true
+    host.localEnabled = false
+    host.modelsPath = "/models"
+    host.keepAliveSec = 7
     dictation.toggle()
-    assertEquals(listOf(Triple("/m/ggml-small.bin", "en", true)), env.chosenWith)
+    assertEquals(listOf(VoiceEngines.Settings("/m/ggml-small.bin", "en", true, false, "/models", 7)), env.chosenWith)
   }
 
   @Test
@@ -235,7 +298,9 @@ class VoiceDictationTest {
 
   @Test
   fun `with only python whisper at hand and no yes the person is asked, and nothing is recorded until they answer`() {
-    env.choice = { _, _, consent -> if (consent) VoiceEngines.Choice.Use(engine) else VoiceEngines.Choice.AskPython(cliInstalled = true) }
+    env.choice = { settings ->
+      if (settings.pythonConsent) VoiceEngines.Choice.Use(engine) else VoiceEngines.Choice.AskPython(cliInstalled = true)
+    }
     host.answer = PythonAnswer.CANCEL
     dictation.toggle()
     assertEquals(listOf(VoiceEngines.Choice.AskPython(true)), host.asked)
@@ -246,7 +311,7 @@ class VoiceDictationTest {
 
   @Test
   fun `a model chosen instead leaves the person at the settings, with nothing recorded and no consent given`() {
-    env.choice = { _, _, _ -> VoiceEngines.Choice.AskPython(cliInstalled = true) }
+    env.choice = { VoiceEngines.Choice.AskPython(cliInstalled = true) }
     host.answer = PythonAnswer.SETTINGS
     dictation.toggle()
     assertTrue(env.opened.isEmpty())
@@ -256,7 +321,9 @@ class VoiceDictationTest {
 
   @Test
   fun `a yes is remembered and the recording starts at once, and the next time nobody is asked`() {
-    env.choice = { _, _, consent -> if (consent) VoiceEngines.Choice.Use(engine) else VoiceEngines.Choice.AskPython(cliInstalled = false) }
+    env.choice = { settings ->
+      if (settings.pythonConsent) VoiceEngines.Choice.Use(engine) else VoiceEngines.Choice.AskPython(cliInstalled = false)
+    }
     host.answer = PythonAnswer.USE
     dictation.toggle()
     assertTrue(host.pythonConsent)
@@ -269,7 +336,7 @@ class VoiceDictationTest {
 
   @Test
   fun `a machine with no engine says what is missing, with the button that fixes it, and opens no microphone`() {
-    env.choice = { _, _, _ -> VoiceEngines.Choice.Unavailable(VoiceProblem.NoModel) }
+    env.choice = { VoiceEngines.Choice.Unavailable(VoiceProblem.NoModel) }
     dictation.toggle()
     assertTrue(env.opened.isEmpty())
     assertEquals(State.IDLE, host.faces.last())
@@ -279,24 +346,26 @@ class VoiceDictationTest {
   @Test
   fun `an engine with something to say about the wait says it under the input, with the way out`() {
     val slow = Engine(waitHint = "модель скачивается")
-    val withHint = VoiceDictation(host, Env(slow).also { it.choice = { _, _, _ -> VoiceEngines.Choice.Use(slow) } })
+    val withHint = VoiceDictation(host, Env(slow).also { it.choice = { VoiceEngines.Choice.Use(slow) } })
     withHint.toggle()
     withHint.toggle()
     assertTrue(host.statuses.any { it != null && "модель скачивается" in it && "Esc" in it }, host.statuses.toString())
   }
 
   @Test
-  fun `the live text appears under the input while the person speaks`() {
-    val live = Engine(live = VoiceEngine.LivePreview(2_500, 90_000))
-    val e = Env(live).also { it.choice = { _, _, _ -> VoiceEngines.Choice.Use(live) } }
+  fun `the live text of a snapshot engine goes into the input as a draft, and the final text takes its place`() {
+    val live = Engine(live = VoiceEngine.LivePreview.Snapshots(2_500, 90_000))
+    val e = Env(live).also { it.choice = { VoiceEngines.Choice.Use(live) } }
     val d = VoiceDictation(host, e)
     d.toggle()
     assertEquals(1, e.every.size, "the loop of previews runs while the recording does")
     e.every.single()()
     assertEquals(1, live.previews.size)
-    assertEquals("🎙 привет мир", host.statuses.last())
+    assertEquals(listOf("привет мир"), host.drafts)
     d.toggle()
     assertTrue(e.every.isEmpty(), "the loop ends with the recording")
+    assertEquals(listOf(TASK), host.delivered)
+    assertEquals(listOf(true), host.closes)
   }
 
   @Test
@@ -307,8 +376,8 @@ class VoiceDictationTest {
 
   @Test
   fun `past the length the engine allows the live text stops and says the rest comes after stop`() {
-    val live = Engine(live = VoiceEngine.LivePreview(2_500, 90_000))
-    val e = Env(live).also { it.choice = { _, _, _ -> VoiceEngines.Choice.Use(live) } }
+    val live = Engine(live = VoiceEngine.LivePreview.Snapshots(2_500, 90_000))
+    val e = Env(live).also { it.choice = { VoiceEngines.Choice.Use(live) } }
     val d = VoiceDictation(host, e)
     d.toggle()
     e.opened.single().elapsedMs = 91_000
@@ -320,10 +389,10 @@ class VoiceDictationTest {
 
   @Test
   fun `a live engine that fails is named once, the loop ends, and the final text does not repeat it`() {
-    val live = Engine(live = VoiceEngine.LivePreview(2_500, 90_000))
+    val live = Engine(live = VoiceEngine.LivePreview.Snapshots(2_500, 90_000))
     live.previewFails = IllegalStateException("exit 1")
     live.work = { _, note -> note(VoiceProblem.ServerFailed("exit 1", afterStop = true)); VoiceEngine.Outcome.Text(TASK) }
-    val e = Env(live).also { it.choice = { _, _, _ -> VoiceEngines.Choice.Use(live) } }
+    val e = Env(live).also { it.choice = { VoiceEngines.Choice.Use(live) } }
     val d = VoiceDictation(host, e)
     d.toggle()
     e.every.single()()
@@ -442,6 +511,181 @@ class VoiceDictationTest {
     assertEquals(listOf(TASK), host.delivered)
     assertNotNull(env.opened.getOrNull(1))
     assertNull(host.notices.firstOrNull { it.text.contains("{") })
+  }
+
+  // --- an engine that hears the frames: local recognition ---
+
+  private val frames = Engine(live = VoiceEngine.LivePreview.Frames)
+  private val framesEnv = Env(frames).also { it.choice = { VoiceEngines.Choice.Use(frames) } }
+  private val framesDictation = VoiceDictation(host, framesEnv)
+
+  @Test
+  fun `a frame engine hears every chunk of the device, drafts and phrases go into the input, and the stop keeps them`() {
+    framesDictation.toggle()
+    val taken = framesEnv.opened.single()
+    val heard = assertNotNull(frames.listened)
+    assertNotNull(taken.onFrame).invoke(ByteArray(4096), 4096)
+    assertEquals(listOf(4096), heard.fed)
+    heard.say(VoiceEngine.LiveText.Draft("привет"))
+    heard.say(VoiceEngine.LiveText.Phrase("привет мир"))
+    assertEquals(listOf("привет"), host.drafts)
+    assertEquals(listOf("привет мир"), host.delivered)
+    framesDictation.toggle()
+    assertTrue(heard.finished)
+    assertFalse(taken.audio.exists(), "the file of the recording is not kept for an engine that heard it already")
+    assertEquals(listOf("привет мир"), host.delivered, "the phrases are in the input already and are not put there twice")
+    assertEquals(listOf(true), host.closes)
+    assertEquals(State.DONE, host.faces.last())
+  }
+
+  @Test
+  fun `the last phrase said while the text is made still reaches the input, and nothing after the dictation does`() {
+    frames.finishWith = { heard -> heard.say(VoiceEngine.LiveText.Phrase("хвост")); VoiceEngine.Outcome.Text("хвост") }
+    framesDictation.toggle()
+    framesDictation.toggle()
+    assertEquals(listOf("хвост"), host.delivered)
+    frames.listened!!.say(VoiceEngine.LiveText.Draft("поздно"))
+    assertTrue(host.drafts.isEmpty(), "a draft after the end belongs to no dictation")
+  }
+
+  @Test
+  fun `a frame engine that heard nothing says so, and one that broke says why`() {
+    framesDictation.toggle()
+    framesDictation.toggle()
+    assertEquals(VoiceProblem.Empty.notice().text, host.notices.single().text)
+    host.notices.clear()
+    frames.finishWith = { VoiceEngine.Outcome.Failed(VoiceProblem.LocalEngineFailed("model broken")) }
+    framesDictation.toggle()
+    framesDictation.toggle()
+    assertTrue("model broken" in host.notices.single().text)
+    assertEquals(State.IDLE, host.faces.last())
+  }
+
+  @Test
+  fun `a frame engine that breaks while the person speaks is said at once, and once`() {
+    val broken = VoiceProblem.LocalEngineFailed("model did not load")
+    frames.finishWith = { VoiceEngine.Outcome.Failed(broken) }
+    framesDictation.toggle()
+    assertNotNull(frames.listened).onProblem(broken)
+    assertEquals(1, host.notices.size, "said while recording, so the person does not talk to a broken engine until the stop")
+    framesDictation.toggle()
+    assertEquals(1, host.notices.size, "the stop does not say it a second time")
+    assertEquals(State.IDLE, host.faces.last())
+  }
+
+  @Test
+  fun `Esc while a frame engine listens drops it and takes out all the dictation wrote`() {
+    framesDictation.toggle()
+    val heard = assertNotNull(frames.listened)
+    heard.say(VoiceEngine.LiveText.Phrase("лишнее"))
+    assertTrue(framesDictation.cancel())
+    assertTrue(heard.cancelled)
+    assertFalse(heard.finished)
+    assertEquals(listOf(false), host.closes)
+  }
+
+  @Test
+  fun `a device that will not open lets the engine go too`() {
+    framesEnv.openFails = IllegalStateException("busy")
+    framesDictation.toggle()
+    assertTrue(assertNotNull(frames.listened).cancelled)
+  }
+
+  @Test
+  fun `silence from the device is not given to the engine to finish`() {
+    framesDictation.toggle()
+    framesEnv.opened.single().result = VoiceCapture.Captured.Silence
+    framesDictation.toggle()
+    val heard = assertNotNull(frames.listened)
+    assertTrue(heard.cancelled)
+    assertFalse(heard.finished)
+  }
+
+  // --- the models of local recognition ---
+
+  private val offer = VoiceEngines.Choice.OfferModels(
+    profile = checkNotNull(SttCatalog.bundled?.profiles?.get("ru")),
+    archives = checkNotNull(SttCatalog.bundled?.profiles?.get("ru")).archives,
+    store = SttModelStore(java.nio.file.Path.of("/models")),
+    fallback = VoiceEngines.Choice.Use(Engine()),
+  )
+
+  @Test
+  fun `without the models nothing records, the person is asked, and a no is just a no`() {
+    env.choice = { offer }
+    host.modelsAnswer = ModelsAnswer.CANCEL
+    dictation.toggle()
+    assertEquals(listOf(offer), host.offered)
+    assertTrue(env.opened.isEmpty())
+    assertTrue(env.installed.isEmpty())
+    assertEquals(State.IDLE, host.faces.last())
+    assertTrue(host.localEnabled, "a cancel is not a decision for good")
+  }
+
+  @Test
+  fun `a yes downloads under the progress bar, counts the percent under the input, and offers the recording with one click`() {
+    env.choice = { offer }
+    host.modelsAnswer = ModelsAnswer.DOWNLOAD
+    dictation.toggle()
+    assertEquals(listOf(offer), env.installed)
+    assertTrue(State.DOWNLOADING in host.faces)
+    assertEquals(listOf(0.5, 1.0), host.fractions)
+    assertTrue(host.statuses.contains(VoiceFlow.downloading(50)), host.statuses.toString())
+    assertTrue(host.progressTitles.single().contains("278"), host.progressTitles.toString())
+    assertTrue(env.opened.isEmpty(), "the microphone does not open by itself minutes after the click")
+    assertEquals(State.IDLE, host.faces.last())
+    val ready = host.notices.single()
+    assertEquals(VoiceProblem.ModelsReady.notice().text, ready.text)
+    assertEquals(listOf(VoiceAction.RECORD_AGAIN), ready.actions)
+  }
+
+  @Test
+  fun `a failed download says why, offers a retry that asks nothing again, and a click while downloading does nothing`() {
+    env.choice = { offer }
+    host.modelsAnswer = ModelsAnswer.DOWNLOAD
+    env.installWith = { _, _ ->
+      dictation.toggle()
+      SttInstaller.Outcome.Failed(SttInstaller.Stage.CHECKSUM, "t-one-ru", "x")
+    }
+    dictation.toggle()
+    assertEquals(1, env.chosenWith.size, "the click during the download started nothing")
+    val failed = host.notices.single()
+    assertEquals(listOf(VoiceAction.DOWNLOAD_AGAIN, VoiceAction.VOICE_SETTINGS), failed.actions)
+    env.installWith = { _, _ -> SttInstaller.Outcome.Done }
+    dictation.downloadAgain()
+    assertEquals(1, host.offered.size, "the retry does not ask the person a second time")
+    assertEquals(2, env.installed.size)
+  }
+
+  @Test
+  fun `the cancel of the progress bar and Esc both stop the download`() {
+    env.choice = { offer }
+    host.modelsAnswer = ModelsAnswer.DOWNLOAD
+    host.barCancelled = true
+    env.installWith = { _, cancelled -> if (cancelled()) SttInstaller.Outcome.Cancelled else SttInstaller.Outcome.Done }
+    dictation.toggle()
+    assertEquals(VoiceProblem.ModelsCancelled.notice().text, host.notices.single().text)
+    host.notices.clear()
+    host.barCancelled = false
+    var seen: Boolean? = null
+    env.installWith = { _, cancelled ->
+      assertTrue(dictation.cancel())
+      seen = cancelled()
+      SttInstaller.Outcome.Cancelled
+    }
+    dictation.toggle()
+    assertEquals(true, seen)
+    assertEquals(1, host.notices.size, "Esc said it once; the outcome of the download does not say it again")
+  }
+
+  @Test
+  fun `the earlier engine instead turns local recognition off for good and records with it at once`() {
+    env.choice = { settings -> if (settings.localEnabled) offer else VoiceEngines.Choice.Use(engine) }
+    host.modelsAnswer = ModelsAnswer.EARLIER
+    dictation.toggle()
+    assertFalse(host.localEnabled)
+    assertEquals(State.RECORDING, host.faces.last())
+    assertTrue(env.installed.isEmpty())
   }
 
   private companion object {

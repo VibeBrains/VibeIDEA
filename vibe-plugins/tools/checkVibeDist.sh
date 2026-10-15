@@ -119,6 +119,46 @@ if ! ls "$APP_PLUGINS/vibe-agent/lib/zxing-core.jar" >/dev/null 2>&1; then
   fail=1
 fi
 
+# --- 3a. Local speech recognition: the Java half in the plugin, the native half for this very platform ---
+# Unit tests and the live engine test load the libraries from vibe-plugins/deps; only the image says whether they shipped
+SHERPA_JAR=""
+for jar in "$APP_PLUGINS"/vibe-agent/lib/*.jar; do
+  if unzip -l "$jar" 2>/dev/null | grep -q 'com/k2fsa/sherpa/onnx/OnlineRecognizer.class'; then SHERPA_JAR="$jar"; break; fi
+done
+if [ -z "$SHERPA_JAR" ]; then
+  say "✖ классов sherpa-onnx нет ни в одном jar vibe-agent/lib — локальное распознавание речи не загрузится."
+  say "  Это module-library sherpa-onnx-jvm в intellij.vibe.agent.iml: её пакует раскладка плагина."
+  fail=1
+fi
+NATIVE="$APP_PLUGINS/vibe-agent/native"
+# The platforms the natives are built for are those of pins.env: macOS arm64 and Windows x64; an Intel Mac image has none
+case "$ROOT_DIR" in
+  */Contents)
+    if file -b "$ROOT_DIR"/jbr/Contents/Home/lib/server/libjvm.dylib 2>/dev/null | grep -q arm64; then SHERPA_PLATFORM=osx-aarch64
+    else SHERPA_PLATFORM=""; fi ;;
+  *) if ls "$ROOT_DIR"/bin/*.exe >/dev/null 2>&1; then SHERPA_PLATFORM=win-x64; else SHERPA_PLATFORM=""; fi ;;
+esac
+if [ -n "$SHERPA_PLATFORM" ]; then
+  dir="$NATIVE/$SHERPA_PLATFORM"
+  case "$SHERPA_PLATFORM" in
+    osx-*) libs="libsherpa-onnx-jni.dylib libonnxruntime.*.dylib" ;;
+    win-*) libs="sherpa-onnx-jni.dll onnxruntime.dll" ;;
+  esac
+  for lib in $libs sherpa-onnx-LICENSE onnxruntime-LICENSE; do
+    # shellcheck disable=SC2086
+    ls $dir/$lib >/dev/null 2>&1 || { say "✖ нет $SHERPA_PLATFORM/$lib в vibe-agent/native — голос без Python на этой платформе не заработает"; fail=1; }
+  done
+  # The JNI library finds the runtime beside itself; a build that rewrote its load commands would not
+  if [ "${SHERPA_PLATFORM%%-*}" = osx ] && [ -f "$dir/libsherpa-onnx-jni.dylib" ] && command -v otool >/dev/null 2>&1; then
+    otool -l "$dir/libsherpa-onnx-jni.dylib" | grep -A2 LC_RPATH | grep -q '@loader_path' ||
+      { say "✖ libsherpa-onnx-jni.dylib потерял LC_RPATH @loader_path — ONNX Runtime рядом с ним не найдётся"; fail=1; }
+  fi
+  extra=$(ls "$NATIVE" 2>/dev/null | grep -vx "$SHERPA_PLATFORM" || true)
+  [ -z "$extra" ] || { say "✖ в vibe-agent/native лишние платформы: $extra — чужие библиотеки в образе только весят"; fail=1; }
+else
+  say "  локальное распознавание: для этой платформы нативных библиотек не собираем (голос идёт через whisper)"
+fi
+
 # --- 3б. Классы, которых плагин не видит в образе ---
 # Дефект 18.09.2026: граф кода брал символы из UAST, `.iml` объявлял модуль, компиляция и 1857
 # тестов были зелёными — а UAST лежит ВНУТРИ плагина Java, и в установленной IDE построение графа

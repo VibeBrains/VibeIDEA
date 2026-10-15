@@ -121,6 +121,7 @@ object VoiceCapture {
    * The read loop, apart from the line: reads into [sink] until [stopped], the cap, or the device gives out
    *
    * @param onLevel the loudness of every chunk as it is read, from the very bytes that go to [sink]
+   * @param onFrame every chunk as it is read, the same bytes and only until the next read reuses the buffer
    * @return why it ended on its own, or null when [stopped] ended it
    */
   internal fun pump(
@@ -128,6 +129,7 @@ object VoiceCapture {
     sink: ByteArrayOutputStream,
     capBytes: Long,
     onLevel: (Double) -> Unit = {},
+    onFrame: (ByteArray, Int) -> Unit = { _, _ -> },
     stopped: () -> Boolean,
   ): End? {
     val chunk = ByteArray(CHUNK_BYTES)
@@ -138,6 +140,7 @@ object VoiceCapture {
         if (count <= 0) return if (stopped()) null else End.Device("no data from the input device")
         sink.write(chunk, 0, count)
         onLevel(rmsOf(chunk, count))
+        onFrame(chunk, count)
         // The cap is enforced here rather than by a timer
         // A timer that fires while the line is blocked in read() stops nothing
         // And a microphone that stays on is the one failure mode of a recorder nobody forgives
@@ -186,6 +189,7 @@ object VoiceCapture {
     private val line: TargetDataLine,
     private val target: File,
     private val onEnded: (End) -> Unit,
+    private val onFrame: (ByteArray, Int) -> Unit,
   ) : Recording {
     @Volatile private var stopped = false
     @Volatile private var latestLevel = 0.0
@@ -196,7 +200,7 @@ object VoiceCapture {
     override val level: Double get() = latestLevel
 
     private fun pumpLoop() {
-      val end = pump({ line.read(it, 0, it.size) }, buffer, (MAX_MS * bytesPerMs()).toLong(), onLevel = { latestLevel = it }) { stopped }
+      val end = pump({ line.read(it, 0, it.size) }, buffer, (MAX_MS * bytesPerMs()).toLong(), { latestLevel = it }, onFrame) { stopped }
       if (end != null) onEnded(end)
     }
 
@@ -244,13 +248,15 @@ object VoiceCapture {
    *
    * Blocks while the system asks the person for permission, because macOS shows its dialog from inside the open call
    * So it must never run on the UI thread
+   *
+   * @param onFrame hears every chunk read from the device, on the thread that reads it; it must not keep the array
    */
-  fun start(target: File, onEnded: (End) -> Unit = {}): Recording {
+  fun start(target: File, onEnded: (End) -> Unit = {}, onFrame: (ByteArray, Int) -> Unit = { _, _ -> }): Recording {
     val format = format()
     val line = AudioSystem.getLine(DataLine.Info(TargetDataLine::class.java, format)) as TargetDataLine
     line.open(format)
     line.start()
-    return LineRecording(line, target, onEnded)
+    return LineRecording(line, target, onEnded, onFrame)
   }
 
   private const val CHUNK_BYTES = 4096

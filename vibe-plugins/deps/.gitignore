@@ -9,3 +9,7 @@ js-debug-dap-*.tar.gz
 php-debug-*.vsix
 # Сборник TextMate-грамматик: восстанавливается download.sh по версии и sha256 из pins.env.
 tm-grammars-*.tgz
+# sherpa-onnx native jars and licence texts: restored by download.sh from the versions and sha256 in pins.env
+sherpa-onnx-native-lib-*.jar
+sherpa-onnx-LICENSE
+onnxruntime-LICENSE

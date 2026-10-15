@@ -24,6 +24,7 @@ import com.intellij.ui.components.TextComponentEmptyText
 import com.intellij.util.ui.JBFont
 import com.intellij.util.ui.JBUI
 import com.vibe.agent.settings.VibeChatSettings
+import com.vibe.agent.voice.VoiceSlot
 import java.awt.BorderLayout
 import java.awt.Color
 import java.awt.Dimension
@@ -313,9 +314,9 @@ class ComposerPanel(
   }
 
   /**
-   * The live transcript of a dictation in progress: grey, italic and apart from the draft, so typing
-   * is never disturbed and nothing half-heard is ever sent. The final text goes into the draft at
-   * «стоп»; this only shows that the microphone hears.
+   * The line of a dictation in progress, grey and italic under the input: what it is doing now,
+   * recording, transcribing, downloading the models with the percent
+   * The words themselves go into the input, as drafts that are never sent ([voiceSlot])
    */
   private val voicePreview = JBTextArea().apply {
     isEditable = false
@@ -329,7 +330,10 @@ class ComposerPanel(
     isVisible = false
   }
 
-  /** Shows the live transcript; null hides it. EDT only. */
+  /** Where the dictation in progress writes; see [VoiceSlot] for why every write checks the text first */
+  private val voiceSlot = VoiceSlot()
+
+  /** Shows the line of the dictation; null hides it. EDT only. */
   fun setVoicePreview(text: String?) {
     voicePreview.isVisible = text != null
     voicePreview.text = text.orEmpty()
@@ -496,8 +500,41 @@ class ComposerPanel(
     }
   }
 
-  /** Current draft (text + staged context + images) without clearing it. */
-  fun composed(): ComposedMessage = ComposedMessage(input.text.trim(), context.values.toList(), images.toList())
+  /**
+   * Current draft (text + staged context + images) without clearing it
+   * The draft of a phrase still being dictated is left out: a half-heard word is never sent, and never saved as the
+   * draft of a chat the person switched away from
+   */
+  fun composed(): ComposedMessage =
+    ComposedMessage(voiceSlot.withoutDraft(input.text).trim(), context.values.toList(), images.toList())
+
+  /** The draft of the phrase being dictated, in the input in place of the previous one; EDT only */
+  fun voiceDraft(text: String) = applyVoice(voiceSlot.draft(text, input.text, input.caretPosition))
+
+  /** A dictated phrase is final; EDT only */
+  fun voicePhrase(text: String) = applyVoice(voiceSlot.phrase(text, input.text, input.caretPosition))
+
+  /** The dictation ended: with [keep] its final phrases stay, without it all it wrote goes; EDT only */
+  fun voiceClose(keep: Boolean) {
+    applyVoice(voiceSlot.close(keep, input.text))
+    if (keep) focusInput()
+  }
+
+  /**
+   * Applies an edit of the dictation and keeps the caret where the person had it
+   * A caret inside or right after the dictated words follows them; one elsewhere moves only by what changed before it
+   */
+  private fun applyVoice(edit: VoiceSlot.Edit?) {
+    edit ?: return
+    val caret = input.caretPosition
+    input.replaceRange(edit.text, edit.from, edit.to)
+    val delta = edit.text.length - (edit.to - edit.from)
+    input.caretPosition = when {
+      caret >= edit.to -> caret + delta
+      caret >= edit.from -> edit.from + edit.text.length
+      else -> caret
+    }.coerceIn(0, input.document.length)
+  }
 
   fun clearDraft() {
     input.text = ""

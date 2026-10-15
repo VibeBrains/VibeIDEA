@@ -21,6 +21,7 @@ class VoiceFlowTest {
   @Test
   fun `a click while the text is made cancels nothing`() {
     assertEquals(VoiceFlow.Click.NONE, VoiceFlow.onClick(VoiceFlow.State.TRANSCRIBING))
+    assertEquals(VoiceFlow.Click.NONE, VoiceFlow.onClick(VoiceFlow.State.DOWNLOADING), "nor a click while the models download")
     assertTrue(VoiceFlow.Click.entries.none { it.name.contains("TRANSCRIBE") }, "there is no click that cancels a transcription")
   }
 
@@ -33,7 +34,10 @@ class VoiceFlowTest {
   @Test
   fun `giving up is possible exactly while there is something to give up`() {
     val cancellable = VoiceFlow.State.entries.filter { VoiceFlow.cancellable(it) }
-    assertEquals(listOf(VoiceFlow.State.OPENING, VoiceFlow.State.RECORDING, VoiceFlow.State.TRANSCRIBING), cancellable)
+    assertEquals(
+      listOf(VoiceFlow.State.OPENING, VoiceFlow.State.RECORDING, VoiceFlow.State.TRANSCRIBING, VoiceFlow.State.DOWNLOADING),
+      cancellable,
+    )
   }
 
   @Test
@@ -84,7 +88,10 @@ class VoiceFlowTest {
 
   @Test
   fun `the button turns while the person waits for something with no picture of its own`() {
-    assertEquals(listOf(VoiceFlow.State.OPENING, VoiceFlow.State.TRANSCRIBING), VoiceFlow.State.entries.filter { VoiceFlow.spinning(it) })
+    assertEquals(
+      listOf(VoiceFlow.State.OPENING, VoiceFlow.State.TRANSCRIBING, VoiceFlow.State.DOWNLOADING),
+      VoiceFlow.State.entries.filter { VoiceFlow.spinning(it) },
+    )
   }
 
   @Test

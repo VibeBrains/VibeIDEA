@@ -103,3 +103,32 @@ printf 'vscode-js-debug %s (MIT) and vscode-php-debug %s (MIT), bundled from pro
   "$JS_DEBUG_V" "$PHP_DEBUG_V" > extracted/servers/dap/README.txt
 # Тот же капкан, что с npm-серверами: висячая ссылка валит обход дерева в сборщике дистрибутива.
 find extracted/servers/dap -type l ! -exec test -e {} \; -print -delete
+
+# --- sherpa-onnx: the native half of local speech recognition (voice input without Python) ---
+#
+# One pinned jar of native libraries per platform we build; only the libraries are kept, laid out the way the plugin
+# looks for them (plugins/vibe-agent/native/<os-arch>/). Both platforms are fetched on any machine, as the other
+# dependencies are: the archive is a few megabytes, and a build for the other OS must not depend on who ran this script.
+SHERPA_BASE="https://github.com/k2-fsa/sherpa-onnx/releases/download/v$SHERPA_ONNX_V"
+rm -rf extracted/sherpa-onnx && mkdir -p extracted/sherpa-onnx
+for pair in "osx-aarch64:$SHERPA_NATIVE_OSX_AARCH64_SHA" "win-x64:$SHERPA_NATIVE_WIN_X64_SHA"; do
+  platform=${pair%%:*}
+  sha=${pair#*:}
+  jar="sherpa-onnx-native-lib-$platform-$SHERPA_ONNX_V.jar"
+  [ -f "$jar" ] || curl -sL -o "$jar" "$SHERPA_BASE/$jar"
+  echo "$sha  $jar" | shasum -a 256 -c -
+  mkdir -p "extracted/sherpa-onnx/$platform"
+  unzip -q -j -o "$jar" "sherpa-onnx/native/$platform/*" -d "extracted/sherpa-onnx/$platform"
+done
+# Apache-2.0 and MIT both want their text next to the copy: it ships in every platform folder
+[ -f "sherpa-onnx-LICENSE" ] || curl -sL -o "sherpa-onnx-LICENSE" \
+  "https://raw.githubusercontent.com/k2-fsa/sherpa-onnx/v$SHERPA_ONNX_V/LICENSE"
+echo "$SHERPA_LICENSE_SHA  sherpa-onnx-LICENSE" | shasum -a 256 -c -
+[ -f "onnxruntime-LICENSE" ] || curl -sL -o "onnxruntime-LICENSE" \
+  "https://raw.githubusercontent.com/microsoft/onnxruntime/v$ONNXRUNTIME_V/LICENSE"
+echo "$ONNXRUNTIME_LICENSE_SHA  onnxruntime-LICENSE" | shasum -a 256 -c -
+for platform in osx-aarch64 win-x64; do
+  cp sherpa-onnx-LICENSE onnxruntime-LICENSE "extracted/sherpa-onnx/$platform/"
+  printf 'sherpa-onnx %s (Apache-2.0) with ONNX Runtime %s (MIT), native libraries from the project release.\nLicences: sherpa-onnx-LICENSE, onnxruntime-LICENSE\n' \
+    "$SHERPA_ONNX_V" "$ONNXRUNTIME_V" > "extracted/sherpa-onnx/$platform/README.txt"
+done

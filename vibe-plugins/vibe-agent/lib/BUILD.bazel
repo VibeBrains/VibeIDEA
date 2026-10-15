@@ -1,0 +1,15 @@
+load("@rules_java//java:defs.bzl", "java_import")
+
+### auto-generated section `local-libs` start
+java_import(
+    name = "vibe-agent-sherpa-onnx-jvm",
+    jars = ["sherpa-onnx-jvm-1.13.4.jar"],
+    visibility = ["//visibility:public"],
+)
+
+exports_files(
+    ["sherpa-onnx-jvm-1.13.4.jar"],
+    visibility = ["//visibility:public"],
+)
+
+### auto-generated section `local-libs` end

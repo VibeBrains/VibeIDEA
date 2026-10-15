@@ -32,13 +32,21 @@ enum class VoiceAction {
   CHOOSE_MODEL,
 
   /** Another recording: the one that failed is gone */
-  RECORD_AGAIN;
+  RECORD_AGAIN,
+
+  /** The download of the models once more, with the consent already given */
+  DOWNLOAD_AGAIN,
+
+  /** The chat settings, where the folder of the speech models and local recognition are set */
+  VOICE_SETTINGS;
 
   val label: String
     get() = when (this) {
       MICROPHONE_SETTINGS -> t("chat.voice.action.microphone")
       CHOOSE_MODEL -> t("chat.voice.action.model")
       RECORD_AGAIN -> t("chat.voice.action.again")
+      DOWNLOAD_AGAIN -> t("chat.voice.action.downloadAgain")
+      VOICE_SETTINGS -> t("chat.voice.action.settings")
     }
 }
 
@@ -81,6 +89,19 @@ sealed interface VoiceProblem {
   /** The person dropped the recording itself, before there was anything to transcribe */
   data object RecordingCancelled : VoiceProblem
 
+  /** Local recognition broke: the libraries, a model that would not load, a decoder that threw */
+  data class LocalEngineFailed(val reason: String) : VoiceProblem
+
+  /** The models are in place: the dictation that asked for them did not start, and the person starts it with one click */
+  data object ModelsReady : VoiceProblem
+
+  /** The download of the models stopped at [stage]; nothing half done is left in the folder */
+  data class ModelsFailed(val stage: SttInstaller.Stage, val reason: String, val folder: String) : VoiceProblem
+  data object ModelsCancelled : VoiceProblem
+
+  /** Another panel is downloading them already */
+  data object ModelsBusy : VoiceProblem
+
   fun notice(): VoiceNotice = when (this) {
     is NoMicrophone -> VoiceNotice(t("chat.voice.noMicrophone", "reason" to reason), JournalLevel.WARNING, actions = MICROPHONE_FIXES)
     Silence -> VoiceNotice(t("chat.voice.silent"), JournalLevel.WARNING, actions = MICROPHONE_FIXES)
@@ -104,6 +125,19 @@ sealed interface VoiceProblem {
     is Discarded -> VoiceNotice(t("chat.voice.discarded", "text" to text, "min" to VoiceTranscription.MIN_TASK_CHARS), JournalLevel.INFO)
     Cancelled -> VoiceNotice(t("chat.voice.cancelled"), JournalLevel.INFO)
     RecordingCancelled -> VoiceNotice(t("chat.voice.recordingCancelled"), JournalLevel.INFO)
+    is LocalEngineFailed -> VoiceNotice(t("chat.voice.localFailed", "reason" to reason), JournalLevel.WARNING, SettingsPage.CHAT, AGAIN)
+    ModelsReady -> VoiceNotice(t("chat.voice.modelsReady"), JournalLevel.INFO, actions = AGAIN)
+    is ModelsFailed -> VoiceNotice(modelsFailedText(), JournalLevel.WARNING, SettingsPage.CHAT, MODELS_FIXES)
+    ModelsCancelled -> VoiceNotice(t("chat.voice.modelsCancelled"), JournalLevel.INFO)
+    ModelsBusy -> VoiceNotice(t("chat.voice.modelsBusy"), JournalLevel.INFO)
+  }
+
+  private fun ModelsFailed.modelsFailedText(): String = when (stage) {
+    SttInstaller.Stage.DOWNLOAD -> t("chat.voice.modelsFailed.download", "reason" to reason)
+    SttInstaller.Stage.CHECKSUM -> t("chat.voice.modelsFailed.checksum")
+    SttInstaller.Stage.UNPACK -> t("chat.voice.modelsFailed.unpack", "reason" to reason)
+    SttInstaller.Stage.FILES -> t("chat.voice.modelsFailed.files", "files" to reason)
+    SttInstaller.Stage.DISK -> t("chat.voice.modelsFailed.disk", "folder" to folder, "reason" to reason)
   }
 
   companion object {
@@ -111,6 +145,7 @@ sealed interface VoiceProblem {
     private val MICROPHONE_FIXES = listOf(VoiceAction.MICROPHONE_SETTINGS, VoiceAction.RECORD_AGAIN)
     private val MODEL_FIX = listOf(VoiceAction.CHOOSE_MODEL)
     private val AGAIN = listOf(VoiceAction.RECORD_AGAIN)
+    private val MODELS_FIXES = listOf(VoiceAction.DOWNLOAD_AGAIN, VoiceAction.VOICE_SETTINGS)
 
     /** The recording hit its cap, which the person is told in minutes */
     fun limitReached(): LimitReached = LimitReached(VoiceCapture.MAX_MS / MS_PER_MINUTE)
