@@ -6,12 +6,14 @@ import com.intellij.icons.AllIcons
 import com.intellij.openapi.Disposable
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.application.ReadAction
+import com.intellij.openapi.fileEditor.FileEditorManager
 import com.intellij.openapi.fileEditor.FileEditorManagerEvent
 import com.intellij.openapi.fileEditor.FileEditorManagerListener
 import com.intellij.openapi.options.ShowSettingsUtil
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.ui.popup.JBPopupFactory
 import com.intellij.openapi.ui.Messages
+import com.intellij.openapi.vfs.LocalFileSystem
 import com.intellij.ui.JBColor
 import com.intellij.util.ui.JBUI
 import com.vibe.agent.acp.AcpClient
@@ -505,13 +507,16 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
   private val voicePill: PillButton =
     PillButton(icon = VibeIcons.MIC) { toggleVoice() }.apply { toolTipText = t("chat.voice.start") }
 
+  /** The run button: opens the pipeline menu under itself */
+  private val pipelinePill: PillButton =
+    PillButton(icon = AllIcons.Actions.RunAll) { choosePipeline() }.apply { toolTipText = t("chat.pipelinePill") }
+
   init {
     border = JBUI.Borders.empty(4)
     // Unlike the settings pages, this menu holds what people change while working: reply style, reasoning, offline
     val quickSettings = com.vibe.agent.ui.composer.QuickSettingsPill {
       ShowSettingsUtil.getInstance().showSettingsDialog(project, com.vibe.agent.settings.VibeAgentConfigurable::class.java)
     }.pill
-    val pipeline = PillButton(icon = AllIcons.Actions.RunAll) { choosePipeline() }.apply { toolTipText = t("chat.pipelinePill") }
     // Шестерёнка уехала в шапку панели (VibeAgentToolWindowFactory): настройки открывают раз в
     // месяц, а место в ряду композера занимают всегда — там живёт то, что меняют по ходу работы.
     // The microphone appears only where recording is possible: a button that cannot work is worse
@@ -522,7 +527,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
       agent = modelPicker.pill,
       permissions = permissionPicker.pill,
       quickSettings = quickSettings,
-      pipeline = pipeline,
+      pipeline = pipelinePill,
       voice = voicePill.takeIf { com.vibe.agent.voice.VoiceCapture.isSupported() },
     ).forEach { composer.addPill(it) }
     composer.setElasticPill(modelPicker.pill)
@@ -4826,10 +4831,22 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
       return
     }
     val agent = agents.firstOrNull() ?: run { feedNotice(t("pipeline.needsAgent", "path" to AcpConfig.configPath())); return }
-    val names = pipelines.map { t("pipeline.choice", "name" to it.name, "count" to it.steps.size) }
-    val choice = Messages.showDialog(project, t("pipeline.choosePrompt"), t("pipeline.chooseTitle"), names.toTypedArray(), 0, Messages.getQuestionIcon())
-    if (choice < 0) return
-    val chosen = pipelines[choice]
+    com.vibe.agent.ui.composer.PipelinePicker(
+      onRun = { startPipeline(it, agent) },
+      onOpenFile = ::openPipelinesFile,
+    ).show(pipelines, pipelinePill)
+  }
+
+  private fun openPipelinesFile() {
+    val file = project.basePath?.let { LocalFileSystem.getInstance().refreshAndFindFileByNioFile(PipelinesFile.path(it)) }
+    if (file == null) {
+      feedNotice(t("pipeline.none"))
+      return
+    }
+    FileEditorManager.getInstance(project).openFile(file, true)
+  }
+
+  private fun startPipeline(chosen: com.vibe.agent.pipelines.Pipeline, agent: AgentServerConfig) {
     // Смета ДО запуска: потолки расхода срабатывают уже на середине прогона, а разница между одним
     // ходом и шестью ролями видна только тому, кто за неё однажды заплатил.
     if (!confirmEstimate(chosen)) return
