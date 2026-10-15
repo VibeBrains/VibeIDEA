@@ -5,6 +5,7 @@ import java.awt.Component
 import java.awt.Container
 import java.awt.Dimension
 import java.awt.LayoutManager
+import javax.swing.JComponent
 
 /**
  * The composer's pill row: one line, and one pill that gives way before the row wraps
@@ -91,3 +92,18 @@ class PillRowLayout(private val gap: Int, private val minElastic: Int) : LayoutM
     fun width(gap: Int): Int = items.sumOf { it.second } + gap * (items.size - 1).coerceAtLeast(0)
   }
 }
+
+/**
+ * The order of the pills the composer adds to the row, left to right: the agent, the permissions, the quick settings,
+ * the pipeline, then the microphone. The context ring and the history pill belong to the composer itself
+ * The row only wraps and never reorders, so this order is the order on screen at every width
+ */
+internal fun composerPillOrder(
+  mode: JComponent,
+  config: JComponent,
+  agent: JComponent,
+  permissions: JComponent,
+  quickSettings: JComponent,
+  pipeline: JComponent,
+  voice: JComponent?,
+): List<JComponent> = listOfNotNull(mode, config, agent, permissions, quickSettings, pipeline, voice)

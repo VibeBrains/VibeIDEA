@@ -170,7 +170,10 @@ object ProvidersService {
   private fun loadFile(path: Path, source: String, onWarning: (String) -> Unit): List<ProviderEntry> {
     if (!Files.isRegularFile(path)) return emptyList()
     return try {
-      ProvidersFile.parse(Files.readString(path), source = source, onWarning = onWarning)
+      // The path is known only here: the picker names the file a hand-declared model came from
+      ProvidersFile.parse(Files.readString(path), source = source, onWarning = onWarning).map { entry ->
+        entry.copy(models = entry.models.map { it.copy(sourcePath = path.toString()) })
+      }
     }
     catch (e: Exception) {
       onWarning(t("providers.warn.fileUnparsed", "path" to path, "reason" to e.message))

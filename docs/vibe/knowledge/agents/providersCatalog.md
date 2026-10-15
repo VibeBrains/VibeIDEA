@@ -52,8 +52,8 @@ baseURL/apiKeyEnv). У VibeIDE builtins лежат ПОД пользовател
   врёт: Alibaba Coding Plan (каталог возвращает модели вне плана, имена сверяются
   посимвольно) и выключенные маршруты Meta Muse / minimax-anthropic (каталога нет).
 - **Кастомные модели** (`models.static`) — фича «для гиков»: пример в
-  `_template-openai-compatible.jsonc`, раздел в providersSpec.md; бейдж «кастом» в пикере
-  и на странице «Модели». Через кастомную модель включаются `vision:false`, `fim:true`,
+  `_template-openai-compatible.jsonc`, раздел в providersSpec.md; карандаш с путём файла в пикере
+  и бейдж «кастом» на странице «Модели». Через кастомную модель включаются `vision:false`, `fim:true`,
   `extraBody`-квирки (thinking у Moonshot, tool_stream у DashScope/GLM).
 - **Ключ без рестарта**: apply в «Провайдерах» публикует project-топик
   `ProvidersChangeListener.TOPIC` → открытая панель перечитывает реестр и каталоги моделей.

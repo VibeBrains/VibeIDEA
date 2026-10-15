@@ -117,6 +117,11 @@ data class ModelEntry(
    * включается осознанно, а не нами за пользователя.
    */
   val cacheTtl: String? = null,
+  /**
+   * Full path of the providers file this model was read from; set when the file is loaded, never written back.
+   * Null for a model that came from no file, such as one picked from a live list.
+   */
+  val sourcePath: String? = null,
 )
 
 /**

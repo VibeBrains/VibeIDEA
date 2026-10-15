@@ -78,6 +78,7 @@ import com.vibe.agent.settings.VibeProvidersConfigurable
 import com.vibe.agent.ui.composer.ChatTarget
 import com.vibe.agent.ui.composer.ComposedMessage
 import com.vibe.agent.ui.composer.ComposerPanel
+import com.vibe.agent.ui.composer.composerPillOrder
 import com.vibe.agent.ui.composer.ContextSerializer
 import com.vibe.agent.ui.composer.EditorContext
 import com.vibe.agent.ui.composer.ImageAttachment
@@ -457,7 +458,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     override fun agentCommands(): List<com.vibe.agent.acp.AgentCommand> =
       if (target is ChatTarget.Agent) client?.commands.orEmpty() else emptyList()
   })
-  private val modelPicker = ModelPicker({ selectTarget(it) }, { openSettings() })
+  private val modelPicker = ModelPicker({ selectTarget(it) }, { openSettings() }, project.basePath)
   private val modePicker = ModePicker { modeId -> switchMode(modeId) }
 
   /** Насколько агенту разрешено действовать без вопроса; умолчание — автопилот. */
@@ -506,21 +507,25 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
 
   init {
     border = JBUI.Borders.empty(4)
-    composer.addPill(modePicker.pill)
-    composer.addPill(configPicker.pill)
-    composer.addPill(modelPicker.pill)
-    composer.setElasticPill(modelPicker.pill)
-    composer.addPill(PillButton(icon = AllIcons.Actions.RunAll) { choosePipeline() }.apply { toolTipText = t("chat.pipelinePill") })
+    // Unlike the settings pages, this menu holds what people change while working: reply style, reasoning, offline
+    val quickSettings = com.vibe.agent.ui.composer.QuickSettingsPill {
+      ShowSettingsUtil.getInstance().showSettingsDialog(project, com.vibe.agent.settings.VibeAgentConfigurable::class.java)
+    }.pill
+    val pipeline = PillButton(icon = AllIcons.Actions.RunAll) { choosePipeline() }.apply { toolTipText = t("chat.pipelinePill") }
     // Шестерёнка уехала в шапку панели (VibeAgentToolWindowFactory): настройки открывают раз в
     // месяц, а место в ряду композера занимают всегда — там живёт то, что меняют по ходу работы.
-    composer.addPill(permissionPicker.pill)
-    // Unlike the settings pages, this menu holds what people change while working: reply style, reasoning, offline
-    composer.addPill(com.vibe.agent.ui.composer.QuickSettingsPill {
-      ShowSettingsUtil.getInstance().showSettingsDialog(project, com.vibe.agent.settings.VibeAgentConfigurable::class.java)
-    }.pill)
     // The microphone appears only where recording is possible: a button that cannot work is worse
     // than no button.
-    if (com.vibe.agent.voice.VoiceCapture.isSupported()) composer.addPill(voicePill)
+    composerPillOrder(
+      mode = modePicker.pill,
+      config = configPicker.pill,
+      agent = modelPicker.pill,
+      permissions = permissionPicker.pill,
+      quickSettings = quickSettings,
+      pipeline = pipeline,
+      voice = voicePill.takeIf { com.vibe.agent.voice.VoiceCapture.isSupported() },
+    ).forEach { composer.addPill(it) }
+    composer.setElasticPill(modelPicker.pill)
     feedSelection.markdown = { history.get(currentThreadId)?.let { com.vibe.agent.history.ChatExport.toMarkdown(it) } }
     composer.onCopyChat = { copyConversation() }
     composer.onExportChat = { exportConversation() }

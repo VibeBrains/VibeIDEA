@@ -30,7 +30,8 @@ class PillRowLayoutTest {
   private fun row(width: Int): JPanel {
     val layout = PillRowLayout(gap, 72).also { it.elastic = model }
     return JPanel(layout).apply {
-      listOf(mode, model, pipeline, permission, ring).forEach { add(it) }
+      // The order the composer adds them in: the permissions come before the pipeline
+      listOf(mode, model, permission, pipeline, ring).forEach { add(it) }
       setSize(width, 200)
       doLayout()
     }
@@ -60,6 +61,14 @@ class PillRowLayoutTest {
     assertTrue(!onFirstLine(ring), "ряд не перенёсся")
     panel.components.forEach { assertTrue(it.x + it.width <= 250, "пилюля за краем ряда") }
     assertTrue(panel.preferredSize.height > 24, "высота ряда не учла вторую строку")
+  }
+
+  @Test
+  fun `the pills keep their order when the row wraps`() {
+    // The model at its minimum still leaves the permission pill on the second line, the rest follow it
+    val panel = row(250)
+    val inOrder = panel.components.sortedWith(compareBy({ it.y }, { it.x }))
+    assertEquals(listOf(mode, model, permission, pipeline, ring), inOrder)
   }
 
   @Test
