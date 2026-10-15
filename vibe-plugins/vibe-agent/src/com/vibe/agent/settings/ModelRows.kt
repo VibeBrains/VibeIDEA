@@ -6,9 +6,9 @@ import com.vibe.agent.i18n.VibeI18n.t
 import com.vibe.agent.providers.ModelEntry
 
 /**
- * Pure presentation/filter logic for the «Модели» page rows — kept free of Swing so
- * badges, search and the «активные» display filter are unit-testable (VibeIDE §4-5
- * semantics: AND-tokenized search over name/id/provider/traits, counters (N) and (X/Y)).
+ * Pure presentation/filter logic for the rows of the Models page — kept free of Swing so
+ * badges, search and the "only enabled" display filter are unit-testable (VibeIDE §4-5
+ * semantics: AND-tokenized search over name/id/traits, counters (N) and (X/Y)).
  */
 object ModelRows {
   /** Declared traits as text badges: «кастом» for hand-declared entries, vision/fim/context where known. */
@@ -48,6 +48,13 @@ object ModelRows {
   /** AND-tokenized, case-insensitive: every token must occur somewhere in the haystack. */
   fun matches(hay: String, tokens: List<String>): Boolean =
     tokens.all { hay.lowercase().contains(it) }
+
+  /**
+   * Whether a row stays on the screen of its provider's block
+   * It matches the search, and it is switched on when the block shows only the switched-on ones
+   */
+  fun visible(hay: String, enabled: Boolean, tokens: List<String>, onlyEnabled: Boolean): Boolean =
+    (!onlyEnabled || enabled) && matches(hay, tokens)
 
   /** Group header counter: «(N)» normally, «(X/Y)» while searching (found / total-after-actives-filter). */
   /**

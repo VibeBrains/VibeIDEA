@@ -246,6 +246,11 @@
       "Runs": {
         "attention": "Error"
       },
+      "Settings": {
+        "cardBackground": "DeepBg",
+        "cardBorder": "Border",
+        "waitingBorder": "Border"
+      },
       "Status": {
         "ready": "Ok",
         "thinking": "Accent",
