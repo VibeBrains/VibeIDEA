@@ -178,12 +178,18 @@ internal class PickerRow {
   private val nameLabel = JBLabel()
   private val detailLabel = JBLabel()
   private val trailingLabel = JBLabel()
-  private val row = JPanel(FlowLayout(FlowLayout.LEFT, JBUI.scale(GAP), 0)).apply {
-    border = JBUI.Borders.empty(0, JBUI.scale(UIUtil.getListCellHPadding()))
+  private val lead = JPanel(FlowLayout(FlowLayout.LEFT, JBUI.scale(GAP), 0)).apply {
+    isOpaque = false
     add(check)
     add(nameLabel)
     add(detailLabel)
-    add(trailingLabel)
+  }
+
+  // The trailing mark sits at the right edge, so the marks of all rows form one column whatever the name length
+  private val row = JPanel(java.awt.BorderLayout(JBUI.scale(TRAILING_GAP), 0)).apply {
+    border = JBUI.Borders.empty(0, JBUI.scale(UIUtil.getListCellHPadding()))
+    add(lead, java.awt.BorderLayout.CENTER)
+    add(trailingLabel, java.awt.BorderLayout.EAST)
   }
 
   /** Fills the row for one list cell; the same component goes back for every cell */
@@ -214,6 +220,9 @@ internal class PickerRow {
   private companion object {
     // Unscaled gap between the parts of the row
     const val GAP = 4
+
+    // Unscaled least gap between the longest name and the trailing mark
+    const val TRAILING_GAP = 12
   }
 }
 
