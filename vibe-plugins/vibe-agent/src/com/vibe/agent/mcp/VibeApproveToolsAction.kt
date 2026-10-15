@@ -5,6 +5,7 @@ import com.intellij.openapi.actionSystem.ActionUpdateThread
 import com.intellij.openapi.actionSystem.AnActionEvent
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.project.DumbAwareAction
+import com.intellij.openapi.project.Project
 import com.intellij.openapi.ui.Messages
 import com.vibe.agent.i18n.VibeI18n.t
 import com.vibe.agent.providers.ToolSpec
@@ -30,6 +31,11 @@ class VibeApproveToolsAction : DumbAwareAction() {
 
   override fun actionPerformed(e: AnActionEvent) {
     val project = e.project ?: return
+    run(project)
+  }
+
+  /** The whole flow, also for the link of the settings page; [onApproved] gets the name of the server whose tools were confirmed */
+  fun run(project: Project, onApproved: (String) -> Unit = {}) {
     val base = project.basePath
     ApplicationManager.getApplication().executeOnPooledThread {
       val drifted = McpServersFile.load(base).servers
@@ -53,6 +59,7 @@ class VibeApproveToolsAction : DumbAwareAction() {
         val (name, specs, _) = drifted[choice]
         ApprovedTools.approve(base, name, specs)
         Messages.showInfoMessage(project, t("mcp.approve.done", "server" to name), t("mcp.approve.title"))
+        onApproved(name)
       }
     }
   }

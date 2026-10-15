@@ -99,7 +99,7 @@ class McpStdioTransport(
   }
 
   override fun exchange(message: JsonObject, id: Long, timeoutMs: Long): JsonObject {
-    if (closed) throw McpClient.McpException("server is not running")
+    if (closed) throw McpClient.Stopped("server is not running")
     val waiter = CompletableFuture<JsonObject>()
     pending[id] = waiter
     try {
@@ -110,7 +110,7 @@ class McpStdioTransport(
       throw e.cause ?: e
     }
     catch (e: java.util.concurrent.TimeoutException) {
-      throw McpClient.McpException("${message["method"]?.jsonPrimitive?.contentOrNull}: no answer in $timeoutMs ms")
+      throw McpClient.NoAnswer(message["method"]?.jsonPrimitive?.contentOrNull.orEmpty(), timeoutMs)
     }
     finally {
       pending.remove(id)
@@ -122,7 +122,7 @@ class McpStdioTransport(
   override fun close() {
     if (closed) return
     closed = true
-    pending.values.forEach { it.completeExceptionally(McpClient.McpException("server stopped")) }
+    pending.values.forEach { it.completeExceptionally(McpClient.Stopped("server stopped")) }
     pending.clear()
     runCatching { output.close() }
     onClose()

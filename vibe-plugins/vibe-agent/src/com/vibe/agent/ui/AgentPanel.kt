@@ -227,6 +227,22 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
   // One shared audit log per project (writer here, reader in the viewer action) — see VibeAuditService.
   private val audit: AuditLog? = com.vibe.agent.audit.VibeAuditService.getInstance(project).get()
 
+  /**
+   * The servers of `.vibe/mcp.json` for the direct chat
+   *
+   * Kept apart from [directTools] so that the settings page can read their state and restart one: it reaches them through [VibeMcpServers]
+   */
+  private val ownServers = com.vibe.agent.mcp.ConfiguredServersSource(
+    servers = { com.vibe.agent.mcp.McpServersFile.load(project.basePath).servers },
+    workingDir = project.basePath?.let { java.nio.file.Path.of(it) },
+    clientVersion = com.intellij.openapi.application.ApplicationInfo.getInstance().fullVersion,
+    onFailure = { failures -> failures.forEach { systemLine(t("mcp.servers.problem", "text" to it), CONFIG, WARNING) } },
+    // Description drift is a security event, so it is named in the feed rather than the log: the person agreed to
+    // other descriptions, and the decision is theirs (see ToolFingerprint).
+    onDrift = { server, drift -> feedNotice(com.vibe.agent.mcp.DriftMessage.of(server, drift)) },
+    onReport = { com.vibe.agent.mcp.VibeMcpServers.getInstance(project).changed() },
+  ).also { com.vibe.agent.mcp.VibeMcpServers.getInstance(project).attach(it) }
+
   /** Tools of the direct chat: the IDE's own tools, then the shared memory server started on the first turn that offers tools. */
   private val directTools = com.vibe.agent.mcp.DirectChatTools(listOf(
     com.vibe.agent.mcp.IdeToolsSource { name, arguments -> com.vibe.agent.mcp.VibeMcpTools { project }.dispatch(project, name, arguments) },
@@ -248,15 +264,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     ),
     // Свои серверы человека идут ПОСЛЕДНИМИ: имя инструмента, совпавшее с нашим, достаётся нам —
     // иначе чужой сервер молча подменил бы `vibe_read_file`, и понять это было бы не по чему.
-    com.vibe.agent.mcp.ConfiguredServersSource(
-      servers = { com.vibe.agent.mcp.McpServersFile.load(project.basePath).servers },
-      workingDir = project.basePath?.let { java.nio.file.Path.of(it) },
-      clientVersion = com.intellij.openapi.application.ApplicationInfo.getInstance().fullVersion,
-      onFailure = { failures -> failures.forEach { systemLine(t("mcp.servers.problem", "text" to it), CONFIG, WARNING) } },
-      // Description drift is a security event, so it is named in the feed rather than the log: the person agreed to
-      // other descriptions, and the decision is theirs (see ToolFingerprint).
-      onDrift = { server, drift -> feedNotice(com.vibe.agent.mcp.DriftMessage.of(server, drift)) },
-    ),
+    ownServers,
   ), answerer = { request -> answerMcpInput(request) })
 
   /** Why the direct chat goes without tools is said once per panel: a line on every turn stops being read. */
@@ -639,6 +647,8 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     // A recording left open would keep the microphone on behind a closed panel
     voice.dispose()
     voiceFace.dispose()
+    // The settings page must not keep asking servers that are about to be closed
+    if (!project.isDisposed) com.vibe.agent.mcp.VibeMcpServers.getInstance(project).detach(ownServers)
     directTools.close()
     composer.queue.clear()
     turnInFlight.set(false)
@@ -1114,22 +1124,10 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
    */
   override fun configuredServers(): List<Map<String, Any>> {
     val parsed = com.vibe.agent.mcp.McpServersFile.load(project.basePath)
-    parsed.problems.forEach { systemLine(t("mcp.servers.problem", "text" to describe(it)), CONFIG, WARNING) }
+    parsed.problems.forEach { systemLine(t("mcp.servers.problem", "text" to com.vibe.agent.mcp.McpFileText.of(it)), CONFIG, WARNING) }
     val live = parsed.servers.filterNot { it.disabled }
     if (live.isNotEmpty()) systemLine(t("mcp.servers.offered", "names" to live.joinToString { it.name }), AGENTS)
     return live.map { com.vibe.agent.mcp.McpServersFile.acpEntry(it) }
-  }
-
-  /** Жалоба разбора `mcp.json` — человеческой фразой из каталога, по коду и имени записи. */
-  private fun describe(complaint: com.vibe.agent.mcp.McpServersFile.Complaint): String {
-    val name = complaint.name.orEmpty()
-    return when (complaint.problem) {
-      com.vibe.agent.mcp.McpServersFile.Problem.NOT_JSON -> t("mcp.servers.notJson")
-      com.vibe.agent.mcp.McpServersFile.Problem.NO_SECTION -> t("mcp.servers.noSection")
-      com.vibe.agent.mcp.McpServersFile.Problem.NOT_AN_OBJECT -> t("mcp.servers.notAnObject", "name" to name)
-      com.vibe.agent.mcp.McpServersFile.Problem.NO_COMMAND -> t("mcp.servers.noCommand", "name" to name)
-      com.vibe.agent.mcp.McpServersFile.Problem.UNREADABLE -> t("mcp.servers.unreadable")
-    }
   }
 
   override fun teamMemoryServers(agentSupportsHttp: Boolean): List<Map<String, Any>> {

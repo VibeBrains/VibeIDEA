@@ -32,12 +32,18 @@ class McpClient(private val transport: McpTransport) : AutoCloseable {
   /** The server refused the credentials: a new request with the same ones cannot succeed */
   class Unauthorized(message: String) : McpException(message)
 
+  /** The server process is gone: it exited, or was closed, before it answered */
+  class Stopped(message: String) : McpException(message)
+
+  /** The server stayed silent past the ceiling of the request */
+  class NoAnswer(val method: String, val timeoutMs: Long) : McpException("$method: no answer in $timeoutMs ms")
+
   private val nextId = AtomicLong(1)
 
   val isAlive: Boolean get() = transport.isAlive
 
   private fun request(method: String, params: JsonObject, timeoutMs: Long, meta: JsonObject? = null): JsonObject {
-    if (!transport.isAlive) throw McpException("server is not running")
+    if (!transport.isAlive) throw Stopped("server is not running")
     val id = nextId.getAndIncrement()
     val response = transport.exchange(buildJsonObject {
       put("jsonrpc", "2.0")

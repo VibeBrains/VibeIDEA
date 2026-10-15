@@ -74,6 +74,7 @@
     <applicationConfigurable groupId="tools" displayName="VibeIDEA" id="com.vibe.settings" instance="com.vibe.agent.settings.VibeSettingsRoot"/>
     <projectConfigurable parentId="com.vibe.settings" displayName="Провайдеры" id="com.vibe.agent.providers" instance="com.vibe.agent.settings.VibeProvidersConfigurable"/>
     <projectConfigurable parentId="com.vibe.settings" displayName="Модели" id="com.vibe.agent.models" instance="com.vibe.agent.settings.VibeModelsConfigurable"/>
+    <projectConfigurable parentId="com.vibe.settings" displayName="MCP-серверы" id="com.vibe.agent.mcp" instance="com.vibe.agent.settings.VibeMcpServersConfigurable"/>
     <applicationConfigurable parentId="com.vibe.settings" displayName="Агент" id="com.vibe.agent.behavior" instance="com.vibe.agent.settings.VibeAgentConfigurable"/>
     <applicationConfigurable parentId="com.vibe.settings" displayName="Чат" id="com.vibe.agent.chat" instance="com.vibe.agent.settings.VibeChatConfigurable"/>
     <applicationConfigurable parentId="com.vibe.settings" displayName="Интерфейс" id="com.vibe.agent.ui" instance="com.vibe.agent.settings.VibeUiConfigurable"/>

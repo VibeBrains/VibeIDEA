@@ -131,8 +131,10 @@ internal class TruncatingLabel(private val maxPreferred: Int = META_PREFERRED, p
  * A link of a settings page that can be cut with an ellipsis instead of widening the page
  *
  * A short link keeps its own width; the one whose text is a whole sentence gives way down to [MIN_WIDTH]
+ *
+ * [onClick] is kept in the open for a test: the platform runs the listener of a link inside an application, and a unit test has none
  */
-internal class SettingsLink(text: String, onClick: () -> Unit) : ActionLink(text, { onClick() }) {
+internal class SettingsLink(text: String, internal val onClick: () -> Unit) : ActionLink(text, { onClick() }) {
   override fun getMinimumSize(): Dimension {
     val size = super.getMinimumSize()
     return Dimension(minOf(size.width, JBUI.scale(MIN_WIDTH)), size.height)
