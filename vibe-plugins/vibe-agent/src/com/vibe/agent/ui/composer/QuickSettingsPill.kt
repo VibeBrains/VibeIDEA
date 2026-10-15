@@ -32,7 +32,12 @@ class QuickSettingsPill(
         is QuickSettings.Item.Choice -> group.add(DefaultActionGroup(title(item.id), true).apply {
           item.options.forEach { option -> add(choice(item.id, option)) }
         })
-        is QuickSettings.Item.Switch -> group.add(switch(item.id))
+        // A switch is a submenu of two values like its neighbours: a bare toggle makes the popup reserve a check column
+        // for every row, and the whole menu opened with a wide empty margin on the left
+        is QuickSettings.Item.Switch -> group.add(DefaultActionGroup(title(item.id), true).apply {
+          add(switchValue(item.id, false))
+          add(switchValue(item.id, true))
+        })
       }
     }
     group.addSeparator()
@@ -41,7 +46,7 @@ class QuickSettingsPill(
       override fun actionPerformed(e: AnActionEvent) = openAllSettings()
     })
     JBPopupFactory.getInstance()
-      .createActionGroupPopup(t("quick.title"), group, DataManager.getInstance().getDataContext(pill),
+      .createActionGroupPopup(null, group, DataManager.getInstance().getDataContext(pill),
                               JBPopupFactory.ActionSelectionAid.SPEEDSEARCH, true)
       .showUnderneathOf(pill)
   }
@@ -54,11 +59,14 @@ class QuickSettingsPill(
     override fun setSelected(e: AnActionEvent, state: Boolean) = QuickSettings.choose(store, id, option)
   }
 
-  private fun switch(id: String) = object : ToggleAction(title(id)) {
+  /** One value of a switch: checked when the switch is in it, and choosing it puts the switch there */
+  private fun switchValue(id: String, on: Boolean) = object : ToggleAction(if (on) t("quick.switch.on") else t("quick.switch.off")) {
     override fun getActionUpdateThread(): ActionUpdateThread = ActionUpdateThread.EDT
-    override fun isSelected(e: AnActionEvent): Boolean =
-      (QuickSettings.items(store).firstOrNull { it.id == id } as? QuickSettings.Item.Switch)?.on == true
-    override fun setSelected(e: AnActionEvent, state: Boolean) = QuickSettings.flip(store, id)
+    private fun isOn(): Boolean = (QuickSettings.items(store).firstOrNull { it.id == id } as? QuickSettings.Item.Switch)?.on == true
+    override fun isSelected(e: AnActionEvent): Boolean = isOn() == on
+    override fun setSelected(e: AnActionEvent, state: Boolean) {
+      if (isOn() != on) QuickSettings.flip(store, id)
+    }
   }
 
   private fun title(id: String): String = when (id) {
