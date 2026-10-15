@@ -143,9 +143,28 @@
 
 ## Установка
 
-**macOS** — `.dmg` (Apple Silicon) или `.sit`.
-**Windows** — инсталлятор `.exe` или архив `.win.zip`.
-**Linux** — `.tar.gz`.
+**macOS (Apple Silicon):** `VibeIDEA-0.9.0-aarch64.dmg` — перетащить в «Программы».
+
+```bash
+shasum -a 256 VibeIDEA-0.9.0-aarch64.dmg
+# b1d46b1656bbc9d0c16da9be63f0078760ce6c5fde464d2860d97d84e5933a57
+```
+
+**Windows (x64):** `VibeIDEA-0.9.0.exe` — обычный инсталлятор; или `VibeIDEA-0.9.0.win.zip` — распаковать куда угодно и запустить `bin\idea64.exe`.
+
+```powershell
+Get-FileHash VibeIDEA-0.9.0.exe -Algorithm SHA256
+# 41f0bbae615cd7738ba1072bdcce17b72e7c3d8421aa61ae0bff0909a996fc1e
+Get-FileHash VibeIDEA-0.9.0.win.zip -Algorithm SHA256
+# a1357c7b2d924e3373c0fd6625d644c4fe58d5f74b1b63444f09b6d59af58c3e
+```
+
+**Linux (x64):** `VibeIDEA-0.9.0.tar.gz` — распаковать и запустить `bin/idea.sh`.
+
+```bash
+sha256sum VibeIDEA-0.9.0.tar.gz
+# a8e578c57771f754776f1e09be311b4dd496febac31e35024d735ae94669ab14
+```
 
 **Что нужно на машине:** PHP 8.1+ и Node 18+.
 Для отладки PHP — Xdebug.
