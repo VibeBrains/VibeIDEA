@@ -150,7 +150,7 @@ class TelegramBridge {
    */
   private fun handleVoice(token: String, chatId: Long, voice: TelegramProtocol.Command.Voice) {
     // A Telegram note is Opus in OGG: openai-whisper decodes it through ffmpeg, whisper.cpp is the fallback.
-    val transcriber = VoiceTranscription.find(VibeAgentSettings.voiceModelPath, wav = false) ?: run {
+    val transcriber = VoiceTranscription.find(VibeAgentSettings.voiceModelPath) ?: run {
       send(token, TelegramProtocol.sendMessage(chatId, t("telegram.voice.noTranscriber")))
       return
     }

@@ -197,7 +197,7 @@ class AcpClient(
     Thread({
       val code = p.waitFor()
       // Nobody will answer the in-flight requests any more: fail them so callers unblock.
-      failPending("agent process exited (code $code)")
+      failPending(AgentGoneException(AgentGoneException.Kind.EXITED, "agent process exited (code $code)", code.toString()))
       if (!stopped) handler.onProcessExit(this, code)
     }, "vibe-acp-exit").apply { isDaemon = true }.start()
   }
@@ -213,7 +213,7 @@ class AcpClient(
     authMethods = emptyList()
     // Тумблеры и режимы принадлежат сессиям: у мёртвого клиента их нет.
     open.clear()
-    failPending("agent stopped")
+    failPending(AgentGoneException(AgentGoneException.Kind.STOPPED, "agent stopped"))
   }
 
   /**
@@ -250,11 +250,11 @@ class AcpClient(
     return request("session/close", buildJsonObject { put("sessionId", sessionId) }).thenApply { }
   }
 
-  private fun failPending(reason: String) {
+  private fun failPending(reason: AgentGoneException) {
     // Remove-and-fail each entry so a future put() racing between a snapshot and a clear()
     // is still observed and failed, never orphaned forever incomplete.
     val ids = pending.keys.toList()
-    for (id in ids) pending.remove(id)?.completeExceptionally(IllegalStateException(reason))
+    for (id in ids) pending.remove(id)?.completeExceptionally(reason)
   }
 
   /** Одна запись MCP-сервера, собранная снаружи (карта → JSON без ещё одной модели данных). */
@@ -603,7 +603,7 @@ class AcpClient(
     catch (e: java.io.IOException) {
       // A dead pipe must not surface as an IDE error from whichever thread wrote last.
       handler.onProtocolLog(t("acp.log.writeFailed", "reason" to e.message))
-      failPending("agent pipe closed: ${e.message}")
+      failPending(AgentGoneException(AgentGoneException.Kind.PIPE_CLOSED, "agent pipe closed: ${e.message}", e.message.orEmpty()))
     }
   }
 

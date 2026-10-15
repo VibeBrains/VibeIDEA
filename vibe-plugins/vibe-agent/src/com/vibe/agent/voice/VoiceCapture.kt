@@ -11,6 +11,7 @@ import javax.sound.sampled.AudioSystem
 import javax.sound.sampled.DataLine
 import javax.sound.sampled.TargetDataLine
 import kotlin.math.abs
+import kotlin.math.sqrt
 
 /**
  * Recording the microphone — with the JDK, and with no native library at all.
@@ -73,6 +74,26 @@ object VoiceCapture {
     return true
   }
 
+  /** Full scale of a 16-bit sample; the divisor that turns a sample into a fraction of the loudest sound the format holds */
+  private const val FULL_SCALE = 32768.0
+
+  /**
+   * Loudness of the first [length] bytes of [pcm] (16-bit little-endian, our format): the root mean square, 0 to 1 of full scale
+   * Speech in a quiet room sits near a few hundredths, so the number is small by nature and the picture is what scales it
+   */
+  fun rmsOf(pcm: ByteArray, length: Int = pcm.size): Double {
+    var sum = 0.0
+    var count = 0
+    var i = 0
+    while (i + 1 < length) {
+      val sample = (pcm[i].toInt() and 0xFF) or (pcm[i + 1].toInt() shl 8)
+      sum += sample.toDouble() * sample
+      count++
+      i += 2
+    }
+    return if (count == 0) 0.0 else sqrt(sum / count) / FULL_SCALE
+  }
+
   /** Why a recording ended without being stopped by the person */
   sealed interface End {
     /** [MAX_MS] reached: the microphone is closed on purpose */
@@ -99,9 +120,16 @@ object VoiceCapture {
   /**
    * The read loop, apart from the line: reads into [sink] until [stopped], the cap, or the device gives out
    *
+   * @param onLevel the loudness of every chunk as it is read, from the very bytes that go to [sink]
    * @return why it ended on its own, or null when [stopped] ended it
    */
-  internal fun pump(read: (ByteArray) -> Int, sink: ByteArrayOutputStream, capBytes: Long, stopped: () -> Boolean): End? {
+  internal fun pump(
+    read: (ByteArray) -> Int,
+    sink: ByteArrayOutputStream,
+    capBytes: Long,
+    onLevel: (Double) -> Unit = {},
+    stopped: () -> Boolean,
+  ): End? {
     val chunk = ByteArray(CHUNK_BYTES)
     try {
       while (!stopped()) {
@@ -109,6 +137,7 @@ object VoiceCapture {
         // A read that returns nothing after stop() is the line draining, not a failure
         if (count <= 0) return if (stopped()) null else End.Device("no data from the input device")
         sink.write(chunk, 0, count)
+        onLevel(rmsOf(chunk, count))
         // The cap is enforced here rather than by a timer
         // A timer that fires while the line is blocked in read() stops nothing
         // And a microphone that stays on is the one failure mode of a recorder nobody forgives
@@ -132,35 +161,51 @@ object VoiceCapture {
 
   /**
    * One recording in progress
-   * Started by [start], ended by [stop], which says what was captured, or by itself, which [onEnded] reports
+   * Started by [start], ended by [stop], which says what was captured, or by itself, which the callback of [start] reports
    */
-  class Recording internal constructor(
-    private val line: TargetDataLine,
-    private val target: File,
-    private val onEnded: (End) -> Unit,
-  ) {
-    @Volatile private var stopped = false
-    private val buffer = ByteArrayOutputStream()
-    private val thread = Thread({ pumpLoop() }, "vibe-voice-capture").apply { isDaemon = true; start() }
+  interface Recording {
+    val elapsedMs: Long
 
-    val elapsedMs: Long get() = ((buffer.size() / bytesPerMs()).toLong())
-
-    private fun pumpLoop() {
-      val end = pump({ line.read(it, 0, it.size) }, buffer, (MAX_MS * bytesPerMs()).toLong()) { stopped }
-      if (end != null) onEnded(end)
-    }
+    /** Loudness of the latest chunk read from the device, 0 to 1 of full scale; 0 before the first one */
+    val level: Double
 
     /**
      * What was captured so far, as WAV, while the recording goes on — the live transcript reads it.
      * Null while it is still too short to say anything, or while it holds only silence
      */
-    fun snapshot(): ByteArray? {
+    fun snapshot(): ByteArray?
+
+    /** Closes the microphone and says what came of the recording; blocks briefly, so never on the UI thread */
+    fun stop(): Captured
+
+    /** Throws away what was captured: the person changed their mind, and the file must not appear */
+    fun cancel()
+  }
+
+  private class LineRecording(
+    private val line: TargetDataLine,
+    private val target: File,
+    private val onEnded: (End) -> Unit,
+  ) : Recording {
+    @Volatile private var stopped = false
+    @Volatile private var latestLevel = 0.0
+    private val buffer = ByteArrayOutputStream()
+    private val thread = Thread({ pumpLoop() }, "vibe-voice-capture").apply { isDaemon = true; start() }
+
+    override val elapsedMs: Long get() = ((buffer.size() / bytesPerMs()).toLong())
+    override val level: Double get() = latestLevel
+
+    private fun pumpLoop() {
+      val end = pump({ line.read(it, 0, it.size) }, buffer, (MAX_MS * bytesPerMs()).toLong(), onLevel = { latestLevel = it }) { stopped }
+      if (end != null) onEnded(end)
+    }
+
+    override fun snapshot(): ByteArray? {
       val bytes = buffer.toByteArray()
       return if (tooShort(bytes.size.toLong()) || isSilent(bytes)) null else wav(bytes)
     }
 
-    /** Closes the microphone and says what came of the recording; blocks briefly, so never on the UI thread */
-    fun stop(): Captured {
+    override fun stop(): Captured {
       stopped = true
       runCatching { line.stop() }
       thread.join(JOIN_MS)
@@ -184,8 +229,7 @@ object VoiceCapture {
       }
     }
 
-    /** Throws away what was captured: the person changed their mind, and the file must not appear. */
-    fun cancel() {
+    override fun cancel() {
       stopped = true
       runCatching { line.stop() }
       runCatching { line.close() }
@@ -206,7 +250,7 @@ object VoiceCapture {
     val line = AudioSystem.getLine(DataLine.Info(TargetDataLine::class.java, format)) as TargetDataLine
     line.open(format)
     line.start()
-    return Recording(line, target, onEnded)
+    return LineRecording(line, target, onEnded)
   }
 
   private const val CHUNK_BYTES = 4096

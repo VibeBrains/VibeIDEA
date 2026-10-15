@@ -12,11 +12,7 @@ import com.intellij.openapi.wm.WindowManager
 import com.vibe.agent.settings.VibeChatSettings
 import java.io.File
 import java.util.concurrent.atomic.AtomicLong
-import javax.sound.sampled.AudioFormat
 import javax.sound.sampled.AudioSystem
-import javax.sound.sampled.FloatControl
-import kotlin.math.PI
-import kotlin.math.sin
 
 /**
  * The notification sound.
@@ -69,7 +65,7 @@ class VibeSoundService {
     AudioSystem.getAudioInputStream(file).use { stream ->
       val clip = AudioSystem.getClip()
       clip.open(stream)
-      applyVolume(clip)
+      SoundSynth.applyVolume(clip, VibeChatSettings.soundVolume)
       clip.start()
       // The clip plays on its own thread; the pooled thread waits so the resource is released.
       Thread.sleep(minOf(clip.microsecondLength / 1000, MAX_CUSTOM_MS))
@@ -79,46 +75,10 @@ class VibeSoundService {
   }
 
   private fun playChime() {
-    val format = AudioFormat(SAMPLE_RATE.toFloat(), 16, 1, true, false)
-    val line = AudioSystem.getSourceDataLine(format)
-    line.open(format)
-    applyVolume(line)
-    line.start()
-    line.write(tone(NOTE_ONE_HZ, NOTE_MS), 0, NOTE_MS * SAMPLE_RATE / 1000 * 2)
-    line.write(tone(NOTE_TWO_HZ, NOTE_MS), 0, NOTE_MS * SAMPLE_RATE / 1000 * 2)
-    line.drain()
-    line.close()
-  }
-
-  /** One note as 16-bit PCM, with a short fade so it does not click at the edges. */
-  private fun tone(frequencyHz: Double, millis: Int): ByteArray {
-    val samples = millis * SAMPLE_RATE / 1000
-    val buffer = ByteArray(samples * 2)
-    val fade = samples / 8
-    for (i in 0 until samples) {
-      val envelope = when {
-        i < fade -> i.toDouble() / fade
-        i > samples - fade -> (samples - i).toDouble() / fade
-        else -> 1.0
-      }
-      val value = (sin(2 * PI * frequencyHz * i / SAMPLE_RATE) * envelope * Short.MAX_VALUE * 0.35).toInt()
-      buffer[i * 2] = (value and 0xFF).toByte()
-      buffer[i * 2 + 1] = ((value shr 8) and 0xFF).toByte()
-    }
-    return buffer
-  }
-
-  private fun applyVolume(line: javax.sound.sampled.Line) {
-    val volume = VibeChatSettings.soundVolume.coerceIn(0, 100) / 100.0
-    if (!line.isControlSupported(FloatControl.Type.MASTER_GAIN)) return
-    val control = line.getControl(FloatControl.Type.MASTER_GAIN) as FloatControl
-    // Gain is in decibels: a linear slider maps through log10, otherwise 50% sounds like 95%.
-    val gain = if (volume <= 0.0001) control.minimum else (20.0 * Math.log10(volume)).toFloat()
-    control.value = gain.coerceIn(control.minimum, control.maximum)
+    SoundSynth.play(SoundSynth.tone(NOTE_ONE_HZ, NOTE_MS) + SoundSynth.tone(NOTE_TWO_HZ, NOTE_MS), VibeChatSettings.soundVolume)
   }
 
   companion object {
-    private const val SAMPLE_RATE = 44_100
     private const val NOTE_MS = 90
     private const val NOTE_ONE_HZ = 880.0
     private const val NOTE_TWO_HZ = 1174.7

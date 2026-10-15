@@ -183,6 +183,13 @@ class ComposerPanel(
 
   /** Сохранить разговор файлом — кнопкой полоски. */
   var onExportChat: (() -> Unit)? = null
+
+  /** True while a dictation is in progress, so that Esc drops it before it does anything else */
+  var voiceActive: () -> Boolean = { false }
+
+  /** Drops the dictation in progress and puts nothing into the draft */
+  var onVoiceCancel: () -> Unit = {}
+
   /**
    * Заполненность контекста — кольцом в ряду пилюль, рядом с моделью и режимом прав.
    *
@@ -549,12 +556,15 @@ class ComposerPanel(
     localShortcut(KeyStroke.getKeyStroke(KeyEvent.VK_BACK_SPACE, menuMask), parentDisposable,
       enabled = { !mention.isShowing && context.isNotEmpty() },
       perform = ::clearContext)
+    // A dictation comes before the stop of a turn: the person is often dictating the next message while the agent works,
+    // and Esc then means the dictation they are looking at, not the agent's work, which a second press still stops
     localShortcut(KeyStroke.getKeyStroke(KeyEvent.VK_ESCAPE, 0), parentDisposable,
-      enabled = { mention.isShowing || slash.isShowing || busy },
+      enabled = { mention.isShowing || slash.isShowing || voiceActive() || busy },
       perform = {
         when {
           mention.isShowing -> mention.close()
           slash.isShowing -> slash.close()
+          voiceActive() -> onVoiceCancel()
           busy -> listener.onStop()
         }
       })

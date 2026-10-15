@@ -106,4 +106,44 @@ class VoiceCaptureTest {
     val end = VoiceCapture.pump({ stopped = true; 0 }, ByteArrayOutputStream(), 1_000) { stopped }
     assertNull(end)
   }
+
+  @Test
+  fun `the loudness of silence is zero and of a full-scale square wave one`() {
+    assertEquals(0.0, VoiceCapture.rmsOf(ByteArray(1_000)))
+    assertEquals(0.0, VoiceCapture.rmsOf(ByteArray(0)))
+    assertEquals(1.0, VoiceCapture.rmsOf(pcmOf(32_767, -32_768, 32_767, -32_768)), 1e-3)
+    assertEquals(0.5, VoiceCapture.rmsOf(pcmOf(16_384, -16_384, 16_384, -16_384)), 1e-9)
+  }
+
+  @Test
+  fun `the loudness counts only the bytes that were read, not the rest of the chunk`() {
+    val chunk = pcmOf(16_384, 16_384, 32_767, 32_767)
+    assertEquals(0.5, VoiceCapture.rmsOf(chunk, length = 4), 1e-9)
+    assertEquals(0.0, VoiceCapture.rmsOf(chunk, length = 1), "half a sample is not a sample")
+  }
+
+  @Test
+  fun `the level is taken from the very bytes that go to the recording`() {
+    val sink = ByteArrayOutputStream()
+    val levels = mutableListOf<Double>()
+    val loud = pcmOf(*IntArray(100) { 16_384 })
+    var reads = 0
+    VoiceCapture.pump(
+      read = { buffer -> loud.copyInto(buffer); reads++; loud.size },
+      sink = sink,
+      capBytes = 1_000_000,
+      onLevel = { levels += it },
+    ) { reads >= 3 }
+    assertEquals(3, levels.size)
+    assertTrue(levels.all { kotlin.math.abs(it - 0.5) < 1e-9 }, levels.toString())
+    assertEquals(3 * loud.size, sink.size())
+  }
+
+  @Test
+  fun `a speaking voice moves the pulse`() {
+    // A tone at a tenth of full scale is a normal voice: the pulse must see it, and silence must leave it still
+    val voice = pcmOf(*IntArray(200) { if (it % 2 == 0) 3_276 else -3_276 })
+    assertTrue(com.vibe.agent.voice.VoicePulse.scale(com.vibe.agent.voice.VoicePulse.level(VoiceCapture.rmsOf(voice))) > 1.35)
+    assertEquals(1.0, com.vibe.agent.voice.VoicePulse.scale(com.vibe.agent.voice.VoicePulse.level(VoiceCapture.rmsOf(ByteArray(400)))))
+  }
 }

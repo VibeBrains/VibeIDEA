@@ -3,13 +3,17 @@ package com.vibe.agent.settings
 
 import com.vibe.agent.i18n.VibeI18n.t
 import com.vibe.agent.journal.ChatJournalService
+import com.vibe.agent.voice.WhisperModels
 import com.intellij.openapi.options.Configurable
+import com.intellij.ui.DocumentAdapter
 import com.intellij.ui.JBIntSpinner
+import com.intellij.ui.components.JBCheckBox
 import com.intellij.ui.components.JBTextField
 import com.intellij.util.ui.FormBuilder
 import com.intellij.util.ui.JBUI
 import javax.swing.JComponent
 import javax.swing.JPanel
+import javax.swing.event.DocumentEvent
 
 /** Settings → Tools → VibeIDEA → Чат. */
 // NoScroll обязателен: без него платформа заворачивает нашу страницу-со-скроллом во ВТОРОЙ скролл
@@ -31,6 +35,9 @@ class VibeChatConfigurable : Configurable, Configurable.NoScroll {
   private var journalSpinner: JBIntSpinner? = null
   private var voiceModel: com.intellij.openapi.ui.TextFieldWithBrowseButton? = null
   private var voiceLanguage: JBTextField? = null
+  private var voicePython: JBCheckBox? = null
+  private var voiceSound: JBCheckBox? = null
+  private var voiceVolume: JBIntSpinner? = null
 
   override fun getDisplayName(): String = t("settings.chat.title")
 
@@ -47,6 +54,26 @@ class VibeChatConfigurable : Configurable, Configurable.NoScroll {
     addBrowseFolderListener(null, com.intellij.openapi.fileChooser.FileChooserDescriptorFactory
       .createSingleFileDescriptor("bin").withTitle(t("settings.voice.modelChooser")))
     voiceModel = this
+  }
+
+  /**
+   * What the empty model field would be filled with: the model found on this machine, shown in grey and not written down
+   * It shows only while the field is empty, which is the rule itself: a path typed there always wins
+   * Follows the language field, because an English-only model is a candidate only for English
+   */
+  private fun showFoundModel() {
+    val field = voiceModel?.textField as? JBTextField ?: return
+    val found = WhisperModels.find(voiceLanguage?.text?.trim() ?: VibeAgentSettings.telegramVoiceLanguage)
+    field.emptyText.text = if (found != null) t("settings.voice.modelFound", "path" to found.path) else t("settings.voice.modelNone")
+  }
+
+  private fun voiceVolumeSpinner() = JBIntSpinner(VibeChatSettings.voiceSoundVolume, 0, 100).also { voiceVolume = it }
+
+  private fun voiceLanguageField() = JBTextField(VibeAgentSettings.telegramVoiceLanguage, 8).also { field ->
+    voiceLanguage = field
+    field.document.addDocumentListener(object : DocumentAdapter() {
+      override fun textChanged(e: DocumentEvent) = showFoundModel()
+    })
   }
 
   override fun createComponent(): JComponent {
@@ -91,10 +118,15 @@ class VibeChatConfigurable : Configurable, Configurable.NoScroll {
       .addComponent(hint(t("settings.sound.hint")))
       .addLabeledComponent(t("settings.voice.model"), voiceModelField())
       .addComponent(hint(t("settings.voice.modelHint")))
-      .addLabeledComponent(t("settings.voice.language"), JBTextField(VibeAgentSettings.telegramVoiceLanguage, 8).also { voiceLanguage = it })
+      .addComponent(JBCheckBox(t("settings.voice.python"), VibeAgentSettings.voicePythonConsent).also { voicePython = it })
+      .addComponent(hint(t("settings.voice.pythonHint")))
+      .addLabeledComponent(t("settings.voice.language"), voiceLanguageField())
       .addComponent(hint(t("settings.voice.languageHint")))
+      .addComponent(JBCheckBox(t("settings.voice.sound"), VibeChatSettings.voiceSoundEnabled).also { voiceSound = it })
+      .addLabeledComponent(t("settings.voice.soundVolume"), voiceVolumeSpinner())
+      .addComponent(hint(t("settings.voice.soundHint")))
       .addComponentFillVertically(JPanel(), 0)
-      .panel.apply { border = JBUI.Borders.empty(8) })
+      .panel.apply { border = JBUI.Borders.empty(8) }).also { showFoundModel() }
   }
 
   /**
@@ -130,6 +162,9 @@ class VibeChatConfigurable : Configurable, Configurable.NoScroll {
     (soundPath?.text?.trim() ?: VibeChatSettings.soundCustomPath) != VibeChatSettings.soundCustomPath ||
     (voiceModel?.text?.trim() ?: VibeAgentSettings.voiceModelPath) != VibeAgentSettings.voiceModelPath ||
     (voiceLanguage?.text?.trim() ?: VibeAgentSettings.telegramVoiceLanguage) != VibeAgentSettings.telegramVoiceLanguage ||
+    voicePython?.isSelected != VibeAgentSettings.voicePythonConsent ||
+    voiceSound?.isSelected != VibeChatSettings.voiceSoundEnabled ||
+    voiceVolume?.number != VibeChatSettings.voiceSoundVolume ||
     (continueField?.text?.trim() ?: VibeChatSettings.continueText) != VibeChatSettings.continueText ||
     (tabsSpinner?.number ?: VibeChatSettings.maxOpenTabs) != VibeChatSettings.maxOpenTabs ||
     (messagesSpinner?.number ?: VibeChatSettings.maxMessagesPerThread) != VibeChatSettings.maxMessagesPerThread ||
@@ -141,6 +176,9 @@ class VibeChatConfigurable : Configurable, Configurable.NoScroll {
   override fun apply() {
     voiceModel?.let { VibeAgentSettings.voiceModelPath = it.text }
     voiceLanguage?.let { VibeAgentSettings.telegramVoiceLanguage = it.text }
+    voicePython?.let { VibeAgentSettings.voicePythonConsent = it.isSelected }
+    voiceSound?.let { VibeChatSettings.voiceSoundEnabled = it.isSelected }
+    voiceVolume?.let { VibeChatSettings.voiceSoundVolume = it.number }
     codeFold?.let { VibeChatSettings.codeFoldLines = it.number }
     journalSpinner?.let {
       VibeChatSettings.journalMaxEntries = it.number
@@ -167,6 +205,9 @@ class VibeChatConfigurable : Configurable, Configurable.NoScroll {
   override fun reset() {
     voiceModel?.text = VibeAgentSettings.voiceModelPath
     voiceLanguage?.text = VibeAgentSettings.telegramVoiceLanguage
+    voicePython?.isSelected = VibeAgentSettings.voicePythonConsent
+    voiceSound?.isSelected = VibeChatSettings.voiceSoundEnabled
+    voiceVolume?.number = VibeChatSettings.voiceSoundVolume
     codeFold?.number = VibeChatSettings.codeFoldLines
     journalSpinner?.number = VibeChatSettings.journalMaxEntries
     soundEnabled?.isSelected = VibeChatSettings.soundEnabled

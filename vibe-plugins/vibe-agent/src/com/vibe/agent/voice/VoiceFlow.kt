@@ -8,6 +8,8 @@ import com.vibe.agent.i18n.VibeI18n.t
  *
  * The button used to have two states, and everything between them (opening the device, which can wait
  * for the system to ask for permission, and transcribing, which can take minutes) looked like a frozen IDE
+ * Every state looks different without the mouse over it: a spinner while the device opens, red and pulsing while it records,
+ * a spinner while the text is made, a check for a moment when it is in the draft
  * Pure: the states and what a click means in each are the part worth testing, and they need no Swing
  */
 object VoiceFlow {
@@ -20,6 +22,9 @@ object VoiceFlow {
 
     /** The recording is closed and turning into text */
     TRANSCRIBING,
+
+    /** The text is in the draft; the button shows it for [DONE_SHOW_MS] and is idle again */
+    DONE,
   }
 
   /** What a click on the button asks for in a given state */
@@ -27,36 +32,53 @@ object VoiceFlow {
     OPEN,
     CANCEL_OPEN,
     STOP,
-    CANCEL_TRANSCRIBE,
+
+    /** A click does nothing: while the text is made, giving up is its own deliberate act and not a second press of the same button */
+    NONE,
   }
 
+  /** How long the check mark stays after the text has reached the draft */
+  const val DONE_SHOW_MS = 1_500L
+
   fun onClick(state: State): Click = when (state) {
-    State.IDLE -> Click.OPEN
+    State.IDLE, State.DONE -> Click.OPEN
     State.OPENING -> Click.CANCEL_OPEN
     State.RECORDING -> Click.STOP
-    State.TRANSCRIBING -> Click.CANCEL_TRANSCRIBE
+    State.TRANSCRIBING -> Click.NONE
   }
+
+  /** Whether there is something in progress that the Esc key drops: the device opening, the recording, the text being made */
+  fun cancellable(state: State): Boolean = state == State.OPENING || state == State.RECORDING || state == State.TRANSCRIBING
 
   fun tooltip(state: State): String = when (state) {
     State.IDLE -> t("chat.voice.start")
     State.OPENING -> t("chat.voice.openingTip")
     State.RECORDING -> t("chat.voice.stop")
     State.TRANSCRIBING -> t("chat.voice.transcribingTip")
+    State.DONE -> t("chat.voice.doneTip")
   }
 
   /** The microphone is red only while it is really recording */
   fun micOn(state: State): Boolean = state == State.RECORDING
 
+  /** The states in which the button turns, because the person is waiting for something that has no picture of its own */
+  fun spinning(state: State): Boolean = state == State.OPENING || state == State.TRANSCRIBING
+
   /**
    * The line under the input for a state; null hides it
    *
-   * While recording it belongs to the live transcript, which fills it itself
+   * While recording it is the live transcript's, which replaces the first words as soon as there are some
    */
   fun status(state: State): String? = when (state) {
     State.OPENING -> line(t("chat.voice.opening"))
+    State.RECORDING -> line(t("chat.voice.recording"))
     State.TRANSCRIBING -> line(t("chat.voice.transcribing"))
-    State.IDLE, State.RECORDING -> null
+    State.DONE -> line(t("chat.voice.done"))
+    State.IDLE -> null
   }
+
+  /** The line while the final text is made by an engine that has something to say about the wait, such as a download */
+  fun waiting(hint: String): String = line(t("chat.voice.transcribingWith", "hint" to hint))
 
   /** [text] in the form the line under the input shows everything in */
   fun line(text: String): String = t("chat.voice.preview", "text" to text)

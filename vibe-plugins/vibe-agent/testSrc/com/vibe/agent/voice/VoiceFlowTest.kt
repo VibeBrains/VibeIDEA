@@ -15,13 +15,25 @@ class VoiceFlowTest {
     assertEquals(VoiceFlow.Click.OPEN, VoiceFlow.onClick(VoiceFlow.State.IDLE))
     assertEquals(VoiceFlow.Click.CANCEL_OPEN, VoiceFlow.onClick(VoiceFlow.State.OPENING))
     assertEquals(VoiceFlow.Click.STOP, VoiceFlow.onClick(VoiceFlow.State.RECORDING))
-    assertEquals(VoiceFlow.Click.CANCEL_TRANSCRIBE, VoiceFlow.onClick(VoiceFlow.State.TRANSCRIBING))
+    assertEquals(VoiceFlow.Click.OPEN, VoiceFlow.onClick(VoiceFlow.State.DONE), "the check mark is idle with a picture")
   }
 
   @Test
-  fun `only an idle button opens a device, so a second click cannot start a second recording`() {
+  fun `a click while the text is made cancels nothing`() {
+    assertEquals(VoiceFlow.Click.NONE, VoiceFlow.onClick(VoiceFlow.State.TRANSCRIBING))
+    assertTrue(VoiceFlow.Click.entries.none { it.name.contains("TRANSCRIBE") }, "there is no click that cancels a transcription")
+  }
+
+  @Test
+  fun `only an idle or finished button opens a device, so a second click cannot start a second recording`() {
     val opening = VoiceFlow.State.entries.filter { VoiceFlow.onClick(it) == VoiceFlow.Click.OPEN }
-    assertEquals(listOf(VoiceFlow.State.IDLE), opening)
+    assertEquals(listOf(VoiceFlow.State.IDLE, VoiceFlow.State.DONE), opening)
+  }
+
+  @Test
+  fun `giving up is possible exactly while there is something to give up`() {
+    val cancellable = VoiceFlow.State.entries.filter { VoiceFlow.cancellable(it) }
+    assertEquals(listOf(VoiceFlow.State.OPENING, VoiceFlow.State.RECORDING, VoiceFlow.State.TRANSCRIBING), cancellable)
   }
 
   @Test
@@ -32,24 +44,65 @@ class VoiceFlowTest {
   }
 
   @Test
-  fun `the line under the input names the wait while the device opens and the text is made`() {
-    val opening = assertNotNull(VoiceFlow.status(VoiceFlow.State.OPENING))
-    assertTrue("микрофон" in opening, opening)
-    assertTrue("разрешени" in opening, "the system may be asking for permission, and the line must say so: $opening")
-    val transcribing = assertNotNull(VoiceFlow.status(VoiceFlow.State.TRANSCRIBING))
-    assertTrue("расшифровываю" in transcribing, transcribing)
-    assertTrue(opening.startsWith("🎙") && transcribing.startsWith("🎙"), "the same form as the live transcript")
+  fun `the tooltip of the transcription says that the key cancels it and the click does not`() {
+    val tip = VoiceFlow.tooltip(VoiceFlow.State.TRANSCRIBING)
+    assertTrue("Esc" in tip, tip)
+    assertTrue("не отменяет" in tip, tip)
+    assertTrue("Esc" in VoiceFlow.tooltip(VoiceFlow.State.RECORDING), "the recording tells how to drop it too")
   }
 
   @Test
-  fun `the line is empty when nothing is going on, and while recording it belongs to the live transcript`() {
+  fun `the line under the input names every state a person waits in`() {
+    val opening = assertNotNull(VoiceFlow.status(VoiceFlow.State.OPENING))
+    assertTrue("микрофон" in opening, opening)
+    assertTrue("разрешени" in opening, "the system may be asking for permission, and the line must say so: $opening")
+    val recording = assertNotNull(VoiceFlow.status(VoiceFlow.State.RECORDING))
+    assertTrue("записываю" in recording, recording)
+    val transcribing = assertNotNull(VoiceFlow.status(VoiceFlow.State.TRANSCRIBING))
+    assertTrue("расшифровываю" in transcribing && "Esc" in transcribing, transcribing)
+    val done = assertNotNull(VoiceFlow.status(VoiceFlow.State.DONE))
+    assertTrue("готово" in done, done)
+    listOf(opening, recording, transcribing, done).forEach { assertTrue(it.startsWith("🎙"), "the same form as the live transcript: $it") }
+  }
+
+  @Test
+  fun `the line is empty when nothing is going on`() {
     assertNull(VoiceFlow.status(VoiceFlow.State.IDLE))
-    assertNull(VoiceFlow.status(VoiceFlow.State.RECORDING))
+  }
+
+  @Test
+  fun `an engine's wait hint comes with the way out`() {
+    val line = VoiceFlow.waiting("модель скачивается")
+    assertTrue("модель скачивается" in line && "Esc" in line, line)
   }
 
   @Test
   fun `the microphone is red only while it really records`() {
     assertEquals(listOf(VoiceFlow.State.RECORDING), VoiceFlow.State.entries.filter { VoiceFlow.micOn(it) })
     assertFalse(VoiceFlow.micOn(VoiceFlow.State.OPENING), "a device that is not open yet is not a recording")
+  }
+
+  @Test
+  fun `the button turns while the person waits for something with no picture of its own`() {
+    assertEquals(listOf(VoiceFlow.State.OPENING, VoiceFlow.State.TRANSCRIBING), VoiceFlow.State.entries.filter { VoiceFlow.spinning(it) })
+  }
+
+  @Test
+  fun `no two states look alike, each is the spinner, the red microphone, the check or the grey one`() {
+    val looks = VoiceFlow.State.entries.groupBy {
+      when {
+        VoiceFlow.spinning(it) -> "spinner"
+        VoiceFlow.micOn(it) -> "red"
+        it == VoiceFlow.State.DONE -> "check"
+        else -> "grey"
+      }
+    }
+    assertEquals(setOf("spinner", "red", "check", "grey"), looks.keys)
+    assertEquals(listOf(VoiceFlow.State.IDLE), looks.getValue("grey"))
+  }
+
+  @Test
+  fun `the check mark stays for a moment, not for good`() {
+    assertTrue(VoiceFlow.DONE_SHOW_MS in 1_000L..3_000L, VoiceFlow.DONE_SHOW_MS.toString())
   }
 }

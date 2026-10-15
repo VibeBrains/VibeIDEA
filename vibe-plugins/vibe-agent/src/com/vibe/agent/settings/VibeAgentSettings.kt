@@ -611,7 +611,8 @@ object VibeAgentSettings {
   private const val KEY_VOICE_MODEL = "vibe.agent.voiceModelPath"
 
   /**
-   * A whisper.cpp model file (ggml `.bin`) for voice notes; empty — none. With it and
+   * A whisper.cpp model file (ggml `.bin`) for voice notes; empty — the model found on the machine
+   * ([com.vibe.agent.voice.WhisperModels]), which is used and shown and never written here. With it and
    * `whisper-server` on the machine a dictation is transcribed while it is recorded (decision №84);
    * with it and `whisper-cli` — after «стоп». Models are not bundled: size and quality are the
    * person's choice.
@@ -619,6 +620,17 @@ object VibeAgentSettings {
   var voiceModelPath: String
     get() = props.getValue(KEY_VOICE_MODEL, "")
     set(value) = props.setValue(KEY_VOICE_MODEL, value.trim(), "")
+
+  private const val KEY_VOICE_PYTHON = "vibe.agent.voicePythonConsent"
+
+  /**
+   * The person has agreed that whisper (Python) may run for the microphone
+   * It fetches a model of over a gigabyte on its first run, so it never starts unasked: with no model for whisper.cpp
+   * the person is offered the choice, and only a yes, remembered here, lets it run on its own
+   */
+  var voicePythonConsent: Boolean
+    get() = props.getBoolean(KEY_VOICE_PYTHON, false)
+    set(value) = props.setValue(KEY_VOICE_PYTHON, value, false)
 
   /**
    * Run voice transcripts through a LOCAL model before using them. On by default because it only

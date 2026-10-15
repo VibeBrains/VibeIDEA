@@ -4,7 +4,6 @@ package com.vibe.agent.voice
 import java.io.File
 import kotlin.test.Test
 import kotlin.test.assertEquals
-import kotlin.test.assertFalse
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
@@ -27,30 +26,18 @@ class VoiceTranscriptionTest {
   }
 
   @Test
-  fun `the microphone goes to whisper-cpp when a model is set, otherwise to openai-whisper`() {
-    assertEquals(VoiceTranscription.Kind.WHISPER_CPP,
-                 VoiceTranscription.find(model, wav = true, lookup = lookup(cli, python), hasFile = hasModel)?.kind)
-    assertEquals(VoiceTranscription.Kind.OPENAI_WHISPER,
-                 VoiceTranscription.find("", wav = true, lookup = lookup(cli, python), hasFile = hasModel)?.kind)
-    assertEquals(VoiceTranscription.Kind.OPENAI_WHISPER,
-                 VoiceTranscription.find("/missing.bin", wav = true, lookup = lookup(cli, python), hasFile = hasModel)?.kind)
-  }
-
-  @Test
   fun `a telegram note goes to openai-whisper first, whisper-cpp is the fallback`() {
     // Opus in OGG: openai-whisper decodes it through ffmpeg.
     assertEquals(VoiceTranscription.Kind.OPENAI_WHISPER,
-                 VoiceTranscription.find(model, wav = false, lookup = lookup(cli, python), hasFile = hasModel)?.kind)
+                 VoiceTranscription.find(model, lookup = lookup(cli, python), hasFile = hasModel)?.kind)
     assertEquals(VoiceTranscription.Kind.WHISPER_CPP,
-                 VoiceTranscription.find(model, wav = false, lookup = lookup(cli), hasFile = hasModel)?.kind)
+                 VoiceTranscription.find(model, lookup = lookup(cli), hasFile = hasModel)?.kind)
   }
 
   @Test
-  fun `whisper-cpp without a model is a setting to fix, not an install`() {
-    assertNull(VoiceTranscription.find("", wav = true, lookup = lookup(cli), hasFile = hasModel))
-    assertTrue(VoiceTranscription.needsModel("", lookup = lookup(cli), hasFile = hasModel))
-    assertTrue(VoiceTranscription.needsModel("/missing.bin", lookup = lookup(cli), hasFile = hasModel))
-    assertFalse(VoiceTranscription.needsModel(model, lookup = lookup(cli), hasFile = hasModel))
-    assertFalse(VoiceTranscription.needsModel("", lookup = lookup(python), hasFile = hasModel), "без whisper-cli дело не в модели")
+  fun `whisper-cpp without a model file set cannot be the fallback`() {
+    assertNull(VoiceTranscription.find("", lookup = lookup(cli), hasFile = hasModel))
+    assertNull(VoiceTranscription.find("/missing.bin", lookup = lookup(cli), hasFile = hasModel))
+    assertNull(VoiceTranscription.find(model, lookup = lookup(), hasFile = hasModel))
   }
 }

@@ -320,23 +320,7 @@ class VibeDoctorAction : AnAction({ t("doctor.action") }) {
 
     // Голос: чем расшифровывается и идёт ли расшифровка во время записи. Иначе «кнопка не
     // работает» выясняется первой же заметкой, а причин у этого три разных.
-    val voiceModel = com.vibe.agent.settings.VibeAgentSettings.voiceModelPath
-    val voiceLive = com.vibe.agent.voice.VoiceServer.configOf(voiceModel, null)
-    val voiceOnce = com.vibe.agent.voice.VoiceTranscription.find(voiceModel, wav = true)
-    lines.add(VibeDiagnosis.Line(
-      t("doctor.line.voice"),
-      when {
-        voiceLive != null || voiceOnce != null -> VibeDiagnosis.State.OK
-        com.vibe.agent.voice.VoiceTranscription.needsModel(voiceModel) -> VibeDiagnosis.State.WARN
-        else -> VibeDiagnosis.State.ABSENT
-      },
-      when {
-        voiceLive != null -> t("doctor.detail.voiceLive", "model" to java.io.File(voiceLive.model).name)
-        voiceOnce != null -> t("doctor.detail.voiceOnce", "tool" to java.io.File(voiceOnce.binary).name)
-        com.vibe.agent.voice.VoiceTranscription.needsModel(voiceModel) -> t("doctor.detail.voiceNoModel")
-        else -> t("doctor.detail.voiceNone")
-      },
-    ))
+    lines.add(voiceLine())
 
     // Not «is it up» but «does it answer by the spec»: the unit suites see the MCP server and the
     // HTTP policy separately, never the listener between them, and a header lost there breaks every
@@ -524,6 +508,38 @@ class VibeDoctorAction : AnAction({ t("doctor.action") }) {
   private fun labels() = object : VibeDiagnosis.Labels {
     override fun header(problems: Int, total: Int) = t("doctor.header", "problems" to problems, "total" to total)
     override val allGood: String get() = t("doctor.allGood")
+  }
+
+  /**
+   * The voice line: the engine the microphone would use right now, asked of the same choice the button asks
+   * The answer is the real one, including the case the button answers with a question about whisper (Python)
+   */
+  private fun voiceLine(): VibeDiagnosis.Line {
+    val manual = VibeAgentSettings.voiceModelPath
+    val language = VibeAgentSettings.telegramVoiceLanguage
+    val choice = com.vibe.agent.voice.VoiceEngines.choose(manual, language, VibeAgentSettings.voicePythonConsent)
+    val name = t("doctor.line.voice")
+    return when (choice) {
+      is com.vibe.agent.voice.VoiceEngines.Choice.Use -> {
+        val engine = choice.engine
+        val model = engine.model?.let { java.io.File(it).name }
+        val found = if (manual.isBlank() && model != null) " (" + t("doctor.detail.voiceFoundNote") + ")" else ""
+        val detail = when {
+          engine.live != null -> t("doctor.detail.voiceLive", "model" to model)
+          model != null -> t("doctor.detail.voiceOnce", "tool" to engine.name)
+          else -> t("doctor.detail.voicePython")
+        }
+        VibeDiagnosis.Line(name, VibeDiagnosis.State.OK, detail + found)
+      }
+      is com.vibe.agent.voice.VoiceEngines.Choice.AskPython ->
+        VibeDiagnosis.Line(name, VibeDiagnosis.State.WARN, t("doctor.detail.voiceAsk"))
+      is com.vibe.agent.voice.VoiceEngines.Choice.Unavailable -> when (val problem = choice.problem) {
+        is com.vibe.agent.voice.VoiceProblem.ModelMissing ->
+          VibeDiagnosis.Line(name, VibeDiagnosis.State.WARN, t("doctor.detail.voiceModelMissing", "path" to problem.path))
+        com.vibe.agent.voice.VoiceProblem.NoModel -> VibeDiagnosis.Line(name, VibeDiagnosis.State.WARN, t("doctor.detail.voiceNoModel"))
+        else -> VibeDiagnosis.Line(name, VibeDiagnosis.State.ABSENT, t("doctor.detail.voiceNone"))
+      }
+    }
   }
 
   /**

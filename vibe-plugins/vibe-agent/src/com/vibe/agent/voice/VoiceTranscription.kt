@@ -37,32 +37,23 @@ object VoiceTranscription {
   const val AUTO_LANGUAGE = "auto"
 
   /**
-   * The transcriber for this audio, or null when the machine has none that can run.
+   * The transcriber for a note that arrived as a file (a Telegram note is Opus in OGG), or null when the machine has none that can run.
    *
-   * A WAV from the IDE microphone goes to whisper.cpp when it is set up: the model is local, loaded
-   * once and fast. Anything else — a Telegram note is Opus in OGG — goes to openai-whisper first,
-   * which decodes through ffmpeg; whisper.cpp is the fallback there.
+   * openai-whisper first, which decodes through ffmpeg; whisper.cpp is the fallback, and only with a model file the person set.
+   * The microphone in the IDE does not come this way: its choice, with the consent that openai-whisper needs, is [VoiceEngines.choose].
    *
    * @param modelPath the whisper.cpp model from the settings; without one whisper.cpp cannot run.
    */
   fun find(
     modelPath: String?,
-    wav: Boolean,
     lookup: (String) -> String? = WatchTools::find,
     hasFile: (String) -> Boolean = { File(it).isFile },
   ): Transcriber? {
     val model = modelPath?.trim()?.takeIf { it.isNotEmpty() && hasFile(it) }
     val cpp = model?.let { m -> lookup(CPP_BINARY)?.let { Transcriber(it, Kind.WHISPER_CPP, m) } }
     val openai = lookup(OPENAI_BINARY)?.let { Transcriber(it, Kind.OPENAI_WHISPER) }
-    return if (wav) cpp ?: openai else openai ?: cpp
+    return openai ?: cpp
   }
-
-  /** whisper.cpp is installed but has no model file — the one case where the fix is a setting, not an install. */
-  fun needsModel(
-    modelPath: String?,
-    lookup: (String) -> String? = WatchTools::find,
-    hasFile: (String) -> Boolean = { File(it).isFile },
-  ): Boolean = lookup(CPP_BINARY) != null && modelPath?.trim()?.takeIf { it.isNotEmpty() }?.let(hasFile) != true
 
   /**
    * The command that writes a plain-text transcript next to the audio.

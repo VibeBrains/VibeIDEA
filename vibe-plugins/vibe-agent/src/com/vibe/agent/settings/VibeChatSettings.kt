@@ -138,6 +138,21 @@ object VibeChatSettings {
     get() = props.getValue(KEY_SOUND_PATH, "")
     set(value) = props.setValue(KEY_SOUND_PATH, value.trim(), "")
 
+  // --- sound of a recording ---
+  /** On by default: the person has to hear that the microphone is really open before the first word */
+  const val DEFAULT_VOICE_SOUND_ENABLED = true
+  const val DEFAULT_VOICE_SOUND_VOLUME = 70
+  private const val KEY_VOICE_SOUND_ENABLED = "vibe.chat.voiceSound.enabled"
+  private const val KEY_VOICE_SOUND_VOLUME = "vibe.chat.voiceSound.volume"
+
+  var voiceSoundEnabled: Boolean
+    get() = props.getBoolean(KEY_VOICE_SOUND_ENABLED, DEFAULT_VOICE_SOUND_ENABLED)
+    set(value) = props.setValue(KEY_VOICE_SOUND_ENABLED, value, DEFAULT_VOICE_SOUND_ENABLED)
+
+  var voiceSoundVolume: Int
+    get() = props.getInt(KEY_VOICE_SOUND_VOLUME, DEFAULT_VOICE_SOUND_VOLUME).coerceIn(0, 100)
+    set(value) = props.setValue(KEY_VOICE_SOUND_VOLUME, value.coerceIn(0, 100), DEFAULT_VOICE_SOUND_VOLUME)
+
   // --- chat journal ---
   /** Entries the chat journal keeps per project; the oldest leave when the buffer is over this */
   const val DEFAULT_JOURNAL_MAX_ENTRIES = 200

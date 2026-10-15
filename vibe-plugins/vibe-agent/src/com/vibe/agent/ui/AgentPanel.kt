@@ -93,6 +93,14 @@ import com.vibe.agent.ui.composer.PillButton
 import com.vibe.agent.ui.history.HistoryPopup
 import com.vibe.agent.ui.history.HistoryRail
 import com.vibe.agent.ui.history.ThreadListPanel
+import com.vibe.agent.voice.IdeVoiceEnv
+import com.vibe.agent.voice.MicrophoneSettings
+import com.vibe.agent.voice.VoiceAction
+import com.vibe.agent.voice.VoiceCue
+import com.vibe.agent.voice.VoiceDictation
+import com.vibe.agent.voice.VoiceEngines
+import com.vibe.agent.voice.VoiceFlow
+import com.vibe.agent.voice.VoiceNotice
 import com.intellij.ide.util.PropertiesComponent
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
@@ -109,6 +117,7 @@ import kotlinx.serialization.json.longOrNull
 import kotlinx.serialization.json.put
 import java.awt.BorderLayout
 import java.awt.Component
+import java.awt.FlowLayout
 import java.awt.Font
 import java.awt.KeyboardFocusManager
 import java.time.Instant
@@ -538,6 +547,8 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     composer.onRejectAll = { rejectAllEdits() }
     composer.onShowChanges = { showChangedFiles() }
     composer.onShowCommands = { showRunningCommands() }
+    composer.voiceActive = { voice.active }
+    composer.onVoiceCancel = { voice.cancel() }
     // Раз в несколько секунд: процессы кончаются сами, и подпись обязана это замечать без хода.
     commandsTimer.start()
     composer.onUsageClick = { showContextPopup() }
@@ -627,6 +638,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     llmClient.cancel()
     // A recording left open would keep the microphone on behind a closed panel
     voice.dispose()
+    voiceFace.dispose()
     directTools.close()
     composer.queue.clear()
     turnInFlight.set(false)
@@ -2571,31 +2583,50 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     }
   }
 
+  /** What the microphone button looks like at each state of a dictation; its pulse follows the loudness of the recording */
+  private val voiceFace: com.vibe.agent.ui.composer.VoicePillFace =
+    com.vibe.agent.ui.composer.VoicePillFace(voicePill, level = { voice.level })
+
   /**
    * The dictation behind the microphone button: opening, recording and transcribing all run off the UI thread
    * What it cannot do it says in the feed (and in the journal when the person has to act): see [com.vibe.agent.voice.VoiceProblem]
+   * It reads nothing of the agent's session, and the agent reads nothing of it
    */
-  private val voice = com.vibe.agent.voice.VoiceDictation(object : com.vibe.agent.voice.VoiceDictation.Host {
+  private val voice: VoiceDictation = VoiceDictation(object : VoiceDictation.Host {
     override val disposed: Boolean get() = this@AgentPanel.disposed
     override val modelPath: String get() = VibeAgentSettings.voiceModelPath
     override val language: String get() = VibeAgentSettings.telegramVoiceLanguage
 
-    override fun face(state: com.vibe.agent.voice.VoiceFlow.State) {
-      voicePill.toolTipText = com.vibe.agent.voice.VoiceFlow.tooltip(state)
-      voicePill.icon = if (com.vibe.agent.voice.VoiceFlow.micOn(state)) VibeIcons.MIC_ON else VibeIcons.MIC
-      voicePill.repaint()
-    }
+    override var pythonConsent: Boolean
+      get() = VibeAgentSettings.voicePythonConsent
+      set(value) { VibeAgentSettings.voicePythonConsent = value }
+
+    override fun face(state: VoiceFlow.State) = voiceFace.show(state)
 
     override fun status(text: String?) = composer.setVoicePreview(text)
 
-    override fun notice(notice: com.vibe.agent.voice.VoiceNotice) {
+    override fun notice(notice: VoiceNotice) {
       // The person asked for this and is looking at the feed; the journal keeps what they have to act on
-      feedNotice(notice.feedText)
+      val fixes = notice.actions.filter { it != VoiceAction.MICROPHONE_SETTINGS || MicrophoneSettings.available() }
+      feedNotice(notice.feedText, fixes.map { action -> action.label to { runVoiceAction(action) } })
       if (notice.level == WARNING) systemLine(notice.text, MISC, WARNING, page = notice.page)
     }
 
     override fun deliver(text: String) = putIntoComposer(text)
+
+    override fun cue(cue: VoiceCue.Kind) = IdeVoiceEnv.playCue(cue)
+
+    override fun askPython(offer: VoiceEngines.Choice.AskPython) = VoiceChoice.ask(project, offer.cliInstalled)
   })
+
+  /** What a button under a line about the dictation does */
+  private fun runVoiceAction(action: VoiceAction) {
+    when (action) {
+      VoiceAction.MICROPHONE_SETTINGS -> MicrophoneSettings.open()
+      VoiceAction.CHOOSE_MODEL -> com.vibe.agent.settings.VibeSettingsPages.open(project, SettingsPage.CHAT)
+      VoiceAction.RECORD_AGAIN -> voice.start()
+    }
+  }
 
   override fun putIntoComposer(text: String) {
     SwingUtilities.invokeLater {
@@ -2800,7 +2831,11 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
         }
       }
       catch (e: Exception) {
-        turnNote(t("chat.error", "reason" to e.message))
+        // An agent failure reads as the agent's and in words: a future waited with get() brings the class name in its message
+        turnNote(
+          if (t is ChatTarget.Agent) t("chat.agentError", "reason" to com.vibe.agent.acp.AgentFailure.reasonOf(e))
+          else t("chat.error", "reason" to e.message)
+        )
         finishTurn()
       }
     }
@@ -3471,7 +3506,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
         val secs = (System.currentTimeMillis() - startedAt) / 1000.0
         if (error != null) {
           finishAgentBubble(secs, t("chat.failed"))
-          feedNotice(t("chat.error", "reason" to error.message))
+          feedNotice(t("chat.agentError", "reason" to com.vibe.agent.acp.AgentFailure.reasonOf(error)))
           audit?.append(AuditEvent(System.currentTimeMillis(), AuditEvent.Action.REPLY, ok = false, actor = agentActor(),
             model = "acp/${t.config.name}", latencyMs = System.currentTimeMillis() - startedAt,
             meta = mapOf("error" to (error.message ?: "error"))))
@@ -6418,6 +6453,23 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     }
   }
 
+  /** A line of the feed with buttons under it for what the person can do about it; the buttons are the feed's own pills, not links */
+  private fun feedNotice(text: String, actions: List<Pair<String, () -> Unit>>) {
+    if (actions.isEmpty()) return feedNotice(text)
+    SwingUtilities.invokeLater {
+      messages.add(metaArea(text, Font.PLAIN, 10f).apply {
+        alignmentX = Component.LEFT_ALIGNMENT
+        border = JBUI.Borders.empty(2, 4)
+      })
+      messages.add(JPanel(FlowLayout(FlowLayout.LEFT, JBUI.scale(FEED_ACTION_GAP), 0)).apply {
+        isOpaque = false
+        alignmentX = Component.LEFT_ALIGNMENT
+        actions.forEach { (label, run) -> add(PillButton(text = label, outlined = true) { run() }) }
+      })
+      revalidateScroll()
+    }
+  }
+
   /**
    * Служебная строка ленты — текстом, а не подписью.
    *
@@ -7242,6 +7294,9 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
 
     /** Exit code of a question closed because its request was withdrawn or the turn stopped: no option has it */
     private const val DIALOG_DISMISSED = -1
+
+    /** The gap between two buttons under a line of the feed, in logical pixels */
+    const val FEED_ACTION_GAP = 6
 
     /**
      * Said to a model whose call came as text that did not parse; model-facing, so plain and in English

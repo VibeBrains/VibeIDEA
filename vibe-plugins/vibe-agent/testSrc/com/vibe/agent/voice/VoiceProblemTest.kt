@@ -20,6 +20,7 @@ class VoiceProblemTest {
     VoiceProblem.SaveFailed("disk full"),
     VoiceProblem.LimitReached(5),
     VoiceProblem.NoModel,
+    VoiceProblem.ModelMissing("/models/ggml-gone.bin"),
     VoiceProblem.NoTranscriber,
     VoiceProblem.ServerFailed("exit 1", afterStop = false),
     VoiceProblem.ServerFailed("exit 1", afterStop = true),
@@ -29,6 +30,7 @@ class VoiceProblemTest {
     VoiceProblem.Empty,
     VoiceProblem.Discarded("да"),
     VoiceProblem.Cancelled,
+    VoiceProblem.RecordingCancelled,
   )
 
   @Test
@@ -44,6 +46,7 @@ class VoiceProblemTest {
   fun `only what the person has to act on is a warning`() {
     val informational = setOf(
       VoiceProblem.TooShort, VoiceProblem.LimitReached(5), VoiceProblem.Empty, VoiceProblem.Discarded("да"), VoiceProblem.Cancelled,
+      VoiceProblem.RecordingCancelled,
     )
     everyProblem.forEach { problem ->
       val expected = if (problem in informational) JournalLevel.INFO else JournalLevel.WARNING
@@ -53,7 +56,9 @@ class VoiceProblemTest {
 
   @Test
   fun `a problem the settings fix points to the chat page, and the others do not`() {
-    val withPage = setOf(VoiceProblem.NoModel, VoiceProblem.NoTranscriber, VoiceProblem.TimedOut(180))
+    val withPage = setOf(
+      VoiceProblem.NoModel, VoiceProblem.ModelMissing("/models/ggml-gone.bin"), VoiceProblem.NoTranscriber, VoiceProblem.TimedOut(180),
+    )
     everyProblem.forEach { problem ->
       assertEquals(if (problem in withPage) SettingsPage.CHAT else null, problem.notice().page, problem.toString())
     }
@@ -70,6 +75,7 @@ class VoiceProblemTest {
     assertTrue("no such file" in VoiceProblem.TranscriberNotStarted("no such file").notice().text)
     assertTrue("180" in VoiceProblem.TimedOut(180).notice().text)
     assertTrue("5" in VoiceProblem.LimitReached(5).notice().text)
+    assertTrue("/models/ggml-gone.bin" in VoiceProblem.ModelMissing("/models/ggml-gone.bin").notice().text)
   }
 
   @Test
@@ -94,11 +100,44 @@ class VoiceProblemTest {
   }
 
   @Test
-  fun `the feed line carries the source label that the journal line leaves to its category`() {
+  fun `the feed line carries a label of its own, which is not the one an agent error wears`() {
     val notice = VoiceProblem.TooShort.notice()
-    assertTrue(notice.feedText.startsWith("[голос] "), notice.feedText)
+    assertTrue(notice.feedText.startsWith("🎙 голос: "), notice.feedText)
     assertTrue(notice.feedText.endsWith(notice.text))
     assertTrue("[" !in notice.text, "the journal line has a category and needs no label: ${notice.text}")
+    assertTrue("[ошибка" !in notice.feedText, "the bracket label is the agent's: ${notice.feedText}")
+  }
+
+  @Test
+  fun `a problem the person can fix comes with the button that fixes it`() {
+    fun actions(problem: VoiceProblem) = problem.notice().actions
+    assertEquals(listOf(VoiceAction.MICROPHONE_SETTINGS, VoiceAction.RECORD_AGAIN), actions(VoiceProblem.Silence))
+    assertEquals(listOf(VoiceAction.MICROPHONE_SETTINGS, VoiceAction.RECORD_AGAIN), actions(VoiceProblem.NoMicrophone("busy")))
+    assertEquals(listOf(VoiceAction.CHOOSE_MODEL), actions(VoiceProblem.NoModel))
+    assertEquals(listOf(VoiceAction.CHOOSE_MODEL), actions(VoiceProblem.ModelMissing("/x.bin")))
+    assertEquals(listOf(VoiceAction.CHOOSE_MODEL, VoiceAction.RECORD_AGAIN), actions(VoiceProblem.TimedOut(180)))
+    assertEquals(listOf(VoiceAction.RECORD_AGAIN), actions(VoiceProblem.TranscriberFailed(1, "boom")))
+    assertEquals(listOf(VoiceAction.RECORD_AGAIN), actions(VoiceProblem.RecordingBroke("gone")))
+    assertTrue(actions(VoiceProblem.Cancelled).isEmpty(), "what the person did on purpose needs no fix")
+    assertTrue(actions(VoiceProblem.TooShort).isEmpty())
+  }
+
+  @Test
+  fun `every action has a label`() {
+    VoiceAction.entries.forEach { assertTrue(it.label.isNotBlank() && !it.label.startsWith("chat.voice"), "no label for $it: ${it.label}") }
+    assertEquals(VoiceAction.entries.size, VoiceAction.entries.map { it.label }.toSet().size)
+  }
+
+  @Test
+  fun `a model that is not found says where it was looked for and what to do`() {
+    val text = VoiceProblem.NoModel.notice().text
+    assertTrue("~/.cache/whisper.cpp" in text && "Homebrew" in text && "настройках чата" in text, text)
+  }
+
+  @Test
+  fun `dropping the recording and dropping the transcription read differently`() {
+    assertNotEquals(VoiceProblem.RecordingCancelled.notice().text, VoiceProblem.Cancelled.notice().text)
+    assertTrue("запись" in VoiceProblem.RecordingCancelled.notice().text)
   }
 
   @Test
@@ -121,12 +160,6 @@ class VoiceProblemTest {
     assertEquals(VoiceProblem.TranscriberFailed(0, "no ffmpeg"), VoiceProblem.ofRun(VoiceTranscription.Once.Failed(0, "no ffmpeg")))
     assertEquals(VoiceProblem.TranscriberNotStarted("nope"), VoiceProblem.ofRun(VoiceTranscription.Once.NotStarted("nope")))
     assertEquals(VoiceProblem.TimedOut(180), VoiceProblem.ofRun(VoiceTranscription.Once.TimedOut(180)))
-  }
-
-  @Test
-  fun `a missing model is told apart from a missing program`() {
-    assertEquals(VoiceProblem.NoModel, VoiceProblem.missingTranscriber("", needsModel = true))
-    assertEquals(VoiceProblem.NoTranscriber, VoiceProblem.missingTranscriber("", needsModel = false))
   }
 
   @Test

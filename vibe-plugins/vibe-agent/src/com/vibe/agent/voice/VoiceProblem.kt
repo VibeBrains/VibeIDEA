@@ -11,8 +11,35 @@ import com.vibe.agent.journal.SettingsPage
  * [text] is the journal line, without a source label: the journal has its category
  * [feedText] is the same under the label of the feed, where there is no category to say where it came from
  */
-data class VoiceNotice(val text: String, val level: JournalLevel, val page: SettingsPage? = null) {
+data class VoiceNotice(
+  val text: String,
+  val level: JournalLevel,
+  val page: SettingsPage? = null,
+  val actions: List<VoiceAction> = emptyList(),
+) {
   val feedText: String get() = t("chat.voice.feedLine", "text" to text)
+}
+
+/**
+ * What the person can do about a problem, offered as a button under its line in the feed
+ * A problem that tells them to do something and gives no way to do it is half an answer
+ */
+enum class VoiceAction {
+  /** The page of the system where the microphone is allowed */
+  MICROPHONE_SETTINGS,
+
+  /** The chat settings, where the model of whisper.cpp is set */
+  CHOOSE_MODEL,
+
+  /** Another recording: the one that failed is gone */
+  RECORD_AGAIN;
+
+  val label: String
+    get() = when (this) {
+      MICROPHONE_SETTINGS -> t("chat.voice.action.microphone")
+      CHOOSE_MODEL -> t("chat.voice.action.model")
+      RECORD_AGAIN -> t("chat.voice.action.again")
+    }
 }
 
 /**
@@ -30,6 +57,9 @@ sealed interface VoiceProblem {
   data class SaveFailed(val reason: String) : VoiceProblem
   data class LimitReached(val minutes: Long) : VoiceProblem
   data object NoModel : VoiceProblem
+
+  /** The path typed in the settings has no file behind it */
+  data class ModelMissing(val path: String) : VoiceProblem
   data object NoTranscriber : VoiceProblem
 
   /**
@@ -48,29 +78,39 @@ sealed interface VoiceProblem {
   data class Discarded(val text: String) : VoiceProblem
   data object Cancelled : VoiceProblem
 
+  /** The person dropped the recording itself, before there was anything to transcribe */
+  data object RecordingCancelled : VoiceProblem
+
   fun notice(): VoiceNotice = when (this) {
-    is NoMicrophone -> VoiceNotice(t("chat.voice.noMicrophone", "reason" to reason), JournalLevel.WARNING)
-    Silence -> VoiceNotice(t("chat.voice.silent"), JournalLevel.WARNING)
+    is NoMicrophone -> VoiceNotice(t("chat.voice.noMicrophone", "reason" to reason), JournalLevel.WARNING, actions = MICROPHONE_FIXES)
+    Silence -> VoiceNotice(t("chat.voice.silent"), JournalLevel.WARNING, actions = MICROPHONE_FIXES)
     TooShort -> VoiceNotice(t("chat.voice.tooShort"), JournalLevel.INFO)
-    is RecordingBroke -> VoiceNotice(t("chat.voice.recordingBroke", "reason" to reason), JournalLevel.WARNING)
-    is SaveFailed -> VoiceNotice(t("chat.voice.saveFailed", "reason" to reason), JournalLevel.WARNING)
+    is RecordingBroke -> VoiceNotice(t("chat.voice.recordingBroke", "reason" to reason), JournalLevel.WARNING, actions = AGAIN)
+    is SaveFailed -> VoiceNotice(t("chat.voice.saveFailed", "reason" to reason), JournalLevel.WARNING, actions = AGAIN)
     is LimitReached -> VoiceNotice(t("chat.voice.limitReached", "minutes" to minutes), JournalLevel.INFO)
-    NoModel -> VoiceNotice(t("chat.voice.noModel"), JournalLevel.WARNING, SettingsPage.CHAT)
+    NoModel -> VoiceNotice(t("chat.voice.noModel"), JournalLevel.WARNING, SettingsPage.CHAT, MODEL_FIX)
+    is ModelMissing -> VoiceNotice(t("chat.voice.modelMissing", "path" to path), JournalLevel.WARNING, SettingsPage.CHAT, MODEL_FIX)
     NoTranscriber -> VoiceNotice(t("chat.voice.noTranscriber"), JournalLevel.WARNING, SettingsPage.CHAT)
     is ServerFailed -> VoiceNotice(
       if (afterStop) t("chat.voice.serverFailedFinal", "reason" to reason) else t("chat.voice.serverFailed", "reason" to reason),
       JournalLevel.WARNING,
     )
-    is TranscriberFailed -> VoiceNotice(t("chat.voice.transcriberFailed", "code" to exitCode, "tail" to tail), JournalLevel.WARNING)
-    is TranscriberNotStarted -> VoiceNotice(t("chat.voice.transcriberNotStarted", "reason" to reason), JournalLevel.WARNING)
-    is TimedOut -> VoiceNotice(t("chat.voice.timedOut", "seconds" to seconds), JournalLevel.WARNING, SettingsPage.CHAT)
+    is TranscriberFailed ->
+      VoiceNotice(t("chat.voice.transcriberFailed", "code" to exitCode, "tail" to tail), JournalLevel.WARNING, actions = AGAIN)
+    is TranscriberNotStarted ->
+      VoiceNotice(t("chat.voice.transcriberNotStarted", "reason" to reason), JournalLevel.WARNING, actions = AGAIN)
+    is TimedOut -> VoiceNotice(t("chat.voice.timedOut", "seconds" to seconds), JournalLevel.WARNING, SettingsPage.CHAT, MODEL_FIX + AGAIN)
     Empty -> VoiceNotice(t("chat.voice.empty"), JournalLevel.INFO)
     is Discarded -> VoiceNotice(t("chat.voice.discarded", "text" to text, "min" to VoiceTranscription.MIN_TASK_CHARS), JournalLevel.INFO)
     Cancelled -> VoiceNotice(t("chat.voice.cancelled"), JournalLevel.INFO)
+    RecordingCancelled -> VoiceNotice(t("chat.voice.recordingCancelled"), JournalLevel.INFO)
   }
 
   companion object {
     private const val MS_PER_MINUTE = 60_000L
+    private val MICROPHONE_FIXES = listOf(VoiceAction.MICROPHONE_SETTINGS, VoiceAction.RECORD_AGAIN)
+    private val MODEL_FIX = listOf(VoiceAction.CHOOSE_MODEL)
+    private val AGAIN = listOf(VoiceAction.RECORD_AGAIN)
 
     /** The recording hit its cap, which the person is told in minutes */
     fun limitReached(): LimitReached = LimitReached(VoiceCapture.MAX_MS / MS_PER_MINUTE)
@@ -91,10 +131,6 @@ sealed interface VoiceProblem {
       is VoiceTranscription.Once.TimedOut -> TimedOut(once.seconds)
       VoiceTranscription.Once.Cancelled -> null
     }
-
-    /** Why there is no transcriber: a missing model file is fixed in the settings, a missing program by installing it */
-    fun missingTranscriber(modelPath: String?, needsModel: Boolean = VoiceTranscription.needsModel(modelPath)): VoiceProblem =
-      if (needsModel) NoModel else NoTranscriber
 
     /** Null when [transcript] is a task; otherwise why it was not put into the draft */
     fun ofTranscript(transcript: String): VoiceProblem? =
