@@ -2858,10 +2858,8 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
       }
       catch (e: Exception) {
         // An agent failure reads as the agent's and in words: a future waited with get() brings the class name in its message
-        turnNote(
-          if (t is ChatTarget.Agent) t("chat.agentError", "reason" to com.vibe.agent.acp.AgentFailure.reasonOf(e))
-          else t("chat.error", "reason" to e.message)
-        )
+        if (t is ChatTarget.Agent) turnNote(agentErrorText(e), agentErrorFixes(e))
+        else turnNote(t("chat.error", "reason" to e.message))
         finishTurn()
       }
     }
@@ -3532,7 +3530,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
         val secs = (System.currentTimeMillis() - startedAt) / 1000.0
         if (error != null) {
           finishAgentBubble(secs, t("chat.failed"))
-          feedNotice(t("chat.agentError", "reason" to com.vibe.agent.acp.AgentFailure.reasonOf(error)))
+          feedNotice(agentErrorText(error), agentErrorFixes(error))
           audit?.append(AuditEvent(System.currentTimeMillis(), AuditEvent.Action.REPLY, ok = false, actor = agentActor(),
             model = "acp/${t.config.name}", latencyMs = System.currentTimeMillis() - startedAt,
             meta = mapOf("error" to (error.message ?: "error"))))
@@ -4397,7 +4395,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
         if (disposed || turnInFlight.get() || currentThreadId != threadId) return@executeOnPooledThread
         runCatching { ensureClient(config, threadId) }
           .onSuccess { showSessionPickers(it) }
-          .onFailure { systemLine(t("chat.reconnectFailed", "reason" to (it.message ?: it.javaClass.simpleName)), AGENTS, WARNING) }
+          .onFailure { systemLine(t("chat.reconnectFailed", "reason" to com.vibe.agent.acp.AgentFailure.reasonOf(it)), AGENTS, WARNING) }
       }
     }
   }
@@ -4413,7 +4411,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     val c = client ?: return
     ApplicationManager.getApplication().executeOnPooledThread {
       runCatching { c.closeSession(sid).get(VibeAgentSettings.handshakeTimeoutSec.toLong(), TimeUnit.SECONDS) }
-        .onFailure { systemLine("[acp] session/close: ${(it.cause ?: it).message}", AGENTS) }
+        .onFailure { systemLine("session/close: ${(it.cause ?: it).message}", AGENTS) }
     }
   }
 
@@ -4646,7 +4644,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
         ensureClient(config, threadId)
       }
       catch (e: Exception) {
-        systemLine(t("chat.reconnectFailed", "reason" to (e.message ?: e.javaClass.simpleName)), AGENTS, WARNING)
+        systemLine(t("chat.reconnectFailed", "reason" to com.vibe.agent.acp.AgentFailure.reasonOf(e)), AGENTS, WARNING)
       }
     }
     return true
@@ -6413,14 +6411,25 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     }
   }
 
+  /** What the feed says about a failed agent request: in words, with the cause taken out of the wrappers */
+  private fun agentErrorText(error: Throwable): String =
+    t("chat.agentError", "reason" to com.vibe.agent.acp.AgentFailure.reasonOf(error))
+
+  /** The buttons under that line: a missing Node tool is fixed on the Node interpreter's page */
+  private fun agentErrorFixes(error: Throwable): List<Pair<String, () -> Unit>> =
+    if (com.vibe.agent.acp.AgentFailure.needsNodeSettings(error)) {
+      listOf(t("chat.agentLaunch.openNode") to { com.vibe.agent.node.NodeSettings.open(project) })
+    } else emptyList()
+
   /**
    * A line of the feed that also stays in the thread.
    *
    * [feedNotice] draws and forgets, which is right for chatter and wrong for the reason a turn
    * ended: after a restart the thread held the question and no trace of what happened to it.
+   * The [actions] are buttons under the line; they are drawn now and not kept with it.
    */
-  private fun turnNote(text: String) {
-    feedNotice(text)
+  private fun turnNote(text: String, actions: List<Pair<String, () -> Unit>> = emptyList()) {
+    feedNotice(text, actions)
     val threadId = turnThreadId ?: currentThreadId
     if (threadId.isNotEmpty()) history.append(threadId, ChatMessageRecord(Role.OTHER, text, at = nowIso()))
   }

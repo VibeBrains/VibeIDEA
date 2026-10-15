@@ -2,6 +2,7 @@
 package com.vibe.lsp
 
 import com.redhat.devtools.lsp4ij.server.ProcessStreamConnectionProvider
+import com.vibe.agent.node.NodeRuntime
 
 /**
  * Окружение процесса языкового сервера: интерпретатор ноды первым в `PATH`.

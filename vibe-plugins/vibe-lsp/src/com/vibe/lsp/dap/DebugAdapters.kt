@@ -1,7 +1,7 @@
 // Copyright 2026 VibeBrains. Use of this source code is governed by the GNU AGPL-3.0 license.
 package com.vibe.lsp.dap
 
-import com.vibe.lsp.NodeRuntime
+import com.vibe.agent.node.NodeRuntime
 import com.vibe.lsp.ServerBinaries
 import java.nio.file.Files
 import java.nio.file.Path

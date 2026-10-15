@@ -5,6 +5,8 @@ import com.intellij.openapi.actionSystem.AnAction
 import com.intellij.openapi.actionSystem.AnActionEvent
 import com.intellij.openapi.ui.Messages
 import com.vibe.agent.i18n.VibeI18n.t
+import com.vibe.agent.node.NodeInterpreter
+import com.vibe.agent.node.NodeRuntime
 
 /**
  * Tools → "VibeIDEA: языковые серверы": says, in one dialog, whether the servers that do the

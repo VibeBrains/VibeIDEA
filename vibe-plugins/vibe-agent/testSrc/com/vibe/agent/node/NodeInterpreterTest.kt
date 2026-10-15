@@ -1,5 +1,5 @@
 // Copyright 2026 VibeBrains. Use of this source code is governed by the GNU AGPL-3.0 license.
-package com.vibe.lsp
+package com.vibe.agent.node
 
 import java.nio.file.Path
 import kotlin.test.Test

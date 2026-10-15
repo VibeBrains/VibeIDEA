@@ -1,6 +1,7 @@
 // Copyright 2026 VibeBrains. Use of this source code is governed by the GNU AGPL-3.0 license.
-package com.vibe.lsp
+package com.vibe.agent.node
 
+import com.vibe.agent.util.ExecutableNames
 import java.io.File
 import java.nio.file.Path
 
@@ -26,7 +27,7 @@ object NodeRuntime {
     home = Path.of(System.getProperty("user.home").orEmpty()),
     projectBase = projectBase?.let { Path.of(it) },
     shellPath = shellPath(),
-    windows = com.vibe.agent.util.ExecutableNames.isWindows(),
+    windows = ExecutableNames.isWindows(),
     configured = NodeInterpreter.stored(),
   )
 
@@ -41,7 +42,10 @@ object NodeRuntime {
    * notice that names the setting is shown by [VibeLspMissingServerNotifier].
    */
   fun command(projectBase: String?, vararg args: String): List<String> =
-    listOf(path(projectBase) ?: NodeInterpreter.binaryName(com.vibe.agent.util.ExecutableNames.isWindows())) + args
+    listOf(path(projectBase) ?: NodeInterpreter.binaryName(ExecutableNames.isWindows())) + args
+
+  /** The folder of the interpreter to run, or null when there is none; `npx` and `npm` live beside `node`. */
+  fun binDir(projectBase: String?): String? = path(projectBase)?.let { Path.of(it).parent?.toString() }
 
   /**
    * Environment for a server process: the interpreter's folder first in PATH.
@@ -50,8 +54,7 @@ object NodeRuntime {
    * environment, which is exactly what it had before.
    */
   fun childEnvironment(projectBase: String?): Map<String, String> {
-    val node = path(projectBase) ?: return emptyMap()
-    val bin = Path.of(node).parent?.toString() ?: return emptyMap()
+    val bin = binDir(projectBase) ?: return emptyMap()
     val inherited = shellPath().joinToString(File.pathSeparator)
     val existing = System.getenv("PATH").orEmpty()
     val parts = listOf(bin, inherited, existing).filter { it.isNotBlank() }

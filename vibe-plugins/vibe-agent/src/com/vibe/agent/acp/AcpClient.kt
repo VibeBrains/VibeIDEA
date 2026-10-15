@@ -21,8 +21,6 @@ import kotlinx.serialization.json.put
 import java.io.BufferedReader
 import java.io.BufferedWriter
 import java.io.File
-import java.nio.file.Files
-import java.nio.file.Path
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicLong
@@ -161,21 +159,19 @@ class AcpClient(
 
   fun start() {
     check(process == null) { "already started" }
-    val cmd = ArrayList<String>()
-    cmd.add(resolveBinary(config.command))
-    cmd.addAll(config.args)
-    val pb = ProcessBuilder(cmd)
+    // The login shell's environment and the Node interpreter set in the IDE, found before the start (AgentLaunch):
+    // a GUI app on macOS does not inherit the shell PATH, and a missing program is told to the person in words
+    val ready = AgentLaunch.readyHere(config.command, workingDir)
+    val pb = ProcessBuilder(listOf(ready.executable) + config.args)
     workingDir?.let { pb.directory(File(it)) }
-    // GUI apps on macOS do not inherit the shell PATH — extend it with well-known dirs.
-    val path = (pb.environment()["PATH"] ?: "") + File.pathSeparator + EXTRA_PATH
-    pb.environment()["PATH"] = path
+    pb.environment().putAll(ready.overlay)
     // The route first and the entry's `env` after it: a variable the record sets by hand is the person's final word
-    val route = AgentProxyRoute.of(config.name) { handler.onProtocolWarning("[acp] $it", com.vibe.agent.journal.SettingsPage.AGENT) }
+    val route = AgentProxyRoute.of(config.name) { handler.onProtocolWarning(it, com.vibe.agent.journal.SettingsPage.AGENT) }
     AgentProxyEnv.apply(pb.environment(), route)
     when (route) {
-      AgentProxyEnv.Route.Direct -> handler.onProtocolLog("[acp] " + com.vibe.agent.i18n.VibeI18n.t("acp.proxy.direct"))
+      AgentProxyEnv.Route.Direct -> handler.onProtocolLog(com.vibe.agent.i18n.VibeI18n.t("acp.proxy.direct"))
       is AgentProxyEnv.Route.Through ->
-        handler.onProtocolLog("[acp] " + com.vibe.agent.i18n.VibeI18n.t("acp.proxy.through", "proxy" to AgentProxyEnv.masked(route.url)))
+        handler.onProtocolLog(com.vibe.agent.i18n.VibeI18n.t("acp.proxy.through", "proxy" to AgentProxyEnv.masked(route.url)))
       AgentProxyEnv.Route.Inherit -> Unit
     }
     // `${secret:NAME}` in the agent's env is resolved HERE, at start, from the OS keychain and
@@ -187,8 +183,8 @@ class AcpClient(
     // An empty value takes the variable away rather than leaving it set and empty (AgentEnvironment).
     AgentEnvironment.apply(pb.environment(), config.env) { value -> secrets(value) }
     val used = config.env.values.flatMap { com.vibe.agent.security.SecretRefs.names(it) }.distinct()
-    if (used.isNotEmpty()) handler.onProtocolLog("[acp] secrets injected into the agent environment: " + used.joinToString(","))
-    val p = pb.start()
+    if (used.isNotEmpty()) handler.onProtocolLog("secrets injected into the agent environment: " + used.joinToString(","))
+    val p = AgentLaunch.start(pb, config.command)
     process = p
     writer = p.outputStream.bufferedWriter()
     Thread({ readLoop(p.inputStream.bufferedReader()) }, "vibe-acp-reader").apply { isDaemon = true }.start()
@@ -360,7 +356,7 @@ class AcpClient(
     } else {
       request("session/resume", JsonObject(params + mapOf("sessionId" to JsonPrimitive(resumable))))
         .exceptionallyCompose {
-          handler.onProtocolLog("[acp] session/resume refused, opening a new session: ${it.message}")
+          handler.onProtocolLog("session/resume refused, opening a new session: ${it.message}")
           request("session/new", params)
         }
     }
@@ -510,7 +506,7 @@ class AcpClient(
   private fun agreedVersion(initResult: JsonElement): Throwable? {
     val answered = (initResult as? JsonObject)?.get("protocolVersion")?.jsonPrimitive?.intOrNull ?: return null
     if (answered == PROTOCOL_VERSION) return null
-    handler.onProtocolLog("[acp] protocolVersion mismatch: we speak $PROTOCOL_VERSION, the agent answered $answered")
+    handler.onProtocolLog("protocolVersion mismatch: we speak $PROTOCOL_VERSION, the agent answered $answered")
     return IllegalStateException(
       t("acp.error.protocolVersion", "agent" to answered.toString(), "ours" to PROTOCOL_VERSION.toString())
     )
@@ -801,24 +797,9 @@ class AcpClient(
     /** JSON-RPC error of a withdrawn request */
     private const val REQUEST_CANCELLED = -32800
 
-    private val EXTRA_PATH: String = listOf(
-      System.getProperty("user.home") + "/.local/bin",
-      System.getProperty("user.home") + "/.npm-global/bin",
-      "/opt/homebrew/bin",
-      "/usr/local/bin",
-    ).joinToString(File.pathSeparator)
-
-    internal fun resolveBinary(binary: String): String {
-      if (com.vibe.agent.util.ExecutableNames.looksLikePath(binary)) return binary
-      val dirs = (System.getenv("PATH")?.split(File.pathSeparator).orEmpty()) + EXTRA_PATH.split(File.pathSeparator)
-      // Имена с расширением идут первыми: на Windows рядом с `npx.cmd` лежит `npx` — скрипт для
-      // Git Bash, который `Files.isExecutable` считает исполняемым, а CreateProcess не запускает
-      // («error=193, не является приложением Win32»). Поймано на живой машине.
-      for (name in com.vibe.agent.util.ExecutableNames.candidates(binary)) {
-        dirs.asSequence().map { Path.of(it, name) }.firstOrNull { Files.isExecutable(it) }?.let { return it.toString() }
-      }
-      return binary
-    }
+    /** The file that would run for [binary], or [binary] itself when there is none; the search is [AgentLaunch]'s */
+    internal fun resolveBinary(binary: String): String =
+      (AgentLaunch.planHere(binary, null) as? AgentLaunch.Plan.Ready)?.executable ?: binary
 
     /**
      * Есть ли чем запустить такую команду — тем же поиском, каким её потом и запустят.
@@ -827,9 +808,6 @@ class AcpClient(
      * пути резолвер возвращает его же, и такое сравнение молча объявляло бы отсутствующий файл
      * найденным. Один ответ в одном месте.
      */
-    fun isAvailable(binary: String): Boolean {
-      if (com.vibe.agent.util.ExecutableNames.looksLikePath(binary)) return Files.isExecutable(Path.of(binary))
-      return resolveBinary(binary) != binary
-    }
+    fun isAvailable(binary: String): Boolean = AgentLaunch.planHere(binary, null) is AgentLaunch.Plan.Ready
   }
 }

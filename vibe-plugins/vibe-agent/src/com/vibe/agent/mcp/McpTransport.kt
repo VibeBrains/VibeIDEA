@@ -138,13 +138,16 @@ class McpStdioTransport(
 
     /** Starts the server process; its stderr is discarded — it is a log, not a protocol. */
     fun start(command: String, args: List<String>, workingDir: Path?, env: Map<String, String> = emptyMap()): McpStdioTransport {
-      val process = ProcessBuilder(listOf(command) + args)
+      // Found with the login shell's environment, as the agents are: an MCP server's `npx` is as invisible to a GUI app as the agent's
+      val ready = com.vibe.agent.acp.AgentLaunch.readyHere(command, workingDir?.toString())
+      val builder = ProcessBuilder(listOf(ready.executable) + args)
         .apply { workingDir?.let { directory(it.toFile()) } }
+        .apply { environment().putAll(ready.overlay) }
         // Переменные окружения нужны чужим серверам: почти каждый просит ключ именно так. Своё
         // окружение процесса IDE при этом СОХРАНЯЕТСЯ — сервер без PATH не найдёт даже node.
         .apply { if (env.isNotEmpty()) environment().putAll(env) }
         .redirectError(ProcessBuilder.Redirect.DISCARD)
-        .start()
+      val process = com.vibe.agent.acp.AgentLaunch.start(builder, command)
       return McpStdioTransport(process.inputStream, process.outputStream) { process.destroy() }
     }
   }

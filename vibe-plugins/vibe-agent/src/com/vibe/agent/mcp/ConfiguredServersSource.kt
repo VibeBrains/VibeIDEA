@@ -89,7 +89,7 @@ class ConfiguredServersSource(
             }
           }
         }.getOrElse { error ->
-          failures += entry.name + ": " + (error.message ?: error.javaClass.simpleName)
+          failures += entry.name + ": " + com.vibe.agent.acp.AgentFailure.reasonOf(error)
           emptyList()
         }
         specs += started

@@ -87,6 +87,8 @@ jvm_library(
         "//platform/analysis-api:analysis",
         # Провайдер бандлов реализует интерфейс TextMate — без него тест не соберётся.
         "//plugins/textmate",
+        # The id of the Node interpreter page, which the agent module opens, is held against this module's plugin.xml.
+        "//vibe-plugins/vibe-agent",
     ],
     runtime_deps = [
         # do not sort,

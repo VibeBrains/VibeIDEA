@@ -7,6 +7,8 @@ import com.intellij.openapi.ui.TextFieldWithBrowseButton
 import com.intellij.ui.components.JBLabel
 import com.intellij.util.ui.FormBuilder
 import com.vibe.agent.i18n.VibeI18n.t
+import com.vibe.agent.node.NodeInterpreter
+import com.vibe.agent.node.NodeRuntime
 import javax.swing.JComponent
 import com.vibe.agent.settings.SettingsUi
 

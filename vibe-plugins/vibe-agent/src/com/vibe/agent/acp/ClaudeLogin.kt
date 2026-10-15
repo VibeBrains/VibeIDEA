@@ -1,7 +1,6 @@
 // Copyright 2026 VibeBrains. Use of this source code is governed by the GNU AGPL-3.0 license.
 package com.vibe.agent.acp
 
-import java.io.File
 import java.io.IOException
 import java.time.Duration
 import java.util.concurrent.TimeUnit
@@ -43,18 +42,15 @@ object ClaudeLogin {
   /**
    * The production runner: output discarded unread, bounded by [TIMEOUT].
    *
-   * PATH gets the directories of the resolved `claude` and `node`: a GUI app on macOS does not
-   * inherit the shell's PATH, and an npm-installed `claude` starts with `#!/usr/bin/env node`.
+   * The environment is the one the agent itself starts with ([AgentLaunch]): a GUI app on macOS does not inherit the
+   * shell's PATH, and an npm-installed `claude` starts with `#!/usr/bin/env node`.
    */
   fun exitCode(command: List<String>): Int? {
-    val binary = AcpClient.resolveBinary(command.first())
-    val builder = ProcessBuilder(listOf(binary) + command.drop(1))
+    val ready = AgentLaunch.planHere(command.first(), null) as? AgentLaunch.Plan.Ready ?: return null
+    val builder = ProcessBuilder(listOf(ready.executable) + command.drop(1))
       .redirectOutput(ProcessBuilder.Redirect.DISCARD)
       .redirectError(ProcessBuilder.Redirect.DISCARD)
-    val extra = listOf(binary, AcpClient.resolveBinary("node"))
-      .map { File(it) }.filter { it.isAbsolute }.mapNotNull { it.parent }.distinct()
-    builder.environment()["PATH"] = (listOf(builder.environment()["PATH"].orEmpty()) + extra)
-      .filter { it.isNotEmpty() }.joinToString(File.pathSeparator)
+    builder.environment().putAll(ready.overlay)
     val process = try { builder.start() } catch (e: IOException) { return null }
     if (!process.waitFor(TIMEOUT.toMillis(), TimeUnit.MILLISECONDS)) {
       process.destroyForcibly()

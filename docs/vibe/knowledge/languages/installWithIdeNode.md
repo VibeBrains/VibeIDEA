@@ -28,7 +28,7 @@
 - установка npm-команд — `npm` из папки ноды IDE, с этой папкой первой в `PATH` (`NpmInstall`);
 - поиск — папка ноды IDE входит в список (`ServerBinaries.nodeBinDir`);
 - запуск и проверка — одно правило для файла сервера (`ServerBinaries.runCommand`: `.js` нодой,
-  `.phar` через PHP) и одно окружение (`NodeRuntime.childEnvironment`).
+  `.phar` через PHP) и одно окружение (`NodeRuntime.childEnvironment`). С 15.10.2026 `NodeInterpreter` и `NodeRuntime` живут в `vibe-agent` (`com.vibe.agent.node`): их же читает запуск агента ACP и MCP-серверов (`AgentLaunch`), а `vibe-lsp` зависит от `vibe-agent`, не наоборот.
 
 Нет ноды — установка не запускается, а называет причину. Команды не на npm (Phpactor — готовый
 phar) идут как написаны.

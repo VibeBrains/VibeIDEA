@@ -3,6 +3,7 @@ package com.vibe.lsp
 
 import com.intellij.openapi.project.Project
 import com.vibe.agent.mcp.VibeIdeFacts
+import com.vibe.agent.node.NodeRuntime
 
 /**
  * Языковые серверы — в ответ инструмента «что умеет эта IDE».

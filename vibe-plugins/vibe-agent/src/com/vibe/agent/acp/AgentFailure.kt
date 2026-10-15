@@ -29,7 +29,8 @@ class AgentGoneException(val kind: Kind, message: String, val detail: String = "
  *
  * A request that is waited for with `get()` fails with an `ExecutionException` whose message is `cause.toString()`,
  * which is where `java.lang.IllegalStateException: agent stopped` in the feed came from: a class name and a sentence in English
- * Here the wrappers are taken off, a lost connection is told in words of its own with what to do, and anything else keeps its message
+ * Here the wrappers are taken off, a lost connection or a program that could not be started is told in words of its own
+ * with what to do, and anything else keeps its message
  */
 object AgentFailure {
   /** How many wrappers are taken off looking for the cause: futures wrap a failure once or twice */
@@ -59,6 +60,20 @@ object AgentFailure {
         AgentGoneException.Kind.PIPE_CLOSED -> t("chat.agentGone.pipeClosed", "reason" to root.detail)
       }
     }
+    if (root is AgentLaunchException) {
+      return when (root.kind) {
+        AgentLaunchException.Kind.NOT_FOUND ->
+          if (root.nodeTool) t("chat.agentLaunch.nodeMissing", "command" to root.command)
+          else t("chat.agentLaunch.notFound", "command" to root.command)
+        AgentLaunchException.Kind.START_FAILED -> t("chat.agentLaunch.failed", "command" to root.command, "reason" to root.detail)
+      }
+    }
     return root.message?.takeIf { it.isNotBlank() } ?: root.javaClass.simpleName
+  }
+
+  /** The failure is a missing Node tool, which the person fixes on the Node interpreter's settings page */
+  fun needsNodeSettings(error: Throwable): Boolean {
+    val root = rootOf(error)
+    return root is AgentLaunchException && root.kind == AgentLaunchException.Kind.NOT_FOUND && root.nodeTool
   }
 }
