@@ -22,13 +22,21 @@ object WatchTools {
     System.getProperty("user.home") + "/.local/bin",
   )
 
-  fun find(binary: String): String? {
-    val fromPath = System.getenv("PATH")?.split(File.pathSeparator).orEmpty()
-    return (fromPath + EXTRA_DIRS).asSequence()
-      .map { Path.of(it, binary) }
-      .firstOrNull { Files.isExecutable(it) }
-      ?.toString()
-  }
+  /** Where tools are looked for: the IDE's PATH first, then the places a GUI launch does not know about */
+  private fun searchDirs(): List<String> =
+    (System.getenv("PATH")?.split(File.pathSeparator).orEmpty() + EXTRA_DIRS).filter { it.isNotEmpty() }.distinct()
+
+  /**
+   * [searchDirs] as a PATH value, for a child process that looks tools up itself
+   *
+   * openai-whisper calls `ffmpeg` by bare name, so under a GUI launch it never finds the one [find] would have
+   */
+  fun searchPath(): String = searchDirs().joinToString(File.pathSeparator)
+
+  fun find(binary: String): String? = searchDirs().asSequence()
+    .map { Path.of(it, binary) }
+    .firstOrNull { Files.isExecutable(it) }
+    ?.toString()
 
   /** Either the tools, or a message naming what is missing and how to get it. */
   fun resolve(): Result<Tools> {

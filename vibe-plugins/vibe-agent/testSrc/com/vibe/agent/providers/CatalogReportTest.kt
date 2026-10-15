@@ -21,8 +21,17 @@ class CatalogReportTest {
     // The page is a button of the journal entry, so the text names no path
     assertFalse(text.contains("Settings"), text)
     assertFalse(text.contains("не получен"), text)
-    assertTrue(report.hasProblems)
+    assertFalse(report.hasProblems, "a missing key is not a fault: the summary is information, not a warning")
     assertTrue(report.needsKeys)
+  }
+
+  @Test
+  fun `keyless providers next to a real failure keep the warning`() {
+    assertTrue(CatalogReport(keyless = listOf("openai"), rejected = listOf("deepseek")).hasProblems)
+    assertTrue(CatalogReport(keyless = listOf("openai"), localDown = listOf("ollama")).hasProblems)
+    assertTrue(CatalogReport(keyless = listOf("openai"), failed = listOf("zai" to "timeout")).hasProblems)
+    assertTrue(CatalogReport(keyless = listOf("openai"), keyRequired = listOf("gpu")).hasProblems)
+    assertFalse(CatalogReport(updated = listOf("zai"), keyless = listOf("openai")).hasProblems)
   }
 
   @Test

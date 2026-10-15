@@ -4,7 +4,6 @@ package com.vibe.agent.voice
 import org.junit.jupiter.api.Assumptions.assumeTrue
 import org.junit.jupiter.api.Test
 import java.io.File
-import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
 /**
@@ -26,7 +25,6 @@ class VoiceServerLiveTest {
       val sample = System.getenv("VIBE_VOICE_SAMPLE")?.let { File(it) }?.takeIf { it.isFile }
       val wav = sample?.readBytes() ?: VoiceCapture.wav(ByteArray(32_000))
       val first = server.transcribe(wav, cfg, VoiceServer.FINAL_TIMEOUT_MS)
-      assertNotNull(first, "сервер ответил, а текста в ответе нет")
       if (sample != null) assertTrue("голос" in first.lowercase(), first)
       // The second request goes to the same, already running server — no second model load.
       val started = System.nanoTime()

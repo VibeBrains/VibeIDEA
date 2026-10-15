@@ -152,6 +152,15 @@ object ChatJournal {
     return trim(entries + entry, maxEntries)
   }
 
+  /**
+   * True when [entries] already hold a line of [category] with this [text]: the person has been told, so a repeat is not news
+   * The line is compared as the journal keeps it, clipped
+   */
+  fun hasLine(entries: List<JournalEntry>, category: JournalCategory, text: String): Boolean {
+    val kept = clip(text)
+    return entries.any { it.category == category && it.text == kept }
+  }
+
   /** The buffer cut to a limit; the same list when nothing has to go */
   fun trim(entries: List<JournalEntry>, maxEntries: Int): List<JournalEntry> =
     if (entries.size > maxEntries) entries.takeLast(maxEntries) else entries

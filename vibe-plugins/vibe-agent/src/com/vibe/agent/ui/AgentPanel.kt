@@ -505,7 +505,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
    * красный — состояние видно, не наводя мышь.
    */
   private val voicePill: PillButton =
-    PillButton(icon = VibeIcons.MIC) { toggleVoice() }.apply { toolTipText = t("chat.voice.start") }
+    PillButton(icon = VibeIcons.MIC) { voice.toggle() }.apply { toolTipText = t("chat.voice.start") }
 
   /** The run button: opens the pipeline menu under itself */
   private val pipelinePill: PillButton =
@@ -555,7 +555,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     // Config files live on disk — never read (or seed) them on the EDT; publish results back here.
     ApplicationManager.getApplication().executeOnPooledThread {
       val loadedAgents = AcpConfig.load(project.basePath) { systemLine(t("chat.configNotice", "text" to it), CONFIG, WARNING) }
-      val loadedProviders = ProvidersService.load(project.basePath) { systemLine("[providers] $it", PROVIDERS, WARNING) }
+      val loadedProviders = ProvidersService.load(project.basePath) { systemLine(it, PROVIDERS, WARNING) }
       val catalogCache = ModelCatalogCache.load()
       // Read here so the spending ceiling, which is asked on the EDT, never has to touch the disk.
       com.vibe.agent.budget.VibeSpendService.getInstance().prime()
@@ -572,7 +572,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
         systemLine(t("chat.greeting.ready",
           "agents" to loadedAgents.joinToString { it.name },
           "providers" to loadedProviders.joinToString { it.name }.ifEmpty { t("chat.greeting.none") }), AGENTS, read = true)
-        guardFindings.forEach { f -> systemLine("[guard:${f.severity}] ${f.message}", PROVIDERS, WARNING) }
+        guardFindings.forEach { f -> systemLine(f.message, PROVIDERS, WARNING) }
         // A repository seen for the first time gets one line about what its files can and cannot do.
         if (com.vibe.agent.security.ForeignProjectNotice.noticeOnce(project.basePath)) {
           systemLine("🛡 " + com.vibe.agent.security.ForeignProjectNotice.TEXT, CHECKS)
@@ -596,7 +596,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
   /** Re-read the provider registry and re-pull model catalogs (e.g. after a key was applied in Settings). */
   private fun reloadProviderRegistry() {
     ApplicationManager.getApplication().executeOnPooledThread {
-      val loadedProviders = ProvidersService.load(project.basePath) { systemLine("[providers] $it", PROVIDERS, WARNING) }
+      val loadedProviders = ProvidersService.load(project.basePath) { systemLine(it, PROVIDERS, WARNING) }
       val catalogCache = ModelCatalogCache.load()
       val guardFindings = ProviderGuard.scan(loadedProviders)
       SwingUtilities.invokeLater {
@@ -604,7 +604,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
         staticModelIds = loadedProviders.associate { p -> p.id to p.models.map { it.id }.toSet() }
         providers = applyCatalogCache(loadedProviders, catalogCache)
         systemLine(t("chat.providersChanged"), PROVIDERS)
-        guardFindings.forEach { f -> systemLine("[guard:${f.severity}] ${f.message}", PROVIDERS, WARNING) }
+        guardFindings.forEach { f -> systemLine(f.message, PROVIDERS, WARNING) }
         rebuildTargets()
         fetchProviderModels()
       }
@@ -625,6 +625,8 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     turnThreadId?.let { history.endTurn(it) }
     llmCancel.set(true)
     llmClient.cancel()
+    // A recording left open would keep the microphone on behind a closed panel
+    voice.dispose()
     directTools.close()
     composer.queue.clear()
     turnInFlight.set(false)
@@ -2569,135 +2571,31 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     }
   }
 
-  private var recording: com.vibe.agent.voice.VoiceCapture.Recording? = null
-
-  /** The live-transcript loop of the recording in progress (decision №84); null when there is none. */
-  private var voicePreviewLoop: java.util.concurrent.ScheduledFuture<*>? = null
-
-  /** A preview still waiting for the server: the next beat is skipped, not queued behind it. */
-  private val voicePreviewBusy = java.util.concurrent.atomic.AtomicBoolean(false)
-
-  private fun toggleVoice() {
-    val active = recording
-    if (active == null) {
-      val target = java.io.File.createTempFile("vibe-voice-", ".wav")
-      val started = runCatching { com.vibe.agent.voice.VoiceCapture.start(target) }.getOrElse {
-        systemLine(t("chat.voice.noMicrophone", "reason" to (it.message ?: it.javaClass.simpleName)), MISC, WARNING)
-        target.delete()
-        return
-      }
-      recording = started
-      voicePill.toolTipText = t("chat.voice.stop")
-      voicePill.icon = VibeIcons.MIC_ON
-      voicePill.repaint()
-      startVoicePreview(started)
-      return
-    }
-    recording = null
-    stopVoicePreview()
-    voicePill.toolTipText = t("chat.voice.start")
-    voicePill.icon = VibeIcons.MIC
-    voicePill.repaint()
-    val file = active.stop()
-    if (file == null) {
-      // Too short is a misclick, not a note. Transcribing silence costs seconds and returns
-      // whisper's filler invented out of nothing.
-      systemLine(t("chat.voice.tooShort"), MISC)
-      return
-    }
-    ApplicationManager.getApplication().executeOnPooledThread { transcribeVoice(file) }
-  }
-
-  /** The resident server a live transcript can run on, or null: no `whisper-server` or no model set. */
-  private fun voiceServerConfig(): com.vibe.agent.voice.VoiceServer.Config? =
-    com.vibe.agent.voice.VoiceServer.configOf(VibeAgentSettings.voiceModelPath, VibeAgentSettings.telegramVoiceLanguage)
-
   /**
-   * Every few seconds the recording so far goes to the resident server and its text shows under the
-   * input — the person sees that the microphone hears before «стоп», not after. Past
-   * [com.vibe.agent.voice.VoiceServer.PREVIEW_MAX_MS] the loop stops: each preview transcribes the
-   * whole recording again, and the final transcript comes at «стоп» anyway. A server that cannot
-   * start is named once and the loop ends; the final transcript then takes the one-shot path.
+   * The dictation behind the microphone button: opening, recording and transcribing all run off the UI thread
+   * What it cannot do it says in the feed (and in the journal when the person has to act): see [com.vibe.agent.voice.VoiceProblem]
    */
-  private fun startVoicePreview(active: com.vibe.agent.voice.VoiceCapture.Recording) {
-    val config = voiceServerConfig() ?: return
-    val server = com.vibe.agent.voice.VoiceServer
-    voicePreviewLoop = com.intellij.util.concurrency.AppExecutorUtil.getAppScheduledExecutorService().scheduleWithFixedDelay({
-      if (disposed || recording !== active || !voicePreviewBusy.compareAndSet(false, true)) return@scheduleWithFixedDelay
-      try {
-        if (active.elapsedMs > server.PREVIEW_MAX_MS) {
-          SwingUtilities.invokeLater { if (recording === active) composer.setVoicePreview(t("chat.voice.previewLimit")) }
-          voicePreviewLoop?.cancel(false)
-          return@scheduleWithFixedDelay
-        }
-        val wav = active.snapshot() ?: return@scheduleWithFixedDelay
-        val text = server.getInstance().transcribe(wav, config, server.PREVIEW_TIMEOUT_MS)
-        if (!text.isNullOrBlank()) {
-          SwingUtilities.invokeLater { if (recording === active) composer.setVoicePreview(t("chat.voice.preview", "text" to text)) }
-        }
-      }
-      catch (e: Exception) {
-        voicePreviewLoop?.cancel(false)
-        systemLine(t("chat.voice.serverFailed", "reason" to (e.message ?: e.javaClass.simpleName)), MISC, WARNING)
-      }
-      finally {
-        voicePreviewBusy.set(false)
-      }
-    }, server.PREVIEW_INTERVAL_MS, server.PREVIEW_INTERVAL_MS, java.util.concurrent.TimeUnit.MILLISECONDS)
-  }
+  private val voice = com.vibe.agent.voice.VoiceDictation(object : com.vibe.agent.voice.VoiceDictation.Host {
+    override val disposed: Boolean get() = this@AgentPanel.disposed
+    override val modelPath: String get() = VibeAgentSettings.voiceModelPath
+    override val language: String get() = VibeAgentSettings.telegramVoiceLanguage
 
-  private fun stopVoicePreview() {
-    voicePreviewLoop?.cancel(false)
-    voicePreviewLoop = null
-    SwingUtilities.invokeLater { composer.setVoicePreview(null) }
-  }
+    override fun face(state: com.vibe.agent.voice.VoiceFlow.State) {
+      voicePill.toolTipText = com.vibe.agent.voice.VoiceFlow.tooltip(state)
+      voicePill.icon = if (com.vibe.agent.voice.VoiceFlow.micOn(state)) VibeIcons.MIC_ON else VibeIcons.MIC
+      voicePill.repaint()
+    }
 
-  private fun transcribeVoice(file: java.io.File) {
-    try {
-      systemLine(t("chat.voice.transcribing"), MISC)
-      // The resident server first: it already holds the model the live transcript used. Failing
-      // that — the one-shot transcriber, as before the server existed.
-      val viaServer = voiceServerConfig()?.let { config ->
-        runCatching {
-          com.vibe.agent.voice.VoiceServer.getInstance().transcribe(file.readBytes(), config, com.vibe.agent.voice.VoiceServer.FINAL_TIMEOUT_MS)
-        }.getOrNull()
-      }
-      val text = viaServer ?: transcribeOnce(file) ?: return
-      val task = com.vibe.agent.voice.VoiceTranscription.taskFrom(text)
-      if (task == null) {
-        systemLine(t("chat.voice.empty"), MISC)
-        return
-      }
-      // Into the draft, not sent: what to do with the words stays the person's decision — the same
-      // rule the design detector's findings follow.
-      putIntoComposer(task)
-    }
-    finally {
-      runCatching { file.delete() }
-    }
-  }
+    override fun status(text: String?) = composer.setVoicePreview(text)
 
-  /** The one-shot transcriber on the machine; null after saying why there is none or it heard nothing. */
-  private fun transcribeOnce(file: java.io.File): String? {
-    val model = VibeAgentSettings.voiceModelPath
-    val transcriber = com.vibe.agent.voice.VoiceTranscription.find(model, wav = true)
-    if (transcriber == null) {
-      systemLine(if (com.vibe.agent.voice.VoiceTranscription.needsModel(model)) t("chat.voice.noModel") else t("chat.voice.noTranscriber"), MISC, WARNING, page = SettingsPage.CHAT)
-      return null
+    override fun notice(notice: com.vibe.agent.voice.VoiceNotice) {
+      // The person asked for this and is looking at the feed; the journal keeps what they have to act on
+      feedNotice(notice.feedText)
+      if (notice.level == WARNING) systemLine(notice.text, MISC, WARNING, page = notice.page)
     }
-    val dir = file.parentFile
-    val text = runCatching {
-      val process = ProcessBuilder(
-        com.vibe.agent.voice.VoiceTranscription.command(transcriber, file, dir, VibeAgentSettings.telegramVoiceLanguage))
-        .redirectErrorStream(true).start()
-      process.inputStream.readBytes()
-      process.waitFor()
-      val out = com.vibe.agent.voice.VoiceTranscription.outputFile(file, dir)
-      out.takeIf { it.isFile }?.readText().also { runCatching { out.delete() } }
-    }.getOrNull()
-    if (text == null) systemLine(t("chat.voice.empty"), MISC)
-    return text
-  }
+
+    override fun deliver(text: String) = putIntoComposer(text)
+  })
 
   override fun putIntoComposer(text: String) {
     SwingUtilities.invokeLater {
@@ -3747,7 +3645,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     }
     val prose = com.vibe.agent.slop.SlopGatePolicy.prosePaths(paths)
     if (slopMode != com.vibe.agent.slop.SlopGatePolicy.Mode.OFF && prose.isNotEmpty()) {
-      val catalog = com.vibe.agent.slop.SlopCheck.catalog(project.basePath) { systemLine(t("slop.cli.warning", "text" to it), CHECKS, WARNING) }
+      val catalog = com.vibe.agent.slop.SlopCheck.catalog(project.basePath) { systemLine(it, CHECKS, WARNING) }
       if (catalog == null) {
         // Silence would read as «the text is clean»; a build without its catalogue says so.
         systemLine(t("slop.gate.noCatalog", "reason" to com.vibe.agent.slop.SlopCheck.builtInWarnings.joinToString("; ")), CHECKS, WARNING)
@@ -3933,7 +3831,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
    */
   private fun sendToLlm(t: ChatTarget.Model, startedAt: Long, gates: GateBounce? = null) {
     try {
-      val resolved = ProvidersService.resolve(t.provider, project.basePath) { systemLine("[providers] $it", PROVIDERS, WARNING) }
+      val resolved = ProvidersService.resolve(t.provider, project.basePath) { systemLine(it, PROVIDERS, WARNING) }
       if (resolved == null) {
         feedNotice(com.vibe.agent.i18n.VibeI18n.t("chat.provider.noBaseUrl", "id" to t.provider.id))
         return
@@ -5110,7 +5008,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
       ?: throw IllegalStateException(t("pipeline.step.noProvider", "id" to providerId))
     val model = provider.models.firstOrNull { it.id == modelId }
       ?: ModelEntry(id = modelId) // модели нет в каталоге — это ещё не повод не спросить о ней
-    val resolved = ProvidersService.resolve(provider, project.basePath) { systemLine("[providers] $it", PROVIDERS, WARNING) }
+    val resolved = ProvidersService.resolve(provider, project.basePath) { systemLine(it, PROVIDERS, WARNING) }
       ?: throw IllegalStateException(com.vibe.agent.i18n.VibeI18n.t("chat.provider.noBaseUrl", "id" to providerId))
     if (resolved.missingKey) {
       throw IllegalStateException(com.vibe.agent.i18n.VibeI18n.t(
@@ -5999,7 +5897,10 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
           }
         }
         if (dormant.isNotEmpty()) {
-          systemLine(t("providers.dormant", "names" to dormant.joinToString { it.name }), PROVIDERS, WARNING, page = SettingsPage.MODELS)
+          // A hint, not a fault: the models are hidden on purpose, and the same list as at the last start is not news
+          val line = t("providers.dormant", "names" to dormant.joinToString { it.name })
+          systemLine(line, PROVIDERS, INFO, page = SettingsPage.MODELS,
+                     read = com.vibe.agent.journal.ChatJournal.hasLine(chatJournal.entries, PROVIDERS, line))
         }
       }
     }

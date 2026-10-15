@@ -30,9 +30,12 @@ data class CatalogReport(
   val isEmpty: Boolean
     get() = updated.isEmpty() && keyless.isEmpty() && rejected.isEmpty() && keyRequired.isEmpty() && localDown.isEmpty() && failed.isEmpty()
 
-  /** Something in the round needs a person: a key is missing or refused, a server is down or did not answer */
+  /**
+   * Something in the round is broken: a key was refused or is wanted, a server is down or did not answer
+   * A provider the person never gave a key is not on this list ([keyless]): nothing failed, there is nothing to ask with
+   */
   val hasProblems: Boolean
-    get() = keyless.isNotEmpty() || rejected.isNotEmpty() || keyRequired.isNotEmpty() || localDown.isNotEmpty() || failed.isNotEmpty()
+    get() = rejected.isNotEmpty() || keyRequired.isNotEmpty() || localDown.isNotEmpty() || failed.isNotEmpty()
 
   /** The trouble is a key, which is fixed on the page of the providers */
   val needsKeys: Boolean

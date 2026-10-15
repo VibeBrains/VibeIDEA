@@ -218,8 +218,8 @@ class TelegramBridge {
       val audio = java.io.File(dir, path.substringAfterLast('/'))
       val bytes = httpBytes(VoiceNote.downloadUrl(token, path)) ?: return null
       audio.writeBytes(bytes)
-      val process = ProcessBuilder(VoiceTranscription.command(transcriber, audio, dir, VibeAgentSettings.telegramVoiceLanguage))
-        .redirectErrorStream(true).start()
+      val command = VoiceTranscription.command(transcriber, audio, dir, VibeAgentSettings.telegramVoiceLanguage)
+      val process = VoiceTranscription.processOf(command).start()
       if (!process.waitFor(TRANSCRIBE_TIMEOUT_SEC, java.util.concurrent.TimeUnit.SECONDS)) {
         process.destroyForcibly()
         return null

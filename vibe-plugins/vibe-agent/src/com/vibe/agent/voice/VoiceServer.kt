@@ -45,9 +45,10 @@ class VoiceServer {
   /**
    * The transcript of [wav], starting or restarting the server when needed. Blocking, one request
    * at a time: the live transcript skips a beat rather than queueing behind itself.
+   * Throws when the server cannot start, does not answer, or answers without text
    */
   @Synchronized
-  fun transcribe(wav: ByteArray, config: Config, timeoutMs: Long): String? {
+  fun transcribe(wav: ByteArray, config: Config, timeoutMs: Long): String {
     if (running != config || process?.isAlive != true) start(config)
     return post(port, wav, timeoutMs)
   }
@@ -151,8 +152,8 @@ class VoiceServer {
     fun textOf(body: String): String? =
       runCatching { ((json.parseToJsonElement(body) as? JsonObject)?.get("text") as? JsonPrimitive)?.contentOrNull?.trim() }.getOrNull()
 
-    /** One transcription request to a server on [port]. Throws on anything but a 200. */
-    fun post(port: Int, wav: ByteArray, timeoutMs: Long): String? {
+    /** One transcription request to a server on [port]; throws on anything but a 200 that carries a text */
+    fun post(port: Int, wav: ByteArray, timeoutMs: Long): String {
       val boundary = "vibe-" + UUID.randomUUID()
       val request = HttpRequest.newBuilder(URI.create("http://$HOST:$port/inference"))
         .timeout(Duration.ofMillis(timeoutMs))
@@ -160,8 +161,9 @@ class VoiceServer {
         .POST(HttpRequest.BodyPublishers.ofByteArray(multipart(boundary, wav)))
         .build()
       val response = http.send(request, HttpResponse.BodyHandlers.ofString())
-      if (response.statusCode() != HTTP_OK) throw IllegalStateException("whisper-server answered ${response.statusCode()}: ${response.body().take(ERROR_CHARS)}")
-      return textOf(response.body())
+      val body = response.body()
+      if (response.statusCode() != HTTP_OK) throw IllegalStateException("whisper-server answered ${response.statusCode()}: ${body.take(ERROR_CHARS)}")
+      return textOf(body) ?: throw IllegalStateException("whisper-server answered without text: ${body.take(ERROR_CHARS)}")
     }
 
     /** The server serves a page at `/` once the model is loaded — there is no health endpoint. */

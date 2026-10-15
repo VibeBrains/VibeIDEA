@@ -10,6 +10,7 @@ import javax.sound.sampled.AudioInputStream
 import javax.sound.sampled.AudioSystem
 import javax.sound.sampled.DataLine
 import javax.sound.sampled.TargetDataLine
+import kotlin.math.abs
 
 /**
  * Recording the microphone — with the JDK, and with no native library at all.
@@ -53,6 +54,73 @@ object VoiceCapture {
   fun tooShort(bytesRecorded: Long, format: AudioFormat = format()): Boolean =
     bytesRecorded < MIN_MS * bytesPerMs(format)
 
+  /**
+   * Loudest sample below which a whole recording counts as silence, out of 32768
+   *
+   * A microphone that is open but not allowed to listen delivers exact zeros
+   * A live one has a noise floor far above this, and speech in a quiet room peaks in the thousands
+   */
+  const val SILENT_PEAK = 8
+
+  /** True when [pcm] (16-bit little-endian, our format) holds nothing louder than [SILENT_PEAK] */
+  fun isSilent(pcm: ByteArray, threshold: Int = SILENT_PEAK): Boolean {
+    var i = 0
+    while (i + 1 < pcm.size) {
+      val sample = (pcm[i].toInt() and 0xFF) or (pcm[i + 1].toInt() shl 8)
+      if (abs(sample) >= threshold) return false
+      i += 2
+    }
+    return true
+  }
+
+  /** Why a recording ended without being stopped by the person */
+  sealed interface End {
+    /** [MAX_MS] reached: the microphone is closed on purpose */
+    data object Limit : End
+
+    /** The device stopped delivering audio, or the read failed */
+    data class Device(val reason: String) : End
+  }
+
+  /** What a stopped recording came to */
+  sealed interface Captured {
+    /** Shorter than [MIN_MS]: a misclick */
+    data object TooShort : Captured
+
+    /** The device delivered only silence, typically because the system has not allowed the microphone */
+    data object Silence : Captured
+
+    /** The audio could not be kept: the file was not written */
+    data class Failed(val reason: String) : Captured
+
+    data class Audio(val file: File) : Captured
+  }
+
+  /**
+   * The read loop, apart from the line: reads into [sink] until [stopped], the cap, or the device gives out
+   *
+   * @return why it ended on its own, or null when [stopped] ended it
+   */
+  internal fun pump(read: (ByteArray) -> Int, sink: ByteArrayOutputStream, capBytes: Long, stopped: () -> Boolean): End? {
+    val chunk = ByteArray(CHUNK_BYTES)
+    try {
+      while (!stopped()) {
+        val count = read(chunk)
+        // A read that returns nothing after stop() is the line draining, not a failure
+        if (count <= 0) return if (stopped()) null else End.Device("no data from the input device")
+        sink.write(chunk, 0, count)
+        // The cap is enforced here rather than by a timer
+        // A timer that fires while the line is blocked in read() stops nothing
+        // And a microphone that stays on is the one failure mode of a recorder nobody forgives
+        if (sink.size() >= capBytes) return End.Limit
+      }
+    }
+    catch (e: Exception) {
+      return if (stopped()) null else End.Device(reasonOf(e))
+    }
+    return null
+  }
+
   /** PCM of [format] wrapped as WAV, in memory — the file the transcribers read, without the file. */
   fun wav(pcm: ByteArray, format: AudioFormat = format()): ByteArray {
     val out = ByteArrayOutputStream()
@@ -63,49 +131,57 @@ object VoiceCapture {
   }
 
   /**
-   * One recording in progress. Started by [start], ended by [stop] — which returns the file, or
-   * null when what was captured is too short to be a note.
+   * One recording in progress
+   * Started by [start], ended by [stop], which says what was captured, or by itself, which [onEnded] reports
    */
-  class Recording internal constructor(private val line: TargetDataLine, private val target: File) {
+  class Recording internal constructor(
+    private val line: TargetDataLine,
+    private val target: File,
+    private val onEnded: (End) -> Unit,
+  ) {
     @Volatile private var stopped = false
     private val buffer = ByteArrayOutputStream()
-    private val thread = Thread({ pump() }, "vibe-voice-capture").apply { isDaemon = true; start() }
+    private val thread = Thread({ pumpLoop() }, "vibe-voice-capture").apply { isDaemon = true; start() }
 
     val elapsedMs: Long get() = ((buffer.size() / bytesPerMs()).toLong())
 
-    private fun pump() {
-      val chunk = ByteArray(4096)
-      val cap = (MAX_MS * bytesPerMs()).toLong()
-      while (!stopped) {
-        val read = line.read(chunk, 0, chunk.size)
-        if (read <= 0) break
-        buffer.write(chunk, 0, read)
-        // The cap is enforced here rather than by a timer: a timer that fires while the line is
-        // blocked in read() stops nothing, and «микрофон выключился, но пишет» is the one failure
-        // mode of a recorder nobody forgives.
-        if (buffer.size() >= cap) break
-      }
+    private fun pumpLoop() {
+      val end = pump({ line.read(it, 0, it.size) }, buffer, (MAX_MS * bytesPerMs()).toLong()) { stopped }
+      if (end != null) onEnded(end)
     }
 
     /**
      * What was captured so far, as WAV, while the recording goes on — the live transcript reads it.
-     * Null while it is still too short to say anything.
+     * Null while it is still too short to say anything, or while it holds only silence
      */
     fun snapshot(): ByteArray? {
       val bytes = buffer.toByteArray()
-      return if (tooShort(bytes.size.toLong())) null else wav(bytes)
+      return if (tooShort(bytes.size.toLong()) || isSilent(bytes)) null else wav(bytes)
     }
 
-    /** @return the WAV file, or null when the recording is too short to bother transcribing. */
-    fun stop(): File? {
+    /** Closes the microphone and says what came of the recording; blocks briefly, so never on the UI thread */
+    fun stop(): Captured {
       stopped = true
       runCatching { line.stop() }
-      thread.join(2000)
+      thread.join(JOIN_MS)
       runCatching { line.close() }
       val bytes = buffer.toByteArray()
-      if (tooShort(bytes.size.toLong())) return null
-      target.writeBytes(wav(bytes))
-      return target
+      if (tooShort(bytes.size.toLong())) {
+        runCatching { target.delete() }
+        return Captured.TooShort
+      }
+      if (isSilent(bytes)) {
+        runCatching { target.delete() }
+        return Captured.Silence
+      }
+      return try {
+        target.writeBytes(wav(bytes))
+        Captured.Audio(target)
+      }
+      catch (e: java.io.IOException) {
+        runCatching { target.delete() }
+        Captured.Failed(reasonOf(e))
+      }
     }
 
     /** Throws away what was captured: the person changed their mind, and the file must not appear. */
@@ -113,17 +189,26 @@ object VoiceCapture {
       stopped = true
       runCatching { line.stop() }
       runCatching { line.close() }
-      thread.join(2000)
+      thread.join(JOIN_MS)
       buffer.reset()
+      runCatching { target.delete() }
     }
   }
 
-  /** Opens the microphone. Throws when the system refuses — permissions, or no input device. */
-  fun start(target: File): Recording {
+  /**
+   * Opens the microphone, and throws when the system refuses: no input device, or the line is taken
+   *
+   * Blocks while the system asks the person for permission, because macOS shows its dialog from inside the open call
+   * So it must never run on the UI thread
+   */
+  fun start(target: File, onEnded: (End) -> Unit = {}): Recording {
     val format = format()
     val line = AudioSystem.getLine(DataLine.Info(TargetDataLine::class.java, format)) as TargetDataLine
     line.open(format)
     line.start()
-    return Recording(line, target)
+    return Recording(line, target, onEnded)
   }
+
+  private const val CHUNK_BYTES = 4096
+  private const val JOIN_MS = 2000L
 }

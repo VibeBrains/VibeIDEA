@@ -3,6 +3,7 @@ package com.vibe.agent.journal
 
 import org.junit.jupiter.api.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertSame
 import kotlin.test.assertTrue
 
@@ -207,6 +208,23 @@ class ChatJournalTest {
   fun `a stored text is cut to the current limit when it is read back`() {
     val stored = ChatJournal.serialize(journalOf(info("a"), info("b"), info("c")))
     assertEquals(listOf("b", "c"), ChatJournal.parse(stored, 2).map { it.text })
+  }
+
+  @Test
+  fun `a line already in the journal under its category is not news`() {
+    val entries = journalOf(info("hint", JournalCategory.PROVIDERS), warning("other", JournalCategory.CHECKS))
+    assertTrue(ChatJournal.hasLine(entries, JournalCategory.PROVIDERS, "hint"))
+    assertFalse(ChatJournal.hasLine(entries, JournalCategory.CHECKS, "hint"), "the category is part of what the line says")
+    assertFalse(ChatJournal.hasLine(entries, JournalCategory.PROVIDERS, "hint, but another list"))
+    assertFalse(ChatJournal.hasLine(emptyList(), JournalCategory.PROVIDERS, "hint"))
+  }
+
+  @Test
+  fun `a line is compared as the journal keeps it, clipped and trimmed`() {
+    val long = "z".repeat(ChatJournal.MAX_TEXT_CHARS + 50)
+    val entries = journalOf(info(long, JournalCategory.PROVIDERS))
+    assertTrue(ChatJournal.hasLine(entries, JournalCategory.PROVIDERS, long))
+    assertTrue(ChatJournal.hasLine(journalOf(info("  hint ", JournalCategory.PROVIDERS)), JournalCategory.PROVIDERS, "hint"))
   }
 
   @Test
