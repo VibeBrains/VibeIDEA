@@ -6,10 +6,11 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 
 /**
- * Edits of `.vibe/mcp.json` made from the settings page: switch a server off and on, remove it, add one
+ * Edits of a servers file made from the settings page: switch a server off and on, remove it, add one
+ * Either file takes them, the project's `.vibe/mcp.json` or the shared `~/.vibe/mcp.json`: the text is the same
  *
  * The file is shared with VibeIDE and kept in git, so it is edited as TEXT, not parsed and written back:
- * a rewrite would reorder keys, reflow the layout and drop what this product does not know (`cwd`, `tools`,
+ * a rewrite would reorder keys, reflow the layout and drop what this product does not know (`tools`,
  * `url` entries of the other one). A small scanner finds the member to touch and the edit changes only the characters
  * it has to, in the style the file already has (indent, line breaks, one line or many).
  *
@@ -243,6 +244,7 @@ object McpServersEdit {
       if (entry.env.isNotEmpty()) {
         add("${quote("env")}: { " + entry.env.entries.joinToString(", ") { "${quote(it.key)}: ${quote(it.value)}" } + " }")
       }
+      entry.cwd?.let { add("${quote("cwd")}: ${quote(it)}") }
       if (entry.disabled) add("${quote(DISABLED)}: $TRUE")
     }
     val head = "${quote(entry.name)}: "

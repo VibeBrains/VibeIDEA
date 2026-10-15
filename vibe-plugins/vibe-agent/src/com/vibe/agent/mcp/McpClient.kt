@@ -212,5 +212,9 @@ class McpClient(private val transport: McpTransport) : AutoCloseable {
     /** Starts the server process and speaks to it over its stdio ([McpStdioTransport.start]) */
     fun start(command: String, args: List<String>, workingDir: Path?, env: Map<String, String> = emptyMap()): McpClient =
       McpClient(McpStdioTransport.start(command, args, workingDir, env))
+
+    /** Starts the server of a file entry: in the folder its `cwd` names as written, otherwise in [projectDir] */
+    fun start(entry: McpServersFile.Entry, projectDir: Path?): McpClient =
+      start(entry.command, entry.args, entry.processDir(projectDir), entry.env)
   }
 }

@@ -11,21 +11,25 @@ import com.vibe.agent.i18n.VibeI18n.t
 import com.vibe.agent.mcp.McpServersEdit
 import com.vibe.agent.mcp.McpServersFile
 import java.nio.file.Files
+import java.nio.file.Path
 
 /**
- * `.vibe/mcp.json` of the project as the settings page touches it: read the text, write an edit, open it in the editor
+ * The two servers files as the settings page touches them: read the text, write an edit, open it in the editor
  *
+ * The files are the project's `.vibe/mcp.json` and the shared `~/.vibe/mcp.json`, told apart by [McpServersFile.Layer]
  * The text is the editor's when the file is open (unsaved changes included) and the disk's otherwise: a page that read the disk
  * while the editor held a newer text would write its edit over the person's own. Edits go through the document, as one undoable
  * step, like the edits of the commands menu
  */
 internal class McpFileAccess(private val project: Project) {
-  private fun virtualFile(): VirtualFile? =
-    McpServersFile.pathIn(project.basePath)?.let { LocalFileSystem.getInstance().refreshAndFindFileByNioFile(it) }
+  private fun path(layer: McpServersFile.Layer): Path? = McpServersFile.pathOf(layer, project.basePath)
+
+  private fun virtualFile(layer: McpServersFile.Layer): VirtualFile? =
+    path(layer)?.let { LocalFileSystem.getInstance().refreshAndFindFileByNioFile(it) }
 
   /** The text of the file; null when there is no file yet */
-  fun read(): String? {
-    val file = virtualFile() ?: return null
+  fun read(layer: McpServersFile.Layer): String? {
+    val file = virtualFile(layer) ?: return null
     return FileDocumentManager.getInstance().getDocument(file)?.text
            ?: runCatching { String(file.contentsToByteArray(), Charsets.UTF_8) }.getOrNull()
   }
@@ -36,9 +40,9 @@ internal class McpFileAccess(private val project: Project) {
    * Null when the file was written; otherwise the reason in words: the edit refused ([name] is the server it concerned)
    * or the system could not write
    */
-  fun rewrite(title: String, name: String, edit: (String?) -> McpServersEdit.Outcome): String? {
-    val path = McpServersFile.pathIn(project.basePath) ?: return t("settings.mcp.refused.noProject")
-    val file = virtualFile()
+  fun rewrite(layer: McpServersFile.Layer, title: String, name: String, edit: (String?) -> McpServersEdit.Outcome): String? {
+    val path = path(layer) ?: return t("settings.mcp.refused.noProject")
+    val file = virtualFile(layer)
     val document = file?.let { FileDocumentManager.getInstance().getDocument(it) }
     // A file that exists but gives no text must not be taken for a missing one: the edit would write a new file over it
     if (file != null && document == null) return t("settings.mcp.refused.noText")
@@ -63,8 +67,8 @@ internal class McpFileAccess(private val project: Project) {
   }
 
   /** Opens the file in the editor, with the caret on the entry of [name] when it is given and found */
-  fun open(name: String?) {
-    val file = virtualFile() ?: return
+  fun open(layer: McpServersFile.Layer, name: String?) {
+    val file = virtualFile(layer) ?: return
     val offset = name?.let { n -> FileDocumentManager.getInstance().getDocument(file)?.text?.let { McpServersEdit.offsetOf(it, n) } } ?: 0
     OpenFileDescriptor(project, file, offset).navigate(true)
   }

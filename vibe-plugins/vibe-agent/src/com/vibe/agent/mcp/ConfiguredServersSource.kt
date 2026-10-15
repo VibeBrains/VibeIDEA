@@ -5,7 +5,7 @@ import com.vibe.agent.providers.ToolSpec
 import kotlinx.serialization.json.JsonObject
 
 /**
- * Инструменты СВОИХ серверов человека (`.vibe/mcp.json`) в прямом чате.
+ * Инструменты СВОИХ серверов человека (`~/.vibe/mcp.json` и `.vibe/mcp.json`) в прямом чате.
  *
  * Один источник на все серверы, а не по источнику на каждый: список серверов меняется правкой
  * файла, и держать соответствие «запись файла → объект в панели» значило бы синхронизировать две
@@ -138,7 +138,8 @@ class ConfiguredServersSource(
     // A process that started but never answered must not outlive the attempt: a restart from the page repeats it at will
     var started: McpClient? = null
     return runCatching {
-      val client = McpClient.start(entry.command, entry.args, workingDir, entry.env).also { started = it }
+      // The process runs where its entry says (`cwd`), otherwise in the project folder; approvals stay keyed by the project
+      val client = McpClient.start(entry, workingDir).also { started = it }
       client.initialize(clientVersion, timeoutMs)
       val tools = client.listTools(timeoutMs)
       val specs = tools.map { ToolSpec(it.name, it.description, it.inputSchema) }

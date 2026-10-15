@@ -228,12 +228,12 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
   private val audit: AuditLog? = com.vibe.agent.audit.VibeAuditService.getInstance(project).get()
 
   /**
-   * The servers of `.vibe/mcp.json` for the direct chat
+   * The servers of `~/.vibe/mcp.json` and `.vibe/mcp.json` for the direct chat
    *
    * Kept apart from [directTools] so that the settings page can read their state and restart one: it reaches them through [VibeMcpServers]
    */
   private val ownServers = com.vibe.agent.mcp.ConfiguredServersSource(
-    servers = { com.vibe.agent.mcp.McpServersFile.load(project.basePath).servers },
+    servers = { com.vibe.agent.mcp.McpServersFile.loadLayers(project.basePath).servers },
     workingDir = project.basePath?.let { java.nio.file.Path.of(it) },
     clientVersion = com.intellij.openapi.application.ApplicationInfo.getInstance().fullVersion,
     onFailure = { failures -> failures.forEach { systemLine(t("mcp.servers.problem", "text" to it), CONFIG, WARNING) } },
@@ -1123,10 +1123,14 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
    * меньше — это часы поисков «почему инструмент пропал».
    */
   override fun configuredServers(): List<Map<String, Any>> {
-    val parsed = com.vibe.agent.mcp.McpServersFile.load(project.basePath)
-    parsed.problems.forEach { systemLine(t("mcp.servers.problem", "text" to com.vibe.agent.mcp.McpFileText.of(it)), CONFIG, WARNING) }
-    val live = parsed.servers.filterNot { it.disabled }
+    val merged = com.vibe.agent.mcp.McpServersFile.loadLayers(project.basePath)
+    merged.allProblems.forEach { (layer, complaint) -> systemLine(com.vibe.agent.mcp.McpFileText.line(layer, complaint), CONFIG, WARNING) }
+    val live = merged.servers.filterNot { it.disabled }
     if (live.isNotEmpty()) systemLine(t("mcp.servers.offered", "names" to live.joinToString { it.name }), AGENTS)
+    // ACP describes a stdio server by name, command, args and env only
+    // The agent starts it in its own folder, so the entry's `cwd` cannot reach it
+    val cwdLost = live.filter { it.cwd != null }
+    if (cwdLost.isNotEmpty()) systemLine(t("mcp.servers.cwdNotPassed", "names" to cwdLost.joinToString { it.name }), AGENTS, WARNING)
     return live.map { com.vibe.agent.mcp.McpServersFile.acpEntry(it) }
   }
 

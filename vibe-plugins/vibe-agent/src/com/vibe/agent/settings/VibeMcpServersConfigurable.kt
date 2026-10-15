@@ -24,12 +24,13 @@ import javax.swing.JPanel
 import javax.swing.SwingUtilities
 
 /**
- * MCP servers: the servers of `.vibe/mcp.json` as cards, with the switch, the edit, the removal and the form that adds one
+ * MCP servers: the servers of `~/.vibe/mcp.json` and `.vibe/mcp.json` as cards
+ * Each card has the switch, the edit and the removal, and a form adds a server
  *
- * The file is the only place the servers live: a click writes into it at once (as an edit of the text, so the key order, the
- * layout and the fields this product does not know stay), and nothing waits for Apply. What the page says about a server's state
- * is what the chat that runs the servers knows ([VibeMcpServers]); a server that nobody has started in this session is told so
- * rather than guessed
+ * The files are the only place the servers live: a click writes at once into the file the card is from (as an edit of the text, so
+ * the key order, the layout and the fields this product does not know stay), and nothing waits for Apply
+ * What the page says about a server's state is what the chat that runs the servers knows ([VibeMcpServers]);
+ * a server that nobody has started in this session is told so rather than guessed
  */
 // NoScroll: the page scrolls itself (see VibeProvidersConfigurable)
 class VibeMcpServersConfigurable(private val project: Project) : Configurable, Configurable.NoScroll {
@@ -47,18 +48,19 @@ class VibeMcpServersConfigurable(private val project: Project) : Configurable, C
 
   override fun createComponent(): JComponent {
     val page = McpServersPageView(object : McpServersPageView.Actions {
-      override fun toggle(name: String, enabled: Boolean) {
-        rewrite(name, ofExisting { McpServersEdit.setDisabled(it, name, !enabled) })
+      override fun toggle(layer: McpServersFile.Layer, name: String, enabled: Boolean) {
+        rewrite(layer, name, ofExisting { McpServersEdit.setDisabled(it, name, !enabled) })
         if (!enabled && note == null) release(name)
       }
 
-      override fun edit(name: String?) = closeSettingsThen { file.open(name) }
+      override fun edit(layer: McpServersFile.Layer, name: String?) = closeSettingsThen { file.open(layer, name) }
 
-      override fun delete(name: String) {
-        val answer = Messages.showYesNoDialog(project, t("settings.mcp.deleteConfirm", "name" to name), t("settings.mcp.title"),
+      override fun delete(layer: McpServersFile.Layer, name: String) {
+        val question = t("settings.mcp.deleteConfirm", "name" to name, "file" to layer.fileLabel)
+        val answer = Messages.showYesNoDialog(project, question, t("settings.mcp.title"),
                                               t("common.delete"), t("common.cancel"), Messages.getQuestionIcon())
         if (answer != Messages.YES) return
-        rewrite(name, ofExisting { McpServersEdit.remove(it, name) })
+        rewrite(layer, name, ofExisting { McpServersEdit.remove(it, name) })
         if (note == null) release(name)
       }
 
@@ -66,14 +68,14 @@ class VibeMcpServersConfigurable(private val project: Project) : Configurable, C
 
       override fun confirmTools() = VibeApproveToolsAction().run(project) { name -> confirmed(name) }
 
-      override fun add(entry: McpServersFile.Entry): String? {
-        val refusal = file.rewrite(t("settings.mcp.title"), entry.name) { text -> McpServersEdit.add(text, entry) }
+      override fun add(layer: McpServersFile.Layer, entry: McpServersFile.Entry): String? {
+        val refusal = file.rewrite(layer, t("settings.mcp.title"), entry.name) { text -> McpServersEdit.add(text, entry) }
         // A refusal is told by the form, under the fields; the page itself changes only when the file did
         refresh()
         return refusal
       }
 
-      override fun taken(): Set<String> = McpServersFile.parse(file.read().orEmpty()).servers.mapTo(HashSet()) { it.name }
+      override fun taken(layer: McpServersFile.Layer): Set<String> = layered(texts()).names[layer].orEmpty()
     })
     view = page
 
@@ -92,19 +94,28 @@ class VibeMcpServersConfigurable(private val project: Project) : Configurable, C
     }
   }
 
-  /** Read the file and what the chat knows, draw the cards */
+  /** The text of each file as the page sees it: the editor's where a file is open, the disk's otherwise; null for a missing file */
+  private fun texts(): Map<McpServersFile.Layer, String?> = McpServersFile.Layer.entries.associateWith { file.read(it) }
+
+  private fun layered(texts: Map<McpServersFile.Layer, String?>): McpServersFile.Merged = McpServersFile.merge(
+    texts[McpServersFile.Layer.USER]?.let { McpServersFile.parse(it) } ?: McpServersFile.EMPTY,
+    texts[McpServersFile.Layer.PROJECT]?.let { McpServersFile.parse(it) } ?: McpServersFile.EMPTY,
+  )
+
+  /** Read the files and what the chat knows, draw the cards */
   private fun refresh() {
     val page = view ?: return
-    val text = file.read()
-    val parsed = text?.let { McpServersFile.parse(it) } ?: McpServersFile.EMPTY
+    val texts = texts()
+    val merged = layered(texts)
     val servers = VibeMcpServers.getInstance(project)
-    val cards = McpServersPage.cards(parsed.servers, servers.report(), servers.canRestart)
-    page.render(McpServersPageView.Model(cards, McpServersPage.problems(parsed) + listOfNotNull(note), restarting.toSet(), text != null))
+    val cards = McpServersPage.cards(merged, servers.report(), servers.canRestart)
+    val existing = texts.filterValues { it != null }.keys
+    page.render(McpServersPageView.Model(cards, McpServersPage.problems(merged) + listOfNotNull(note), restarting.toSet(), existing))
   }
 
-  /** One edit of the file; what it did not do is said on the page, what it did is drawn from the file again */
-  private fun rewrite(name: String, edit: (String?) -> McpServersEdit.Outcome) {
-    note = file.rewrite(t("settings.mcp.title"), name, edit)
+  /** One edit of a file; what it did not do is said on the page, what it did is drawn from the files again */
+  private fun rewrite(layer: McpServersFile.Layer, name: String, edit: (String?) -> McpServersEdit.Outcome) {
+    note = file.rewrite(layer, t("settings.mcp.title"), name, edit)
     refresh()
   }
 

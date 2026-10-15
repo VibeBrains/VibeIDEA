@@ -18,9 +18,9 @@ class McpServersPageViewTest {
     assertEquals(3, titles.size)
     assertTrue(titles[0].endsWith("github") && titles[1].endsWith("tracker") && titles[2].endsWith("черновик"), titles.toString())
     val texts = page.textsOf(page.view.content)
-    assertTrue("запущен · инструментов: 26" in texts, texts.toString())
-    assertTrue(texts.any { it.startsWith("не запустился: не найдена программа uvx") }, texts.toString())
-    assertTrue("выключен" in texts, texts.toString())
+    assertTrue("проект · запущен · инструментов: 26" in texts, texts.toString())
+    assertTrue(texts.any { it.startsWith("проект · не запустился: не найдена программа uvx") }, texts.toString())
+    assertTrue("проект · выключен" in texts, texts.toString())
     assertTrue("серверов: 3 · запущено: 1" in page.textsOf(page.view.header))
   }
 
@@ -60,7 +60,8 @@ class McpServersPageViewTest {
     assertTrue(boxes.all { it.text == "включён" })
     boxes[0].doClick()
     boxes[2].doClick()
-    assertEquals(listOf("github" to false, "черновик" to true), page.toggled)
+    val project = McpServersFile.Layer.PROJECT
+    assertEquals(listOf(Triple(project, "github", false), Triple(project, "черновик", true)), page.toggled)
   }
 
   @Test
@@ -80,9 +81,9 @@ class McpServersPageViewTest {
     val page = McpServersPageFixture().rendered()
     val github = page.foldOf("github")
     page.all(github, SettingsLink::class.java).forEach { page.click(it) }
-    assertEquals(listOf<String?>("github"), page.edited)
+    assertEquals(listOf<Pair<McpServersFile.Layer, String?>>(McpServersFile.Layer.PROJECT to "github"), page.edited)
     assertEquals(listOf("github"), page.restarted)
-    assertEquals(listOf("github"), page.deleted)
+    assertEquals(listOf(McpServersFile.Layer.PROJECT to "github"), page.deleted)
 
     page.view.render(page.model(page.fixtureCards(withheld = true)))
     page.click(page.link("Подтвердить инструменты"))
@@ -111,27 +112,74 @@ class McpServersPageViewTest {
   @Test
   fun `a name with markup in it is shown as text`() {
     val page = McpServersPageFixture()
-    val cards = McpServersPage.cards(listOf(page.entry("<b>x</b>", "a<script>", listOf("&"))), page.fixtureReport(), canRestart = true)
+    val cards = McpServersPage.cards(page.merged(project = listOf(page.entry("<b>x</b>", "a<script>", listOf("&")))), page.fixtureReport(), canRestart = true)
     page.view.render(page.model(cards))
     val texts = page.textsOf(page.foldOf("<b>x</b>")).joinToString("\n")
     assertTrue(texts.contains("&lt;script&gt;") || texts.contains("a<script>"), texts)
   }
 
   @Test
-  fun `warnings of the file come first, and the missing file has no link to open`() {
+  fun `warnings of the files come first, and a missing file has no link to open`() {
     val page = McpServersPageFixture()
-    page.view.render(page.model(cards = emptyList(), warnings = listOf("mcp.json: файл не разобрался как JSON"), fileExists = false))
+    page.view.render(page.model(cards = emptyList(), warnings = listOf("mcp.json: файл не разобрался как JSON"), existing = emptySet()))
     assertTrue(page.textsOf(page.view.content).any { it.contains("файл не разобрался как JSON") })
-    assertTrue(page.all(page.view.content, SettingsLink::class.java).none { it.text == "Открыть файл" })
-    page.view.render(page.model(cards = emptyList(), fileExists = true))
-    assertTrue(page.all(page.view.content, SettingsLink::class.java).any { it.text == "Открыть файл" })
+    val links = { page.all(page.view.content, SettingsLink::class.java).mapNotNull { it.text } }
+    assertTrue(links().none { it.startsWith("Открыть") })
+    page.view.render(page.model(cards = emptyList(), existing = setOf(McpServersFile.Layer.PROJECT)))
+    assertTrue("Открыть файл проекта" in links() && "Открыть общий файл" !in links(), links().toString())
+    page.view.render(page.model(cards = emptyList(), existing = McpServersFile.Layer.entries.toSet()))
+    assertTrue("Открыть файл проекта" in links() && "Открыть общий файл" in links(), links().toString())
   }
 
   @Test
-  fun `the link to the file opens it without an entry`() {
-    val page = McpServersPageFixture().rendered()
-    page.click(page.link("Открыть файл"))
-    assertEquals(listOf<String?>(null), page.edited)
+  fun `each link to a file opens that file without an entry`() {
+    val page = McpServersPageFixture()
+    page.view.render(page.model(existing = McpServersFile.Layer.entries.toSet()))
+    page.click(page.link("Открыть файл проекта"))
+    page.click(page.link("Открыть общий файл"))
+    assertEquals(listOf<Pair<McpServersFile.Layer, String?>>(
+      McpServersFile.Layer.PROJECT to null, McpServersFile.Layer.USER to null), page.edited)
+  }
+
+  // ----- the two files -----
+
+  @Test
+  fun `a card shows the file the server is from, and a project entry over a shared one says so`() {
+    val page = McpServersPageFixture()
+    page.view.render(page.model(page.layeredServers(), existing = McpServersFile.Layer.entries.toSet()))
+    fun header(name: String) = page.textsOf(page.foldOf(name).header).joinToString("|")
+    assertTrue(header("vibememory").contains("|общий · запущен · инструментов: 6|"), header("vibememory"))
+    assertTrue(header("jira").contains("|общий · ещё не запускался|"), header("jira"))
+    assertTrue(header("github").contains("|проект · перекрывает общую · запущен · инструментов: 18|"), header("github"))
+    assertTrue(header("tracker").contains("|проект · не запустился"), header("tracker"))
+    val body = { name: String -> page.textsOf(page.foldOf(name)).joinToString("\n") }
+    assertTrue(body("jira").contains("Файл: ~/.vibe/mcp.json"), body("jira"))
+    assertTrue(body("github").contains("Файл: .vibe/mcp.json"), body("github"))
+    assertTrue(body("github").contains("заменяет запись «github» общего файла целиком"), body("github"))
+    assertFalse(body("tracker").contains("заменяет запись"), body("tracker"))
+  }
+
+  @Test
+  fun `the working folder is shown on the card that has one`() {
+    val page = McpServersPageFixture()
+    page.view.render(page.model(page.layeredServers()))
+    assertTrue(page.textsOf(page.foldOf("vibememory")).joinToString("\n").contains("Рабочий каталог: /Users/me"))
+    assertFalse(page.textsOf(page.foldOf("jira")).joinToString("\n").contains("Рабочий каталог"))
+  }
+
+  @Test
+  fun `every action of a card goes to the file the card is from`() {
+    val page = McpServersPageFixture()
+    page.view.render(page.model(page.layeredServers()))
+    val user = McpServersFile.Layer.USER
+    val project = McpServersFile.Layer.PROJECT
+    page.all(page.foldOf("jira"), JBCheckBox::class.java).single().doClick()
+    page.all(page.foldOf("tracker"), JBCheckBox::class.java).single().doClick()
+    assertEquals(listOf(Triple(user, "jira", false), Triple(project, "tracker", false)), page.toggled)
+    page.all(page.foldOf("jira"), SettingsLink::class.java).forEach { page.click(it) }
+    page.all(page.foldOf("github"), SettingsLink::class.java).forEach { page.click(it) }
+    assertEquals(listOf<Pair<McpServersFile.Layer, String?>>(user to "jira", project to "github"), page.edited)
+    assertEquals(listOf(user to "jira", project to "github"), page.deleted)
   }
 
   // ----- empty state -----
@@ -167,7 +215,7 @@ class McpServersPageViewTest {
     page.view.formPanel.type(name = "", command = "npx")
     page.view.formPanel.send()
     assertEquals("Укажите имя сервера", page.view.formPanel.errorText)
-    page.taken = setOf("github")
+    page.taken = mapOf(McpServersFile.Layer.PROJECT to setOf("github"))
     page.view.formPanel.type(name = "github", command = "npx")
     page.view.formPanel.send()
     assertTrue(page.view.formPanel.errorText.contains("«github»"), page.view.formPanel.errorText)
@@ -182,14 +230,36 @@ class McpServersPageViewTest {
     page.view.formPanel.type(name = "jira", command = "uvx", args = "mcp-jira --url \"https://x y\"", env = "JIRA_TOKEN=abc")
     page.view.formPanel.send()
     assertEquals(
-      listOf(McpServersFile.Entry("jira", "uvx", listOf("mcp-jira", "--url", "https://x y"), mapOf("JIRA_TOKEN" to "abc"))),
+      listOf(McpServersFile.Layer.PROJECT to
+               McpServersFile.Entry("jira", "uvx", listOf("mcp-jira", "--url", "https://x y"), mapOf("JIRA_TOKEN" to "abc"))),
       page.added,
+      "the project's file is the default",
     )
     assertFalse(page.view.formShown)
     assertEquals("", page.view.formPanel.errorText)
     page.view.showForm()
     page.view.formPanel.send()
     assertEquals("Укажите имя сервера", page.view.formPanel.errorText, "the fields were emptied")
+  }
+
+  @Test
+  fun `the form writes into the file it was told to, and checks the names of that file only`() {
+    val page = McpServersPageFixture().rendered()
+    page.taken = mapOf(McpServersFile.Layer.USER to setOf("github"))
+    page.view.showForm()
+    page.view.formPanel.pick(McpServersFile.Layer.USER)
+    page.view.formPanel.type(name = "github", command = "npx")
+    page.view.formPanel.send()
+    assertTrue(page.view.formPanel.errorText.contains("«github»"), "the name is taken in the shared file")
+    page.view.formPanel.pick(McpServersFile.Layer.PROJECT)
+    page.view.formPanel.send()
+    assertEquals(listOf(McpServersFile.Layer.PROJECT to McpServersFile.Entry("github", "npx")), page.added,
+                 "the same name in the project's file is free: it replaces the shared one")
+    page.view.showForm()
+    page.view.formPanel.type(name = "pg", command = "node", cwd = " /Users/me ")
+    page.view.formPanel.pick(McpServersFile.Layer.USER)
+    page.view.formPanel.send()
+    assertEquals(McpServersFile.Layer.USER to McpServersFile.Entry("pg", "node", cwd = "/Users/me"), page.added.last())
   }
 
   @Test
@@ -223,11 +293,11 @@ private fun McpServersPageFixture.fixtureReport(withheld: Boolean = false) = com
 )
 
 private fun McpServersPageFixture.fixtureCards(withheld: Boolean): List<McpServersPage.Card> = McpServersPage.cards(
-  listOf(
+  merged(project = listOf(
     entry("github", args = listOf("-y", "@modelcontextprotocol/server-github")),
     entry("tracker", "uvx", listOf("mcp-tracker")),
     entry("черновик", "node", listOf("tools/my-mcp-server.js"), disabled = true),
-  ),
+  )),
   fixtureReport(withheld),
   canRestart = true,
 )

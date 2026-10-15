@@ -36,7 +36,8 @@ class McpServersPageShrinkTest {
       live = mapOf("github" to fixture.live(tools = 26)),
       failed = mapOf(longName to longReason, "tracker" to longReason),
     )
-    fixture.view.render(fixture.model(McpServersPage.cards(servers, report, canRestart = true), warnings = listOf("mcp.json: $longReason")))
+    val cards = McpServersPage.cards(fixture.merged(project = servers), report, canRestart = true)
+    fixture.view.render(fixture.model(cards, warnings = listOf("mcp.json: $longReason")))
     fixture.view.showForm()
     fixture.view.cardFolds().forEach { it.expanded = true }
     return fixture

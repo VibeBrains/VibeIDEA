@@ -7,6 +7,7 @@ import com.vibe.agent.mcp.McpServersFile
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 /** The state each card shows for a server: what the file says, what the chat that runs the servers knows */
@@ -20,8 +21,11 @@ class McpServersPageTest {
   private fun live(tools: Int = 3, withheld: Boolean = false, alive: Boolean = true) =
     ConfiguredServersSource.Report.Live(tools, withheld, alive)
 
+  private fun merged(project: List<McpServersFile.Entry> = emptyList(), user: List<McpServersFile.Entry> = emptyList()) =
+    McpServersFile.merge(McpServersFile.Parsed(user, emptyList()), McpServersFile.Parsed(project, emptyList()))
+
   private fun card(entry: McpServersFile.Entry, report: ConfiguredServersSource.Report, canRestart: Boolean = true) =
-    McpServersPage.cards(listOf(entry), report, canRestart).single()
+    McpServersPage.cards(merged(project = listOf(entry)), report, canRestart).single()
 
   @Test
   fun `a server nobody has started is idle and says so, not stopped`() {
@@ -77,7 +81,7 @@ class McpServersPageTest {
 
   @Test
   fun `cards follow the file, one per entry`() {
-    val cards = McpServersPage.cards(listOf(entry("b"), entry("a"), entry("c")), report(), canRestart = true)
+    val cards = McpServersPage.cards(merged(project = listOf(entry("b"), entry("a"), entry("c"))), report(), canRestart = true)
     assertEquals(listOf("b", "a", "c"), cards.map { it.name })
   }
 
@@ -91,16 +95,45 @@ class McpServersPageTest {
 
   @Test
   fun `the summary counts the file and the servers that run`() {
-    val cards = McpServersPage.cards(listOf(entry("a"), entry("b"), entry("c", disabled = true)), report(live = mapOf("a" to live())), true)
+    val servers = listOf(entry("a"), entry("b"), entry("c", disabled = true))
+    val cards = McpServersPage.cards(merged(project = servers), report(live = mapOf("a" to live())), true)
     assertEquals("серверов: 3 · запущено: 1", McpServersPage.summary(cards))
   }
 
   @Test
   fun `what the file says wrong about itself is said in the words of the chat feed`() {
-    val parsed = McpServersFile.parse("""{"mcpServers": {"пустой": {}, "рабочий": {"command": "node"}}}""")
-    assertEquals(listOf("mcp.json: у записи «пустой» не указан command"), McpServersPage.problems(parsed))
-    assertEquals(listOf("mcp.json: файл не разобрался как JSON"), McpServersPage.problems(McpServersFile.parse("это не json")))
-    assertTrue(McpServersPage.problems(McpServersFile.EMPTY).isEmpty(), "no file is not a complaint")
+    val project = McpServersFile.parse("""{"mcpServers": {"пустой": {}, "рабочий": {"command": "node"}}}""")
+    val user = McpServersFile.parse("это не json")
+    val both = McpServersFile.merge(user, project)
+    assertEquals(
+      listOf("~/.vibe/mcp.json: файл не разобрался как JSON", ".vibe/mcp.json: у записи «пустой» не указан ни command, ни url"),
+      McpServersPage.problems(both),
+      "each complaint names its file, the shared file first",
+    )
+    assertTrue(McpServersPage.problems(McpServersFile.merge(McpServersFile.EMPTY, McpServersFile.EMPTY)).isEmpty(), "no file is not a complaint")
+  }
+
+  @Test
+  fun `a card says which file the server is from and whether it replaces a shared one`() {
+    val shared = entry("shared")
+    val replaced = entry("both", "npx")
+    val cards = McpServersPage.cards(
+      merged(project = listOf(entry("both", "uvx"), entry("mine")), user = listOf(shared, replaced)), report(), canRestart = true,
+    )
+    val byName = cards.associateBy { it.name }
+    assertEquals(McpServersFile.Layer.USER, byName.getValue("shared").layer)
+    assertEquals(McpServersFile.Layer.PROJECT, byName.getValue("mine").layer)
+    assertEquals(McpServersFile.Layer.PROJECT, byName.getValue("both").layer, "the stronger file's entry is the one that stands")
+    assertEquals("uvx", byName.getValue("both").commandLine)
+    assertEquals(listOf("общий", "проект · перекрывает общую", "проект"), listOf("shared", "both", "mine").map { McpServersPage.layerTag(byName.getValue(it)) })
+    assertFalse(byName.getValue("mine").overrides)
+    assertFalse(byName.getValue("shared").overrides, "a shared entry replaces nothing")
+  }
+
+  @Test
+  fun `a card carries the working folder of the entry`() {
+    assertEquals("/Users/me", card(entry("a").copy(cwd = "/Users/me"), report()).cwd)
+    assertNull(card(entry("a"), report()).cwd)
   }
 
   @Test

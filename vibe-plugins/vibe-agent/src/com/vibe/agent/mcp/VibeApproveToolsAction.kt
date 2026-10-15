@@ -38,7 +38,7 @@ class VibeApproveToolsAction : DumbAwareAction() {
   fun run(project: Project, onApproved: (String) -> Unit = {}) {
     val base = project.basePath
     ApplicationManager.getApplication().executeOnPooledThread {
-      val drifted = McpServersFile.load(base).servers
+      val drifted = McpServersFile.loadLayers(base).servers
         .filterNot { it.disabled }
         .mapNotNull { entry ->
           val specs = runCatching { read(entry, base) }.getOrNull() ?: return@mapNotNull null
@@ -68,7 +68,7 @@ class VibeApproveToolsAction : DumbAwareAction() {
   private fun read(entry: McpServersFile.Entry, base: String?): List<ToolSpec> {
     val dir = base?.let { java.nio.file.Path.of(it) }
     val version = com.intellij.openapi.application.ApplicationInfo.getInstance().fullVersion
-    return McpClient.start(entry.command, entry.args, dir, entry.env).use { client ->
+    return McpClient.start(entry, dir).use { client ->
       client.initialize(version, DirectChatTools.CALL_TIMEOUT_MS)
       client.listTools(DirectChatTools.CALL_TIMEOUT_MS).map { ToolSpec(it.name, it.description, it.inputSchema) }
     }

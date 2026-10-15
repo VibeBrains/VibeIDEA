@@ -92,4 +92,11 @@ class McpServerFormTest {
     assertEquals(McpServerForm.Problem.NO_NAME, invalid(input(name = "", command = "", args = "'")).problem)
     assertEquals(McpServerForm.Problem.NO_COMMAND, invalid(input(command = "", args = "'")).problem)
   }
+
+  @Test
+  fun `the working folder is kept as typed minus the edges, and an empty one is none`() {
+    assertEquals("/Users/me", valid(input().copy(cwd = "  /Users/me ")).cwd)
+    assertNull(valid(input().copy(cwd = "   ")).cwd)
+    assertNull(valid(input()).cwd)
+  }
 }

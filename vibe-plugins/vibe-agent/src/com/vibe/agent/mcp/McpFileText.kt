@@ -4,7 +4,7 @@ package com.vibe.agent.mcp
 import com.vibe.agent.i18n.VibeI18n.t
 
 /**
- * The words for what is wrong with `.vibe/mcp.json`, from the code and the entry name the parser gave
+ * The words for what is wrong with `mcp.json`, from the code and the entry name the parser gave
  *
  * The parser knows no language ([McpServersFile.Problem]); the chat feed and the settings page both say the same thing from here
  */
@@ -16,7 +16,12 @@ object McpFileText {
       McpServersFile.Problem.NO_SECTION -> t("mcp.servers.noSection")
       McpServersFile.Problem.NOT_AN_OBJECT -> t("mcp.servers.notAnObject", "name" to name)
       McpServersFile.Problem.NO_COMMAND -> t("mcp.servers.noCommand", "name" to name)
+      McpServersFile.Problem.AMBIGUOUS -> t("mcp.servers.ambiguous", "name" to name)
       McpServersFile.Problem.UNREADABLE -> t("mcp.servers.unreadable")
     }
   }
+
+  /** The line the feed and the settings page show: which file it is about, then what is wrong */
+  fun line(layer: McpServersFile.Layer, complaint: McpServersFile.Complaint): String =
+    t("mcp.servers.problem", "file" to layer.fileLabel, "text" to of(complaint))
 }

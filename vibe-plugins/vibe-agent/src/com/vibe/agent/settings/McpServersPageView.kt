@@ -17,7 +17,7 @@ import javax.swing.JComponent
 import javax.swing.JPanel
 
 /**
- * What the MCP servers page draws: a card per server of `.vibe/mcp.json`, and the form that adds one
+ * What the MCP servers page draws: a card per server of the two files (`~/.vibe/mcp.json`, `.vibe/mcp.json`), and the form that adds one
  *
  * The cards are the ones of the Models page ([CardPanel], [FoldPanel]); a card is closed until someone opens it, except a server
  * that needs the person (it did not start, or its tools wait for confirmation), whose card is open the first time it is drawn
@@ -27,38 +27,41 @@ import javax.swing.JPanel
  */
 internal class McpServersPageView(private val actions: Actions) {
   interface Actions {
-    /** The switch of a card: write `disabled` into the file or take it out */
-    fun toggle(name: String, enabled: Boolean)
+    /** The switch of a card: write `disabled` into the file of [layer] or take it out */
+    fun toggle(layer: McpServersFile.Layer, name: String, enabled: Boolean)
 
-    /** Open the file, at the entry of [name] when given; the settings close, because a modal dialog leaves no editor to type into */
-    fun edit(name: String?)
+    /**
+     * Open the file of [layer], at the entry of [name] when given
+     * The settings close, because a modal dialog leaves no editor to type into
+     */
+    fun edit(layer: McpServersFile.Layer, name: String?)
 
-    /** Ask, then cut the entry out of the file */
-    fun delete(name: String)
+    /** Ask, then cut the entry out of the file of [layer] */
+    fun delete(layer: McpServersFile.Layer, name: String)
 
     fun restart(name: String)
 
     /** The dialog that lists the servers whose tools changed and takes the person's decision */
     fun confirmTools()
 
-    /** Write the new entry; null when it is written, the reason in words when it is not */
-    fun add(entry: McpServersFile.Entry): String?
+    /** Write the new entry into the file of [layer]; null when it is written, the reason in words when it is not */
+    fun add(layer: McpServersFile.Layer, entry: McpServersFile.Entry): String?
 
-    /** Names the file has, so that the form refuses a second server under one of them */
-    fun taken(): Set<String>
+    /** Names the file of [layer] has, so that the form refuses a second server under one of them */
+    fun taken(layer: McpServersFile.Layer): Set<String>
   }
 
   /**
    * Everything a redraw needs
    *
-   * [warnings] are what the file says wrong about itself and why the last edit was refused; [restarting] are the servers
-   * whose restart is under way; [fileExists] is false until the first server is added
+   * [warnings] are what the files say wrong about themselves and why the last edit was refused; [restarting] are the servers
+   * whose restart is under way; [existing] are the files that are there: a file that is not has no link to open
    */
   data class Model(
     val cards: List<McpServersPage.Card>,
     val warnings: List<String>,
     val restarting: Set<String>,
-    val fileExists: Boolean,
+    val existing: Set<McpServersFile.Layer>,
   )
 
   private val folds = LinkedHashMap<String, FoldPanel>()
@@ -66,12 +69,14 @@ internal class McpServersPageView(private val actions: Actions) {
   private var latest: Model? = null
 
   private val summary = TruncatingLabel()
-  private val openFile = SettingsLink(t("settings.mcp.open")) { actions.edit(null) }
-    .apply { toolTipText = t("settings.mcp.openTooltip") }
+  private val openProject = SettingsLink(t("settings.mcp.openProject")) { actions.edit(McpServersFile.Layer.PROJECT, null) }
+    .apply { toolTipText = t("settings.mcp.openProjectTooltip") }
+  private val openUser = SettingsLink(t("settings.mcp.openUser")) { actions.edit(McpServersFile.Layer.USER, null) }
+    .apply { toolTipText = t("settings.mcp.openUserTooltip") }
 
   private val form = McpServerFormPanel(
-    taken = { actions.taken() },
-    submit = { entry -> actions.add(entry).also { if (it == null) hideForm() } },
+    taken = { layer -> actions.taken(layer) },
+    submit = { layer, entry -> actions.add(layer, entry).also { if (it == null) hideForm() } },
     cancel = { hideForm() },
   )
 
@@ -110,7 +115,8 @@ internal class McpServersPageView(private val actions: Actions) {
     for (warning in model.warnings) {
       content.add(SettingsUi.hint(StringUtil.escapeXmlEntities(warning)).left().apply { foreground = StatusDot.WAITING_COLOR })
     }
-    if (model.fileExists) content.add(openFile.left())
+    if (McpServersFile.Layer.PROJECT in model.existing) content.add(openProject.left())
+    if (McpServersFile.Layer.USER in model.existing) content.add(openUser.left())
     content.add(gap())
     if (formOpen) {
       content.add(CardPanel(dashed = true).apply { add(form, BorderLayout.CENTER) }.left())
@@ -155,17 +161,22 @@ internal class McpServersPageView(private val actions: Actions) {
     val enabled = ModelCheckBox(t("settings.mcp.enabled"), !card.disabled).apply {
       toolTipText = t("settings.mcp.enabledTooltip")
     }
-    enabled.addActionListener { actions.toggle(card.name, enabled.isSelected) }
+    enabled.addActionListener { actions.toggle(card.layer, card.name, enabled.isSelected) }
     val line = FoldHeader(enabled)
     line.setTitle(card.name)
-    line.meta.text = McpServersPage.statusText(card)
+    line.meta.text = McpServersPage.metaText(card)
     line.meta.foreground = colorOf(card.status)
     return FoldPanel(line, bodyOf(card, restarting))
   }
 
   private fun bodyOf(card: McpServersPage.Card, restarting: Boolean): JComponent = column().apply {
     border = JBUI.Borders.empty(BODY_TOP_GAP, BODY_INDENT, 0, 0)
+    add(SettingsUi.hint(t("settings.mcp.detail.file", "file" to StringUtil.escapeXmlEntities(card.layer.fileLabel))).left())
+    if (card.overrides) {
+      add(SettingsUi.hint(t("settings.mcp.detail.overrides", "name" to StringUtil.escapeXmlEntities(card.name))).left())
+    }
     add(SettingsUi.hint(t("settings.mcp.detail.command", "command" to StringUtil.escapeXmlEntities(card.commandLine))).left())
+    card.cwd?.let { add(SettingsUi.hint(t("settings.mcp.detail.cwd", "cwd" to StringUtil.escapeXmlEntities(it))).left()) }
     if (card.envNames.isNotEmpty()) {
       add(SettingsUi.hint(t("settings.mcp.detail.env", "names" to StringUtil.escapeXmlEntities(card.envNames.joinToString(", ")))).left())
     }
@@ -177,8 +188,8 @@ internal class McpServersPageView(private val actions: Actions) {
       McpServersPage.Status.RUNNING, McpServersPage.Status.DISABLED -> Unit
     }
     add(Box.createVerticalStrut(JBUI.scale(BODY_TOP_GAP)))
-    add(SettingsLink(t("settings.mcp.edit")) { actions.edit(card.name) }
-          .apply { toolTipText = t("settings.mcp.editTooltip", "name" to card.name) }.left())
+    add(SettingsLink(t("settings.mcp.edit")) { actions.edit(card.layer, card.name) }
+          .apply { toolTipText = t("settings.mcp.editTooltip", "name" to card.name, "file" to card.layer.fileLabel) }.left())
     if (card.restartable) {
       add(SettingsLink(if (restarting) t("settings.mcp.restarting") else t("settings.mcp.restart")) { actions.restart(card.name) }
             .apply {
@@ -192,7 +203,7 @@ internal class McpServersPageView(private val actions: Actions) {
       add(SettingsLink(t("settings.mcp.confirm")) { actions.confirmTools() }
             .apply { toolTipText = t("settings.mcp.confirmTooltip") }.left())
     }
-    add(SettingsLink(t("common.delete")) { actions.delete(card.name) }.left())
+    add(SettingsLink(t("common.delete")) { actions.delete(card.layer, card.name) }.left())
   }
 
   private fun colorOf(status: McpServersPage.Status): JBColor = when (status) {

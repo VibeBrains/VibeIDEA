@@ -9,7 +9,7 @@ import com.vibe.agent.mcp.McpServersEdit
 import com.vibe.agent.mcp.McpServersFile
 
 /**
- * Pure logic of the MCP servers page: what a card says about a server, and what the file says about itself
+ * Pure logic of the MCP servers page: what a card says about a server, and what the files say about themselves
  *
  * No Swing and no I/O in here, so every rule is a unit test and the view only draws the answers
  */
@@ -41,6 +41,12 @@ object McpServersPage {
     /** In words; set for [Status.FAILED] */
     val reason: String?,
     val restartable: Boolean,
+    /** The file the entry is written in: every edit of the card goes there */
+    val layer: McpServersFile.Layer,
+    /** The project's entry stands where the shared file has one of the same name, and wins over it */
+    val overrides: Boolean,
+    /** The working folder of the server process as the entry says it; null — the project folder */
+    val cwd: String?,
   ) {
     val disabled: Boolean get() = status == Status.DISABLED
 
@@ -49,13 +55,13 @@ object McpServersPage {
   }
 
   /**
-   * One card per entry of the file, in the order of the file
+   * One card per server that runs here, in the order [McpServersFile.merge] gives: the shared file's servers, then the project's
    *
    * [canRestart]: a chat holds the servers, so a restart reaches them; the states of the report are the chat's, which is
    * why a server nobody started in this session is [Status.IDLE] and not «stopped»
    */
-  fun cards(servers: List<McpServersFile.Entry>, report: ConfiguredServersSource.Report, canRestart: Boolean): List<Card> =
-    servers.map { entry ->
+  fun cards(merged: McpServersFile.Merged, report: ConfiguredServersSource.Report, canRestart: Boolean): List<Card> =
+    merged.servers.map { entry ->
       val live = report.live[entry.name]
       val failure = report.failed[entry.name]
       val (status, reason) = when {
@@ -67,7 +73,8 @@ object McpServersPage {
         else -> Status.IDLE to null
       }
       Card(entry.name, commandLine(entry), entry.env.keys.toList(), status, live?.tools ?: 0, reason,
-           restartable = canRestart && status in RESTARTABLE)
+           restartable = canRestart && status in RESTARTABLE,
+           layer = merged.sourceOfName.getValue(entry.name), overrides = entry.name in merged.overrides, cwd = entry.cwd)
     }
 
   /** The states a restart makes sense for: the chat has touched the server, so there is something to stop or to retry */
@@ -93,9 +100,23 @@ object McpServersPage {
     "total" to cards.size, "running" to cards.count { it.status == Status.RUNNING || it.status == Status.WITHHELD },
   )
 
-  /** What the file says about itself: one phrase per complaint of the parser, as the chat feed says them */
-  fun problems(parsed: McpServersFile.Parsed): List<String> =
-    parsed.problems.map { t("mcp.servers.problem", "text" to McpFileText.of(it)) }
+  /** What the files say about themselves: one phrase per complaint of the parser, each with its file, as the chat feed says them */
+  fun problems(merged: McpServersFile.Merged): List<String> =
+    merged.allProblems.map { (layer, complaint) -> McpFileText.line(layer, complaint) }
+
+  /**
+   * The line next to the title of a card: which file the server is from, then its state
+   * It gives way to the width, and the tooltip has it whole
+   */
+  fun metaText(card: Card): String = layerTag(card) + TAG_SEPARATOR + statusText(card)
+
+  /** The short word on a card that tells which file the server is from; the project's entry also says it replaces a shared one */
+  fun layerTag(card: Card): String {
+    val layer = if (card.layer == McpServersFile.Layer.USER) t("settings.mcp.layer.user") else t("settings.mcp.layer.project")
+    return if (card.overrides) layer + TAG_SEPARATOR + t("settings.mcp.layer.overrides") else layer
+  }
+
+  private const val TAG_SEPARATOR = " · "
 
   /** Why an edit of the file was not made */
   fun refusal(reason: McpServersEdit.Reason, name: String): String = when (reason) {

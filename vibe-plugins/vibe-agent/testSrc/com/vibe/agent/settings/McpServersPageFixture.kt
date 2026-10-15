@@ -9,31 +9,38 @@ import javax.swing.AbstractButton
 import javax.swing.JLabel
 import javax.swing.text.JTextComponent
 
-/** An MCP servers page drawn without an IDE: the file is a list in memory and every click is written down */
+/** An MCP servers page drawn without an IDE: the files are lists in memory and every click is written down with the file it went to */
 internal class McpServersPageFixture {
-  val toggled = ArrayList<Pair<String, Boolean>>()
-  val edited = ArrayList<String?>()
-  val deleted = ArrayList<String>()
+  val toggled = ArrayList<Triple<McpServersFile.Layer, String, Boolean>>()
+  val edited = ArrayList<Pair<McpServersFile.Layer, String?>>()
+  val deleted = ArrayList<Pair<McpServersFile.Layer, String>>()
   val restarted = ArrayList<String>()
   var confirmed = 0
-  val added = ArrayList<McpServersFile.Entry>()
+  val added = ArrayList<Pair<McpServersFile.Layer, McpServersFile.Entry>>()
 
   /** What the file refuses an entry with, as the page would be told; null — written */
   var addAnswer: String? = null
-  var taken: Set<String> = emptySet()
+
+  /** The names each file has, as the form is told when it asks */
+  var taken: Map<McpServersFile.Layer, Set<String>> = emptyMap()
 
   val view = McpServersPageView(object : McpServersPageView.Actions {
-    override fun toggle(name: String, enabled: Boolean) { toggled += name to enabled }
-    override fun edit(name: String?) { edited += name }
-    override fun delete(name: String) { deleted += name }
+    override fun toggle(layer: McpServersFile.Layer, name: String, enabled: Boolean) { toggled += Triple(layer, name, enabled) }
+    override fun edit(layer: McpServersFile.Layer, name: String?) { edited += layer to name }
+    override fun delete(layer: McpServersFile.Layer, name: String) { deleted += layer to name }
     override fun restart(name: String) { restarted += name }
     override fun confirmTools() { confirmed++ }
-    override fun add(entry: McpServersFile.Entry): String? = addAnswer.also { if (it == null) added += entry }
-    override fun taken(): Set<String> = taken
+    override fun add(layer: McpServersFile.Layer, entry: McpServersFile.Entry): String? =
+      addAnswer.also { if (it == null) added += layer to entry }
+    override fun taken(layer: McpServersFile.Layer): Set<String> = taken[layer].orEmpty()
   })
 
   fun entry(name: String, command: String = "npx", args: List<String> = emptyList(), env: Map<String, String> = emptyMap(),
-            disabled: Boolean = false) = McpServersFile.Entry(name, command, args, env, disabled)
+            disabled: Boolean = false, cwd: String? = null) = McpServersFile.Entry(name, command, args, env, disabled, cwd)
+
+  /** The two files laid one over the other, from the entries each has */
+  fun merged(project: List<McpServersFile.Entry> = emptyList(), user: List<McpServersFile.Entry> = emptyList()) =
+    McpServersFile.merge(McpServersFile.Parsed(user, emptyList()), McpServersFile.Parsed(project, emptyList()))
 
   fun live(tools: Int = 5, withheld: Boolean = false, alive: Boolean = true) = ConfiguredServersSource.Report.Live(tools, withheld, alive)
 
@@ -48,15 +55,37 @@ internal class McpServersPageFixture {
       live = mapOf("github" to live(tools = 26)),
       failed = mapOf("tracker" to "не найдена программа uvx — установите её или поправьте command в записи сервера"),
     )
-    return McpServersPage.cards(servers, report, canRestart = true)
+    return McpServersPage.cards(merged(project = servers), report, canRestart = true)
+  }
+
+  /**
+   * Servers of both files: the shared file's `vibememory` (with a folder of its own), `jira` and `github`, and the project's `github`
+   * that replaces the shared one, `tracker` and a switched-off draft
+   */
+  fun layeredServers(): List<McpServersPage.Card> {
+    val user = listOf(
+      entry("vibememory", "/Users/me/.vibememory/bin/vibememory-mcp", listOf("--agent", "vibeidea"), cwd = "/Users/me"),
+      entry("jira", "uvx", listOf("mcp-jira"), mapOf("JIRA_TOKEN" to "x")),
+      entry("github", args = listOf("-y", "@modelcontextprotocol/server-github")),
+    )
+    val project = listOf(
+      entry("github", "npx", listOf("-y", "@modelcontextprotocol/server-github", "--read-only")),
+      entry("tracker", "uvx", listOf("mcp-tracker")),
+      entry("черновик", "node", listOf("tools/my-mcp-server.js"), disabled = true),
+    )
+    val report = ConfiguredServersSource.Report(
+      live = mapOf("vibememory" to live(tools = 6), "github" to live(tools = 18)),
+      failed = mapOf("tracker" to "не найдена программа uvx — установите её или поправьте command в записи сервера"),
+    )
+    return McpServersPage.cards(merged(project, user), report, canRestart = true)
   }
 
   fun model(
     cards: List<McpServersPage.Card> = threeServers(),
     warnings: List<String> = emptyList(),
     restarting: Set<String> = emptySet(),
-    fileExists: Boolean = true,
-  ) = McpServersPageView.Model(cards, warnings, restarting, fileExists)
+    existing: Set<McpServersFile.Layer> = setOf(McpServersFile.Layer.PROJECT),
+  ) = McpServersPageView.Model(cards, warnings, restarting, existing)
 
   fun rendered(model: McpServersPageView.Model = model()): McpServersPageFixture {
     view.render(model)

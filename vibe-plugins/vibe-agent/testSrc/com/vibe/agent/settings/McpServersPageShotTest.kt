@@ -2,6 +2,7 @@
 package com.vibe.agent.settings
 
 import com.intellij.util.ui.JBUI
+import com.vibe.agent.mcp.McpServersFile
 import java.awt.BorderLayout
 import java.awt.Color
 import java.awt.Component
@@ -119,11 +120,21 @@ class McpServersPageShotTest {
     for (palette in listOf(neon, porcelain)) {
       installPalette(palette)
 
-      val empty = McpServersPageFixture().rendered(McpServersPageFixture().model(cards = emptyList(), fileExists = false))
+      val empty = McpServersPageFixture().rendered(McpServersPageFixture().model(cards = emptyList(), existing = emptySet()))
       shoot(out, "empty", palette, 660, outerOf(empty, palette))
 
       shoot(out, "servers", palette, 660, outerOf(McpServersPageFixture().rendered(), palette))
       shoot(out, "servers", palette, 420, outerOf(McpServersPageFixture().rendered(), palette))
+
+      // Servers of both files: the shared file's, and the project's that replaces one of them
+      fun layers(): McpServersPageFixture = McpServersPageFixture().apply {
+        view.render(model(layeredServers(), existing = McpServersFile.Layer.entries.toSet()))
+      }
+      shoot(out, "layers", palette, 660, outerOf(layers(), palette))
+      shoot(out, "layers", palette, 420, outerOf(layers(), palette))
+      val layersOpen = layers()
+      layersOpen.view.cardFolds().forEach { it.expanded = true }
+      shoot(out, "layers-open", palette, 660, outerOf(layersOpen, palette))
 
       val open = McpServersPageFixture().rendered()
       open.view.cardFolds().forEach { it.expanded = true }

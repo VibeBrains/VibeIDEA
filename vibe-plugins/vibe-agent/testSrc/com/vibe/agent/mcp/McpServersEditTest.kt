@@ -165,6 +165,13 @@ class McpServersEditTest {
   }
 
   @Test
+  fun `the working folder is written between the environment and the switch, and reads back as written`() {
+    val text = edited(McpServersEdit.add(null, McpServersFile.Entry("vm", "vibememory-mcp", env = mapOf("K" to "v"), cwd = "/Users/me")))
+    assertTrue(text.contains("      \"env\": { \"K\": \"v\" },\n      \"cwd\": \"/Users/me\"\n"), text)
+    assertEquals("/Users/me", McpServersFile.parse(text).servers.single().cwd)
+  }
+
+  @Test
   fun `a blank file is a file that is not there`() {
     assertEquals(edited(McpServersEdit.add(null, entry("a", "x"))), edited(McpServersEdit.add("  \n", entry("a", "x"))))
   }

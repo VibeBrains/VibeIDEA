@@ -16,21 +16,25 @@ import javax.swing.JButton
 import javax.swing.JPanel
 
 /**
- * The form that adds a server: name, command, arguments, environment
+ * The form that adds a server: the file to write it in, name, command, arguments, environment, working folder
  *
  * It checks what was typed ([McpServerForm]) and says what is wrong right under the fields; a valid entry goes out through
  * [submit], whose answer is null when the file was written and the reason when it was not, so a refusal stays where the person looks
- * The form never touches the file itself
+ * The form never touches the file itself; the file is the project's unless the person picks the shared one
  */
 internal class McpServerFormPanel(
-  private val taken: () -> Set<String>,
-  private val submit: (McpServersFile.Entry) -> String?,
+  private val taken: (McpServersFile.Layer) -> Set<String>,
+  private val submit: (McpServersFile.Layer, McpServersFile.Entry) -> String?,
   private val cancel: () -> Unit,
 ) : JPanel(BorderLayout()) {
+  /** The files in the order of the list: the project's first, because it is what a new server is mostly for */
+  private val layers = listOf(McpServersFile.Layer.PROJECT, McpServersFile.Layer.USER)
+  private val file = SettingsUi.combo(arrayOf(t("settings.mcp.form.fileProject"), t("settings.mcp.form.fileUser")))
   private val name = JBTextField().apply { emptyText.text = NAME_EXAMPLE }
   private val command = JBTextField().apply { emptyText.text = COMMAND_EXAMPLE }
   private val args = JBTextField().apply { emptyText.text = ARGS_EXAMPLE }
   private val env = JBTextArea(ENV_ROWS, 0).apply { emptyText.text = ENV_EXAMPLE }
+  private val cwd = JBTextField().apply { emptyText.text = CWD_EXAMPLE }
 
   /** What is wrong, in one line that gives way to the width; the full text is in the tooltip */
   private val error = TruncatingLabel().apply { foreground = StatusDot.ERROR_COLOR }
@@ -47,19 +51,22 @@ internal class McpServerFormPanel(
     }
     val form = FormBuilder.createFormBuilder()
       .addComponent(SettingsUi.section(t("settings.mcp.form.title")))
+      .addLabeledComponent(JBLabel(t("settings.mcp.form.file")), file, true)
       .addLabeledComponent(JBLabel(t("settings.mcp.form.name")), name, true)
       .addLabeledComponent(JBLabel(t("settings.mcp.form.command")), command, true)
       .addLabeledComponent(JBLabel(t("settings.mcp.form.args")), args, true)
       .addComponent(SettingsUi.hint(t("settings.mcp.form.argsHint")))
       .addLabeledComponent(JBLabel(t("settings.mcp.form.env")), VibeScroll.pane(env), true)
       .addComponent(SettingsUi.hint(t("settings.mcp.form.envHint")))
+      .addLabeledComponent(JBLabel(t("settings.mcp.form.cwd")), cwd, true)
+      .addComponent(SettingsUi.hint(t("settings.mcp.form.cwdHint")))
       .addComponent(error)
       .addComponent(buttons)
       .panel
     form.isOpaque = false
     add(form, BorderLayout.CENTER)
     // Enter in a one-line field sends the form, as in any dialog
-    for (field in listOf(name, command, args)) field.addActionListener { send() }
+    for (field in listOf(name, command, args, cwd)) field.addActionListener { send() }
   }
 
   /** The cursor goes to the first field, so that the form opens ready to type into */
@@ -69,23 +76,31 @@ internal class McpServerFormPanel(
 
   /** Empties the fields and the message: the form is shown again for another server, not for the one just added */
   fun clear() {
-    for (field in listOf(name, command, args)) field.text = ""
+    for (field in listOf(name, command, args, cwd)) field.text = ""
     env.text = ""
+    file.selectedIndex = 0
     showError("")
   }
 
   /** What a test types into the fields */
-  internal fun type(name: String, command: String, args: String = "", env: String = "") {
+  internal fun type(name: String, command: String, args: String = "", env: String = "", cwd: String = "") {
     this.name.text = name
     this.command.text = command
     this.args.text = args
     this.env.text = env
+    this.cwd.text = cwd
+  }
+
+  /** Picks the file the next server is written in, as the list does */
+  internal fun pick(layer: McpServersFile.Layer) {
+    file.selectedIndex = layers.indexOf(layer)
   }
 
   internal fun send() {
-    when (val verdict = McpServerForm.validate(McpServerForm.Input(name.text, command.text, args.text, env.text), taken())) {
+    val layer = layers[file.selectedIndex.coerceAtLeast(0)]
+    when (val verdict = McpServerForm.validate(McpServerForm.Input(name.text, command.text, args.text, env.text, cwd.text), taken(layer))) {
       is McpServerForm.Verdict.Invalid -> showError(McpServerForm.describe(verdict))
-      is McpServerForm.Verdict.Valid -> showError(submit(verdict.entry).orEmpty())
+      is McpServerForm.Verdict.Valid -> showError(submit(layer, verdict.entry).orEmpty())
     }
   }
 
@@ -105,5 +120,6 @@ internal class McpServerFormPanel(
     const val COMMAND_EXAMPLE = "npx"
     const val ARGS_EXAMPLE = "-y @modelcontextprotocol/server-github"
     const val ENV_EXAMPLE = "GITHUB_PERSONAL_ACCESS_TOKEN=ghp_…"
+    const val CWD_EXAMPLE = "/Users/me"
   }
 }

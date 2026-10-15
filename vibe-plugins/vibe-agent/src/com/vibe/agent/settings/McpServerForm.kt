@@ -5,13 +5,17 @@ import com.vibe.agent.i18n.VibeI18n.t
 import com.vibe.agent.mcp.McpServersFile
 
 /**
- * The form that adds a server to `.vibe/mcp.json`: what was typed into four fields, and what is wrong with it
+ * The form that adds a server to one of the servers files: what was typed into the fields, and what is wrong with it
  *
  * Pure, so every rule is a unit test and the panel only shows the answers
  */
 object McpServerForm {
-  /** The four fields as typed: [args] is one line split like a shell would, [env] is one `NAME=value` per line */
-  data class Input(val name: String, val command: String, val args: String, val env: String)
+  /**
+   * The fields as typed: [args] is one line split like a shell would, [env] is one `NAME=value` per line
+   *
+   * [cwd] is the working folder of the server process, empty for the project folder
+   */
+  data class Input(val name: String, val command: String, val args: String, val env: String, val cwd: String = "")
 
   enum class Problem {
     NO_NAME,
@@ -37,7 +41,7 @@ object McpServerForm {
     val args = splitArgs(input.args) ?: return Verdict.Invalid(Problem.UNCLOSED_QUOTE)
     val env = parseEnv(input.env)
     if (env is Env.Bad) return Verdict.Invalid(Problem.BAD_ENV_LINE, env.line.toString())
-    return Verdict.Valid(McpServersFile.Entry(name, command, args, (env as Env.Ok).values))
+    return Verdict.Valid(McpServersFile.Entry(name, command, args, (env as Env.Ok).values, cwd = input.cwd.trim().ifEmpty { null }))
   }
 
   fun describe(invalid: Verdict.Invalid): String = when (invalid.problem) {
