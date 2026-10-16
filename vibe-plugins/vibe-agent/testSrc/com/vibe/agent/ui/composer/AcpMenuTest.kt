@@ -84,6 +84,11 @@ class AcpMenuTest {
   }
 
   @Test
+  fun `hard breaks of an agent text are spaces, a blank line is a paragraph`() {
+    assertEquals(listOf("Use when diagnosing issues", "Second"), paragraphs("Use when\ndiagnosing  issues\n\nSecond"))
+  }
+
+  @Test
   fun `the mode pill names the mode in force`() {
     assertEquals("Режим: Вручную", AcpMenu.modePillText(claudeModes))
     assertEquals("Режим", AcpMenu.modePillText(SessionModes("gone", claudeModes.available)))

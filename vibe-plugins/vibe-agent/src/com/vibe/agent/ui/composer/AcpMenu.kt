@@ -25,9 +25,16 @@ internal const val TOOLTIP_MAX_WIDTH = 360
  */
 internal fun wrappedTooltip(lines: List<String>, maxWidth: Int = JBUI.scale(TOOLTIP_MAX_WIDTH)): String {
   val metrics = JLabel().getFontMetrics(UIManager.getFont("ToolTip.font") ?: JBFont.label())
-  val wrapped = lines.flatMap { wrapWords(it, maxWidth, metrics::stringWidth) }
+  val wrapped = lines.flatMap { paragraphs(it) }.flatMap { wrapWords(it, maxWidth, metrics::stringWidth) }
   return "<html>" + wrapped.joinToString("<br>") { StringUtil.escapeXmlEntities(it) } + "</html>"
 }
+
+/**
+ * Agent texts carry their own hard line breaks, laid out for a terminal width, not ours
+ * A single break is a space, a blank line is a paragraph: otherwise our wrap cuts the phrase twice
+ */
+internal fun paragraphs(text: String): List<String> =
+  text.split(Regex("\\n\\s*\\n")).map { it.replace(Regex("\\s+"), " ").trim() }.filter { it.isNotEmpty() }.ifEmpty { listOf("") }
 
 /** [text] split at spaces into lines no wider than [maxWidth]; a word wider than that stays whole on a line of its own */
 internal fun wrapWords(text: String, maxWidth: Int, width: (String) -> Int): List<String> {
