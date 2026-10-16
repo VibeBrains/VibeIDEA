@@ -3167,7 +3167,8 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
 
   private fun noteLoop(call: com.vibe.agent.acp.ToolCall, turn: TurnState) {
     val loopHistory = turn.loopHistory
-    loopHistory.add(com.vibe.agent.safety.LoopDetector.fingerprint(call.toolName ?: call.kind, call.rawInput?.toString()))
+    // Recorded once per call id, when real arguments are known: the announce may carry none
+    if (!loopHistory.noteCall(call.id, call.toolName ?: call.kind, call.rawInput?.toString())) return
     val finding = com.vibe.agent.safety.LoopDetector.check(loopHistory.snapshot())
     if (finding.verdict == com.vibe.agent.safety.LoopDetector.Verdict.OK) return
     val reason = if (finding.verdict == com.vibe.agent.safety.LoopDetector.Verdict.REPEAT)
@@ -6570,6 +6571,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
       "tool_call_update" -> {
         val call = turn.toolCalls.onToolCallUpdate(u) ?: return
         harvestMutation(call, turn)
+        noteLoop(call, turn)
         // Stream Claude Bash output / exit into the console for this terminal.
         terminalOutputFrame(u)?.let { (id, data) -> appendTerminalOutput(id, data) }
         terminalExitFrame(u)?.let { (id, code, sig) -> markTerminalExit(id, code, sig) }

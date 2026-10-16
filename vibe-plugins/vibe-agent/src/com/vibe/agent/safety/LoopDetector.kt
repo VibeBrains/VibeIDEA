@@ -33,14 +33,37 @@ object LoopDetector {
   fun fingerprint(toolName: String?, arguments: String?): String =
     (toolName.orEmpty().trim().lowercase() + "|" + arguments.orEmpty().trim()).take(FINGERPRINT_LIMIT)
 
+  /** True for arguments that say nothing about the call: absent, blank, `{}` or `null`. */
+  fun isEmptyInput(arguments: String?): Boolean {
+    val text = arguments.orEmpty().filterNot { it.isWhitespace() }
+    return text.isEmpty() || text == "{}" || text == "null"
+  }
+
   /** Bounded history of fingerprints in call order. */
   class History(private val limit: Int = HISTORY_LIMIT) {
     private val calls = ArrayDeque<String>()
+    private val recordedIds = ArrayDeque<String>()
 
     @Synchronized
     fun add(fingerprint: String) {
       calls.addLast(fingerprint)
       while (calls.size > limit) calls.removeFirst()
+    }
+
+    /**
+     * Records a tool call by id, once, and only when it carries real arguments
+     * Returns true when the call was recorded by this invocation
+     *
+     * Some agents announce a call with empty arguments and send them in a later update:
+     * Fingerprinting the announce would make four different writes look like one call repeated
+     */
+    @Synchronized
+    fun noteCall(callId: String, toolName: String?, arguments: String?): Boolean {
+      if (isEmptyInput(arguments) || callId in recordedIds) return false
+      recordedIds.addLast(callId)
+      while (recordedIds.size > limit) recordedIds.removeFirst()
+      add(fingerprint(toolName, arguments))
+      return true
     }
 
     @Synchronized
