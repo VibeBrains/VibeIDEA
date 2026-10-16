@@ -118,9 +118,9 @@ class VibeCommandsMenuGroup : ActionGroup(), DumbAware {
   private class RemoveAction(private val command: ProjectCommands.Command) : DumbAwareAction(t("common.delete")) {
     override fun actionPerformed(e: AnActionEvent) {
       val project = e.project ?: return
-      val answer = Messages.showYesNoDialog(project, t("commands.menu.remove.confirm", "name" to command.name, "command" to command.line),
-                                            t("commands.title"), t("common.delete"), t("common.cancel"), Messages.getQuestionIcon())
-      if (answer == Messages.YES) rewrite(project, templatePresentation.text) { ProjectCommandsEdit.remove(it, command.id) }
+      val removed = com.vibe.agent.ui.VibeConfirmDialog.confirm(project, t("commands.menu.remove.confirm", "name" to command.name, "command" to command.line),
+                                                                t("commands.title"), t("common.delete"), t("common.cancel"))
+      if (removed) rewrite(project, templatePresentation.text) { ProjectCommandsEdit.remove(it, command.id) }
     }
   }
 

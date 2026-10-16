@@ -2470,8 +2470,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     val approvedFiles = props.getValue(filesKey)?.let { com.vibe.agent.skills.SkillApproval.decodeFiles(it) }
     val body = com.vibe.agent.skills.SkillApprovalText.render(id, entry, verdict, approvedFiles)
     val approved = askOnEdt {
-      Messages.showYesNoDialog(project, body, t("skills.approve.title"),
-                               t("skills.approve.use"), t("common.cancel"), Messages.getQuestionIcon()) == Messages.YES
+      VibeConfirmDialog.confirm(project, body, t("skills.approve.title"), t("skills.approve.use"), t("common.cancel"))
     }
     if (!approved) {
       systemLine(t("skills.approve.refused", "id" to id), AGENTS)
@@ -4230,7 +4229,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
         else -> askOnEdt {
           val question = t("directTools.approve", "tool" to asked.name, "args" to asked.arguments.take(DIRECT_TOOL_ARGS_PREVIEW))
           val full = if (danger == null) question else t("directTools.dangerous", "reason" to danger) + "\n\n" + question
-          Messages.showYesNoDialog(project, full, t("directTools.approveTitle"), Messages.getQuestionIcon()) == Messages.YES
+          VibeConfirmDialog.confirm(project, full, t("directTools.approveTitle"), t("chat.permission.allow"), t("chat.permission.reject"))
         }.also { approved ->
           audit?.append(AuditEvent(System.currentTimeMillis(), AuditEvent.Action.PERMISSION, ok = approved,
                                    actor = com.vibe.agent.audit.AuditActor.HUMAN, callId = asked.id, meta = mapOf("tool" to asked.name)))
@@ -6982,14 +6981,13 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
         var open = false
         if (!request.dismissed) ApplicationManager.getApplication().invokeAndWait {
           // A dialog the agent can withdraw: `Messages` shows one nobody holds, and a withdrawn question would wait for nobody
-          val dialog = com.intellij.openapi.ui.messages.MessageDialog(
+          val dialog = VibeConfirmDialog(
             project,
             t("elicit.url.body", "message" to (form.message ?: ""), "url" to url),
             t("elicit.url.title"),
-            arrayOf(t("elicit.url.open"), t("elicit.url.decline")),
+            listOf(t("elicit.url.open"), t("elicit.url.decline")),
             0,
             com.intellij.icons.AllIcons.General.QuestionDialog,
-            false,
           )
           request.closes(dialog, DIALOG_DISMISSED)
           dialog.show()
@@ -7061,9 +7059,11 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     val outbound = command?.let { com.vibe.agent.guard.Trifecta.outboundInLine(it) }
     if (outbound != null) turnSignals.add(com.vibe.agent.guard.Trifecta.Signal.OUTBOUND_CHANNEL)
     val trifecta = com.vibe.agent.guard.Trifecta.complete(turnSignals)
+    // The command is shown in its own block, so a title that merely repeats it is shortened to the tool's name
+    val askedTitle = if (command != null && title.contains(command.trim().take(PERMISSION_ECHO_CHARS))) name ?: t("chat.permission.default") else title
     val base = if (destructive != null)
-      t("chat.permission.destructive", "reasons" to destructive.reasons.joinToString(", "), "command" to command.take(DESTRUCTIVE_PREVIEW_LEN), "title" to title)
-    else title
+      t("chat.permission.destructive", "reasons" to destructive.reasons.joinToString(", "), "command" to command.take(DESTRUCTIVE_PREVIEW_LEN), "title" to askedTitle)
+    else askedTitle
     // Три признака за один ход названы человеку словами: по отдельности каждый законен, и молча
     // разрешённое здесь — единственное место, где утечка выглядит как обычная работа.
     val asked = if (trifecta) t("chat.permission.trifecta", "channel" to (outbound ?: ""), "title" to base) else base
@@ -7071,7 +7071,8 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     val dialogText = turn.label?.let { t("chat.permission.fromStep", "step" to it, "text" to asked) } ?: asked
     val options = params["options"]?.jsonArray?.map { it.jsonObject } ?: emptyList()
     val chosen = if (request.dismissed) null else askOnEdt {
-      val names = options.map { it["name"]?.jsonPrimitive?.contentOrNull ?: it.getValue("optionId").jsonPrimitive.content }
+      // The agent's own button names are English; the kind of the option says what it is, and the kind is translated
+      val names = options.map { permissionButton(it) }
       // Понижение доверия на ходу, где сошлись все три признака: диалог перестаёт выглядеть
       // рутинным и перестаёт предлагать «да».
       //
@@ -7081,8 +7082,8 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
       // единственное место, где утечка выглядит как обычная работа.
       val defaultOption = if (trifecta) indexOfRefusal(options) else 0
       // A dialog held by the request: the agent may withdraw the question, Stop closes it, and either way it is a refusal
-      val dialog = com.intellij.openapi.ui.messages.MessageDialog(project, dialogText, t("chat.permission.title"), names.toTypedArray(),
-        defaultOption, if (destructive != null || trifecta) Messages.getWarningIcon() else Messages.getQuestionIcon(), false)
+      val dialog = VibeConfirmDialog(project, dialogText, t("chat.permission.title"), names,
+        defaultOption, if (destructive != null || trifecta) Messages.getWarningIcon() else Messages.getQuestionIcon(), command)
       request.closes(dialog, DIALOG_DISMISSED)
       dialog.show()
       val choice = dialog.exitCode
@@ -7104,6 +7105,15 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
         }
       })
     }
+  }
+
+  /** The button of a permission option: by its ACP kind, in our words; the agent's own name when the kind is unknown */
+  private fun permissionButton(option: JsonObject): String = when (option["kind"]?.jsonPrimitive?.contentOrNull) {
+    "allow_once" -> t("chat.permission.allow")
+    "allow_always" -> t("chat.permission.allowAlways")
+    "reject_once" -> t("chat.permission.reject")
+    "reject_always" -> t("chat.permission.rejectAlways")
+    else -> option["name"]?.jsonPrimitive?.contentOrNull ?: option.getValue("optionId").jsonPrimitive.content
   }
 
   /**
@@ -7334,6 +7344,9 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
 
     /** Exit code of a question closed because its request was withdrawn or the turn stopped: no option has it */
     private const val DIALOG_DISMISSED = -1
+
+    /** How much of a command must be found in the dialog text to call it an echo of the command block */
+    private const val PERMISSION_ECHO_CHARS = 30
 
     /** The gap between two buttons under a line of the feed, in logical pixels */
     const val FEED_ACTION_GAP = 6

@@ -121,13 +121,13 @@ class ProjectCommandRunner(private val project: Project) {
     val key = com.vibe.agent.safety.ApprovalKeys.COMMAND + command.id
     val hash = ProjectCommands.approvalHash(command)
     if (!command.confirm && properties.getValue(key) == hash) return true
-    val answer = Messages.showYesNoDialog(
+    val accepted = com.vibe.agent.ui.VibeConfirmDialog.confirm(
       project,
       if (command.confirm) t("commands.confirm", "title" to command.name, "command" to command.line)
       else t("commands.approve", "title" to command.name, "command" to command.line),
       t("commands.title"), t("commands.approve.yes"), t("common.cancel"), Messages.getWarningIcon(),
     )
-    if (answer != Messages.YES) return false
+    if (!accepted) return false
     properties.setValue(key, hash)
     return true
   }
