@@ -1597,6 +1597,7 @@
   "picker.config.tooltip": "The agent's own settings: it names them, offers the values and reports what is in force — they are not IDE settings",
   "picker.mode.current": "Now: {value}",
   "picker.mode.label": "Mode",
+  "picker.mode.labelWith": "Mode: {value}",
   "picker.mode.tooltip": "The agent's own mode: it sends the list of modes and what they mean — they are not IDE settings",
   "picker.target.acp": "ACP agent",
   "picker.target.agentTooltip": "ACP agent: {command} {args}",

@@ -100,6 +100,12 @@ internal object AcpMenu {
     return AcpLabels.valueName(optionId, current.value, current.name)
   }
 
+  /** The mode pill names the mode in force, so it is seen without opening anything */
+  fun modePillText(modes: SessionModes): String {
+    val current = modes.available.firstOrNull { it.id == modes.currentModeId } ?: return t("picker.mode.label")
+    return t("picker.mode.labelWith", "value" to AcpLabels.modeName(current.id, current.name))
+  }
+
   /** What the mode pill is, then the mode in force with its hint */
   fun modeTooltipLines(modes: SessionModes): List<String> {
     val current = modes.available.firstOrNull { it.id == modes.currentModeId }

@@ -1597,6 +1597,7 @@
   "picker.config.tooltip": "Настройки агента: названия, варианты и значения присылает сам агент, это не настройки IDE",
   "picker.mode.current": "Сейчас: {value}",
   "picker.mode.label": "Режим",
+  "picker.mode.labelWith": "Режим: {value}",
   "picker.mode.tooltip": "Режим агента: список режимов и их смысл присылает сам агент, это не настройки IDE",
   "picker.target.acp": "агент ACP",
   "picker.target.agentTooltip": "Агент ACP: {command} {args}",

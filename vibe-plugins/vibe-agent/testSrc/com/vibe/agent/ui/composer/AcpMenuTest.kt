@@ -84,6 +84,12 @@ class AcpMenuTest {
   }
 
   @Test
+  fun `the mode pill names the mode in force`() {
+    assertEquals("Режим: Вручную", AcpMenu.modePillText(claudeModes))
+    assertEquals("Режим", AcpMenu.modePillText(SessionModes("gone", claudeModes.available)))
+  }
+
+  @Test
   fun `a mode id we do not know is shown as the agent sent it`() {
     val modes = SessionModes("yolo", listOf(SessionMode("yolo", "YOLO", "Do everything"), SessionMode("default", "Manual", null)))
     val row = AcpMenu.modeRows(modes).first()
@@ -181,13 +187,12 @@ class AcpMenuTest {
   }
 
   @Test
-  fun `the mode pill is one word, whatever mode is in force`() {
+  fun `the mode pill follows the mode in force`() {
     val picker = ModePicker { }
     picker.setModes(claudeModes)
-    assertEquals(t("picker.mode.label"), picker.pill.text)
-    assertFalse(picker.pill.text.contains(' '), "more than one word: ${picker.pill.text}")
+    assertEquals("Режим: Вручную", picker.pill.text)
     picker.setModes(claudeModes.copy(currentModeId = "plan"))
-    assertEquals(t("picker.mode.label"), picker.pill.text)
+    assertEquals("Режим: План", picker.pill.text)
     assertTrue(picker.pill.isVisible)
     picker.setModes(null)
     assertFalse(picker.pill.isVisible)

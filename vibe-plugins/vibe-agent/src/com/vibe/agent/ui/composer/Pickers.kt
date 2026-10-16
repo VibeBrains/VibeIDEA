@@ -107,7 +107,7 @@ class ModelPicker(
 
 /**
  * The mode pill: the ACP session modes the agent advertises (session/new → modes)
- * The caption is fixed: the mode in force is the agent's own wording, and as the pill's text it would look like a setting of the IDE
+ * The caption names the mode in force; what the pill is stays in its tooltip
  * What the pill is and the mode in force are in its tooltip; the menu shows the modes, each with its hint behind a help mark
  * Hidden when the current target has no modes (direct LLM chat has no tools to gate)
  */
@@ -118,7 +118,7 @@ class ModePicker(private val onChoose: (modeId: String) -> Unit) {
   fun setModes(modes: SessionModes?) {
     this.modes = modes
     pill.isVisible = modes != null && modes.available.isNotEmpty()
-    pill.text = t("picker.mode.label")
+    pill.text = modes?.let { AcpMenu.modePillText(it) } ?: t("picker.mode.label")
     pill.toolTipText = modes?.let { wrappedTooltip(AcpMenu.modeTooltipLines(it)) } ?: t("picker.mode.tooltip")
     pill.revalidate()
   }
