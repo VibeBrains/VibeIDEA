@@ -11,16 +11,19 @@ import com.vibe.agent.mcp.McpServersFile
 import com.vibe.agent.ui.composer.StatusDot
 import java.awt.BorderLayout
 import java.awt.Component
+import java.awt.Rectangle
 import javax.swing.Box
 import javax.swing.BoxLayout
 import javax.swing.JComponent
 import javax.swing.JPanel
+import javax.swing.SwingUtilities
 
 /**
  * What the MCP servers page draws: a card per server of the two files (`~/.vibe/mcp.json`, `.vibe/mcp.json`), and the form that adds one
  *
- * The cards are the ones of the Models page ([CardPanel], [FoldPanel]); a card is closed until someone opens it, except a server
- * that needs the person (it did not start, or its tools wait for confirmation), whose card is open the first time it is drawn
+ * The cards are the ones of the Models page ([CardPanel], [FoldPanel]); a card is open the first time it is drawn, so that the command,
+ * the file and the state of a server are in front of the person without a click, except a server that is switched off, which is closed
+ * The form that adds a server comes after the cards, because that is where a person who has just read the list looks next
  *
  * No platform services in here: the state comes in as a [Model] and every click goes out through [Actions], so the same view
  * is drawn in a unit test and the screenshots are made from it
@@ -32,7 +35,7 @@ internal class McpServersPageView(private val actions: Actions) {
 
     /**
      * Open the file of [layer], at the entry of [name] when given
-     * The settings close, because a modal dialog leaves no editor to type into
+     * The settings close first: an editor opened behind the settings window cannot be reached, in either kind of that window
      */
     fun edit(layer: McpServersFile.Layer, name: String?)
 
@@ -80,6 +83,9 @@ internal class McpServersPageView(private val actions: Actions) {
     cancel = { hideForm() },
   )
 
+  /** The form in the card it is drawn in: the card is what the page scrolls to */
+  private val formCard = CardPanel(dashed = true).apply { add(form, BorderLayout.CENTER) }
+
   /** The title line, the summary and the link to the form: stays on top while the cards scroll, so it must be able to shrink */
   val header: JComponent = JPanel(BorderLayout(JBUI.scale(HEADER_GAP), 0)).apply {
     isOpaque = false
@@ -118,17 +124,17 @@ internal class McpServersPageView(private val actions: Actions) {
     if (McpServersFile.Layer.PROJECT in model.existing) content.add(openProject.left())
     if (McpServersFile.Layer.USER in model.existing) content.add(openUser.left())
     content.add(gap())
-    if (formOpen) {
-      content.add(CardPanel(dashed = true).apply { add(form, BorderLayout.CENTER) }.left())
-      content.add(gap())
-    }
     if (model.cards.isEmpty() && !formOpen) content.add(emptyState())
     for (card in model.cards) {
       val fold = foldOf(card, card.name in model.restarting)
-      // A card the person has seen keeps its open state; one drawn for the first time opens if the server needs them
-      fold.expanded = if (card.name in known) card.name in wasOpen else card.status in ATTENTION
+      // A card the person has seen keeps its open state; one drawn for the first time is open unless the server is off
+      fold.expanded = if (card.name in known) card.name in wasOpen else card.status !in CLOSED_BY_DEFAULT
       folds[card.name] = fold
       content.add(CardPanel(dashed = false).apply { add(fold, BorderLayout.CENTER) }.left())
+      content.add(gap())
+    }
+    if (formOpen) {
+      content.add(formCard.left())
       content.add(gap())
     }
     summary.text = McpServersPage.summary(model.cards)
@@ -143,6 +149,13 @@ internal class McpServersPageView(private val actions: Actions) {
     formOpen = true
     latest?.let { render(it, force = true) }
     form.focusFirst()
+    // The form is the last thing on the page and may be under the edge of the window: it is brought into view once laid out
+    SwingUtilities.invokeLater { revealForm() }
+  }
+
+  /** Scrolls the page to the form, its top first: the title and the cancel link are there */
+  internal fun revealForm() {
+    if (formOpen) formCard.scrollRectToVisible(Rectangle(0, 0, formCard.width, formCard.height))
   }
 
   fun hideForm() {
@@ -229,7 +242,7 @@ internal class McpServersPageView(private val actions: Actions) {
     const val BODY_INDENT = 18
     const val BODY_TOP_GAP = 6
 
-    /** The servers that wait for the person: their cards are open when first drawn */
-    val ATTENTION = setOf(McpServersPage.Status.FAILED, McpServersPage.Status.WITHHELD)
+    /** A server that is switched off has nothing to read: its card is closed when first drawn */
+    val CLOSED_BY_DEFAULT = setOf(McpServersPage.Status.DISABLED)
   }
 }

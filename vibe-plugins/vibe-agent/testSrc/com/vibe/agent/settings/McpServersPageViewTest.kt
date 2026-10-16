@@ -4,6 +4,7 @@ package com.vibe.agent.settings
 import com.intellij.ui.components.JBCheckBox
 import com.vibe.agent.mcp.McpServersFile
 import org.junit.jupiter.api.Test
+import javax.swing.JButton
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertNull
@@ -25,21 +26,22 @@ class McpServersPageViewTest {
   }
 
   @Test
-  fun `a card is closed until opened, except a server that needs the person`() {
+  fun `a card is open when first drawn, except a server that is switched off`() {
     val page = McpServersPageFixture().rendered()
-    assertFalse(page.foldOf("github").expanded)
+    assertTrue(page.foldOf("github").expanded, "the command and the file of a server are in front of the person without a click")
     assertTrue(page.foldOf("tracker").expanded, "a server that did not start shows why without a click")
-    assertFalse(page.foldOf("черновик").expanded)
+    assertFalse(page.foldOf("черновик").expanded, "a server that is off has nothing to read")
   }
 
   @Test
   fun `a card the person closed or opened stays so across a redraw`() {
     val page = McpServersPageFixture().rendered()
-    page.foldOf("github").expanded = true
-    page.foldOf("tracker").expanded = false
+    page.foldOf("github").expanded = false
+    page.foldOf("черновик").expanded = true
     page.view.render(page.model(warnings = listOf("mcp.json: файл не разобрался как JSON")))
-    assertTrue(page.foldOf("github").expanded)
-    assertFalse(page.foldOf("tracker").expanded, "closed by the person, it must not spring open on the next state change")
+    assertFalse(page.foldOf("github").expanded, "closed by the person, it must not spring open on the next state change")
+    assertTrue(page.foldOf("черновик").expanded)
+    assertTrue(page.foldOf("tracker").expanded)
   }
 
   @Test
@@ -197,6 +199,28 @@ class McpServersPageViewTest {
     assertEquals(1, inHeader, "and the header keeps its own")
   }
 
+  @Test
+  fun `every link of the page does something, so a click on one is never lost`() {
+    val page = McpServersPageFixture()
+    page.view.render(page.model(page.fixtureCards(withheld = true), existing = McpServersFile.Layer.entries.toSet()))
+    val links = page.all(page.view.header, SettingsLink::class.java) + page.all(page.view.content, SettingsLink::class.java)
+    // The header, two links to the files, and from two to four links on each of the three cards
+    assertTrue(links.size >= 12, links.map { it.text }.toString())
+    for (link in links) {
+      val requestsBefore = page.requests
+      page.click(link)
+      assertTrue(page.requests > requestsBefore || page.view.formShown, "the link «${link.text}» did nothing")
+      page.view.hideForm()
+    }
+  }
+
+  @Test
+  fun `the link of the empty page that adds a server opens the form`() {
+    val page = McpServersPageFixture().rendered(McpServersPageFixture().model(cards = emptyList()))
+    page.click(page.all(page.view.content, SettingsLink::class.java).first { it.text == "Добавить сервер" })
+    assertTrue(page.view.formShown)
+  }
+
   // ----- the form -----
 
   @Test
@@ -284,6 +308,63 @@ class McpServersPageViewTest {
     page.view.formPanel.send()
     assertEquals("no", page.view.formPanel.errorText, "the entry was valid, so the fields survived the redraw")
   }
+
+  @Test
+  fun `the form is drawn after the cards, where a person who has read the list looks next`() {
+    val page = McpServersPageFixture().rendered()
+    page.view.showForm()
+    val cards = page.view.content.components.filterIsInstance<CardPanel>()
+    assertEquals(page.view.cardFolds().size + 1, cards.size)
+    assertTrue(page.all(cards.last(), McpServerFormPanel::class.java).isNotEmpty(), "the form is the last card")
+    assertTrue(cards.dropLast(1).all { page.all(it, McpServerFormPanel::class.java).isEmpty() }, "no card but the last holds the form")
+  }
+
+  @Test
+  fun `the form can be cancelled from its title and from its bottom, and nothing is written`() {
+    val ways = listOf<(McpServersPageFixture) -> Unit>(
+      { page -> page.click(page.all(page.view.formPanel, SettingsLink::class.java).single { it.text == "Отмена" }) },
+      // A link is a button too, to the platform: the one at the bottom is the button that is not a link
+      { page -> page.all(page.view.formPanel, JButton::class.java).single { it.text == "Отмена" && it !is SettingsLink }.doClick() },
+    )
+    for (cancel in ways) {
+      val page = McpServersPageFixture().rendered()
+      page.view.showForm()
+      page.view.formPanel.type(name = "jira", command = "uvx")
+      cancel(page)
+      assertFalse(page.view.formShown)
+      assertTrue(page.added.isEmpty(), "a cancelled form writes nothing")
+      assertTrue(page.all(page.view.content, McpServerFormPanel::class.java).isEmpty(), "the form is gone from the page")
+      page.view.showForm()
+      page.view.formPanel.send()
+      assertEquals("Укажите имя сервера", page.view.formPanel.errorText, "the fields were emptied by the cancel")
+    }
+  }
+
+  @Test
+  fun `the way out of the form is on its title line, in sight without scrolling a form taller than the window`() {
+    val page = McpServersPageFixture().rendered()
+    page.view.showForm()
+    page.layOut(SettingsUi.page(page.view.content), FORM_WIDTH, FORM_HEIGHT)
+    val form = page.view.formPanel
+    val cancel = page.all(form, SettingsLink::class.java).single { it.text == "Отмена" }
+    val firstField = page.all(form, javax.swing.JTextField::class.java).first()
+    val linkTop = javax.swing.SwingUtilities.convertPoint(cancel, 0, 0, form).y
+    val fieldTop = javax.swing.SwingUtilities.convertPoint(firstField, 0, 0, form).y
+    assertTrue(linkTop < fieldTop, "the cancel link is at $linkTop, the first field at $fieldTop")
+  }
+
+  @Test
+  fun `showing the form scrolls the page to it`() {
+    val page = McpServersPageFixture().rendered()
+    val scroll = SettingsUi.page(page.view.content)
+    page.layOut(scroll, FORM_WIDTH, FORM_HEIGHT)
+    page.view.showForm()
+    page.layOut(scroll, FORM_WIDTH, FORM_HEIGHT)
+    val card = generateSequence<java.awt.Component>(page.view.formPanel) { it.parent }.first { it is CardPanel }
+    assertTrue(card.y > FORM_HEIGHT, "the form must start below the first screen for the scroll to mean anything, it starts at ${card.y}")
+    page.view.revealForm()
+    assertEquals(card.y, scroll.viewport.viewPosition.y, "the top of the form is the top of what the person sees")
+  }
 }
 
 /** The report the fixture's three servers have, with the github server held back when asked */
@@ -301,3 +382,7 @@ private fun McpServersPageFixture.fixtureCards(withheld: Boolean): List<McpServe
   fixtureReport(withheld),
   canRestart = true,
 )
+
+/** The size of the settings window the form tests lay the page out in: short enough that the form starts below the first screen */
+private const val FORM_WIDTH = 660
+private const val FORM_HEIGHT = 300

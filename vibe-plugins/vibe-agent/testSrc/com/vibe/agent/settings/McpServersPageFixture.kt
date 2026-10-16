@@ -18,6 +18,9 @@ internal class McpServersPageFixture {
   var confirmed = 0
   val added = ArrayList<Pair<McpServersFile.Layer, McpServersFile.Entry>>()
 
+  /** How many times the page asked the outside world for something: a link that leaves this where it was did nothing */
+  val requests: Int get() = toggled.size + edited.size + deleted.size + restarted.size + confirmed + added.size
+
   /** What the file refuses an entry with, as the page would be told; null — written */
   var addAnswer: String? = null
 
@@ -125,5 +128,30 @@ internal class McpServersPageFixture {
 
   fun linksOf(card: FoldPanel): List<String> = all(card, SettingsLink::class.java).mapNotNull { it.text }
 
+  /** Lays [root] out at the size of a window, pass after pass: wrapped text asks for another pass once it knows its width */
+  fun layOut(root: Component, width: Int, height: Int) {
+    root.setSize(width, height)
+    repeat(LAYOUT_PASSES) {
+      invalidateAll(root)
+      doLayoutAll(root)
+    }
+  }
+
+  private fun invalidateAll(c: Component) {
+    c.invalidate()
+    if (c is Container) c.components.forEach { invalidateAll(it) }
+  }
+
+  private fun doLayoutAll(c: Component) {
+    if (c is Container) {
+      c.doLayout()
+      c.components.forEach { doLayoutAll(it) }
+    }
+  }
+
   fun foldOf(name: String): FoldPanel = view.cardFolds().first { fold -> textsOf(fold.header).any { it.endsWith("  $name") } }
+
+  private companion object {
+    const val LAYOUT_PASSES = 4
+  }
 }

@@ -2,6 +2,7 @@
 package com.vibe.agent.settings
 
 import com.intellij.util.ui.JBUI
+import com.vibe.agent.mcp.ConfiguredServersSource
 import com.vibe.agent.mcp.McpServersFile
 import java.awt.BorderLayout
 import java.awt.Color
@@ -150,6 +151,17 @@ class McpServersPageShotTest {
                                   env = "JIRA_URL=https://x\nTOKEN")
       mistake.view.formPanel.send()
       shoot(out, "form-error", palette, 660, outerOf(mistake, palette))
+
+      // One server of the shared file that nobody has started, the card the page opens with, and the same page with the form under it
+      fun single(): McpServersPageFixture = McpServersPageFixture().apply {
+        val atlassian = entry("mcp-atlassian", "uvx", listOf("mcp-atlassian"), mapOf("JIRA_URL" to "u", "JIRA_API_TOKEN" to "t"))
+        val cards = McpServersPage.cards(merged(user = listOf(atlassian)), ConfiguredServersSource.Report.EMPTY, canRestart = false)
+        view.render(model(cards, existing = setOf(McpServersFile.Layer.USER)))
+      }
+      shoot(out, "fix-owner", palette, 660, outerOf(single(), palette))
+      val withForm = single()
+      withForm.view.showForm()
+      shoot(out, "fix-form", palette, 660, outerOf(withForm, palette))
     }
     (tokens + defaults).forEach { UIManager.put(it, null) }
   }

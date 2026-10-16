@@ -3,12 +3,9 @@ package com.vibe.agent.settings
 
 import com.intellij.openapi.Disposable
 import com.intellij.openapi.application.ApplicationManager
-import com.intellij.openapi.application.ModalityState
 import com.intellij.openapi.diagnostic.logger
 import com.intellij.openapi.options.Configurable
-import com.intellij.openapi.options.newEditor.SettingsDialog
 import com.intellij.openapi.project.Project
-import com.intellij.openapi.ui.DialogWrapper
 import com.intellij.openapi.ui.Messages
 import com.intellij.openapi.util.Disposer
 import com.intellij.util.ui.JBUI
@@ -157,18 +154,10 @@ class VibeMcpServersConfigurable(private val project: Project) : Configurable, C
     ApplicationManager.getApplication().executeOnPooledThread { VibeMcpServers.getInstance(project).confirmed(name) }
   }
 
-  /**
-   * Settings are a modal dialog, and an editor opened behind one cannot be typed into: the dialog closes first
-   *
-   * Closing applies what other pages have pending, as OK does, so that nothing the person typed is lost by a click on a link
-   */
+  /** Settings cover the editor, in both kinds of their window: it closes first, and what [action] opens is then in front of the person */
   private fun closeSettingsThen(action: () -> Unit) {
-    val dialog = view?.content?.let { DialogWrapper.findInstance(it) }
-    if (dialog is SettingsDialog) {
-      dialog.applyAndClose(false)
-      ApplicationManager.getApplication().invokeLater(action, ModalityState.nonModal())
-    }
-    else action()
+    val content = view?.content
+    if (content == null) action() else SettingsWindow.closeThen(content, action)
   }
 
   override fun isModified(): Boolean = false

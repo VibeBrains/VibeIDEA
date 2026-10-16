@@ -6,6 +6,7 @@ import com.intellij.util.ui.JBUI
 import com.intellij.util.ui.UIUtil
 import java.awt.Dimension
 import javax.swing.JEditorPane
+import javax.swing.SwingUtilities
 
 /**
  * Подсказка под настройкой, которая переносится по ширине, а не тянет страницу вбок.
@@ -86,7 +87,21 @@ internal class WrappingHint(html: String) : JEditorPane() {
     if (usable <= 0 || usable == wrappedAt) return
     wrappedAt = usable
     applyText()
-    revalidate()
+    // The wrap above leaves the hint at 0x0, and the layout that called is in the middle of its pass and will not come back to it
+    // Put the bounds it gave back: a hint left at zero size paints nothing, and a card body is built once and laid out once
+    super.setBounds(x, y, width, height)
+    relayoutAfterPass()
+  }
+
+  /**
+   * Asks for one more layout pass, to measure the text at the width it now has
+   *
+   * A revalidation asked for from inside a layout pass does not bring another pass: in a real window the hints stayed at zero size
+   * after it, with the event queue idle
+   * So while the hint is on the screen the request goes out after the pass
+   */
+  private fun relayoutAfterPass() {
+    if (isShowing) SwingUtilities.invokeLater { revalidate() } else revalidate()
   }
 
   override fun updateUI() {

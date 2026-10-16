@@ -50,7 +50,7 @@ internal class McpServerFormPanel(
       add(cancelButton)
     }
     val form = FormBuilder.createFormBuilder()
-      .addComponent(SettingsUi.section(t("settings.mcp.form.title")))
+      .addComponent(titleRow())
       .addLabeledComponent(JBLabel(t("settings.mcp.form.file")), file, true)
       .addLabeledComponent(JBLabel(t("settings.mcp.form.name")), name, true)
       .addLabeledComponent(JBLabel(t("settings.mcp.form.command")), command, true)
@@ -67,6 +67,21 @@ internal class McpServerFormPanel(
     add(form, BorderLayout.CENTER)
     // Enter in a one-line field sends the form, as in any dialog
     for (field in listOf(name, command, args, cwd)) field.addActionListener { send() }
+  }
+
+  /**
+   * The title and, on the same line, the way out
+   * The buttons at the bottom are far down a form this tall, and a person who sees no way out of it closes the whole settings window
+   */
+  private fun titleRow(): JPanel = JPanel(BorderLayout(JBUI.scale(TITLE_GAP), 0)).apply {
+    isOpaque = false
+    add(SettingsUi.section(t("settings.mcp.form.title")), BorderLayout.CENTER)
+    // The section has its own gap on top; the link's box has the same one, so that the two texts stand on one line
+    add(JPanel(BorderLayout()).apply {
+      isOpaque = false
+      border = JBUI.Borders.emptyTop(TITLE_TOP_GAP)
+      add(SettingsLink(t("common.cancel")) { cancel() }, BorderLayout.NORTH)
+    }, BorderLayout.EAST)
   }
 
   /** The cursor goes to the first field, so that the form opens ready to type into */
@@ -113,6 +128,8 @@ internal class McpServerFormPanel(
 
   private companion object {
     const val BUTTON_GAP = 8
+    const val TITLE_GAP = 8
+    const val TITLE_TOP_GAP = 8
     const val ENV_ROWS = 3
 
     // Code samples, the same in every language: what a server of the usual kind looks like in the file
