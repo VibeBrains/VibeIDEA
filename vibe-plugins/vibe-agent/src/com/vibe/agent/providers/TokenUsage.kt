@@ -44,6 +44,17 @@ data class TokenUsage(
     cacheWriteTokens = maxOf(cacheWriteTokens, other.cacheWriteTokens),
   )
 
+  /**
+   * What two separate requests cost together: the rounds of one tool loop are billed one by one
+   * The loop used to [merge] them, and a turn of twenty rounds was counted as its single largest request
+   */
+  operator fun plus(other: TokenUsage): TokenUsage = TokenUsage(
+    inputTokens = inputTokens + other.inputTokens,
+    outputTokens = outputTokens + other.outputTokens,
+    cacheReadTokens = cacheReadTokens + other.cacheReadTokens,
+    cacheWriteTokens = cacheWriteTokens + other.cacheWriteTokens,
+  )
+
   companion object {
     val NONE = TokenUsage()
 

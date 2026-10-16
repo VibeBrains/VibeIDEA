@@ -178,7 +178,8 @@ class VibeAgentConfigurable : Configurable, Configurable.NoScroll {
     val mcpExecute = JBCheckBox(t("settings.agent.mcpAllowExecute"), VibeAgentSettings.mcpAllowExecute).also { mcpAllowExecute = it }
     val handshake = JBIntSpinner(VibeAgentSettings.handshakeTimeoutSec, VibeAgentSettings.MIN_HANDSHAKE_TIMEOUT_SEC, VibeAgentSettings.MAX_HANDSHAKE_TIMEOUT_SEC).also { handshakeTimeout = it }
     val tools = JBCheckBox(t("settings.agent.directTools"), VibeAgentSettings.directToolsEnabled).also { directTools = it }
-    val toolRounds = JBIntSpinner(VibeAgentSettings.directToolMaxRounds, VibeAgentSettings.MIN_DIRECT_TOOL_MAX_ROUNDS, VibeAgentSettings.MAX_DIRECT_TOOL_MAX_ROUNDS)
+    val toolRounds = JBIntSpinner(VibeAgentSettings.directToolCheckpointRounds, VibeAgentSettings.MIN_DIRECT_TOOL_CHECKPOINT_ROUNDS,
+                                  VibeAgentSettings.MAX_DIRECT_TOOL_CHECKPOINT_ROUNDS)
       .also { directToolRounds = it }
     val trigger = JBIntSpinner(VibeAgentSettings.compactTriggerPercent, VibeAgentSettings.MIN_COMPACT_TRIGGER_PERCENT, VibeAgentSettings.MAX_COMPACT_TRIGGER_PERCENT)
       .also { compactTrigger = it }
@@ -368,7 +369,7 @@ class VibeAgentConfigurable : Configurable, Configurable.NoScroll {
     terminalEnabled?.isSelected != VibeAgentSettings.terminalEnabled ||
     handshakeTimeout?.number != VibeAgentSettings.handshakeTimeoutSec ||
     directTools?.isSelected != VibeAgentSettings.directToolsEnabled ||
-    directToolRounds?.number != VibeAgentSettings.directToolMaxRounds ||
+    directToolRounds?.number != VibeAgentSettings.directToolCheckpointRounds ||
     compactTrigger?.number != VibeAgentSettings.compactTriggerPercent ||
     compactTarget?.number != VibeAgentSettings.compactTargetPercent ||
     compactKeep?.number != VibeAgentSettings.compactKeepRecent ||
@@ -435,7 +436,7 @@ class VibeAgentConfigurable : Configurable, Configurable.NoScroll {
     terminalEnabled?.let { VibeAgentSettings.terminalEnabled = it.isSelected }
     handshakeTimeout?.let { VibeAgentSettings.handshakeTimeoutSec = it.number }
     directTools?.let { VibeAgentSettings.directToolsEnabled = it.isSelected }
-    directToolRounds?.let { VibeAgentSettings.directToolMaxRounds = it.number }
+    directToolRounds?.let { VibeAgentSettings.directToolCheckpointRounds = it.number }
     compactTrigger?.let { VibeAgentSettings.compactTriggerPercent = it.number }
     compactTarget?.let { VibeAgentSettings.compactTargetPercent = it.number }
     compactKeep?.let { VibeAgentSettings.compactKeepRecent = it.number }
@@ -512,7 +513,7 @@ class VibeAgentConfigurable : Configurable, Configurable.NoScroll {
     checksMaxFileKb?.number = VibeAgentSettings.checksMaxFileKb
     handshakeTimeout?.number = VibeAgentSettings.handshakeTimeoutSec
     directTools?.isSelected = VibeAgentSettings.directToolsEnabled
-    directToolRounds?.number = VibeAgentSettings.directToolMaxRounds
+    directToolRounds?.number = VibeAgentSettings.directToolCheckpointRounds
     compactTrigger?.number = VibeAgentSettings.compactTriggerPercent
     compactTarget?.number = VibeAgentSettings.compactTargetPercent
     compactKeep?.number = VibeAgentSettings.compactKeepRecent

@@ -560,7 +560,8 @@ class ComposerPanel(
     focusInput()
   }
 
-  private fun sendContinue() {
+  /** The «continue» button's message; also what a stopped turn's pill sends */
+  fun sendContinue() {
     if (busy || !targetAvailable) return
     listener.onSend(ComposedMessage(VibeChatSettings.continueText))
     focusInput()

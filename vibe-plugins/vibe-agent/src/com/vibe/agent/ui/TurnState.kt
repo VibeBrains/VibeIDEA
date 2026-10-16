@@ -80,6 +80,9 @@ internal class TurnState(
   /** The effort the turn's last request was sent at, kept with its answer ([com.vibe.agent.providers.EffortUpdates]) */
   @Volatile var effortMark: String? = null
 
+  /** Model-facing words closing a tool loop the client stopped ([com.vibe.agent.providers.ToolLoopCheckpoint.stoppedMarker]) */
+  @Volatile var stopMarker: String? = null
+
   // The feed projection; the UI thread only.
   var uiConsumed = 0
   var message: AgentPanel.AgentMessage? = null

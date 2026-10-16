@@ -52,4 +52,12 @@ class TokenUsageTest {
     assertNull(TokenUsage.fromOpenAiChunk(obj("""{"usage":{"prompt_tokens":0,"completion_tokens":0}}""")))
     assertTrue(!TokenUsage.NONE.known)
   }
+
+  @Test
+  fun `the rounds of one tool loop add up instead of keeping the largest`() {
+    val round = TokenUsage(inputTokens = 100, outputTokens = 20, cacheReadTokens = 30_000, cacheWriteTokens = 500)
+    val turn = (1..3).fold(TokenUsage.NONE) { sum, _ -> sum + round }
+    assertEquals(TokenUsage(300, 60, 90_000, 1_500), turn)
+    assertEquals(3 * round.total, turn.total)
+  }
 }

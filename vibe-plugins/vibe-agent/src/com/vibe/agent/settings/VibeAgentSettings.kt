@@ -141,9 +141,14 @@ object VibeAgentSettings {
   const val MIN_HANDSHAKE_TIMEOUT_SEC = 10
   const val MAX_HANDSHAKE_TIMEOUT_SEC = 600
   const val DEFAULT_DIRECT_TOOLS_ENABLED = true
-  const val DEFAULT_DIRECT_TOOL_MAX_ROUNDS = 8
-  const val MIN_DIRECT_TOOL_MAX_ROUNDS = 1
-  const val MAX_DIRECT_TOOL_MAX_ROUNDS = 50
+  /**
+   * Working tool rounds between checkpoints of a direct-chat turn: VibeIDE's controlled-mode pause
+   * It asks rather than stops: a dead stop at a few rounds left an edit that needs some reads and a grep undone
+   */
+  const val DEFAULT_DIRECT_TOOL_CHECKPOINT_ROUNDS = 25
+  /** Zero never asks: the turn runs until the model answers in words or the hard limit ends it */
+  const val MIN_DIRECT_TOOL_CHECKPOINT_ROUNDS = 0
+  const val MAX_DIRECT_TOOL_CHECKPOINT_ROUNDS = com.vibe.agent.providers.ToolLoopCheckpoint.HARD_LIMIT
   const val MIN_COMPACT_TRIGGER_PERCENT = 50
   const val MAX_COMPACT_TRIGGER_PERCENT = 95
   const val MIN_COMPACT_TARGET_PERCENT = 20
@@ -171,7 +176,8 @@ object VibeAgentSettings {
   private const val KEY_HANDSHAKE_TIMEOUT_SEC = "vibe.agent.handshakeTimeoutSec"
   private const val KEY_PERMISSION_MODE = "vibe.agent.permissionMode"
   private const val KEY_DIRECT_TOOLS_ENABLED = "vibe.agent.directTools.enabled"
-  private const val KEY_DIRECT_TOOL_MAX_ROUNDS = "vibe.agent.directTools.maxRounds"
+  // A new key, not the old one: the old value was a stop, and a person who set it meant something else
+  private const val KEY_DIRECT_TOOL_CHECKPOINT_ROUNDS = "vibe.agent.directTools.checkpointRounds"
   private const val KEY_COMPACT_TRIGGER_PERCENT = "vibe.agent.compaction.triggerPercent"
   private const val KEY_COMPACT_TARGET_PERCENT = "vibe.agent.compaction.targetPercent"
   private const val KEY_COMPACT_KEEP_RECENT = "vibe.agent.compaction.keepRecent"
@@ -347,10 +353,16 @@ object VibeAgentSettings {
     get() = props.getValue(KEY_PERMISSION_MODE, com.vibe.agent.mcp.PermissionMode.DEFAULT.id)
     set(value) = props.setValue(KEY_PERMISSION_MODE, value, com.vibe.agent.mcp.PermissionMode.DEFAULT.id)
 
-  /** How many tool rounds one direct-chat turn may take before it stops: a model calling tools in a loop spends a request per round. */
-  var directToolMaxRounds: Int
-    get() = props.getInt(KEY_DIRECT_TOOL_MAX_ROUNDS, DEFAULT_DIRECT_TOOL_MAX_ROUNDS).coerceIn(MIN_DIRECT_TOOL_MAX_ROUNDS, MAX_DIRECT_TOOL_MAX_ROUNDS)
-    set(value) = props.setValue(KEY_DIRECT_TOOL_MAX_ROUNDS, value.coerceIn(MIN_DIRECT_TOOL_MAX_ROUNDS, MAX_DIRECT_TOOL_MAX_ROUNDS), DEFAULT_DIRECT_TOOL_MAX_ROUNDS)
+  /**
+   * Every this many working tool rounds a direct-chat turn reaches a checkpoint ([com.vibe.agent.providers.ToolLoopCheckpoint])
+   * The person is asked whether to go on; the autopilot goes on by itself within [autopilotMaxTokens]
+   */
+  var directToolCheckpointRounds: Int
+    get() = props.getInt(KEY_DIRECT_TOOL_CHECKPOINT_ROUNDS, DEFAULT_DIRECT_TOOL_CHECKPOINT_ROUNDS)
+      .coerceIn(MIN_DIRECT_TOOL_CHECKPOINT_ROUNDS, MAX_DIRECT_TOOL_CHECKPOINT_ROUNDS)
+    set(value) = props.setValue(KEY_DIRECT_TOOL_CHECKPOINT_ROUNDS,
+                                value.coerceIn(MIN_DIRECT_TOOL_CHECKPOINT_ROUNDS, MAX_DIRECT_TOOL_CHECKPOINT_ROUNDS),
+                                DEFAULT_DIRECT_TOOL_CHECKPOINT_ROUNDS)
 
   /** Direct chat folds its history when the window is this full, percent. */
   var compactTriggerPercent: Int

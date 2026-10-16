@@ -65,7 +65,6 @@ import com.vibe.agent.pipelines.PipelinesFile
 import com.vibe.agent.providers.AuthSpec
 import com.vibe.agent.providers.CatalogReport
 import com.vibe.agent.providers.ChatMessage
-import com.vibe.agent.providers.ImagePart
 import com.vibe.agent.providers.LlmClient
 import com.vibe.agent.providers.ModelCatalogCache
 import com.vibe.agent.providers.ModelEntry
@@ -3879,10 +3878,55 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
       text
     }
     // Pinned records among the folded ones stay as they were written.
-    val pinned = transcript.filter { it.role != Role.OTHER }.take(cut).filter { it.pinned }.map {
+    val pinned = transcript.filter(com.vibe.agent.history.TranscriptWire::carried).take(cut).filter { it.pinned }.map {
       ChatMessage(role = if (it.role == Role.USER) "user" else "assistant", text = it.wireText ?: it.text)
     }
     return listOf(ChatMessage("system", t("context.compacted.prefix", "summary" to summary))) + pinned + current.drop(cut)
+  }
+
+  /**
+   * What the tool loop does at [verdict]: true goes on with the next request in the same turn, false ends the turn
+   *
+   * The person is asked in a dialog, as a permission is, and going on resumes this very loop: nothing is resent
+   * A turn that ends here leaves the client's words for the model ([TurnState.stopMarker]) and a pill to continue:
+   * The rounds stay in the thread, so continuing picks up from the last result instead of reading everything again
+   */
+  private fun passCheckpoint(
+    verdict: com.vibe.agent.providers.ToolLoopCheckpoint.Verdict,
+    checkpoint: com.vibe.agent.providers.ToolLoopCheckpoint,
+    spent: () -> Long,
+  ): Boolean {
+    val budget = VibeAgentSettings.autopilotMaxTokens
+    val stoppedLine = when (verdict) {
+      com.vibe.agent.providers.ToolLoopCheckpoint.Verdict.GO_ON -> return true
+      com.vibe.agent.providers.ToolLoopCheckpoint.Verdict.PASS_ON_AUTOPILOT -> {
+        systemLine(if (budget > 0) t("directTools.checkpointPassed", "rounds" to checkpoint.work, "spent" to spent(), "max" to budget)
+                   else t("directTools.checkpointPassedNoBudget", "rounds" to checkpoint.work, "spent" to spent()), AGENTS)
+        return true
+      }
+      com.vibe.agent.providers.ToolLoopCheckpoint.Verdict.ASK -> {
+        val overBudget = com.vibe.agent.mcp.PermissionMode.of(VibeAgentSettings.permissionMode) == com.vibe.agent.mcp.PermissionMode.AUTO
+        val question = t("directTools.checkpointAsk", "rounds" to checkpoint.work, "spent" to spent()) +
+                       (if (overBudget) "\n\n" + t("directTools.checkpointAskBudget", "max" to budget) else "")
+        noteActivity()
+        val goOn = askOnEdt {
+          VibeConfirmDialog.confirm(project, question, t("directTools.checkpointTitle"),
+                                    t("directTools.checkpointContinue"), t("directTools.checkpointStop"))
+        }
+        // The time the dialog stood open is the person's, not a silence of the model
+        noteActivity()
+        if (goOn && !llmCancel.get()) {
+          checkpoint.personAgreed(spent())
+          return true
+        }
+        t("directTools.checkpointStopped", "rounds" to checkpoint.total)
+      }
+      com.vibe.agent.providers.ToolLoopCheckpoint.Verdict.STOP ->
+        t("directTools.hardLimit", "limit" to com.vibe.agent.providers.ToolLoopCheckpoint.HARD_LIMIT)
+    }
+    turns.chat.stopMarker = com.vibe.agent.providers.ToolLoopCheckpoint.stoppedMarker(checkpoint.total)
+    turnNote(stoppedLine, listOf(t("directTools.checkpointContinue") to { composer.sendContinue() }))
+    return false
   }
 
   /**
@@ -3922,17 +3966,8 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
         imageIndices, MAX_IMAGE_HISTORY_MESSAGES, imageCutIndex, newImageArrived)
       imageCutIndex = cut
       val imageBearing = imageIndices.filter { it >= cut }.toSet()
-      val wireMessages = transcript.withIndex().filter { it.value.role != Role.OTHER }.map { (index, r) ->
-        ChatMessage(
-          role = if (r.role == Role.USER) "user" else "assistant",
-          text = r.wireText ?: r.text,
-          images = if (index in imageBearing) r.images.map { ImagePart(it.mimeType, it.base64) } else emptyList(),
-          reasoning = r.reasoning,
-          toolRounds = r.toolRounds,
-          responses = r.responses,
-          effortMark = r.effortMark,
-        )
-      }
+      // A turn that ended on tool calls without words travels too: asked to continue, the model picks up from its results
+      val wireMessages = com.vibe.agent.history.TranscriptWire.messages(transcript, imageBearing)
       // A model declared non-vision must not receive images lingering in the history either.
       val uncompacted = if (t.model.vision == false) wireMessages.map { it.withoutImages() } else wireMessages
       // Expanded after compaction: compaction cuts by transcript positions, one message per record.
@@ -3940,9 +3975,11 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
       val allTools = directToolSpecs(t)
       val loaded = loadedTools.getOrPut(threadId) { java.util.Collections.synchronizedSet(LinkedHashSet()) }
       // Where the model takes tools in place, `tools` stays as the thread began and found tools follow as system messages:
-      // the prefix, its cache and the thinking blocks after it stay valid. What earlier turns found comes from the thread
+      // the prefix, its cache and the thinking blocks after it stay valid
       val inPlace = llmClient.addsToolsInPlace(resolved, t.model)
-      if (inPlace) transcript.forEach { record -> record.toolRounds.forEach { loaded.addAll(it.addedTools) } }
+      // What earlier turns found comes from the thread on every route: a reopened thread offers the same tools again,
+      // and its earlier calls name tools the request still offers
+      loaded.addAll(com.vibe.agent.history.TranscriptWire.loadedTools(transcript))
       fun offer() = com.vibe.agent.mcp.ToolSearch.offered(allTools, if (inPlace) emptySet() else loaded,
                                                           VibeAgentSettings.toolSearchThreshold)
       var tools = offer()
@@ -3977,7 +4014,14 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
       lastLlmTurnStartedAtMs = System.currentTimeMillis()
       var request = wire
       var usage = com.vibe.agent.providers.TokenUsage.NONE
-      var rounds = 0
+      // Checkpoints instead of a dead stop: the person decides at each one, the autopilot within its token budget
+      val checkpoint = com.vibe.agent.providers.ToolLoopCheckpoint(
+        VibeAgentSettings.directToolCheckpointRounds,
+        autopilot = com.vibe.agent.mcp.PermissionMode.of(VibeAgentSettings.permissionMode) == com.vibe.agent.mcp.PermissionMode.AUTO,
+        maxTokens = VibeAgentSettings.autopilotMaxTokens.toLong(),
+      )
+      // The stretch so far and this turn's requests: the budget of one unattended stretch, as the plan autopilot counts it
+      fun spent() = stretchTokens.get() + usage.total
       // A call written as text that did not parse is answered once with a request to use the tools; a second is the end
       var textCallAsked = false
       // An objective sign that this model did not manage: the turn moves to the strong model when one is set
@@ -4007,7 +4051,8 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
           // The vendor compares this request with the thread's previous answer and names what broke the cache
           cacheDiagnostics = com.vibe.agent.providers.CacheDiagnostics.Ask(lastMessageIds[threadId]),
         ) { delta -> noteActivity(); roundText.append(delta); appendAgentText(delta) }
-        usage = usage.merge(llmClient.lastUsage())
+        // Summed, not merged: each round is a request of its own and is billed as one
+        usage = usage + llmClient.lastUsage()
         llmClient.lastMessageId()?.let { lastMessageIds[threadId] = it }
         llmClient.lastCacheMiss()?.takeIf { com.vibe.agent.providers.CacheDiagnostics.worthSaying(it) }?.let { miss ->
           systemLine(vendorMissLine(miss), PROVIDERS, WARNING)
@@ -4017,7 +4062,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
         // A refusal before any tool ran: another model may answer, and nothing this one did has to be undone
         // After a tool round the files are already changed, and a model starting over would redo that work blind
         // The refusal's credit is kept only when the turn does move on: held otherwise, it would ride on an unrelated request
-        if (stop != null && rounds == 0 && com.vibe.agent.resilience.FailoverPlan.shouldFailOver(stop.kind) &&
+        if (stop != null && checkpoint.total == 0 && com.vibe.agent.resilience.FailoverPlan.shouldFailOver(stop.kind) &&
             failOver(t, stopNote(stop), startedAt) {
               discardRefusedAnswer(t, usage)
               stop.creditToken?.let {
@@ -4032,11 +4077,12 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
         turns.chat.effortMark = llmClient.lastEffortMark()
         val unparsed = llmClient.lastUnparsedToolMarkup()
         if (calls.isEmpty() && unparsed != null && !llmCancel.get()) {
-          if (textCallAsked || rounds++ >= VibeAgentSettings.directToolMaxRounds) {
+          if (textCallAsked) {
             turnNote(t("directTools.textCallFailed"))
-            if (textCallAsked) escalation = ESCALATE_TEXT_CALL
+            escalation = ESCALATE_TEXT_CALL
             break
           }
+          checkpoint.retried()
           textCallAsked = true
           turnNote(t("directTools.textCallUnparsed"))
           request = request + ChatMessage("assistant", roundText.toString() + unparsed) +
@@ -4044,10 +4090,6 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
           continue
         }
         if (calls.isEmpty() || llmCancel.get()) break
-        if (rounds++ >= VibeAgentSettings.directToolMaxRounds) {
-          turnNote(t("directTools.roundsLimit", "limit" to VibeAgentSettings.directToolMaxRounds))
-          break
-        }
         val loadedBefore = loaded.toSet()
         val results = calls.map { call ->
           // A tool round is a sign of life too: a model that only calls tools streams no text, and
@@ -4075,6 +4117,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
                           ?.let { ChatMessage("system", "", toolAdditions = it) })
         // The round is kept with the turn, then the work goes to the strong model, not round after futile round here
         if (escalation != null) break
+        if (llmCancel.get() || !passCheckpoint(checkpoint.afterRound(calls, spent()), checkpoint, ::spent)) break
       }
       // The gates of an agent's turn, over what this model's tools wrote: a refusal comes back to it as a message
       var bounce: GateBounce? = null
@@ -6324,16 +6367,21 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     }
     val responses = turn.responses.also { turn.responses = null }
     val effortMark = turn.effortMark.also { turn.effortMark = null }
+    // The client's words after a stopped loop go to the model with the turn, never to the feed
+    val stopMarker = turn.stopMarker.also { turn.stopMarker = null }
     // A turn that produced no words used to leave NOTHING in the thread — the question alone, and
     // the reason shown once in the feed and never written down. Reopening the IDE then showed a
     // conversation where the agent had simply not answered (eight such threads in the owner's store,
     // 18.09.2026). The outcome is a record now, and the rounds it did run stay with it.
     if (threadId != null && fullText.isBlank()) {
       val note = t("chat.turnNoAnswer", "outcome" to (suffix ?: "").ifBlank { t("chat.turnNoAnswerUnknown") })
-      history.append(threadId, ChatMessageRecord(Role.OTHER, note, at = nowIso(), toolRounds = toolRounds))
+      history.append(threadId, ChatMessageRecord(Role.OTHER, note, at = nowIso(), wireText = stopMarker, toolRounds = toolRounds))
+      // Its requests were billed all the same: a model that works silently must not spend outside the report and the budget
+      if (turn.usage.known) recordTurnSpend(turn, "", threadId)
     }
     if (threadId != null && fullText.isNotBlank()) {
-      history.append(threadId, ChatMessageRecord(Role.ASSISTANT, fullText, at = nowIso(), reasoning = reasoning, toolRounds = toolRounds,
+      history.append(threadId, ChatMessageRecord(Role.ASSISTANT, fullText, at = nowIso(), wireText = stopMarker?.let { fullText + "\n\n" + it },
+                                                 reasoning = reasoning, toolRounds = toolRounds,
                                                  responses = responses, effortMark = effortMark))
       recordTurnSpend(turn, fullText, threadId)
     }

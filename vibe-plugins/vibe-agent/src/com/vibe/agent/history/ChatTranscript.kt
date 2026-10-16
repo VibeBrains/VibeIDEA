@@ -29,7 +29,11 @@ class ChatMessageRecord(
   val images: List<StoredImage> = emptyList(),
   /** ISO-8601 instant. */
   val at: String,
-  /** USER only: the wire text actually sent to the LLM (with inlined context blocks); null = same as [text]. */
+  /**
+   * The text the model gets in place of [text]; null = the same as [text]
+   * USER: the message with its inlined context blocks
+   * ASSISTANT and OTHER: the client's words after a tool loop it stopped, so the model knows the task is unfinished
+   */
   val wireText: String? = null,
   /** Pinned messages survive trimming: the one thing the user asked not to forget. */
   val pinned: Boolean = false,
@@ -39,7 +43,10 @@ class ChatMessageRecord(
    * other model it is never sent. The feed does not draw it from here.
    */
   val reasoning: String? = null,
-  /** ASSISTANT only: the tool rounds of the turn, so the next request carries what the tools returned. */
+  /**
+   * The tool rounds of the turn, so the next request carries what the tools returned
+   * ASSISTANT, or OTHER for a turn that ended without a word: both travel to the model ([TranscriptWire])
+   */
   val toolRounds: List<com.vibe.agent.providers.ToolRound> = emptyList(),
   /**
    * ASSISTANT only: the final answer's output items on the Responses wire. The same model gets them back in place of
