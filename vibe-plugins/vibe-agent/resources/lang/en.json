@@ -1526,6 +1526,7 @@
   "mcp.offer.noToken": "the IDE tools were not offered: there is no API token (Tools → \"VibeIDEA: show the API token\")",
   "mcp.refusal.disabled": "this tool is turned off in settings: writing and starting work over MCP are opened explicitly, Settings → Tools → VibeIDEA → Agent → HTTP API",
   "mcp.refusal.untrusted": "the project is not marked as trusted, so changing files and starting work over MCP are off; only reading tools are available. A human can lift this: File → Trust Project",
+  "acp.refusal.untrusted": "the project is not marked as trusted, so the agent may not change files or run commands; reading is available. A human can lift this: File → Trust Project",
   "mcp.servers.ambiguous": "the entry «{name}» has both command and url — keep one, or the two products will start different things",
   "mcp.servers.cwdNotPassed": "the working folder (cwd) is not passed to an external agent — ACP has no place for it, so the server starts in the agent's folder: {names}",
   "mcp.servers.drift": "⚠ Server “{server}” changed its tools after approval: {what}. Its tools are disabled — review the changes and confirm via the “Confirm MCP server tools” action",

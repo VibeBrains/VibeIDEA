@@ -781,6 +781,8 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     if (persistToThread) desiredTargetId = null
     target = t
     composer.targetAvailable = t != null
+    // An ACP agent decides by its own session mode when to ask; the IDE mode pill is the direct chat's alone
+    permissionPicker.pill.isVisible = com.vibe.agent.mcp.PermissionMode.pillShownFor(t is ChatTarget.Agent)
     when (t) {
       is ChatTarget.Agent -> {
         composer.setPlanNotice(false)
@@ -7259,6 +7261,17 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
       feedNotice("🪝 ${preHook.agentMessage}")
       return buildJsonObject { put("outcome", buildJsonObject { put("outcome", "cancelled") }) }
     }
+    // Workspace trust is the IDE's own safety and does not depend on any mode: an untrusted project is read-only.
+    // Everything else is put to the person — the agent's session mode already chose to ask
+    val askedKind = toolCall?.get("kind")?.jsonPrimitive?.contentOrNull ?: known?.kind
+    if (com.vibe.agent.acp.AcpPermissionPolicy.answer(askedKind, com.intellij.ide.trustedProjects.TrustedProjects.isProjectTrusted(project)) ==
+        com.vibe.agent.acp.AcpPermissionPolicy.Answer.REFUSE_UNTRUSTED) {
+      feedNotice(t("acp.refusal.untrusted"))
+      audit?.append(AuditEvent(System.currentTimeMillis(), AuditEvent.Action.PERMISSION, ok = false, actor = com.vibe.agent.audit.AuditActor.IDE,
+        callId = permissionCallId, turnId = turnId, sessionId = turnThreadId ?: currentThreadId,
+        meta = mapOf("title" to title.take(120), "outcome" to "untrusted")))
+      return refusalAnswer(params)
+    }
     // The step's write boundary holds for a write the agent makes with its own tool too: it asks first, and the
     // question names the files. A write made without asking never reaches the client — only a worktree holds that
     if (turn.scope.stated) {
@@ -7344,13 +7357,18 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
    * Named in the feed and the audit — a refusal the person never saw is still a decision made on their behalf
    */
   private fun refuseOutsideScope(params: JsonObject, turn: TurnState, callId: String?, title: String, outside: List<String>): JsonElement {
-    val options = params["options"]?.jsonArray?.map { it.jsonObject }.orEmpty()
-    val refusal = options.firstOrNull { it["kind"]?.jsonPrimitive?.contentOrNull?.startsWith("reject") == true }
-      ?.get("optionId")?.jsonPrimitive?.contentOrNull
     feedNotice(t("chat.permission.outsideScope", "step" to (turn.label ?: turn.role ?: "-"), "paths" to outside.joinToString()))
     audit?.append(AuditEvent(System.currentTimeMillis(), AuditEvent.Action.PERMISSION, ok = false, actor = com.vibe.agent.audit.AuditActor.IDE,
       callId = callId, turnId = turnId, sessionId = turnThreadId ?: currentThreadId,
       meta = mapOf("title" to title.take(120), "outcome" to "outsideScope")))
+    return refusalAnswer(params)
+  }
+
+  /** The IDE's refusal to a permission request: the agent's own refusing option, or `cancelled` when it offers none */
+  private fun refusalAnswer(params: JsonObject): JsonElement {
+    val options = params["options"]?.jsonArray?.map { it.jsonObject }.orEmpty()
+    val refusal = options.firstOrNull { it["kind"]?.jsonPrimitive?.contentOrNull?.startsWith("reject") == true }
+      ?.get("optionId")?.jsonPrimitive?.contentOrNull
     return buildJsonObject {
       put("outcome", buildJsonObject {
         if (refusal != null) {
@@ -7376,6 +7394,11 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     val path = params["path"]?.jsonPrimitive?.contentOrNull?.let { fileOps.resolvePath(it).normalized.toString() }
     val resolved = if (path == null) params
                    else JsonObject(params + ("path" to kotlinx.serialization.json.JsonPrimitive(path)))
+    // Workspace trust holds for the agent's own writes too, whatever the agent's mode or the IDE mode says
+    if (com.vibe.agent.acp.AcpPermissionPolicy.answer("edit", com.intellij.ide.trustedProjects.TrustedProjects.isProjectTrusted(project)) ==
+        com.vibe.agent.acp.AcpPermissionPolicy.Answer.REFUSE_UNTRUSTED) {
+      throw IllegalStateException(t("acp.refusal.untrusted"))
+    }
     // preToolUse hook on the client-controlled write path (WritePreview is the interactive gate;
     // a blocking hook refuses before the diff even appears).
     val preHook = runToolHook(HookEvent.PRE_TOOL_USE, "write_text_file", resolved)

@@ -63,6 +63,9 @@ enum class PermissionMode(val id: String) {
   companion object {
     val DEFAULT = AUTO
 
+    /** The IDE mode governs the direct chat only: an ACP agent decides when to ask by its own session mode */
+    fun pillShownFor(agentTarget: Boolean): Boolean = !agentTarget
+
     fun of(id: String?): PermissionMode = entries.firstOrNull { it.id == id } ?: DEFAULT
   }
 }
