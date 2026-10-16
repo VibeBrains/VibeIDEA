@@ -14,14 +14,17 @@ class VoiceTranscriptionRunTest {
   private val dir: File = Files.createTempDirectory("vibe-voice-run-test").toFile()
   private val audio = File(dir, "note.wav").apply { writeBytes(ByteArray(8)) }
 
-  /** A program with the command line of openai-whisper: `audio --output_format txt --output_dir DIR [--language L]`. */
+  /**
+   * A stand-in with the command line of openai-whisper: `audio --output_format txt --output_dir DIR [--language L]`
+   *
+   * The transcriber is `/bin/sh` and the "audio" file is the script, so `$0` is the audio and `$4` the output directory
+   * No new executable is created: macOS vets the first launch of every fresh executable (syspolicyd),
+   * and on a loaded machine that took 10-26 s, past the run limit, on whichever test came first
+   */
   private fun program(body: String): VoiceTranscription.Transcriber {
     assumeFalse(System.getProperty("os.name").startsWith("Windows"), "the stand-ins are shell scripts")
-    val script = File(dir, "fake-whisper").apply {
-      writeText("#!/bin/sh\n$body\n")
-      setExecutable(true)
-    }
-    return VoiceTranscription.Transcriber(script.absolutePath)
+    audio.writeText("$body\n")
+    return VoiceTranscription.Transcriber(SHELL)
   }
 
   private fun run(transcriber: VoiceTranscription.Transcriber, timeoutMs: Long = 20_000, cancelled: () -> Boolean = { false }) =
@@ -34,14 +37,14 @@ class VoiceTranscriptionRunTest {
 
   @Test
   fun `a transcriber that writes its transcript gives it back`() {
-    val result = run(program("printf 'привет мир' > ${'$'}5/note.txt"))
+    val result = run(program("printf 'привет мир' > ${'$'}4/note.txt"))
     assertEquals(VoiceTranscription.Once.Text("привет мир"), result)
   }
 
   @Test
   fun `a transcriber that exits quietly without a transcript is a failure with the last thing it said`() {
     // openai-whisper without ffmpeg on PATH: it skips the file and still exits 0
-    val result = run(program("echo \"Skipping ${'$'}1 due to FileNotFoundError: ffmpeg\" >&2"))
+    val result = run(program("echo \"Skipping ${'$'}0 due to FileNotFoundError: ffmpeg\" >&2"))
     assertTrue(result is VoiceTranscription.Once.Failed, result.toString())
     result as VoiceTranscription.Once.Failed
     assertEquals(0, result.exitCode)
@@ -79,7 +82,7 @@ class VoiceTranscriptionRunTest {
 
   @Test
   fun `the transcriber finds the tools of a shell, not only those of a GUI launch`() {
-    val result = run(program("printf '%s' \"${'$'}PATH\" > ${'$'}5/note.txt"))
+    val result = run(program("printf '%s' \"${'$'}PATH\" > ${'$'}4/note.txt"))
     assertTrue(result is VoiceTranscription.Once.Text, result.toString())
     result as VoiceTranscription.Once.Text
     assertEquals(WatchTools.searchPath(), result.text)
@@ -90,5 +93,9 @@ class VoiceTranscriptionRunTest {
     assertEquals("20%|##", VoiceTranscription.tailOf("10%|#\r20%|##\r\n  \n"))
     assertEquals("", VoiceTranscription.tailOf(" \n\r"))
     assertEquals(240, VoiceTranscription.tailOf("x".repeat(1000)).length)
+  }
+
+  private companion object {
+    const val SHELL = "/bin/sh"
   }
 }
