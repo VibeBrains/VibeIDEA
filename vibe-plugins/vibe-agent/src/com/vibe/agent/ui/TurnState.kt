@@ -70,8 +70,11 @@ internal class TurnState(
   @Volatile var limitHit: StepLimits.Verdict? = null
   @Volatile var report: StepReport? = null
 
-  /** The streamed text of the turn; the UI thread projects it into [message]. */
-  val text = StringBuffer()
+  /** The turn's words by segment: what was said between two tool calls is a row of its own */
+  val segments = TurnSegments()
+
+  /** The streamed text of the open segment; the UI thread projects it into [message]. */
+  val text: StringBuffer get() = segments.current.text
 
   /** A direct model's reasoning and tool rounds, stored with its answer. */
   val reasoning = StringBuffer()
@@ -87,7 +90,12 @@ internal class TurnState(
   @Volatile var stopMarker: String? = null
 
   // The feed projection; the UI thread only.
-  var uiConsumed = 0
+  /** How much of the open segment is already in [message] */
+  var uiConsumed: Int
+    get() = segments.current.consumed
+    set(value) { segments.current.consumed = value }
+
+  /** The row of the open segment; a closed segment's row stays in the feed and is no longer the turn's */
   var message: AgentPanel.AgentMessage? = null
   var thoughts: ThoughtsBlock? = null
 

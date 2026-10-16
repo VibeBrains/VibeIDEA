@@ -4815,6 +4815,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     recordRows.clear()
     val chat = turns.chat
     chat.message = null
+    chat.segments.current.message = null
     chat.uiConsumed = 0
     for ((index, record) in thread.messages.withIndex()) {
       val row = when (record.role) {
@@ -4842,6 +4843,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
       m.append(live)
       chat.uiConsumed = live.length
       chat.message = m
+      chat.segments.current.message = m
       messages.add(m.row)
       recordRows.add(m.row)
     }
@@ -4853,6 +4855,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
       val text = step.text.toString()
       val m = if (text.isNotEmpty()) AgentMessage().also { it.append(text) } else null
       step.message = m
+      step.segments.current.message = m
       step.uiConsumed = text.length
       m?.let { step.feed.addRecord(it.row) }
     }
@@ -6338,23 +6341,55 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
 
   /** Streams into the live row of [turn]; the store gets the full text at finish. */
   private fun appendAgentText(text: String, turn: TurnState = turns.chat) {
-    turn.text.append(text)
+    // The segment is taken now: by the time the projection runs, the next segment may already hold newer words
+    val segment = turn.segments.append(text)
     SwingUtilities.invokeLater {
-      if (turnThreadId != currentThreadId) return@invokeLater
-      var m = turn.message
+      if (turnThreadId != currentThreadId || segment.retired) return@invokeLater
+      var m = segment.message
       if (m == null) {
         // A stray delta after the turn finished must not spawn a ghost empty row.
         if (!turnInFlight.get()) return@invokeLater
+        // Whitespace before the first word is not a row: it would be an empty bubble
+        if (segment.text.isBlank()) return@invokeLater
+        // Reasoning that came before the words ends where they begin: the next thought opens a block after them
+        turn.thoughts?.finish()
+        turn.thoughts = null
         m = AgentMessage()
+        segment.message = m
         turn.message = m
         turn.feed.addRecord(m.row)
       }
-      // Project from the turn's buffer: a tab switch mid-stream re-rendered the row from it already.
-      val full = turn.text.toString()
-      if (turn.uiConsumed < full.length) {
-        m.append(full.substring(turn.uiConsumed))
-        turn.uiConsumed = full.length
+      // Project from the segment's buffer: a tab switch mid-stream re-rendered the row from it already.
+      val full = segment.text.toString()
+      if (segment.consumed < full.length) {
+        m.append(full.substring(segment.consumed))
+        segment.consumed = full.length
       }
+      revalidateScroll()
+    }
+  }
+
+  /**
+   * A tool call or a thought ends what the agent was saying: the words so far become a row and a record of their own
+   *
+   * The call or the thought then lands after them, where it happened
+   * Without the cut the turn's words were one bubble and every call stood below it
+   */
+  private fun closeSegment(turn: TurnState) {
+    val segment = turn.segments.cut() ?: return
+    val targetThread = (if (turnInFlight.get()) turnThreadId else null) ?: currentThreadId
+    turn.segments.record(segment, nowIso())?.let { history.append(targetThread, it) }
+    SwingUtilities.invokeLater {
+      val m = segment.message
+      if (m != null) {
+        val full = segment.text.toString()
+        if (segment.consumed < full.length) m.append(full.substring(segment.consumed))
+        m.renderSegments(full)
+        if (turn.message === m) turn.message = null
+      }
+      segment.retired = true
+      turn.thoughts?.finish()
+      turn.thoughts = null
       revalidateScroll()
     }
   }
@@ -6447,7 +6482,10 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     // the reason shown once in the feed and never written down. Reopening the IDE then showed a
     // conversation where the agent had simply not answered (eight such threads in the owner's store,
     // 18.09.2026). The outcome is a record now, and the rounds it did run stay with it.
-    if (threadId != null && fullText.isBlank()) {
+    val closedSegments = turn.segments.cutCount
+    turn.segments.reset()
+    // Words said before the last call are stored as records already; a turn whose last word was a call has an answer
+    if (threadId != null && fullText.isBlank() && (closedSegments == 0 || toolRounds.isNotEmpty() || stopMarker != null)) {
       val note = t("chat.turnNoAnswer", "outcome" to (suffix ?: "").ifBlank { t("chat.turnNoAnswerUnknown") })
       history.append(threadId, ChatMessageRecord(Role.OTHER, note, at = nowIso(), wireText = stopMarker, toolRounds = toolRounds))
       // Its requests were billed all the same: a model that works silently must not spend outside the report and the budget
@@ -6481,6 +6519,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
       // Заголовок блока досказывается ДО сброса ссылки: иначе он навсегда остаётся на «думает…».
       turn.thoughts?.finish()
       turn.thoughts = null
+      turn.segments.current.message = null
       if (m != null) {
         // Flush the tail the per-delta projections did not reach before the buffer was cleared.
         if (turn.uiConsumed < fullText.length) m.append(fullText.substring(turn.uiConsumed))
@@ -6494,6 +6533,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
   /** Compact tool-call card, VibeIDE style: 4px radius, quiet border, 11px italic. */
   private fun toolCard(title: String, turn: TurnState = turns.chat, toolName: String? = null) {
     // Out-of-turn agent notifications land in the visible thread, not in a finished turn's one.
+    closeSegment(turn)
     val targetThread = (if (turnInFlight.get()) turnThreadId else null) ?: currentThreadId
     history.append(targetThread, ChatMessageRecord(Role.OTHER, title, at = nowIso(), toolName = toolName))
     SwingUtilities.invokeLater {
@@ -6991,6 +7031,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
 
   /** Stream the agent's reasoning into a collapsible block on the turn's thread. */
   private fun appendThought(text: String, turn: TurnState = turns.chat) {
+    closeSegment(turn)
     val targetThread = (if (turnInFlight.get()) turnThreadId else null) ?: currentThreadId
     SwingUtilities.invokeLater {
       if (targetThread != currentThreadId) return@invokeLater
@@ -6999,9 +7040,9 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
         if (!turnInFlight.get()) return@invokeLater
         block = ThoughtsBlock()
         turn.thoughts = block
-        // Reasoning precedes the answer: when the answer row already streams, insert ABOVE it.
         // Not a record: reasoning is not a history record (it would shift the reveal index).
-        turn.feed.addExtra(block, turn.message?.row)
+        // The words said before it were closed above, so the block lands after them, in arrival order
+        turn.feed.addExtra(block)
       }
       block.append(text)
       revalidateScroll()

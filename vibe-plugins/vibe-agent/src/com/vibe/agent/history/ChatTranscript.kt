@@ -61,9 +61,15 @@ class ChatMessageRecord(
    * [com.vibe.agent.checkpoints.AgentShellTools]: the rewind warning counts commands by that name
    */
   val toolName: String? = null,
+  /**
+   * ASSISTANT only: words the agent said before a tool call or a thought of the same turn, stored where they were said
+   * The turn's own answer is the last, non-interim record; the rounds, reasoning and wire text stay with it
+   * Interim words are the feed's: the direct model gets them back inside [toolRounds], so they do not travel twice
+   */
+  val interim: Boolean = false,
 ) {
   fun withPinned(pinned: Boolean): ChatMessageRecord =
-    ChatMessageRecord(role, text, images, at, wireText, pinned, reasoning, toolRounds, responses, effortMark, toolName)
+    ChatMessageRecord(role, text, images, at, wireText, pinned, reasoning, toolRounds, responses, effortMark, toolName, interim)
 
   /** The names of the tools this message stands for: the rounds of a direct turn and the row of an agent's tool */
   val toolNames: List<String>
@@ -88,7 +94,7 @@ class ChatThread(
     get() = messages.firstOrNull { it.role == Role.USER }?.text?.lineSequence()?.firstOrNull()?.trim().orEmpty()
 
   /** User + assistant messages (the count badge in thread rows). */
-  val dialogueCount: Int get() = messages.count { it.role != Role.OTHER }
+  val dialogueCount: Int get() = messages.count { it.role != Role.OTHER && !it.interim }
 
   fun withMessages(messages: List<ChatMessageRecord>, lastModified: String = this.lastModified): ChatThread =
     ChatThread(id, createdAt, lastModified, workspaceId, workspaceLabel, messages, state)
@@ -166,6 +172,7 @@ object ChatTranscriptCodec {
         m.responses?.let { put("responses", it.toStored()) }
         m.effortMark?.let { put("effortMark", it) }
         m.toolName?.let { put("toolName", it) }
+        if (m.interim) put("interim", true)
         if (m.images.isNotEmpty()) put("images", JsonArray(m.images.map { img ->
           buildJsonObject {
             put("name", img.name)
@@ -205,6 +212,7 @@ object ChatTranscriptCodec {
         responses = com.vibe.agent.providers.ResponsesReplay.fromStored(m["responses"]),
         effortMark = m.str("effortMark"),
         toolName = m.str("toolName"),
+        interim = (m["interim"] as? kotlinx.serialization.json.JsonPrimitive)?.content == "true",
       )
     }
     return ChatThread(

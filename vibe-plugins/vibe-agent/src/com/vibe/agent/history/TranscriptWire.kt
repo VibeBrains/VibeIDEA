@@ -15,7 +15,7 @@ import com.vibe.agent.providers.ImagePart
  */
 object TranscriptWire {
   /** Whether [record] goes to the model; compaction counts positions over exactly these records */
-  fun carried(record: ChatMessageRecord): Boolean = record.role != Role.OTHER || record.toolRounds.isNotEmpty()
+  fun carried(record: ChatMessageRecord): Boolean = !record.interim && (record.role != Role.OTHER || record.toolRounds.isNotEmpty())
 
   /** The carried records in order; [imageBearing] holds the transcript indices whose images still travel */
   fun messages(transcript: List<ChatMessageRecord>, imageBearing: Set<Int>): List<ChatMessage> =
