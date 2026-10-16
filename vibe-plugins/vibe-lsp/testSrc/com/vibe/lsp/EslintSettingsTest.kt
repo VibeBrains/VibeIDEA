@@ -9,9 +9,9 @@ import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 /**
- * Гейт на три значения, из-за которых `textDocument/codeAction` падал на Windows-сборке 0.5.0.
+ * Гейт на значения, из-за которых `textDocument/codeAction` падал на Windows-сборке 0.5.0.
  *
- * Тест сторожит именно их: вернувшаяся пустая строка в `nodePath`, пропавший `workspaceFolder` или
+ * Тест сторожит именно их: вернувшийся `null` в `nodePath`, пропавший `workspaceFolder` или
  * снова выключенная плоская конфигурация — это возврат того же дефекта, а снаружи он выглядит
  * ошибкой сервера, а не нашей.
  */
@@ -19,9 +19,23 @@ class EslintSettingsTest {
   private fun eslint(uri: String?) = eslintSettings(uri).getAsJsonObject("eslint")
 
   @Test
-  fun `nodePath is null so the server resolves node itself`() {
+  fun `nodePath is a string the wire cannot drop`() {
     val nodePath = eslint("file:///work/proj").get("nodePath")
-    assertTrue(nodePath.isJsonNull, "nodePath обязан быть null, пустая строка ломает склейку пути")
+    assertTrue(nodePath.isJsonPrimitive, "null выбрасывается JSON-RPC слоем, сервер получает undefined и падает на path.isAbsolute")
+    assertEquals("/work/proj", nodePath.asString)
+  }
+
+  @Test
+  fun `nodePath is an empty string without a base path`() {
+    val nodePath = eslint(null).get("nodePath")
+    assertTrue(nodePath.isJsonPrimitive)
+    assertEquals("", nodePath.asString)
+  }
+
+  @Test
+  fun `no setting that the server compares with null survives serialization as null`() {
+    val settings = eslint("file:///work/proj")
+    assertTrue(settings.entrySet().none { it.value.isJsonNull }, "null-значения lsp4j при отправке теряет")
   }
 
   @Test

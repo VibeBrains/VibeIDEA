@@ -1,7 +1,6 @@
 // Copyright 2026 VibeBrains. Use of this source code is governed by the GNU AGPL-3.0 license.
 package com.vibe.lsp
 
-import com.google.gson.JsonNull
 import com.google.gson.JsonObject
 import com.google.gson.JsonPrimitive
 import com.intellij.openapi.project.Project
@@ -63,6 +62,10 @@ internal fun workspaceFolderUri(basePath: String?): String? {
   return uri.trimEnd('/')
 }
 
+/** Absolute path from a `file:` URI, or `null` when the URI does not parse. */
+internal fun fileUriToPath(uri: String): String? =
+  runCatching { Path.of(java.net.URI.create(uri)).toString() }.getOrNull()
+
 /**
  * Настройки для `workspace/configuration`.
  *
@@ -72,9 +75,13 @@ internal fun workspaceFolderUri(basePath: String?): String? {
  *
  * 1. **`workspaceFolder` обязателен.** Сервер выводит из него `workspaceFolderPath`, и без него тот
  *    остаётся `undefined`.
- * 2. **`nodePath` = `null`, а не пустая строка.** Пустую строку сервер считает заданным значением и
- *    идёт склеивать её с `workspaceFolderPath` — на `undefined` это и падает. `null` означает
- *    «ищи сам», что нам и нужно.
+ * 2. **`nodePath` is always a string; `null` must never be sent.** The server checks
+ *    `settings.nodePath !== null` and then calls `path.isAbsolute(nodePath)`.
+ *    The lsp4j JSON-RPC layer silently drops `null` fields on serialization, so the server sees `undefined`,
+ *    the `!== null` check passes, and `path.isAbsolute(undefined)` throws
+ *    «The "path" argument must be of type string. Received undefined» (0.9.0, TS project, four balloons in a row).
+ *    So the absolute project root is sent: the server resolves `eslint` from it
+ *    and falls back to the usual lookup from the file directory. No root — an empty string, which is still a string.
  * 3. **`experimental` отправляется пустым объектом.** Мы принудительно выключали плоскую
  *    конфигурацию (`useFlatConfig: false`), а ESLint 9 по умолчанию только на ней и работает.
  *    Совсем убрать поле нельзя: сервер читает `settings.experimental.useFlatConfig` без проверки и
@@ -95,7 +102,7 @@ internal fun eslintSettings(workspaceFolderUri: String?): JsonObject {
     add("quiet", JsonPrimitive(false))
     add("onIgnoredFiles", JsonPrimitive("off"))
     add("run", JsonPrimitive("onType"))
-    add("nodePath", JsonNull.INSTANCE)
+    add("nodePath", JsonPrimitive(workspaceFolderUri?.let(::fileUriToPath).orEmpty()))
     add("options", JsonObject())
     add("problems", JsonObject().apply { add("shortenToSingleLine", JsonPrimitive(false)) })
     add("codeAction", JsonObject().apply {
