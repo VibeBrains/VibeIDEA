@@ -56,6 +56,9 @@ internal class TurnState(
   @Volatile var hadMutatingTool = false
 
   val toolCalls = ToolCallRegistry()
+
+  /** Baselines of the files the agent's own edit tools change, for the per-hunk review */
+  val editCapture = com.vibe.agent.acp.ExternalEditCapture()
   val toolStarts = ConcurrentHashMap<String, Long>()
   val toolCallCount = AtomicInteger(0)
 

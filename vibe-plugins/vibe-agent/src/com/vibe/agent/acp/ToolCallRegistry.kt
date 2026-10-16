@@ -10,6 +10,27 @@ import kotlinx.serialization.json.jsonPrimitive
 import java.util.concurrent.ConcurrentHashMap
 
 /**
+ * One `{type:"diff", path, oldText, newText}` entry of a tool call's ACP `content`
+ *
+ * [oldText] is null when the agent gives none (Claude's Write sends null even for an existing file),
+ * and for an edit it may be a fragment of the file rather than the whole text, so it is never trusted as a baseline
+ */
+data class ToolDiff(val path: String, val oldText: String?, val newText: String) {
+  companion object {
+    /** The diff entries of a frame's `content`; null when the frame carries no `content` array at all */
+    fun parse(frame: JsonObject): List<ToolDiff>? {
+      val arr = frame["content"] as? kotlinx.serialization.json.JsonArray ?: return null
+      return arr.mapNotNull { item ->
+        val obj = item as? JsonObject ?: return@mapNotNull null
+        if (obj["type"]?.jsonPrimitive?.contentOrNull != "diff") return@mapNotNull null
+        val path = obj["path"]?.jsonPrimitive?.contentOrNull ?: return@mapNotNull null
+        ToolDiff(path, obj["oldText"]?.jsonPrimitive?.contentOrNull, obj["newText"]?.jsonPrimitive?.contentOrNull ?: "")
+      }
+    }
+  }
+}
+
+/**
  * One agent tool-call, assembled across `tool_call` (announce) and one or more
  * `tool_call_update` frames. VibeIDEA needs this registry because — unlike
  * VibeIDE, where the agent loop lives in the client — here the loop runs inside
@@ -28,6 +49,8 @@ data class ToolCall(
   var terminalId: String? = null,
   /** ACP `locations` — file paths the tool works with (used to widen changed-file coverage). */
   var locations: List<String> = emptyList(),
+  /** ACP `content` entries of type `diff`: what the agent's own edit tool is about to write or has written. */
+  var diffs: List<ToolDiff> = emptyList(),
 ) {
   val isRunning: Boolean get() = status == STATUS_PENDING || status == STATUS_IN_PROGRESS
   val isDone: Boolean get() = status == STATUS_COMPLETED || status == STATUS_FAILED
@@ -125,6 +148,7 @@ class ToolCallRegistry {
     ).also { byId[id] = it }
     call.terminalId = call.terminalId ?: terminalIdOf(update)
     locationsOf(update)?.let { call.locations = it }
+    diffsOf(update)?.let { call.diffs = it }
     return call
   }
 
@@ -149,8 +173,12 @@ class ToolCallRegistry {
     (update["rawInput"] as? JsonObject)?.let { call.rawInput = it }
     (terminalIdOf(update))?.let { call.terminalId = it }
     locationsOf(update)?.let { call.locations = it }
+    diffsOf(update)?.let { call.diffs = it }
     return call
   }
+
+  /** An update without diff entries (a text-only `content`) leaves the diffs announced earlier as they were */
+  private fun diffsOf(update: JsonObject): List<ToolDiff>? = ToolDiff.parse(update)?.ifEmpty { null }
 
   /** Parse the ACP `locations` array (`[{path, line?}]`) into a list of paths. */
   private fun locationsOf(update: JsonObject): List<String>? {

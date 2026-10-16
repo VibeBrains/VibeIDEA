@@ -23,6 +23,7 @@ import com.vibe.agent.acp.AgentServerConfig
 import com.vibe.agent.acp.ContentBlock
 import com.vibe.agent.acp.IdeFileOps
 import com.vibe.agent.acp.ToolCall
+import com.vibe.agent.acp.ToolDiff
 import com.vibe.agent.audit.AuditEvent
 import com.vibe.agent.audit.AuditLog
 import com.vibe.agent.audit.ToolCallAudit
@@ -6625,6 +6626,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
         val call = turn.toolCalls.onToolCall(u)
         if (call != null) {
           auditToolCall(AuditEvent.Action.TOOL_CALL_START, call, turn); harvestMutation(call, turn); noteLoop(call, turn)
+          snapshotAgentEdit(call, turn)
           turn.toolStarts[call.id] = System.currentTimeMillis()
         }
         toolCard(call?.let { com.vibe.agent.acp.ToolCall.label(it.title, it.toolName) } ?: t("chat.tool"), turn)
@@ -6634,6 +6636,8 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
       "tool_call_update" -> {
         val call = turn.toolCalls.onToolCallUpdate(u) ?: return
         harvestMutation(call, turn)
+        snapshotAgentEdit(call, turn)
+        recordAgentEdit(call, turn)
         noteLoop(call, turn)
         // Stream Claude Bash output / exit into the console for this terminal.
         terminalOutputFrame(u)?.let { (id, data) -> appendTerminalOutput(id, data) }
@@ -6946,6 +6950,34 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     turn.changedPaths.addAll(com.vibe.agent.acp.ToolWrites.writtenPaths(call.kind, call.toolName, call.rawInput, call.locations))
   }
 
+  /** Files an agent's own edit tool works on: its diff entries and its declared write paths, resolved like a client write */
+  private fun agentEditPaths(call: ToolCall): List<String> =
+    (call.diffs.map { it.path } + com.vibe.agent.acp.ToolWrites.writtenPaths(call.kind, call.toolName, call.rawInput, call.locations))
+      .map { fileOps.resolvePath(it).normalized.toString() }.distinct()
+
+  /** Remembers the files before the agent's own tool changes them: the baseline of the per-hunk review */
+  private fun snapshotAgentEdit(call: ToolCall, turn: TurnState) {
+    if (call.isRunning) turn.editCapture.snapshot(agentEditPaths(call))
+  }
+
+  /**
+   * An agent's own edit tool finished: the journal learns the file, so the editor shows per-hunk accept and reject
+   * The journal announces the entry and the review service attaches to the open editors; the VFS is refreshed first so
+   * the editor's document already holds what the agent wrote
+   */
+  private fun recordAgentEdit(call: ToolCall, turn: TurnState) {
+    if (call.status != ToolCall.STATUS_COMPLETED) return
+    val paths = agentEditPaths(call)
+    if (paths.isEmpty()) return
+    val fs = com.intellij.openapi.vfs.LocalFileSystem.getInstance()
+    paths.forEach { fs.refreshAndFindFileByIoFile(java.io.File(it)) }
+    val diffs = call.diffs.map { it.copy(path = fileOps.resolvePath(it.path).normalized.toString()) }
+    for (edit in turn.editCapture.settle(paths, diffs)) {
+      journal().record(edit.path, edit.before, edit.after)
+      turn.changedPaths.add(edit.path)
+    }
+  }
+
   /** Emit a privacy-filtered tool-call audit record (no args/command bodies — only tool + target path). */
   /**
    * Ход, к которому относятся записи журнала. Живёт от промпта до промпта.
@@ -7089,6 +7121,11 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     // The question is normalised like every title: bidi or invisible characters must not hide text in what is approved
     // The request may omit the name the call was announced with, so the registry's call fills it in
     val known = permissionCallId?.let { turn.toolCalls[it] }
+    // The agent's own edit tool asks before it writes: the file is still as it was, and the question carries the diff
+    val askedDiffs = ToolDiff.parse(toolCall ?: JsonObject(emptyMap()))?.ifEmpty { null } ?: known?.diffs.orEmpty()
+    if (askedDiffs.isNotEmpty()) {
+      turn.editCapture.snapshot(askedDiffs.map { fileOps.resolvePath(it.path).normalized.toString() })
+    }
     val name = com.vibe.agent.acp.ToolCall.normalizeTitle(toolCall?.get("name")?.jsonPrimitive?.contentOrNull) ?: known?.toolName
     val title = com.vibe.agent.acp.ToolCall.label(
       com.vibe.agent.acp.ToolCall.normalizeTitle(toolCall?.get("title")?.jsonPrimitive?.contentOrNull)
@@ -7147,7 +7184,8 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
       val defaultOption = if (trifecta) indexOfRefusal(options) else 0
       // A dialog held by the request: the agent may withdraw the question, Stop closes it, and either way it is a refusal
       val dialog = VibeConfirmDialog(project, dialogText, t("chat.permission.title"), names,
-        defaultOption, if (destructive != null || trifecta) Messages.getWarningIcon() else Messages.getQuestionIcon(), command)
+        defaultOption, if (destructive != null || trifecta) Messages.getWarningIcon() else Messages.getQuestionIcon(),
+        command ?: askedDiffs.takeIf { it.isNotEmpty() }?.let { com.vibe.agent.acp.ExternalEditCapture.previewText(it) })
       request.closes(dialog, DIALOG_DISMISSED)
       dialog.show()
       val choice = dialog.exitCode

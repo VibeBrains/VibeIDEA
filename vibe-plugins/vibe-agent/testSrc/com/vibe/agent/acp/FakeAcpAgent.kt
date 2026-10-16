@@ -207,6 +207,32 @@ object FakeAcpAgent {
         notifyUpdate(chunk("read=" + read["result"]?.toString() + " write=" + write["result"]?.toString()))
         send(result(id, stop("end_turn")))
       }
+      "ownEdit" -> {
+        // The shape of Claude Code ACP: the agent edits the file itself; the client sees only the tool call's diff
+        val path = System.getenv("FAKE_EDIT_PATH")
+        val diff = buildJsonObject {
+          put("type", "diff"); put("path", path); put("oldText", "b"); put("newText", "B")
+        }
+        notifyUpdate(buildJsonObject {
+          put("sessionUpdate", "tool_call"); put("toolCallId", "edit-1"); put("title", "Edit"); put("kind", "edit")
+          put("status", "pending"); put("content", JsonArray(listOf(diff)))
+          put("locations", JsonArray(listOf(buildJsonObject { put("path", path) })))
+        })
+        ask("session/request_permission", buildJsonObject {
+          put("sessionId", SESSION_ID)
+          put("toolCall", buildJsonObject {
+            put("toolCallId", "edit-1"); put("title", "Edit"); put("kind", "edit"); put("content", JsonArray(listOf(diff)))
+          })
+          put("options", JsonArray(listOf(buildJsonObject { put("optionId", "allow"); put("name", "Разрешить"); put("kind", "allow_once") })))
+        })
+        java.io.File(path).writeText("a\nB\n")
+        notifyUpdate(buildJsonObject {
+          put("sessionUpdate", "tool_call_update"); put("toolCallId", "edit-1"); put("status", "completed")
+          put("content", JsonArray(listOf(diff)))
+        })
+        notifyUpdate(chunk("правка сделана"))
+        send(result(id, stop("end_turn")))
+      }
       "terminal" -> {
         val created = ask("terminal/create", buildJsonObject {
           put("sessionId", SESSION_ID); put("command", "echo"); put("args", JsonArray(listOf(JsonPrimitive("привет"))))

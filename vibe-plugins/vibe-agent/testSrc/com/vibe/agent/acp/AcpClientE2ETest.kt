@@ -43,10 +43,11 @@ class AcpClientE2ETest {
     val readFile: (JsonObject) -> JsonElement = { buildJsonObject { put("content", "старое содержимое") } },
     val writeFile: (JsonObject) -> JsonElement = { JsonObject(emptyMap()) },
     val createTerminal: ((JsonObject) -> JsonElement)? = null,
+    val onUpdate: (JsonObject) -> Unit = {},
   ) : AcpClient.Handler {
     val permissionCalls = ConcurrentLinkedQueue<JsonObject>()
     val writes = ConcurrentLinkedQueue<JsonObject>()
-    override fun onSessionUpdate(update: JsonObject) { updates += update }
+    override fun onSessionUpdate(update: JsonObject) { updates += update; onUpdate(update) }
     override fun onModeChanged(modeId: String) { modeChanges += modeId }
     override fun onRequestPermission(params: JsonObject, request: PendingRequest): JsonElement {
       permissionCalls += params
@@ -78,7 +79,7 @@ class AcpClientE2ETest {
   }
 
   private fun texts(): List<String> = updates.mapNotNull { p ->
-    p["update"]?.jsonObject?.get("content")?.jsonObject?.get("text")?.jsonPrimitive?.content
+    (p["update"]?.jsonObject?.get("content") as? JsonObject)?.get("text")?.jsonPrimitive?.content
   }
 
   private fun await(condition: () -> Boolean) {
@@ -295,6 +296,42 @@ class AcpClientE2ETest {
     assertTrue(line.contains("старое содержимое"), line)
     assertEquals(1, handler.writes.size)
     assertEquals("новое содержимое", handler.writes.first()["content"]?.jsonPrimitive?.content)
+  }
+
+  @Test
+  fun `a file the agent edits itself reaches the journal and can be rejected`(@org.junit.jupiter.api.io.TempDir dir: java.nio.file.Path) {
+    val file = dir.resolve("f.txt").toFile().apply { writeText("a\nb\n") }
+    val registry = ToolCallRegistry()
+    val capture = ExternalEditCapture()
+    val journal = com.vibe.agent.mcp.AgentEditJournal()
+    // The frames are handled as they arrive, as the panel does: the snapshot must be taken before the agent writes
+    val onUpdate = { frame: JsonObject ->
+      val u = frame["update"] as JsonObject
+      when (u["sessionUpdate"]?.jsonPrimitive?.content) {
+        "tool_call" -> registry.onToolCall(u)?.also { capture.snapshot(it.locations) }
+        "tool_call_update" -> registry.onToolCallUpdate(u)?.also { call ->
+          if (call.status == ToolCall.STATUS_COMPLETED) {
+            capture.settle(call.locations, call.diffs).forEach { journal.record(it.path, it.before, it.after) }
+          }
+        }
+      }
+    }
+    val handler = TestHandler(onUpdate = onUpdate, permission = { params, _ ->
+      // The question carries the diff, and the file is still as it was when it is asked
+      val diffs = ToolDiff.parse(params["toolCall"]!!.jsonObject)!!
+      assertEquals(listOf(ToolDiff(file.path, "b", "B")), diffs)
+      assertEquals("a\nb\n", file.readText())
+      allow()
+    })
+    val c = start("ownEdit", handler, env = mapOf("FAKE_EDIT_PATH" to file.path))
+    c.initializeAndOpenSession().get(30, TimeUnit.SECONDS)
+    c.prompt("поправь").get(30, TimeUnit.SECONDS)
+    await { texts().contains("правка сделана") }
+
+    // The announce came before the write, so the baseline is the file as it was
+    assertEquals(listOf(com.vibe.agent.mcp.AgentEditJournal.Entry(file.path, "a\nb\n", "a\nB\n")), journal.all())
+    assertEquals(com.vibe.agent.mcp.AgentEditJournal.Revert.Done, journal.reject(file.path))
+    assertEquals("a\nb\n", file.readText())
   }
 
   // --- terminal capability ---
