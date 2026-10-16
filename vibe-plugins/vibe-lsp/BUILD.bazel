@@ -83,6 +83,8 @@ jvm_library(
         "//platform/lang-api:lang",
         "//platform/core-api:core",
         "//platform/core-impl",
+        # LSP4IJ's settings class is a PersistentStateComponent, which the compiler must see to instantiate it.
+        "//platform/projectModel-api:projectModel",
         "//platform/editor-ui-api:editor-ui",
         "//platform/analysis-api:analysis",
         # Провайдер бандлов реализует интерфейс TextMate — без него тест не соберётся.
