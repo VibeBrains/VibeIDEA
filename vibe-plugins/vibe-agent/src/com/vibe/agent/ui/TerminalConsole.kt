@@ -21,7 +21,7 @@ import javax.swing.JTextArea
 class TerminalConsole(title: String) : JPanel(BorderLayout()) {
   private val titleText = title.take(120)
   private var exitBadge: String? = null
-  private var collapsed = false
+  private val state = TerminalCardState()
   private val header = JLabel("▾ ▹ $titleText")
   // Shared factory (ChatTheme): the same affordance as message/code copy links.
   private val copy = ChatTheme.copyLabel(t("terminal.copyOutput")) { raw.toString() }
@@ -59,14 +59,18 @@ class TerminalConsole(title: String) : JPanel(BorderLayout()) {
   }
 
   private fun toggleCollapsed() {
-    collapsed = !collapsed
-    area.isVisible = !collapsed
+    state.toggle()
+    applyCollapsed()
+  }
+
+  private fun applyCollapsed() {
+    area.isVisible = !state.collapsed
     refreshHeader()
     revalidate(); repaint()
   }
 
   private fun refreshHeader() {
-    val arrow = if (collapsed) "▸" else "▾"
+    val arrow = if (state.collapsed) "▸" else "▾"
     val mark = if (exitBadge != null) "▪" else "▹"
     header.text = "$arrow $mark $titleText" + (exitBadge?.let { "  ·  $it" } ?: "")
   }
@@ -92,7 +96,8 @@ class TerminalConsole(title: String) : JPanel(BorderLayout()) {
       exitCode != null -> t("terminal.exit.code", "code" to exitCode)
       else -> t("terminal.exit.done")
     }
-    refreshHeader()
+    state.onFinished()
+    applyCollapsed()
     header.foreground = if (exitCode == 0) OK_FG else if (exitCode != null || signal != null) ERR_FG else header.foreground
   }
 
