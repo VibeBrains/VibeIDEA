@@ -72,6 +72,22 @@ class ChatTranscriptTest {
   }
 
   @Test
+  fun `the tool of an agent's row survives the store, and the names of a message cover its rounds too`() {
+    val row = ChatMessageRecord(Role.OTHER, "bash: ls", at = T1, toolName = "run_command")
+    val round = com.vibe.agent.providers.ToolRound("", listOf(com.vibe.agent.providers.ToolCall("c1", "run_persistent_command", "{}")), emptyList())
+    val answer = ChatMessageRecord(Role.ASSISTANT, "готово", at = T2, toolRounds = listOf(round))
+    val original = ChatThread("t-3", T0, T0, null, null, listOf(row, answer))
+
+    val restored = ChatTranscriptCodec.fromJson(ChatTranscriptCodec.toJson(original))!!
+
+    assertEquals("run_command", restored.messages[0].toolName)
+    assertNull(restored.messages[1].toolName)
+    assertEquals(listOf("run_command"), restored.messages[0].toolNames)
+    assertEquals(listOf("run_persistent_command"), restored.messages[1].toolNames)
+    assertEquals("run_command", restored.messages[0].withPinned(true).toolName, "a pin keeps the tool")
+  }
+
+  @Test
   fun `broken entries are skipped, valid ones survive`() {
     val array = Json.parseToJsonElement(
       """[{"id":"ok","createdAt":"$T0","lastModified":"$T0","messages":[]}, 42, "junk", {"noId":true}]"""

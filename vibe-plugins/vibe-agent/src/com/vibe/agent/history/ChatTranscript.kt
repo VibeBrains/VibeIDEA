@@ -55,9 +55,19 @@ class ChatMessageRecord(
   val responses: com.vibe.agent.providers.ResponsesReplay? = null,
   /** ASSISTANT only: the effort its request was sent at, to replay where it changed ([com.vibe.agent.providers.EffortUpdates]) */
   val effortMark: String? = null,
+  /**
+   * OTHER only: the tool an agent's tool row stands for, in the product's own vocabulary
+   * A command tool of an ACP agent is recorded under the name of the direct chat's one (`run_command`), see
+   * [com.vibe.agent.checkpoints.AgentShellTools]: the rewind warning counts commands by that name
+   */
+  val toolName: String? = null,
 ) {
   fun withPinned(pinned: Boolean): ChatMessageRecord =
-    ChatMessageRecord(role, text, images, at, wireText, pinned, reasoning, toolRounds, responses, effortMark)
+    ChatMessageRecord(role, text, images, at, wireText, pinned, reasoning, toolRounds, responses, effortMark, toolName)
+
+  /** The names of the tools this message stands for: the rounds of a direct turn and the row of an agent's tool */
+  val toolNames: List<String>
+    get() = toolRounds.flatMap { round -> round.calls.map { it.name } } + listOfNotNull(toolName)
 }
 
 /** Per-thread snapshot of composer choices (restored when the tab is activated). */
@@ -155,6 +165,7 @@ object ChatTranscriptCodec {
         if (m.toolRounds.isNotEmpty()) put("toolRounds", com.vibe.agent.providers.ToolRounds.toJson(m.toolRounds))
         m.responses?.let { put("responses", it.toStored()) }
         m.effortMark?.let { put("effortMark", it) }
+        m.toolName?.let { put("toolName", it) }
         if (m.images.isNotEmpty()) put("images", JsonArray(m.images.map { img ->
           buildJsonObject {
             put("name", img.name)
@@ -193,6 +204,7 @@ object ChatTranscriptCodec {
         toolRounds = com.vibe.agent.providers.ToolRounds.fromJson(m["toolRounds"]),
         responses = com.vibe.agent.providers.ResponsesReplay.fromStored(m["responses"]),
         effortMark = m.str("effortMark"),
+        toolName = m.str("toolName"),
       )
     }
     return ChatThread(

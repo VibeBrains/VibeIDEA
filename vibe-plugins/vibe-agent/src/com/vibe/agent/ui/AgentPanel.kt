@@ -226,6 +226,11 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
   /** Thread → its session on the running [client]; emptied whenever the client is replaced or gone. */
   private val threadSessions = java.util.concurrent.ConcurrentHashMap<String, String>()
   private val checkpoints: CheckpointService? = project.basePath?.let { CheckpointService(it) }
+
+  init {
+    // Snapshots that nothing lives on lose their references, so git may collect them; off the EDT, once per panel
+    checkpoints?.let { service -> ApplicationManager.getApplication().executeOnPooledThread { service.prune() } }
+  }
   // One shared audit log per project (writer here, reader in the viewer action) — see VibeAuditService.
   private val audit: AuditLog? = com.vibe.agent.audit.VibeAuditService.getInstance(project).get()
 
@@ -1596,15 +1601,29 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     if (message.text.trim() != UNDO_COMMAND) return false
     userBubble(message.text.trim())
     val service = checkpoints ?: run { feedNotice(t("undo.unavailable")); return true }
-    val latest = service.list().firstOrNull() ?: run { feedNotice(t("undo.none")); return true }
-    val confirmed = Messages.showYesNoDialog(
-      project,
-      t("undo.confirm", "hash" to latest.hash.take(8), "label" to latest.label, "time" to timeOfMillis(latest.atMillis)),
-      t("undo.title"), t("undo.yes"), t("common.cancel"), Messages.getWarningIcon(),
-    )
-    if (confirmed != Messages.YES) return true
-    if (service.restore(latest)) feedNotice(t("undo.done", "hash" to latest.hash.take(8)))
-    else feedNotice(t("undo.failed"))
+    ApplicationManager.getApplication().executeOnPooledThread {
+      val latest = service.list().firstOrNull() ?: run { feedNotice(t("undo.none")); return@executeOnPooledThread }
+      val rollback = service.plan(latest)
+      when {
+        rollback == null && !latest.available -> feedNotice(t("chat.checkpoint.gone", "hash" to latest.hash.take(8)))
+        rollback == null -> feedNotice(t("chat.checkpoint.failed"))
+        rollback.wouldChange == false -> feedNotice(t("undo.nothing", "hash" to latest.hash.take(8)))
+        else -> ApplicationManager.getApplication().invokeLater {
+          val confirmed = Messages.showYesNoDialog(
+            project,
+            t("undo.confirm", "hash" to latest.hash.take(8), "label" to latest.label, "time" to timeOfMillis(latest.atMillis),
+              "restore" to rollback.plan.restore.size, "delete" to rollback.plan.delete.size),
+            t("undo.title"), t("undo.yes"), t("common.cancel"), Messages.getWarningIcon(),
+          )
+          if (confirmed == Messages.YES) {
+            restoreFolder(latest, rollback) { ok ->
+              if (ok) feedNotice(t("undo.done", "hash" to latest.hash.take(8)))
+              else feedNotice(t("undo.failed"))
+            }
+          }
+        }
+      }
+    }
     return true
   }
 
@@ -3463,8 +3482,12 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
   }
 
   /** The snapshot a turn can be rolled back to, taken before it starts; said in the feed and the audit */
-  private fun turnCheckpoint(text: String) {
-    checkpoints?.create(t("chat.checkpointLabel", "text" to text.take(CHECKPOINT_LABEL_LEN)))?.let {
+  private fun turnCheckpoint(text: String, agent: String = CheckpointService.BUILTIN_AGENT) {
+    val threadId = turnThreadId ?: currentThreadId
+    // The message of this turn is stored already, so the turn's number is the count of the person's messages before it
+    val turnIndex = threadId?.let { id -> history.get(id)?.messages?.count { it.role == Role.USER } }?.minus(1)?.coerceAtLeast(0)
+    checkpoints?.create(t("chat.checkpointLabel", "text" to text.take(CHECKPOINT_LABEL_LEN)),
+                        turnIndex = turnIndex, threadId = threadId, agent = agent)?.let {
       checkpointLine(it)
       audit?.append(AuditEvent(System.currentTimeMillis(), AuditEvent.Action.CHECKPOINT, ok = true, actor = turnActor,
         meta = mapOf("hash" to it.hash.take(12))))
@@ -3476,7 +3499,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     images: List<ImageAttachment>, startedAt: Long,
     skills: List<ContextSerializer.LoadedSkill> = emptyList(),
   ) {
-    turnCheckpoint(text)
+    turnCheckpoint(text, t.config.registry?.id ?: t.config.name)
     val design = DesignContextFile.load(project.basePath)
     val designed = if (design != null) DesignContextFile.promptBlock(design) + "\n" + text else text
     // The client first: whether the agent could resume its session is known only once it is open,
@@ -6223,25 +6246,59 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     val record = thread.messages.getOrNull(recordIndex)?.takeIf { it.role == Role.USER } ?: return
     fun millis(iso: String?): Long? = iso?.let { runCatching { Instant.parse(it).toEpochMilli() }.getOrNull() }
     val nextAt = thread.messages.drop(recordIndex + 1).firstOrNull { it.role == Role.USER }?.let { millis(it.at) }
+    // What ran in the stretch being undone, both edges included: commands are outside what the chat tracks
+    val undoneTools = thread.messages.drop(recordIndex).flatMap { it.toolNames }
     val service = checkpoints
-    val checkpoint = millis(record.at)?.let { at -> service?.let { com.vibe.agent.checkpoints.RewindPoint.checkpointFor(it.list(), at, nextAt) } }
-    val question = if (checkpoint != null) t("chat.rewind.confirmFiles", "hash" to checkpoint.hash.take(8))
-                   else t("chat.rewind.confirmConversation")
+    ApplicationManager.getApplication().executeOnPooledThread {
+      val checkpoint = millis(record.at)?.let { at ->
+        service?.let { com.vibe.agent.checkpoints.RewindPoint.checkpointFor(it.list(), at, nextAt) }
+      }?.takeIf { it.available }
+      val rollback = checkpoint?.let { service?.plan(it) }
+      ApplicationManager.getApplication().invokeLater {
+        continueRewind(recordIndex, threadId, record.text, checkpoint?.takeIf { rollback != null }, rollback, undoneTools)
+      }
+    }
+  }
+
+  /**
+   * The rest of [rewindTo] once the checkpoint and the plan are known: the question, the branch, the files, the warning
+   *
+   * The question names how many files come back and how many are deleted, because a rollback of the folder cannot be
+   * undone. Without a snapshot the rewind is the conversation only, and when commands ran in the undone stretch the
+   * person is told that their effects were not rolled back
+   */
+  private fun continueRewind(
+    recordIndex: Int, threadId: String, text: String,
+    checkpoint: com.vibe.agent.checkpoints.Checkpoint?, rollback: com.vibe.agent.checkpoints.FolderRollback?, undoneTools: List<String>,
+  ) {
+    if (turnInFlight.get()) {
+      systemLine(t("chat.rewind.busy"), MISC, WARNING)
+      return
+    }
+    val coverage = com.vibe.agent.checkpoints.CheckpointContract.coverage(checkpoint != null, rollback?.wouldChange, undoneTools)
+    val hash = checkpoint?.hash?.take(8)
+    val question = when {
+      checkpoint == null || rollback == null -> t("chat.rewind.confirmConversation")
+      coverage == com.vibe.agent.checkpoints.RewindCoverage.Complete -> t("chat.rewind.confirmFilesUnchanged", "hash" to hash)
+      else -> t("chat.rewind.confirmFiles", "hash" to hash, "restore" to rollback.plan.restore.size, "delete" to rollback.plan.delete.size)
+    }
     if (Messages.showYesNoDialog(project, question, t("chat.rewind.title"), Messages.getWarningIcon()) != Messages.YES) return
     val copy = if (recordIndex == 0) history.create(project.basePath, project.name)
                else history.branch(threadId, recordIndex - 1) ?: return
     activateThread(copy.id)
-    composer.restoreDraft(com.vibe.agent.ui.composer.ComposedMessage(record.text, emptyList(), emptyList()))
-    if (checkpoint == null || service == null) {
-      systemLine(t("chat.rewind.conversationOnly"), MISC)
-      return
-    }
-    ApplicationManager.getApplication().executeOnPooledThread {
-      val restored = service.restore(checkpoint)
-      if (restored) systemLine(t("chat.rewind.filesDone", "hash" to checkpoint.hash.take(8)), MISC)
-      else systemLine(t("chat.checkpoint.failed"), MISC, WARNING)
-      ApplicationManager.getApplication().invokeLater {
-        com.intellij.openapi.vfs.VfsUtil.markDirtyAndRefresh(true, true, true, com.intellij.openapi.vfs.LocalFileSystem.getInstance().findFileByPath(project.basePath!!))
+    composer.restoreDraft(com.vibe.agent.ui.composer.ComposedMessage(text, emptyList(), emptyList()))
+    when {
+      checkpoint == null || rollback == null -> {
+        systemLine(t("chat.rewind.conversationOnly"), MISC)
+        (coverage as? com.vibe.agent.checkpoints.RewindCoverage.Uncovered)?.let {
+          systemLine(t("chat.rewind.uncovered", "count" to it.shellCallCount), MISC, WARNING)
+        }
+      }
+      coverage == com.vibe.agent.checkpoints.RewindCoverage.Complete -> systemLine(t("chat.rewind.filesUnchanged"), MISC)
+      else -> restoreFolder(checkpoint, rollback) { ok ->
+        if (ok) systemLine(t("chat.rewind.filesDone", "hash" to hash, "restore" to rollback.plan.restore.size,
+                             "delete" to rollback.plan.delete.size), MISC)
+        else systemLine(t("chat.checkpoint.failed"), MISC, WARNING)
       }
     }
   }
@@ -6435,10 +6492,10 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
   }
 
   /** Compact tool-call card, VibeIDE style: 4px radius, quiet border, 11px italic. */
-  private fun toolCard(title: String, turn: TurnState = turns.chat) {
+  private fun toolCard(title: String, turn: TurnState = turns.chat, toolName: String? = null) {
     // Out-of-turn agent notifications land in the visible thread, not in a finished turn's one.
     val targetThread = (if (turnInFlight.get()) turnThreadId else null) ?: currentThreadId
-    history.append(targetThread, ChatMessageRecord(Role.OTHER, title, at = nowIso()))
+    history.append(targetThread, ChatMessageRecord(Role.OTHER, title, at = nowIso(), toolName = toolName))
     SwingUtilities.invokeLater {
       if (targetThread != currentThreadId) return@invokeLater
       turn.feed.addRecord(buildToolRow(title))
@@ -6458,17 +6515,24 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
       label.toolTipText = t("chat.checkpoint.tooltip")
       label.addMouseListener(object : java.awt.event.MouseAdapter() {
         override fun mouseClicked(e: java.awt.event.MouseEvent) {
-          val confirm = Messages.showYesNoDialog(project,
-            t("chat.checkpoint.confirm", "hash" to cp.hash.take(8), "label" to cp.label),
-            t("chat.checkpoint.title"), Messages.getWarningIcon())
-          if (confirm == Messages.YES) {
-            ApplicationManager.getApplication().executeOnPooledThread {
-              val service = checkpoints ?: return@executeOnPooledThread
-              val ok = service.restore(cp)
-              if (ok) systemLine(t("chat.checkpoint.done", "hash" to cp.hash.take(8)), MISC)
-              else systemLine(t("chat.checkpoint.failed"), MISC, WARNING)
-              ApplicationManager.getApplication().invokeLater {
-                com.intellij.openapi.vfs.VfsUtil.markDirtyAndRefresh(true, true, true, com.intellij.openapi.vfs.LocalFileSystem.getInstance().findFileByPath(project.basePath!!))
+          val service = checkpoints ?: return
+          ApplicationManager.getApplication().executeOnPooledThread {
+            val rollback = service.plan(cp)
+            when {
+              rollback == null -> systemLine(t("chat.checkpoint.failed"), MISC, WARNING)
+              rollback.wouldChange == false -> systemLine(t("undo.nothing", "hash" to cp.hash.take(8)), MISC)
+              else -> ApplicationManager.getApplication().invokeLater {
+                val confirm = Messages.showYesNoDialog(project,
+                  t("chat.checkpoint.confirm", "hash" to cp.hash.take(8), "label" to cp.label,
+                    "restore" to rollback.plan.restore.size, "delete" to rollback.plan.delete.size),
+                  t("chat.checkpoint.title"), Messages.getWarningIcon())
+                if (confirm == Messages.YES) {
+                  restoreFolder(cp, rollback) { ok ->
+                    if (ok) systemLine(t("chat.checkpoint.done", "hash" to cp.hash.take(8), "restore" to rollback.plan.restore.size,
+                                         "delete" to rollback.plan.delete.size), MISC)
+                    else systemLine(t("chat.checkpoint.failed"), MISC, WARNING)
+                  }
+                }
               }
             }
           }
@@ -6476,6 +6540,21 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
       })
       messages.add(label)
       revalidateScroll()
+    }
+  }
+
+  /**
+   * Writes the snapshot over the working folder and deletes the files of the plan the person confirmed
+   *
+   * Off the EDT; [done] gets the outcome on the same pooled thread, and the editor learns of the changed files after it
+   */
+  private fun restoreFolder(cp: com.vibe.agent.checkpoints.Checkpoint, rollback: com.vibe.agent.checkpoints.FolderRollback, done: (Boolean) -> Unit) {
+    val service = checkpoints ?: return
+    ApplicationManager.getApplication().executeOnPooledThread {
+      done(service.restore(cp, rollback.plan))
+      ApplicationManager.getApplication().invokeLater {
+        com.intellij.openapi.vfs.VfsUtil.markDirtyAndRefresh(true, true, true, com.intellij.openapi.vfs.LocalFileSystem.getInstance().findFileByPath(project.basePath!!))
+      }
     }
   }
 
@@ -6629,7 +6708,8 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
           snapshotAgentEdit(call, turn)
           turn.toolStarts[call.id] = System.currentTimeMillis()
         }
-        toolCard(call?.let { com.vibe.agent.acp.ToolCall.label(it.title, it.toolName) } ?: t("chat.tool"), turn)
+        toolCard(call?.let { com.vibe.agent.acp.ToolCall.label(it.title, it.toolName) } ?: t("chat.tool"), turn,
+                 call?.let { com.vibe.agent.checkpoints.AgentShellTools.recordedName(it.kind, it.toolName) })
         // Claude adapter announces a terminal for this tool-call — open a live console.
         terminalInfoId(u)?.let { openTerminalConsole(it, call?.title ?: t("chat.terminal"), turn) }
       }
