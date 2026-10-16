@@ -220,6 +220,8 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
   private val clientLock = Any()
   /** Serializes which session is current: a turn's, a tab switch's. Held across a handshake, so never taken on the EDT. */
   private val sessionLock = Any()
+  /** A session opened ahead of the first prompt is being started: a second start would only queue behind it. */
+  private val sessionAheadStarting = java.util.concurrent.atomic.AtomicBoolean(false)
   /** Thread → its session on the running [client]; emptied whenever the client is replaced or gone. */
   private val threadSessions = java.util.concurrent.ConcurrentHashMap<String, String>()
   private val checkpoints: CheckpointService? = project.basePath?.let { CheckpointService(it) }
@@ -780,6 +782,8 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
         val c = client?.takeIf { clientConfig == t.config && it.isAlive }
         modePicker.setModes(c?.modes); configPicker.setOptions(c?.configOptions)
         composer.setImagesAllowed(c?.capabilities?.image != false, NO_IMAGE_AGENT)
+        // No live agent yet: start it now, so the pickers are there before the first (paid) prompt.
+        if (c == null && currentThreadId.isNotEmpty()) followThreadSession(currentThreadId)
       }
       is ChatTarget.Model -> {
         VibeChatSettings.rememberChoice(project, "llm:${t.provider.id}", t.model.id)
@@ -4426,21 +4430,33 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
    * model request, and pickers left empty until a paid message are what [openThreadSession] exists to avoid. While a
    * turn runs nothing is switched — its session must stay current under its prompt — and the pickers of any other
    * thread stay empty until it ends.
+   * With an agent target picked and no live agent, the agent is started the same way, so the pickers need no paid message.
    */
   private fun followThreadSession(threadId: String) {
-    val config = synchronized(clientLock) { clientConfig.takeIf { client?.isAlive == true } }
     val agentTarget = (target as? ChatTarget.Agent)?.config
-    if (config == null || agentTarget != config) return
-    if (turnInFlight.get()) {
-      if (threadId != turnThreadId) showSessionPickers(null)
-      return
+    val action = SessionAhead.decide(
+      agentTargetSelected = agentTarget != null, turnInFlight = turnInFlight.get(), turnThreadId = turnThreadId,
+      threadId = threadId, startInProgress = sessionAheadStarting.get())
+    when (action) {
+      SessionAhead.Action.SKIP -> return
+      SessionAhead.Action.SHOW_EMPTY -> { showSessionPickers(null); return }
+      SessionAhead.Action.START -> {}
     }
+    val config = agentTarget ?: return
+    if (!sessionAheadStarting.compareAndSet(false, true)) return
     ApplicationManager.getApplication().executeOnPooledThread {
-      synchronized(sessionLock) {
-        if (disposed || turnInFlight.get() || currentThreadId != threadId) return@executeOnPooledThread
-        runCatching { ensureClient(config, threadId) }
-          .onSuccess { showSessionPickers(it) }
-          .onFailure { systemLine(t("chat.reconnectFailed", "reason" to com.vibe.agent.acp.AgentFailure.reasonOf(it)), AGENTS, WARNING) }
+      try {
+        synchronized(sessionLock) {
+          // The target or the tab may have changed while this waited for the lock.
+          val sameAgent = (target as? ChatTarget.Agent)?.config == config
+          if (disposed || turnInFlight.get() || !SessionAhead.stillRelevant(currentThreadId, threadId, sameAgent)) return@executeOnPooledThread
+          runCatching { ensureClient(config, threadId) }
+            .onSuccess { showSessionPickers(it) }
+            .onFailure { systemLine(t("chat.reconnectFailed", "reason" to com.vibe.agent.acp.AgentFailure.reasonOf(it)), AGENTS, WARNING) }
+        }
+      }
+      finally {
+        sessionAheadStarting.set(false)
       }
     }
   }
