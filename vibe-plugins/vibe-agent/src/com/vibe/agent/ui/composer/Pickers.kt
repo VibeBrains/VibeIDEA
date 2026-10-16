@@ -6,8 +6,6 @@ import com.vibe.agent.mcp.PermissionMode
 
 import com.intellij.icons.AllIcons
 import com.intellij.openapi.ui.popup.JBPopupFactory
-import com.intellij.ui.ColoredListCellRenderer
-import com.intellij.ui.SimpleTextAttributes
 import com.intellij.ui.components.JBLabel
 import com.intellij.util.ui.EmptyIcon
 import com.intellij.util.ui.JBUI
@@ -108,33 +106,28 @@ class ModelPicker(
 }
 
 /**
- * «Режим ▾» pill: the ACP session modes the agent advertises (session/new → modes).
- * Hidden when the current target has no modes (direct LLM chat has no tools to gate).
+ * The mode pill: the ACP session modes the agent advertises (session/new → modes)
+ * The caption is fixed: the mode in force is the agent's own wording, and as the pill's text it would look like a setting of the IDE
+ * What the pill is and the mode in force are in its tooltip; the menu shows the modes, each with its hint behind a help mark
+ * Hidden when the current target has no modes (direct LLM chat has no tools to gate)
  */
 class ModePicker(private val onChoose: (modeId: String) -> Unit) {
   private var modes: SessionModes? = null
-  val pill = PillButton(text = "", dropdown = true) { show() }.apply { isVisible = false }
+  val pill = PillButton(text = t("picker.mode.label"), dropdown = true) { show() }.apply { isVisible = false }
 
   fun setModes(modes: SessionModes?) {
     this.modes = modes
     pill.isVisible = modes != null && modes.available.isNotEmpty()
-    val current = modes?.available?.firstOrNull { it.id == modes.currentModeId }
-    pill.text = current?.name ?: modes?.currentModeId ?: ""
-    pill.toolTipText = current?.description ?: t("picker.mode.tooltip")
+    pill.text = t("picker.mode.label")
+    pill.toolTipText = modes?.let { wrappedTooltip(AcpMenu.modeTooltipLines(it)) } ?: t("picker.mode.tooltip")
     pill.revalidate()
   }
 
   private fun show() {
     val m = modes ?: return
-    JBPopupFactory.getInstance().createPopupChooserBuilder(m.available)
-      .setRenderer(object : ColoredListCellRenderer<com.vibe.agent.acp.SessionMode>() {
-        override fun customizeCellRenderer(list: JList<out com.vibe.agent.acp.SessionMode>, value: com.vibe.agent.acp.SessionMode, index: Int, isSelected: Boolean, hasFocus: Boolean) {
-          icon = if (value.id == m.currentModeId) AllIcons.Actions.Checked else EmptyIcon.ICON_16
-          append(value.name)
-          value.description?.let { append("  $it", SimpleTextAttributes.GRAYED_ATTRIBUTES) }
-        }
-      })
-      .setItemChosenCallback { mode -> onChoose(mode.id) }
+    JBPopupFactory.getInstance().createPopupChooserBuilder(AcpMenu.modeRows(m))
+      .setRenderer(AcpMenuRenderer())
+      .setItemChosenCallback { row -> onChoose(row.source.id) }
       .createPopup()
       .also { com.vibe.agent.ui.VibeScroll.thinAllIn(it.content) }
       .showUnderneathOf(pill)
@@ -294,53 +287,37 @@ internal fun providerFileLabel(path: String, projectBase: String?, home: String)
 }
 
 /**
- * «Настройки ▾» pill: the configuration options the agent advertises for this session — switches and choices.
+ * The settings pill: the configuration options the agent advertises for this session — switches and choices
  *
- * A separate pill from «Режим ▾» on purpose: these are the agent's own settings with the agent's own captions.
- * Hidden whenever the agent offers none — most do, and an always-present empty menu reads as a broken feature.
- * A switch flips on click; a choice opens its values with the current one checked.
+ * A separate pill from the mode one on purpose: these are the agent's own settings with the agent's own captions
+ * The caption is fixed and the values in force are in the tooltip: the agent's wording would read as a setting of the IDE
+ * Hidden whenever the agent offers none — most do, and an always-present empty menu reads as a broken feature
+ * A switch flips on click; a choice opens its values with the current one checked
  *
  * The list is never edited locally: the click reports the wanted value, and the caller redraws
- * from what the agent answered.
+ * from what the agent answered
  */
 class ConfigOptionsPicker(
   private val onToggle: (configId: String, value: Boolean) -> Unit,
   private val onChoose: (configId: String, value: String) -> Unit,
 ) {
   private var options: List<SessionConfigOption> = emptyList()
-  val pill = PillButton(text = "", dropdown = true) { show() }.apply { isVisible = false }
+  val pill = PillButton(text = t("picker.config.label"), dropdown = true) { show() }.apply { isVisible = false }
 
   fun setOptions(options: List<SessionConfigOption>?) {
     this.options = options.orEmpty()
     pill.isVisible = this.options.isNotEmpty()
-    val toggles = this.options.map { it.kind }.filterIsInstance<SessionConfigOption.Toggle>()
-    pill.text =
-      if (toggles.size == this.options.size) t("picker.config.label", "on" to toggles.count { it.on }, "total" to toggles.size)
-      else t("picker.config.count", "total" to this.options.size)
-    pill.toolTipText = t("picker.config.tooltip")
+    pill.text = t("picker.config.label")
+    pill.toolTipText = wrappedTooltip(AcpMenu.optionsTooltipLines(this.options))
     pill.revalidate()
   }
 
   private fun show() {
     if (options.isEmpty()) return
-    JBPopupFactory.getInstance().createPopupChooserBuilder(options)
-      .setRenderer(object : ColoredListCellRenderer<SessionConfigOption>() {
-        override fun customizeCellRenderer(list: JList<out SessionConfigOption>, value: SessionConfigOption, index: Int, isSelected: Boolean, hasFocus: Boolean) {
-          when (val kind = value.kind) {
-            is SessionConfigOption.Toggle -> {
-              icon = if (kind.on) AllIcons.Actions.Checked else EmptyIcon.ICON_16
-              append(value.name)
-            }
-            is SessionConfigOption.Choice -> {
-              icon = EmptyIcon.ICON_16
-              append(value.name)
-              append(": ${kind.currentName}", SimpleTextAttributes.REGULAR_BOLD_ATTRIBUTES)
-            }
-          }
-          value.description?.let { append("  $it", SimpleTextAttributes.GRAYED_ATTRIBUTES) }
-        }
-      })
-      .setItemChosenCallback { option ->
+    JBPopupFactory.getInstance().createPopupChooserBuilder(AcpMenu.optionRows(options))
+      .setRenderer(AcpMenuRenderer())
+      .setItemChosenCallback { row ->
+        val option = row.source
         when (val kind = option.kind) {
           is SessionConfigOption.Toggle -> onToggle(option.id, !kind.on)
           is SessionConfigOption.Choice -> showChoices(option.id, kind)
@@ -352,15 +329,9 @@ class ConfigOptionsPicker(
   }
 
   private fun showChoices(configId: String, choice: SessionConfigOption.Choice) {
-    JBPopupFactory.getInstance().createPopupChooserBuilder(choice.options)
-      .setRenderer(object : ColoredListCellRenderer<SessionConfigOption.Choice.Option>() {
-        override fun customizeCellRenderer(list: JList<out SessionConfigOption.Choice.Option>, value: SessionConfigOption.Choice.Option, index: Int, isSelected: Boolean, hasFocus: Boolean) {
-          icon = if (value.value == choice.current) AllIcons.Actions.Checked else EmptyIcon.ICON_16
-          append(value.name)
-          value.description?.let { append("  $it", SimpleTextAttributes.GRAYED_ATTRIBUTES) }
-        }
-      })
-      .setItemChosenCallback { option -> if (option.value != choice.current) onChoose(configId, option.value) }
+    JBPopupFactory.getInstance().createPopupChooserBuilder(AcpMenu.choiceRows(configId, choice))
+      .setRenderer(AcpMenuRenderer())
+      .setItemChosenCallback { row -> if (row.source.value != choice.current) onChoose(configId, row.source.value) }
       .createPopup()
       .also { com.vibe.agent.ui.VibeScroll.thinAllIn(it.content) }
       .showUnderneathOf(pill)
