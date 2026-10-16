@@ -33,8 +33,12 @@ object PreciseNavigation {
 
   fun isEnabled(): Boolean = Registry.`is`(REGISTRY_KEY, false)
 
-  /** Client features in which LSP4IJ's go-to is off while ours is on. */
-  fun install(features: LSPClientFeatures): LSPClientFeatures = features.setDefinitionFeature(Definitions())
+  /**
+   * Client features in which LSP4IJ's go-to is off while ours is on
+   * Selection ranges are asked only for files on disk, see [SelectionRanges]
+   */
+  fun install(features: LSPClientFeatures): LSPClientFeatures =
+    features.setDefinitionFeature(Definitions()).setSelectionRangeFeature(SelectionRanges.feature())
 
   /** Ready features for a factory that needs nothing else. */
   fun features(): LSPClientFeatures = install(LSPClientFeatures())
