@@ -37,6 +37,15 @@ class RetryPolicyTest {
   }
 
   @Test
+  fun `a TLS handshake the remote host cut is transient and paced like VibeIDE`() {
+    val cut = javax.net.ssl.SSLHandshakeException("Remote host terminated the handshake")
+    assertEquals(RetryPolicy.Kind.TRANSIENT, RetryPolicy.classify(null, cut))
+    assertEquals(listOf(1_000L, 2_000L, 4_000L),
+                 (1..3).map { (RetryPolicy.verdict(RetryPolicy.Kind.TRANSIENT, it, null) as RetryPolicy.Verdict.Wait).delayMs })
+    assertEquals(RetryPolicy.Verdict.Stop, RetryPolicy.verdict(RetryPolicy.Kind.TRANSIENT, RetryPolicy.MAX_ATTEMPTS, null))
+  }
+
+  @Test
   fun `a user stop is never retried behind their back`() {
     assertEquals(RetryPolicy.Kind.FATAL, RetryPolicy.classify(null, java.io.InterruptedIOException("остановлено пользователем")))
   }
