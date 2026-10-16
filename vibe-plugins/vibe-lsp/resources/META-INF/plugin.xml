@@ -28,6 +28,8 @@
     <applicationConfigurable parentId="com.vibe.settings" displayName="Языковые серверы"
                              id="com.vibe.lsp.paths" instance="com.vibe.lsp.VibeLspConfigurable"/>
     <postStartupActivity implementation="com.vibe.lsp.VibeLspSuggestionSilencer"/>
+    <!-- Four clicks select a sentence in every editor, diff viewers included. -->
+    <editorFactoryListener implementation="com.vibe.lsp.selection.SentenceClickSelection"/>
     <!-- Ext JS: переход по имени класса и по пути в строке. JS-ядра в открытой платформе нет,
          поэтому и индекс, и переход считают по тексту файла. -->
     <fileBasedIndex implementation="com.vibe.lsp.extjs.ExtDefineIndexExtension"/>

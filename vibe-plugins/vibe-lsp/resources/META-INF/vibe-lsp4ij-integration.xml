@@ -127,4 +127,11 @@
     <!-- The agent's trace resolves names through the servers, not only through the text. -->
     <symbolLookup implementation="com.vibe.lsp.nav.LspSymbolLookup"/>
   </extensions>
+
+  <extensions defaultExtensionNs="com.intellij">
+    <!-- LSP4IJ turns the platform word selection off while a server answers selectionRange, and the server's smallest
+         range inside a template string is the whole literal: a double-click selected the string, not the word.
+         The platform's word goes first, the server's ranges stay as the next steps of Extend Selection. -->
+    <extendWordSelectionHandler implementation="com.vibe.lsp.selection.WordBeforeServerRanges"/>
+  </extensions>
 </idea-plugin>
