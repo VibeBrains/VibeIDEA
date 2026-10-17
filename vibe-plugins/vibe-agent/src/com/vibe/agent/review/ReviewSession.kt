@@ -83,22 +83,27 @@ class ReviewSession(
     override fun documentChanged(event: DocumentEvent) = schedule()
   }
 
+  private val pressed = PressedTarget<Pair<Hunk, HunkBlock.Button>>()
+
   private val mouseListener = object : EditorMouseListener {
-    // The press is taken as well, so a click on a button does not start a selection in the text behind it
+    // The press is taken, so a click on a button does not start a selection in the text behind it
+    // The editor sends no mouseClicked after a consumed press, so the button fires on the release over the same button
     override fun mousePressed(e: EditorMouseEvent) {
-      if (hit(e) != null) e.consume()
+      val hit = hit(e)
+      pressed.press(hit?.let { it.block.hunk to it.button })
+      if (hit != null) e.consume()
+    }
+
+    override fun mouseReleased(e: EditorMouseEvent) {
+      val (hunk, button) = pressed.release(hit(e)?.let { it.block.hunk to it.button }) ?: return
+      e.consume()
+      when (button) {
+        HunkBlock.Button.ACCEPT -> accept(hunk)
+        HunkBlock.Button.REJECT -> reject(hunk)
+      }
     }
 
     override fun mouseExited(e: EditorMouseEvent) = hover(null)
-
-    override fun mouseClicked(e: EditorMouseEvent) {
-      val hit = hit(e) ?: return
-      e.consume()
-      when (hit.button) {
-        HunkBlock.Button.ACCEPT -> accept(hit.block.hunk)
-        HunkBlock.Button.REJECT -> reject(hit.block.hunk)
-      }
-    }
   }
 
   private val motionListener = object : EditorMouseMotionListener {
