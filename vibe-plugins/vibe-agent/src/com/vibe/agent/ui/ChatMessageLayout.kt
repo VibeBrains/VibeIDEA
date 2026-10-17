@@ -195,6 +195,32 @@ internal class ChatFeedMetrics(private val scale: () -> Float = { JBUI.scale(1f)
     return true
   }
 
+  /**
+   * Takes the visible width of the feed; true when the width itself changed, whether or not the layout did
+   *
+   * [update] answers a narrower question: the tight layout is the same at every width, yet its text wraps differently at each
+   */
+  fun follow(width: Int): Boolean {
+    if (width <= 0) return false
+    val changed = width != feedWidth
+    update(width)
+    return changed
+  }
+
   /** The width a row gets inside the feed: the feed less the panel's own padding on both sides */
   fun rowWidth(): Int = max(0, feedWidth - (2 * ChatLayoutSpec.FEED_PAD * scale()).roundToInt())
+}
+
+/** Reflow of a feed whose width changed */
+internal object ChatReflow {
+  /**
+   * Marks [component] and everything under it as needing layout
+   *
+   * `invalidate` goes up, not down, and a box layout keeps the sizes it measured: a stack nested two rows deep
+   * would hand its text the old width and the old height on the next pass
+   */
+  fun invalidateTree(component: java.awt.Component) {
+    component.invalidate()
+    if (component is java.awt.Container) component.components.forEach { invalidateTree(it) }
+  }
 }

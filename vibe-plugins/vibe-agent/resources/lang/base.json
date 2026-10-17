@@ -488,6 +488,7 @@
   "common.close": "Закрыть",
   "common.delete": "Удалить",
   "common.stoppedByUser": "остановлено пользователем",
+  "chat.composerSplit.hint": "Тяните разделитель, чтобы изменить высоту поля ввода; двойной клик — вернуть авто-высоту",
   "composer.attach.tooltip": "Прикрепить изображение (или вставить / перетащить)",
   "composer.image.chip": "{name} · {size} КБ",
   "composer.image.tooLarge": "изображение {name} ({size} КБ) больше лимита {limit} МБ — не прикреплено",

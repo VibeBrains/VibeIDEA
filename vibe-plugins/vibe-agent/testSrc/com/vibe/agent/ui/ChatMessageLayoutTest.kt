@@ -147,4 +147,14 @@ class ChatMessageLayoutTest {
     assertFalse(metrics.update(270))
     assertEquals(270, metrics.feedWidth)
   }
+
+  @Test
+  fun `follow reports a new width even where the layout stays the same`() {
+    val metrics = ChatFeedMetrics { 1f }
+    assertTrue(metrics.follow(280))
+    assertTrue(metrics.follow(270), "the tight layout is the same, the text still wraps anew")
+    assertFalse(metrics.follow(270))
+    assertFalse(metrics.follow(0))
+    assertEquals(270, metrics.feedWidth)
+  }
 }

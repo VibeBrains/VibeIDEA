@@ -189,8 +189,9 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
    * So the rows are invalidated by hand
    */
   private fun onFeedResized() {
-    if (!feedMetrics.update(scroll.viewport.width)) return
-    messages.components.forEach { it.invalidate() }
+    // The layout may stay the same across widths (the tight one does), yet the text must still wrap anew
+    if (!feedMetrics.follow(scroll.viewport.width)) return
+    messages.components.forEach { ChatReflow.invalidateTree(it) }
     messages.revalidate()
     messages.repaint()
   }
@@ -515,6 +516,8 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
   private var rail: HistoryRail? = null
   private var railDisposable: Disposable? = null
   private val centerWrap = JPanel(BorderLayout()).apply { isOpaque = false }
+  /** The feed over the composer with the divider the person drags; the empty chat has no feed to share with */
+  private val split = ComposerSplit(feedEnd, composer, PropertiesFractionStore())
   private val topColumn = JPanel().apply {
     layout = BoxLayout(this, BoxLayout.Y_AXIS)
     isOpaque = false
@@ -680,11 +683,14 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     val hadFocus = focusOwner != null && SwingUtilities.isDescendingFrom(focusOwner, composer)
     centerWrap.remove(composer)
     centerWrap.remove(topColumn)
+    centerWrap.remove(split)
     topColumn.removeAll()
     if (conversationStarted) {
-      centerWrap.add(composer, BorderLayout.SOUTH)
+      split.adopt()
+      centerWrap.add(split, BorderLayout.CENTER)
     }
     else {
+      centerWrap.add(feedEnd, BorderLayout.CENTER)
       topColumn.add(composer.apply { alignmentX = Component.LEFT_ALIGNMENT })
       topColumn.add(landing.apply { alignmentX = Component.LEFT_ALIGNMENT })
       centerWrap.add(topColumn, BorderLayout.NORTH)

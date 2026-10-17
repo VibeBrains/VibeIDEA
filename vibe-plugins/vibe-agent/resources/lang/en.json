@@ -488,6 +488,7 @@
   "common.close": "Close",
   "common.delete": "Delete",
   "common.stoppedByUser": "stopped by the user",
+  "chat.composerSplit.hint": "Drag to resize the input; double-click to return to automatic height",
   "composer.attach.tooltip": "Attach an image (or paste / drag and drop)",
   "composer.image.chip": "{name} · {size} KB",
   "composer.image.tooLarge": "image {name} ({size} KB) exceeds the {limit} MB limit — not attached",

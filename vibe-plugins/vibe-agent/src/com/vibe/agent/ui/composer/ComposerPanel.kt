@@ -103,6 +103,9 @@ class ComposerPanel(
     viewport.isOpaque = false
   }
 
+  /** The least the composer can be: everything around the input as it is now, and the input at its one-line floor */
+  fun minimumHeight(): Int = preferredSize.height - scroll.preferredSize.height + JBUI.scale(INPUT_MIN_HEIGHT)
+
   private val contextStrip = ChipStrip()
   private val attachmentsStrip = ChipStrip()
   private val queueBanner = QueueBanner(queue)
