@@ -48,6 +48,30 @@ class AgentAuthTest {
   }
 
   @Test
+  fun `a lost sign-in is told by the code or by the adapter's words`() {
+    val coded = ExecutionException(CompletionException(AcpRpcError(AgentAuth.AUTH_REQUIRED, "x")))
+    assertTrue(AgentAuth.needsLogin(coded))
+    assertTrue(AgentAuth.needsLogin(IllegalStateException("""{"code":-32000,"message":"Authentication required"}""")))
+    assertTrue(AgentAuth.needsLogin(RuntimeException("Failed to authenticate: OAuth session expired and could not be refreshed")))
+    assertFalse(AgentAuth.needsLogin(AcpRpcError(-32601, "no such method")))
+    assertFalse(AgentAuth.needsLogin(IllegalStateException("agent stopped")))
+    assertFalse(AgentAuth.needsLogin(null))
+  }
+
+  @Test
+  fun `the command of _meta terminal-auth replaces the one rebuilt from the entry`() {
+    val methods = AgentAuth.methods(obj("""
+      { "authMethods": [ { "id": "claude-login", "name": "Log in", "type": "terminal", "args": ["--cli"],
+        "_meta": { "terminal-auth": { "command": "/usr/bin/node", "args": ["/x/acp.js", "--cli"], "label": "Claude Login" } } },
+        { "id": "plain", "name": "Plain", "type": "terminal", "args": ["--cli"] } ] }
+    """.trimIndent()))
+    val config = AgentServerConfig("Claude Code", "npx", listOf("-y", "adapter"), emptyMap())
+    assertEquals("/usr/bin/node /x/acp.js --cli", AgentAuth.terminalCommand(config, methods[0], windows = false).line)
+    assertEquals(null, methods[1].metaCommand)
+    assertEquals("npx -y adapter --cli", AgentAuth.terminalCommand(config, methods[1], windows = false).line)
+  }
+
+  @Test
   fun `a terminal method is the agent's own command with the method's arguments and environment`() {
     val config = AgentServerConfig("Claude Code", "npx", listOf("-y", "@agentclientprotocol/claude-agent-acp"),
                                    mapOf("ANTHROPIC_API_KEY" to "", "TOKEN" to "\${secret:TOKEN}"))

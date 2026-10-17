@@ -25,6 +25,9 @@ object AgentAuth {
   /** JSON-RPC code of `auth_required` — `RequestError.authRequired` in the protocol's SDK. */
   const val AUTH_REQUIRED = -32000
 
+  /** Phrases of an agent that lost its sign-in. */
+  private val LOGIN_MARKERS = listOf("Authentication required", "Failed to authenticate", "OAuth session expired")
+
   private const val TYPE_AGENT = "agent"
   private const val TYPE_TERMINAL = "terminal"
 
@@ -54,11 +57,33 @@ object AgentAuth {
           else -> AuthMethod.Kind.OTHER
         },
         args = (method["args"] as? JsonArray).orEmpty().mapNotNull { (it as? JsonPrimitive)?.contentOrNull },
+        metaCommand = terminalAuthMeta(method),
         env = (method["env"] as? JsonObject).orEmpty().mapNotNull { (key, value) ->
           (value as? JsonPrimitive)?.contentOrNull?.let { key to it }
         }.toMap(),
       )
     }
+
+  /**
+   * `_meta["terminal-auth"]` of a method: the exact program, arguments and label the agent wants run, which
+   * the adapter sends only to a client that announced `_meta["terminal-auth"]`. Null when absent or without a command.
+   */
+  private fun terminalAuthMeta(method: JsonObject): List<String>? {
+    val meta = ((method["_meta"] as? JsonObject)?.get("terminal-auth") as? JsonObject) ?: return null
+    val command = meta.string("command") ?: return null
+    val args = (meta["args"] as? JsonArray).orEmpty().mapNotNull { (it as? JsonPrimitive)?.contentOrNull }
+    return listOf(command) + args
+  }
+
+  /**
+   * Whether a prompt failure is a signed-out agent: `auth_required` (-32000), or the words the Claude adapter
+   * uses when its session expired mid-chat and the code is lost in a wrapper.
+   */
+  fun needsLogin(failure: Throwable?): Boolean {
+    if (isAuthRequired(failure)) return true
+    val text = generateSequence(failure) { it.cause }.take(CAUSE_DEPTH).mapNotNull { it.message }.joinToString(" ")
+    return LOGIN_MARKERS.any { text.contains(it, ignoreCase = true) }
+  }
 
   /** `agentCapabilities.auth.logout`: an object means the agent can log out; absent or null — it cannot. */
   fun logoutSupported(agentCapabilities: JsonObject?): Boolean =
@@ -78,7 +103,8 @@ object AgentAuth {
    * @param windows cmd.exe syntax instead of a POSIX shell's.
    */
   fun terminalCommand(config: AgentServerConfig, method: AuthMethod, windows: Boolean): TerminalCommand {
-    val argv = listOf(config.command) + config.args + method.args
+    // The agent's own full command line wins over our reconstruction of it from the entry.
+    val argv = method.metaCommand ?: (listOf(config.command) + config.args + method.args)
     val line = if (windows) {
       method.env.entries.joinToString("") { "set \"${it.key}=${it.value}\" && " } + argv.joinToString(" ") { quoteWindows(it) }
     }

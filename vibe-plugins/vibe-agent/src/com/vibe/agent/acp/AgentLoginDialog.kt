@@ -36,6 +36,9 @@ class AgentLoginDialog(
     /** The protocol drives it: `authenticate` with this method. */
     data class Authenticate(val method: AuthMethod) : Choice
 
+    /** The method is the agent's program: run it in an IDE terminal tab, then reconnect. */
+    data class Terminal(val method: AuthMethod, val commandLine: String) : Choice
+
     /** The person signed in outside the IDE: reconnect and initialize again. */
     data object Reconnect : Choice
   }
@@ -58,7 +61,12 @@ class AgentLoginDialog(
   /** What to do after OK; Cancel means «not now». */
   fun choice(): Choice {
     val method = selected()
-    return if (method?.kind == AuthMethod.Kind.AGENT) Choice.Authenticate(method) else Choice.Reconnect
+    return when {
+      method?.kind == AuthMethod.Kind.AGENT -> Choice.Authenticate(method)
+      method?.kind == AuthMethod.Kind.TERMINAL && AgentTerminalLogin.isAvailable() ->
+        Choice.Terminal(method, AgentAuth.terminalCommand(config, method, SystemInfo.isWindows).line)
+      else -> Choice.Reconnect
+    }
   }
 
   private fun selected(): AuthMethod? = buttons.indexOfFirst { it.isSelected }.takeIf { it >= 0 }?.let { methods[it] }
@@ -80,7 +88,11 @@ class AgentLoginDialog(
     }
     details.caretPosition = 0
     copy.isVisible = command != null
-    setOKButtonText(if (method?.kind == AuthMethod.Kind.AGENT) t("auth.login") else t("auth.reconnect"))
+    setOKButtonText(when {
+      method?.kind == AuthMethod.Kind.AGENT -> t("auth.login")
+      method?.kind == AuthMethod.Kind.TERMINAL && AgentTerminalLogin.isAvailable() -> t("auth.openTerminal")
+      else -> t("auth.reconnect")
+    })
     isOKActionEnabled = methods.isEmpty() || (method != null && method.kind != AuthMethod.Kind.OTHER)
   }
 

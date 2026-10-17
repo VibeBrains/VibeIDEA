@@ -47,6 +47,8 @@ data class AuthMethod(
   val kind: Kind,
   /** For a terminal method: appended to the agent's own command line. */
   val args: List<String> = emptyList(),
+  /** For a terminal method: the whole command line from `_meta["terminal-auth"]`, if the agent sent one. */
+  val metaCommand: List<String>? = null,
   /** For a terminal method: over the agent's own environment. */
   val env: Map<String, String> = emptyMap(),
 ) {

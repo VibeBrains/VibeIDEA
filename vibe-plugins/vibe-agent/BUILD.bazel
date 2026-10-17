@@ -59,6 +59,8 @@ jvm_library(
         "//platform/buildData:buildData",
         "//platform/util/text-matching",
         "//json/backend",
+        # Terminal sign-in of an agent runs in a tab of the Terminal tool window (optional plugin dependency).
+        "//plugins/terminal",
         # Local speech recognition (sherpa-onnx, Apache-2.0): the Java half; the native half ships per platform in native/
         "//vibe-plugins/vibe-agent/lib:vibe-agent-sherpa-onnx-jvm",
     ],

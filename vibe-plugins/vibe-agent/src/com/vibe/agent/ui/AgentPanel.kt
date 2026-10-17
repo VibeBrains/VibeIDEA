@@ -4416,6 +4416,11 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
             c.openSession(remembered).get(handshakeSec, TimeUnit.SECONDS)
           }
           // Signed in outside the IDE: what the spec prescribes next is a new connection and handshake.
+          is com.vibe.agent.acp.AgentLoginDialog.Choice.Terminal -> {
+            if (!terminalSignIn(config, choice)) throw IllegalStateException(t("auth.notLoggedIn", "agent" to config.name))
+            drop(c)
+            return ensureClient(config, threadId)
+          }
           com.vibe.agent.acp.AgentLoginDialog.Choice.Reconnect -> {
             drop(c)
             return ensureClient(config, threadId)
@@ -6606,15 +6611,61 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     }
   }
 
+  /**
+   * Sign-in in a tab of the IDE terminal: the command is typed there, the person finishes it by hand, then confirms.
+   * True when they say they signed in, so the caller reconnects; a terminal that would not open leaves the command
+   * in the feed to copy.
+   */
+  private fun terminalSignIn(config: AgentServerConfig, choice: com.vibe.agent.acp.AgentLoginDialog.Choice.Terminal): Boolean {
+    val title = t("auth.title", "agent" to config.name)
+    val opened = askOnEdt { com.vibe.agent.acp.AgentTerminalLogin.open(project, title, choice.commandLine) }
+    if (!opened) {
+      feedNotice(t("auth.terminalHint", "command" to choice.commandLine))
+      return false
+    }
+    return askOnEdt {
+      com.intellij.openapi.ui.Messages.showOkCancelDialog(project, t("auth.terminalWait", "agent" to config.name), title,
+        t("auth.reconnect"), t("auth.later"), com.intellij.openapi.ui.Messages.getInformationIcon()) == com.intellij.openapi.ui.Messages.OK
+    }
+  }
+
+  /**
+   * The sign-in action under a failed turn: the same dialog as at session start, for an agent that lost its sign-in
+   * mid-chat. The dropped client makes the next message reconnect, and the person is told to resend it.
+   */
+  private fun signInAfterFailure() {
+    val config = synchronized(clientLock) { clientConfig } ?: return
+    ApplicationManager.getApplication().executeOnPooledThread {
+      val c = synchronized(clientLock) { client }
+      val choice = askOnEdt {
+        com.vibe.agent.acp.AgentLoginDialog(project, config, c?.authMethods.orEmpty()).let { if (it.showAndGet()) it.choice() else null }
+      } ?: return@executeOnPooledThread
+      val signedIn = runCatching {
+        when (choice) {
+          is com.vibe.agent.acp.AgentLoginDialog.Choice.Authenticate -> { signIn(checkNotNull(c), config, choice.method); true }
+          is com.vibe.agent.acp.AgentLoginDialog.Choice.Terminal -> terminalSignIn(config, choice)
+          com.vibe.agent.acp.AgentLoginDialog.Choice.Reconnect -> true
+        }
+      }.getOrElse { feedNotice(agentErrorText(it)); false }
+      if (signedIn) {
+        c?.let { drop(it) }
+        feedNotice(t("auth.retry", "agent" to config.name))
+      }
+    }
+  }
+
   /** What the feed says about a failed agent request: in words, with the cause taken out of the wrappers */
   private fun agentErrorText(error: Throwable): String =
-    t("chat.agentError", "reason" to com.vibe.agent.acp.AgentFailure.reasonOf(error))
+    t("chat.agentError", "reason" to com.vibe.agent.acp.AgentFailure.reasonOf(error)) +
+      (if (com.vibe.agent.acp.AgentAuth.needsLogin(error)) "\n" + t("auth.loginHint") else "")
 
   /** The buttons under that line: a missing Node tool is fixed on the Node interpreter's page */
-  private fun agentErrorFixes(error: Throwable): List<Pair<String, () -> Unit>> =
-    if (com.vibe.agent.acp.AgentFailure.needsNodeSettings(error)) {
+  private fun agentErrorFixes(error: Throwable): List<Pair<String, () -> Unit>> = when {
+    com.vibe.agent.acp.AgentFailure.needsNodeSettings(error) ->
       listOf(t("chat.agentLaunch.openNode") to { com.vibe.agent.node.NodeSettings.open(project) })
-    } else emptyList()
+    com.vibe.agent.acp.AgentAuth.needsLogin(error) -> listOf(t("auth.login") to { signInAfterFailure() })
+    else -> emptyList()
+  }
 
   /**
    * A line of the feed that also stays in the thread.

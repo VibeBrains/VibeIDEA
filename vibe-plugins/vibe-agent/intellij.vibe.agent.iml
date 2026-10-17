@@ -41,6 +41,7 @@
     <orderEntry type="module" module-name="intellij.platform.buildData" />
     <orderEntry type="module" module-name="intellij.platform.util.text.matching" />
     <orderEntry type="module" module-name="intellij.libraries.zxing.core" />
+    <orderEntry type="module" module-name="intellij.terminal" />
     <orderEntry type="module-library">
       <library name="sherpa-onnx-jvm">
         <CLASSES>

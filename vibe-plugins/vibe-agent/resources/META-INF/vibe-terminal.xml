@@ -1,0 +1,3 @@
+<idea-plugin>
+  <!-- Intentionally empty: the optional dependency only makes the Terminal plugin's classes visible to AgentTerminalLogin. -->
+</idea-plugin>
