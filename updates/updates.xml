@@ -7,6 +7,10 @@
   <product name="VibeIDEA">
     <code>VI</code>
     <channel id="vibeidea-release" status="release" licensing="release" name="VibeIDEA" url="https://github.com/VibeBrains/VibeIDEA/releases">
+      <build number="263.10000" version="1.0.0" releaseDate="20261017">
+        <message>Вышла VibeIDEA 1.0.0. Патчей нет — новая версия ставится поверх, настройки сохраняются.</message>
+        <button name="Скачать" url="https://github.com/VibeBrains/VibeIDEA/releases/tag/v1.0.0" download="true" />
+      </build>
       <build number="263.900" version="0.9.0" releaseDate="20261015">
         <message>Вышла VibeIDEA 0.9.0. Патчей нет — новая версия ставится поверх, настройки сохраняются.</message>
         <button name="Скачать" url="https://github.com/VibeBrains/VibeIDEA/releases/tag/v0.9.0" download="true" />
