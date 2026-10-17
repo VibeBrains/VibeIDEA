@@ -31,3 +31,11 @@ com.redhat.devtools.lsp4ij.*
 # Сторож на будущее: проверка бандлов в checkVibeDist.sh и та же команда с
 # `idea.log.debug.categories=#org.jetbrains.plugins.textmate`.
 org.jetbrains.plugins.textmate.api.*
+
+# Terminal: объявленная необязательная зависимость vibe-agent
+# <depends optional="true" config-file="vibe-terminal.xml">org.jetbrains.plugins.terminal</depends>
+# (дескриптор есть и в собранном vibe-agent.jar; класс лежит в plugins/terminal/lib/terminal.jar).
+# Вход агента через терминал: класс называет только AgentTerminalLogin$TerminalTab, а вход в него закрыт
+# проверкой isAvailable() (плагин включён) и runCatching; без терминала вход возвращает false,
+# и лента показывает команду для копирования (AgentPanel.terminalSignIn).
+org.jetbrains.plugins.terminal.TerminalToolWindowManager
