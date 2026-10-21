@@ -31,6 +31,12 @@ data class AgentServerConfig(
   val limits: com.vibe.agent.budget.AgentLimits? = null,
   /** Where the record came from in the ACP registry, when an importer wrote it; null for a record written by hand. */
   val registry: RegistryRef? = null,
+  /**
+   * Whether the agent reads the project's instruction files itself (`readsInstructions`); null — decided by the agent
+   * The IDE then gives it the rest of the project context once per session instead of in every message
+   * (see [AgentInstructions.readsInstructions])
+   */
+  val readsInstructions: Boolean? = null,
 )
 
 /**
@@ -116,6 +122,7 @@ object AcpConfig {
             command = o.getValue("command").jsonPrimitive.content,
             args = o["args"]?.jsonArray?.map { it.jsonPrimitive.content } ?: emptyList(),
             env = o["env"]?.jsonObject?.mapValues { it.value.jsonPrimitive.content } ?: emptyMap(),
+            readsInstructions = o["readsInstructions"]?.jsonPrimitive?.booleanOrNull,
           ))
         }
         catch (e: Exception) {
@@ -167,6 +174,7 @@ object AcpConfig {
             dir = o["dir"]?.jsonPrimitive?.contentOrNull?.takeIf { it.isNotBlank() },
             limits = com.vibe.agent.budget.AgentLimits.parse(o["limits"]),
             registry = registryOf(o["registry"]),
+            readsInstructions = o["readsInstructions"]?.jsonPrimitive?.booleanOrNull,
           ))
         }
         catch (e: Exception) {

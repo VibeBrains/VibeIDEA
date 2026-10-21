@@ -34,5 +34,16 @@ object MinimalismPolicy {
     Mode.ULTRA -> rules.light + "\n" + rules.full + "\n" + rules.ultra
   }
 
+  /**
+   * What an agent session must receive before this prompt, given the mode it was last given ([sent], null — nothing yet)
+   * An agent keeps its own history, so the rules go once and again only when the mode changes, as the terse style does
+   * Switched off after being sent, the session hears [off]; null — nothing to send
+   */
+  fun forAgent(sent: Mode?, current: Mode, rules: Rules, off: String): String? = when {
+    current == (sent ?: Mode.OFF) -> null
+    current == Mode.OFF -> off
+    else -> preamble(current, rules)
+  }
+
   data class Rules(val light: String, val full: String, val ultra: String)
 }

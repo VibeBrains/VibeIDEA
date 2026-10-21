@@ -3319,12 +3319,78 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
    * around one call, a flag nobody sets and a comment restating the line below — each defensible
    * alone, and together the reason agent-written code becomes unreadable faster than hand-written.
    */
-  private fun prependMinimalism(prompt: String): String {
+  private fun prependMinimalism(c: AcpClient, prompt: String): String {
+    val session = c.sessionId ?: return prompt
     val mode = com.vibe.agent.minimalism.MinimalismPolicy.modeOf(VibeAgentSettings.minimalismMode)
-    if (mode == com.vibe.agent.minimalism.MinimalismPolicy.Mode.OFF) return prompt
     val rules = com.vibe.agent.minimalism.MinimalismPolicy.Rules(
       light = t("minimalism.light"), full = t("minimalism.full"), ultra = t("minimalism.ultra"))
-    return com.vibe.agent.minimalism.MinimalismPolicy.preamble(mode, rules) + "\n\n" + prompt
+    val note = com.vibe.agent.minimalism.MinimalismPolicy.forAgent(minimalismSent[session], mode, rules, t("minimalism.off"))
+    minimalismSent[session] = mode
+    return if (note == null) prompt else note + "\n\n" + prompt
+  }
+
+  /** Agent sessions and the minimalism mode each was last given: the agent keeps its history, as with [terseSent] */
+  private val minimalismSent = java.util.concurrent.ConcurrentHashMap<String, com.vibe.agent.minimalism.MinimalismPolicy.Mode>()
+
+  /**
+   * The project context of an agent that reads the project's instruction files itself, built for the current client
+   * Null for any other agent: it keeps getting the rules in every message, the way it did
+   */
+  override fun sessionInstructions(): String? {
+    val config = clientConfig ?: return null
+    return if (com.vibe.agent.acp.AgentInstructions.readsInstructions(config)) sessionContext()?.block?.text else null
+  }
+
+  /** The once-per-session context and what the context guard found in the rule files on the way */
+  private class SessionContext(
+    val block: com.vibe.agent.acp.AgentInstructions.Block,
+    val findings: List<Pair<String, List<com.vibe.agent.security.ContextSanitizer.Finding>>>,
+  )
+
+  /**
+   * What the agent cannot read itself: the root rules of `.vibe/rules`, `.cursor/rules` and `.cursorrules`, where the
+   * notes live, and the design context — see [com.vibe.agent.acp.AgentInstructions.block]
+   * Bodies pass the same guard as in [prependProjectRules]: a rule file is text someone else wrote
+   */
+  private fun sessionContext(): SessionContext? {
+    val findings = ArrayList<Pair<String, List<com.vibe.agent.security.ContextSanitizer.Finding>>>()
+    val rules = com.vibe.agent.context.ProjectContextService.getInstance(project).rules().map { rule ->
+      val clean = com.vibe.agent.security.ContextSanitizer.sanitize(rule.body)
+      if (clean.findings.isNotEmpty()) findings.add(rule.source.ifEmpty { rule.name } to clean.findings)
+      rule.copy(body = clean.text)
+    }
+    val pointers = buildList {
+      com.vibe.agent.knowledge.KnowledgeIndex.getInstance(project).indexFile()?.let { add(t("acp.instructions.knowledge", "path" to it)) }
+      val decisions = com.vibe.agent.decisions.DecisionStore.getInstance(project)
+      if (decisions.entries().isNotEmpty()) {
+        add(t("acp.instructions.decisions", "path" to decisions.folder() + "/" + com.vibe.agent.decisions.DecisionRecord.INDEX))
+      }
+      if (com.vibe.agent.ingest.IngestStore.getInstance(project).entries().isNotEmpty()) {
+        add(t("acp.instructions.inbox", "path" to com.vibe.agent.ingest.Ingest.FOLDER + "/" + com.vibe.agent.ingest.Ingest.INDEX))
+      }
+    }
+    val design = DesignContextFile.load(project.basePath)?.let { DesignContextFile.promptBlock(it) }
+    val words = com.vibe.agent.acp.AgentInstructions.Words(
+      header = t("acp.instructions.header"), always = t("acp.instructions.always"),
+      onDemand = t("acp.instructions.onDemand"), nested = t("acp.instructions.nested"))
+    val block = com.vibe.agent.acp.AgentInstructions.block(rules, pointers, design, words) ?: return null
+    return SessionContext(block, findings)
+  }
+
+  /** The once-per-session context in front of [prompt] when the session has not got this text yet (rules edited, or no system prompt) */
+  private fun prependSessionContext(c: AcpClient, prompt: String): String {
+    val context = sessionContext()
+    val due = com.vibe.agent.acp.AgentInstructions.due(context?.block?.text, c.deliveredInstructions) ?: return prompt
+    c.markInstructions(due)
+    context?.let { announceSessionContext(it) }
+    return due + "\n\n" + prompt
+  }
+
+  /** Says in the feed which rules the session was given, once, and what the guard found in them */
+  private fun announceSessionContext(context: SessionContext) {
+    context.findings.forEach { (source, found) -> reportContextFindings(source, found) }
+    systemLine(t("acp.instructions.delivered", "chars" to context.block.text.length,
+                 "names" to context.block.rules.joinToString().ifEmpty { "—" }), MISC)
   }
 
   /**
@@ -3508,15 +3574,20 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     skills: List<ContextSerializer.LoadedSkill> = emptyList(),
   ) {
     turnCheckpoint(text, t.config.registry?.id ?: t.config.name)
-    val design = DesignContextFile.load(project.basePath)
+    // An agent that reads the project's instruction files itself gets the rest once per session (AgentInstructions)
+    val readsInstructions = com.vibe.agent.acp.AgentInstructions.readsInstructions(t.config)
+    val design = if (readsInstructions) null else DesignContextFile.load(project.basePath)
     val designed = if (design != null) DesignContextFile.promptBlock(design) + "\n" + text else text
     // The client first: whether the agent could resume its session is known only once it is open,
     // and a session it could not resume gets the unfinished plan in front of the prompt.
     val c = ensureClient(t.config, turnThreadId ?: currentThreadId)
     // The agent's own command runs only as the first words of the prompt: the IDE's context goes nowhere in front of it
     val agentCommand = com.vibe.agent.acp.AgentCommand.of(text, c.commands)
-    val fullPrompt = if (agentCommand != null) text
-                     else prependTerse(c, prependMinimalism(prependProjectRules(prependKnowledge(prependCarriedPlan(designed), text), text, loaded)))
+    val fullPrompt = when {
+      agentCommand != null -> text
+      readsInstructions -> prependTerse(c, prependMinimalism(c, prependSessionContext(c, prependCarriedPlan(text))))
+      else -> prependTerse(c, prependMinimalism(c, prependProjectRules(prependKnowledge(prependCarriedPlan(designed), text), text, loaded)))
+    }
     // A fresh turn: its tool calls, changed files and ceilings started empty with its TurnState; what the panel keeps
     // besides them is reset here.
     trace.clear()
@@ -4437,6 +4508,8 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
       // Not the session asked for — none remembered, expired, or the agent cannot resume: it knows
       // nothing of this thread's plan, so the first turn in it carries the plan.
       if (remembered == null || opened != remembered) planCarryThreads.add(threadId)
+      // Given in the system prompt of the session just opened: said now, since no message will carry it
+      if (c.deliveredInstructions != null) sessionContext()?.let { announceSessionContext(it) }
     }
     catch (e: TimeoutException) {
       drop(c)

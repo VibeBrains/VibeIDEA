@@ -44,6 +44,7 @@ class AcpClientE2ETest {
     val writeFile: (JsonObject) -> JsonElement = { JsonObject(emptyMap()) },
     val createTerminal: ((JsonObject) -> JsonElement)? = null,
     val onUpdate: (JsonObject) -> Unit = {},
+    val instructions: String? = null,
   ) : AcpClient.Handler {
     val permissionCalls = ConcurrentLinkedQueue<JsonObject>()
     val writes = ConcurrentLinkedQueue<JsonObject>()
@@ -59,6 +60,7 @@ class AcpClientE2ETest {
       createTerminal?.invoke(params) ?: super.onCreateTerminal(params)
     override fun onProtocolLog(line: String) { protocolLog += line }
     override fun onProcessExit(client: AcpClient, code: Int) { exits += code }
+    override fun sessionInstructions(): String? = instructions
   }
 
   private fun allow(): JsonElement = buildJsonObject {
@@ -174,6 +176,36 @@ class AcpClientE2ETest {
     await { texts().any { it.startsWith("caps=") } }
 
     assertEquals("true", announcedCapabilities(texts().first { it.startsWith("caps=") })["terminal"]?.jsonPrimitive?.content)
+  }
+
+  // --- once-per-session project context ---
+
+  @Test
+  fun `the session context goes in the system prompt of session_new when the agent takes one`() {
+    val c = start(FakeAcpAgent.SYSTEM_PROMPT, TestHandler(instructions = "правила проекта"))
+    c.initializeAndOpenSession().get(30, TimeUnit.SECONDS)
+    assertTrue(assertNotNull(c.capabilities).systemPrompt)
+    c.prompt("ход").get(30, TimeUnit.SECONDS)
+    await { texts().any { it.startsWith("systemPrompt=") } }
+    val sent = kotlinx.serialization.json.Json.parseToJsonElement(texts().first { it.startsWith("systemPrompt=") }.removePrefix("systemPrompt=")).jsonObject
+
+    assertEquals("append", sent["mode"]?.jsonPrimitive?.content, "дописывается к промпту агента, а не заменяет его")
+    assertEquals("правила проекта", (sent["content"] as kotlinx.serialization.json.JsonArray).single().jsonObject["text"]?.jsonPrimitive?.content)
+    assertEquals("правила проекта", c.deliveredInstructions, "сессия помнит, что получила, — сообщения его не повторяют")
+  }
+
+  @Test
+  fun `an agent without a system prompt gets none, and its session is marked by the message that carried the context`() {
+    val c = start(FakeAcpAgent.NO_SYSTEM_PROMPT, TestHandler(instructions = "правила проекта"))
+    c.initializeAndOpenSession().get(30, TimeUnit.SECONDS)
+    c.prompt("ход").get(30, TimeUnit.SECONDS)
+    await { texts().any { it.startsWith("systemPrompt=") } }
+
+    assertEquals("systemPrompt=" + FakeAcpAgent.NO_SYSTEM_PROMPT, texts().first { it.startsWith("systemPrompt=") },
+                 "незаявленное поле в session/new не отправляется")
+    assertNull(c.deliveredInstructions)
+    c.markInstructions("правила проекта")
+    assertEquals("правила проекта", c.deliveredInstructions)
   }
 
   private fun announcedCapabilities(line: String): JsonObject =

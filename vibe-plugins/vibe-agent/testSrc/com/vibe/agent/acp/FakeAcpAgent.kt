@@ -46,6 +46,13 @@ object FakeAcpAgent {
   /** Scenario `parallel`: each session's turn waits for a cancel of ITS OWN session, as a real agent's would. */
   private val sessionCancels = ConcurrentHashMap<String, CountDownLatch>()
 
+  /** The `systemPrompt` each session was opened with, as JSON text — replayed by the scenarios that name it */
+  private val systemPrompts = ConcurrentHashMap<String, String>()
+
+  /** Scenario: the agent declares `sessionCapabilities.systemPrompt`; [NO_SYSTEM_PROMPT] is the same agent without it */
+  const val SYSTEM_PROMPT = "systemPrompt"
+  const val NO_SYSTEM_PROMPT = "noSystemPrompt"
+
   /** What the client announced about itself in `initialize` — replayed on demand so tests can assert it. */
   @Volatile private var clientCapabilities: JsonObject = JsonObject(emptyMap())
 
@@ -100,6 +107,7 @@ object FakeAcpAgent {
             }
             if (scenario == "loadOnly") put("loadSession", true)
             if (scenario == "close") put("sessionCapabilities", buildJsonObject { put("close", buildJsonObject { }) })
+            if (scenario == SYSTEM_PROMPT) put("sessionCapabilities", buildJsonObject { put("systemPrompt", buildJsonObject { }) })
           })
           // Both kinds the protocol defines, and one it may define later: the client names that one, never acts on it.
           if (scenario == "auth") put("authMethods", JsonArray(listOf(
@@ -121,8 +129,10 @@ object FakeAcpAgent {
         // client: a wrong constant there must fail the test, not agree with itself.
         if (scenario == "auth" && !loggedIn) return send(error(id, -32000, "Authentication required"))
         val opened = sessionsOpened.incrementAndGet()
+        val newId = if (opened == 1) SESSION_ID else "fake-session-$opened"
+        systemPrompts[newId] = params["systemPrompt"]?.toString() ?: NO_SYSTEM_PROMPT
         send(result(id, buildJsonObject {
-          put("sessionId", if (opened == 1) SESSION_ID else "fake-session-$opened")
+          put("sessionId", newId)
           put("modes", buildJsonObject {
             put("currentModeId", "default")
             put("availableModes", JsonArray(listOf(
@@ -170,6 +180,10 @@ object FakeAcpAgent {
 
   private fun runPrompt(scenario: String, id: Long, session: String) {
     when (scenario) {
+      SYSTEM_PROMPT, NO_SYSTEM_PROMPT -> {
+        notifyUpdate(chunk("systemPrompt=" + systemPrompts[session]), session)
+        send(result(id, stop("end_turn")))
+      }
       "basic" -> {
         repeat(3) { i -> notifyUpdate(chunk("часть $i")) }
         send(result(id, stop("end_turn")))

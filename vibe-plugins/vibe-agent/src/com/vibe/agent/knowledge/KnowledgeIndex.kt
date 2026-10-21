@@ -22,6 +22,9 @@ class KnowledgeIndex(private val project: Project) {
 
   fun entries(): List<Librarian.Entry> = load()?.entries.orEmpty()
 
+  /** The index file from the project root, or null when the project keeps none */
+  fun indexFile(): String? = load()?.let { loaded -> CANDIDATES.firstOrNull { it.substringBeforeLast('/') == loaded.root } }
+
   /** Paths in the index are relative to the index file; the prompt needs them from the project root. */
   fun relativeTo(entry: Librarian.Entry): String {
     val root = load()?.root ?: return entry.path

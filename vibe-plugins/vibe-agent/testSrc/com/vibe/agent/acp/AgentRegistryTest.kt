@@ -122,6 +122,18 @@ class AgentRegistryTest {
   }
 
   @Test
+  fun `readsInstructions is read from a project record, and its absence leaves the decision to the agent`() {
+    val records = AcpConfig.parseProject("""
+      { "version": 1, "agents": [
+        { "id": "claude", "command": "npx", "args": ["@agentclientprotocol/claude-agent-acp"], "readsInstructions": false },
+        { "id": "codex", "command": "codex-acp", "readsInstructions": true },
+        { "id": "gemini", "command": "gemini" }
+      ] }
+    """.trimIndent()) { error("no warning expected: $it") }
+    assertEquals(listOf(false, true, null), records.map { it.readsInstructions })
+  }
+
+  @Test
   fun `a move of a registry-noted record names the note too`() {
     val entry = AgentRegistry.parse(catalog).first { it.id == "claude-acp" }
     val upgrade = AgentRegistry.Upgrade("Claude Agent", entry, "@agentclientprotocol/claude-agent-acp@2.0.0", "2.0.0", "2.1.0",

@@ -24,4 +24,17 @@ class AgentEnvironmentTest {
     assertEquals("tok", target["TOKEN"])
     assertFalse("OLD" in target)
   }
+
+  @Test
+  fun `marks of the Claude Code session the IDE was started from do not reach the agent, unless the entry sets them`() {
+    val target = mutableMapOf("CLAUDECODE" to "1", "CLAUDE_CODE_SIMPLE" to "1", "CLAUDE_CODE_ENTRYPOINT" to "cli",
+                              "CLAUDE_CONFIG_DIR" to "/home/me/.claude", "CLAUDE_CODE_OAUTH_TOKEN" to "tok")
+    AgentEnvironment.dropForeignSession(target)
+    AgentEnvironment.apply(target, mapOf("CLAUDE_CODE_ENTRYPOINT" to "vibe")) { it }
+    assertFalse("CLAUDECODE" in target, "агент не должен считать себя вложенной сессией")
+    assertFalse("CLAUDE_CODE_SIMPLE" in target, "голый режим не читает CLAUDE.md и правила пользователя")
+    assertEquals("vibe", target["CLAUDE_CODE_ENTRYPOINT"], "заданное записью — последнее слово человека")
+    assertEquals("/home/me/.claude", target["CLAUDE_CONFIG_DIR"], "настройки пользователя остаются")
+    assertEquals("tok", target["CLAUDE_CODE_OAUTH_TOKEN"], "вход подпиской — не метка сессии")
+  }
 }

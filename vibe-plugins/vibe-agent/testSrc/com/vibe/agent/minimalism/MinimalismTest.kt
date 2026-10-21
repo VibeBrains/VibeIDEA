@@ -32,6 +32,16 @@ class MinimalismPolicyTest {
     val ultra = MinimalismPolicy.preamble(MinimalismPolicy.Mode.ULTRA, rules)
     assertTrue(ultra.contains("ЛАЙТ") && ultra.contains("ФУЛЛ") && ultra.contains("УЛЬТРА"))
   }
+
+  @Test
+  fun `an agent session gets the rules once per mode and hears when they are lifted`() {
+    val full = MinimalismPolicy.Mode.FULL
+    assertEquals(null, MinimalismPolicy.forAgent(null, MinimalismPolicy.Mode.OFF, rules, "СНЯТО"), "выключено с начала — молчим")
+    assertEquals("ЛАЙТ\nФУЛЛ", MinimalismPolicy.forAgent(null, full, rules, "СНЯТО"))
+    assertEquals(null, MinimalismPolicy.forAgent(full, full, rules, "СНЯТО"), "сессия уже знает правила")
+    assertEquals("ЛАЙТ", MinimalismPolicy.forAgent(full, MinimalismPolicy.Mode.LIGHT, rules, "СНЯТО"))
+    assertEquals("СНЯТО", MinimalismPolicy.forAgent(full, MinimalismPolicy.Mode.OFF, rules, "СНЯТО"))
+  }
 }
 
 class SimplifyPromptTest {

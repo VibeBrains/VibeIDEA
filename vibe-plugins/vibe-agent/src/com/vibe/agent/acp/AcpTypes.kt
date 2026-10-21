@@ -32,6 +32,8 @@ data class AgentCapabilities(
   val logout: Boolean = false,
   /** The agent frees a session on `session/close` (`sessionCapabilities.close`, stable since 23.04.2026). */
   val closeSession: Boolean = false,
+  /** The agent takes a client system prompt in `session/new` and `session/resume` (`sessionCapabilities.systemPrompt`) */
+  val systemPrompt: Boolean = false,
 )
 
 /**

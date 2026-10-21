@@ -76,6 +76,12 @@ class AcpClient(
      * путём его спросили.
      */
     fun configuredServers(): List<Map<String, Any>> = emptyList()
+
+    /**
+     * The project context a chat session of this agent gets once, when it opens; null — nothing to give
+     * Asked at every opened session rather than once per process: rules edited between two threads reach the second
+     */
+    fun sessionInstructions(): String? = null
     /**
      * Must return the permission outcome (closed dialog = refusal); runs off the reader thread
      * The dialog closes when [request] is dismissed: the agent withdrew the question, or the person pressed Stop
@@ -128,6 +134,9 @@ class AcpClient(
   private class SessionState(@Volatile var modes: SessionModes?, @Volatile var configOptions: List<SessionConfigOption>) {
     /** The agent's own slash commands for this session ([AgentCommand]); empty until it announces them */
     @Volatile var commands: List<AgentCommand> = emptyList()
+
+    /** The project context this session was given, in its system prompt or a message; null — none yet */
+    @Volatile var instructions: String? = null
   }
 
   /**
@@ -181,6 +190,8 @@ class AcpClient(
     // throw away the session it exists to hold. The file is the leak we can close; the process
     // lifetime is a limit we state rather than pretend to have fixed.
     // An empty value takes the variable away rather than leaving it set and empty (AgentEnvironment).
+    // Marks of a Claude Code session the IDE itself was started from go first: the agent is not nested in it
+    AgentEnvironment.dropForeignSession(pb.environment())
     AgentEnvironment.apply(pb.environment(), config.env) { value -> secrets(value) }
     val used = config.env.values.flatMap { com.vibe.agent.security.SecretRefs.names(it) }.distinct()
     if (used.isNotEmpty()) handler.onProtocolLog("secrets injected into the agent environment: " + used.joinToString(","))
@@ -349,7 +360,10 @@ class AcpClient(
    * one connection, each with its own context.
    */
   fun openSession(previousSessionId: String? = null): CompletableFuture<String> {
-    val params = sessionParams ?: return CompletableFuture.failedFuture(IllegalStateException("not initialized"))
+    val base = sessionParams ?: return CompletableFuture.failedFuture(IllegalStateException("not initialized"))
+    // Once per session, in the system prompt, where the agent supports one; otherwise the first message carries it
+    val instructions = handler.sessionInstructions()?.takeIf { capabilities?.systemPrompt == true }
+    val params = if (instructions == null) base else JsonObject(base + ("systemPrompt" to AgentInstructions.systemPrompt(instructions)))
     val resumable = previousSessionId?.takeIf { it.isNotBlank() && capabilities?.resumeSession == true }
     val opened = if (resumable == null) {
       request("session/new", params)
@@ -372,6 +386,7 @@ class AcpClient(
         ?: previousSessionId
         ?: error("agent returned no sessionId")
       open[id] = SessionState(obj?.let { parseModes(it) }, obj?.let { parseConfigOptions(it) }.orEmpty())
+        .also { it.instructions = instructions }
       sessionId = id
       id
     }
@@ -450,6 +465,14 @@ class AcpClient(
   /** The current session's own slash commands, as the agent last announced them */
   val commands: List<AgentCommand> get() = sessionId?.let { open[it]?.commands }.orEmpty()
 
+  /** The project context the current session was given; null — none yet ([AgentInstructions.due] decides the rest) */
+  val deliveredInstructions: String? get() = sessionId?.let { open[it]?.instructions }
+
+  /** Records that the current session got [text] in a message */
+  fun markInstructions(text: String) {
+    sessionId?.let { open[it]?.instructions = text }
+  }
+
   /** Flips one boolean option; the agent answers with the full, current set. */
   fun setConfigOption(configId: String, value: Boolean): CompletableFuture<Unit> = sendConfigOption(buildJsonObject {
     put("configId", configId)
@@ -526,6 +549,7 @@ class AcpClient(
       // an agent built to the spec without its session after every IDE restart.
       resumeSession = (agent?.get("sessionCapabilities") as? JsonObject)?.get("resume") is JsonObject,
       closeSession = (agent?.get("sessionCapabilities") as? JsonObject)?.get("close") is JsonObject,
+      systemPrompt = (agent?.get("sessionCapabilities") as? JsonObject)?.get("systemPrompt") is JsonObject,
       logout = AgentAuth.logoutSupported(agent),
     )
   }
