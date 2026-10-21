@@ -1,6 +1,8 @@
 // Copyright 2026 VibeBrains. Use of this source code is governed by the GNU AGPL-3.0 license.
 package com.vibe.agent.acp
 
+import com.vibe.agent.security.SecretRefs
+
 /**
  * The agent's environment: the IDE's own, with the entry's `env` laid on top.
  *
@@ -11,10 +13,25 @@ package com.vibe.agent.acp
  * agent. A secret reference that resolves to nothing is removed the same way.
  */
 object AgentEnvironment {
-  /** [resolve] turns a configured value into the real one — `${secret:NAME}` references included. */
-  fun apply(target: MutableMap<String, String>, entry: Map<String, String>, resolve: (String) -> String) {
+  /**
+   * [lookup] gives a secret's value by name. A value with ANY reference the lookup cannot provide (absent or empty) is dropped
+   * whole, the variable removed from [target]: a half-substituted string or the reference text itself would reach the agent
+   * as a bogus credential instead of absence. [onUnresolved] gets the variable and the secret names, never a value.
+   */
+  fun apply(
+    target: MutableMap<String, String>,
+    entry: Map<String, String>,
+    lookup: (String) -> String?,
+    onUnresolved: (variable: String, secrets: List<String>) -> Unit = { _, _ -> },
+  ) {
     for ((name, value) in entry) {
-      val resolved = resolve(value)
+      val missing = SecretRefs.missing(value, lookup)
+      if (missing.isNotEmpty()) {
+        target.remove(name)
+        onUnresolved(name, missing)
+        continue
+      }
+      val resolved = SecretRefs.substitute(value, lookup)
       if (resolved.isEmpty()) target.remove(name) else target[name] = resolved
     }
   }

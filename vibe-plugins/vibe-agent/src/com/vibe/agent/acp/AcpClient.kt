@@ -162,9 +162,7 @@ class AcpClient(
   val isAlive: Boolean get() = process?.isAlive == true
 
   /** Resolution order matches the providers': OS keychain via `.vibe/.env`, then the environment. */
-  private fun secrets(value: String): String = com.vibe.agent.security.SecretRefs.substitute(value) { name ->
-    com.vibe.agent.providers.ApiKeyResolver.dotEnv(workingDir)[name] ?: System.getenv(name)
-  }
+  private fun secretValue(name: String): String? = com.vibe.agent.providers.ApiKeyResolver.dotEnv(workingDir)[name] ?: System.getenv(name)
 
   fun start() {
     check(process == null) { "already started" }
@@ -192,7 +190,11 @@ class AcpClient(
     // An empty value takes the variable away rather than leaving it set and empty (AgentEnvironment).
     // Marks of a Claude Code session the IDE itself was started from go first: the agent is not nested in it
     AgentEnvironment.dropForeignSession(pb.environment())
-    AgentEnvironment.apply(pb.environment(), config.env) { value -> secrets(value) }
+    AgentEnvironment.apply(pb.environment(), config.env, ::secretValue) { variable, missing ->
+      // Names only, never a value: the variable is left unset for the agent
+      handler.onProtocolWarning(
+        "Environment variable $variable is not set: secret ${missing.joinToString(",")} not found", com.vibe.agent.journal.SettingsPage.AGENT)
+    }
     val used = config.env.values.flatMap { com.vibe.agent.security.SecretRefs.names(it) }.distinct()
     if (used.isNotEmpty()) handler.onProtocolLog("secrets injected into the agent environment: " + used.joinToString(","))
     val p = AgentLaunch.start(pb, config.command)
