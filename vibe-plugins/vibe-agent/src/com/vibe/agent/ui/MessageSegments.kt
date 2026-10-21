@@ -17,10 +17,10 @@ sealed interface MessageSegment {
 
 object MessageSegments {
   private const val FENCE = "```"
-  // Opening fence: ≤3 leading spaces, a run of ≥3 backticks, then an optional info string (no backticks).
-  private val OPEN = Regex("^ {0,3}(`{3,})[ \\t]*([^`]*?)[ \\t]*$")
-  // Closing fence: ≤3 leading spaces, a run of ≥3 backticks, nothing but whitespace after.
-  private val CLOSE = Regex("^ {0,3}(`{3,})[ \\t]*$")
+  // Opening fence: any leading indent (agents nest fences in list items by 4+ spaces), a run of ≥3 backticks, then an optional info string (no backticks).
+  private val OPEN = Regex("^([ \\t]*)(`{3,})[ \\t]*([^`]*?)[ \\t]*$")
+  // Closing fence: any leading indent, a run of ≥3 backticks, nothing but whitespace after.
+  private val CLOSE = Regex("^[ \\t]*(`{3,})[ \\t]*$")
 
   fun parse(text: String): List<MessageSegment> {
     if (!text.contains(FENCE)) return listOf(MessageSegment.Prose(text))
@@ -39,15 +39,16 @@ object MessageSegments {
       val open = OPEN.matchEntire(lines[i])
       if (open != null) {
         flushProse()
-        val fenceLen = open.groupValues[1].length // close must be ≥ this run → outer ```` not closed by inner ```
-        val lang = open.groupValues[2].trim().substringBefore(' ').substringBefore('\t').takeIf { it.isNotEmpty() }
+        val fenceLen = open.groupValues[2].length // close must be ≥ this run → outer ```` not closed by inner ```
+        val lang = open.groupValues[3].trim().substringBefore(' ').substringBefore('\t').takeIf { it.isNotEmpty() }
         val code = StringBuilder()
+        val indent = open.groupValues[1].length
         i++
         var closed = false
         while (i < lines.size) {
           val close = CLOSE.matchEntire(lines[i])
           if (close != null && close.groupValues[1].length >= fenceLen) { closed = true; i++; break }
-          code.append(lines[i]).append('\n')
+          code.append(lines[i].removeIndent(indent)).append('\n')
           i++
         }
         out.add(MessageSegment.Code(lang, code.toString().removeSuffix("\n")))
@@ -62,6 +63,13 @@ object MessageSegments {
     return out.filterNot {
       (it is MessageSegment.Prose && it.text.isBlank()) || (it is MessageSegment.Code && it.code.isBlank())
     }.ifEmpty { listOf(MessageSegment.Prose(text)) }
+  }
+
+  /** Drops up to [n] leading blanks: the code of a fence nested in a list item is indented with the fence */
+  private fun String.removeIndent(n: Int): String {
+    var k = 0
+    while (k < n && k < length && (this[k] == ' ' || this[k] == '\t')) k++
+    return substring(k)
   }
 
   /** True when [text] has at least one fenced code block worth special rendering. */

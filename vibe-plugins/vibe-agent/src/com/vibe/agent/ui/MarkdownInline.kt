@@ -73,7 +73,8 @@ object MarkdownInline {
       val href = match.groupValues[2]
       // Only http(s) and file links become clickable: `javascript:` in a model's answer is exactly
       // the thing an HTML view must never be handed.
-      if (SAFE_HREF.matches(href)) "<a href='$href'>$label</a>" else label + " (" + href + ")"
+      // Anything else stays as written, brackets included: `arr[0](1)` is code talk, not a link.
+      if (SAFE_HREF.matches(href)) "<a href='$href'>$label</a>" else match.value
     }
     spans.forEachIndexed { index, code ->
       result = result.replace(
@@ -100,7 +101,9 @@ object MarkdownInline {
   private val HEADING = Regex("^(\\s{0,3}#{1,6})\\s+(.*)$")
   private val CODE = Regex("`([^`\n]+)`")
   private val BOLD = Regex("\\*\\*([^*\n]+)\\*\\*")
-  private val ITALIC = Regex("(^|[^*])\\*([^*\n]+)\\*")
+  // Emphasis needs flanking like CommonMark: opened after a space or an opening bracket and followed by a word,
+  // closed before a space or punctuation. `src/*.kt`, `image/*` and `2 * 3 * 4` are not emphasis and keep their stars.
+  private val ITALIC = Regex("(^|[\\s(\\[\"'])\\*([^\\s*](?:[^*\n]*[^\\s*])?)\\*(?=$|[\\s.,;:!?)\\]\"'])")
   private val LINK = Regex("\\[([^\\]\n]+)]\\(([^)\n\\s]+)\\)")
   private val SAFE_HREF = Regex("(?i)(https?://|file:/|mailto:)[^\\s]+")
 
