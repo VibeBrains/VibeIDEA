@@ -97,7 +97,10 @@ class NewModelsReasoningTest {
 
   @Test
   fun `minimax m3-1 never goes out without an effort, and its reasoning goes back as a field`() {
-    val id = "MiniMax-M3.1-Flash-Preview"
+    for (id in listOf("MiniMax-M3.1-Flash-Preview", "MiniMax-M3.1-Flash")) checkMinimaxM31(id)
+  }
+
+  private fun checkMinimaxM31(id: String) {
     // Nothing sent meant the vendor's default max
     assertEquals(obj("""{"reasoning_effort":"low"}"""), fields("openai", Level.OFF, id))
     assertEquals(obj("""{"reasoning_effort":"high"}"""), fields("openai", Level.HIGH, id))
