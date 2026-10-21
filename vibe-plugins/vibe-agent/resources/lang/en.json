@@ -362,6 +362,7 @@
   "chat.threadBusy": "[thread] busy in another window — wait for its turn to finish",
   "chat.tool": "tool",
   "chat.turnDoneNotification": "Vibe Agent finished a turn",
+  "chat.attentionNotification": "Vibe Agent is waiting for you: permission or input needed",
   "chat.turnEndError": "[error] finishing the turn: {reason}",
   "chat.turnFinished": "the turn is finished",
   "chat.turnNoAnswer": "the turn ended without a single word ({outcome}) — what it did manage is in the calls above",

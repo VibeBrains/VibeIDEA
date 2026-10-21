@@ -362,6 +362,7 @@
   "chat.threadBusy": "[тред] занят другим окном — дождитесь завершения его хода",
   "chat.tool": "инструмент",
   "chat.turnDoneNotification": "Vibe Agent завершил ход",
+  "chat.attentionNotification": "Vibe Agent ждёт ответа: нужно разрешение или данные",
   "chat.turnEndError": "[ошибка] завершение хода: {reason}",
   "chat.turnFinished": "ход завершён",
   "chat.turnNoAnswer": "ход закончился без единого слова ({outcome}) — что он успел сделать, видно в вызовах выше",

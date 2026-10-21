@@ -3035,14 +3035,22 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
   }
 
   /** Modern touch: a balloon when a turn finishes while the IDE window is NOT active (you tabbed away). */
-  private fun notifyTurnEndIfAway() {
+  private fun notifyTurnEndIfAway() = notifyIfAway(t("chat.turnDoneNotification"), com.intellij.notification.NotificationType.INFORMATION)
+
+  /**
+   * The agent is waiting for a person (a permission question or a form) and the window is not active.
+   * The sound alone is not enough: it is off for many, and a stalled turn costs the whole wait.
+   */
+  private fun notifyAttentionIfAway() = notifyIfAway(t("chat.attentionNotification"), com.intellij.notification.NotificationType.WARNING)
+
+  private fun notifyIfAway(text: String, type: com.intellij.notification.NotificationType) {
     SwingUtilities.invokeLater {
       if (disposed) return@invokeLater
       val active = com.intellij.openapi.wm.WindowManager.getInstance().getFrame(project)?.isActive == true
       if (active) return@invokeLater
       com.intellij.notification.NotificationGroupManager.getInstance()
         .getNotificationGroup(com.vibe.agent.ui.VibeNotifications.AGENT)
-        .createNotification(t("chat.turnDoneNotification"), com.intellij.notification.NotificationType.INFORMATION)
+        .createNotification(text, type)
         .notify(project)
     }
   }
@@ -7302,6 +7310,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
   override fun onElicit(params: JsonObject, request: com.vibe.agent.acp.PendingRequest): JsonElement {
     com.vibe.agent.sound.VibeSoundService.getInstance()
       .play(com.vibe.agent.sound.SoundPolicy.Event.AWAITING_PERMISSION, project)
+    notifyAttentionIfAway()
     val form = com.vibe.agent.acp.Elicitation.parse(params)
     return when (form.mode) {
       com.vibe.agent.acp.Elicitation.Mode.FORM -> {
@@ -7375,6 +7384,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     // The most important of the three events: here a person is needed RIGHT NOW, and they left.
     com.vibe.agent.sound.VibeSoundService.getInstance()
       .play(com.vibe.agent.sound.SoundPolicy.Event.AWAITING_PERMISSION, project)
+    notifyAttentionIfAway()
     val toolCall = params["toolCall"] as? JsonObject
     val permissionCallId = toolCall?.get("toolCallId")?.jsonPrimitive?.contentOrNull
     // The question is normalised like every title: bidi or invisible characters must not hide text in what is approved

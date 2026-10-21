@@ -403,7 +403,7 @@ object ModelQuirks {
       "minimax: the reasoning goes back with every answer, as <think> tags on the openai wire",
     ),
     Rule(
-      // MiniMax-M3.1-Flash-Preview, for M Plan and MiniMax Code only for now: «always thinks and returns 400 if disabled
+      // MiniMax-M3.1-Flash (earlier -Preview, M Plan only at the time): «always thinks and returns 400 if disabled
       // is sent», reasoning_effort / output_config.effort take low, medium, high, xhigh and max and «defaults to max when
       // omitted»; its reasoning comes in `reasoning_content`, which «must also be preserved completely», and
       // `reasoning_split: false` is not supported (platform.minimax.io/docs/api-reference/text-openai-api and
