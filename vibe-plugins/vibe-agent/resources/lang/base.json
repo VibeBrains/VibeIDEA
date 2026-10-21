@@ -1553,6 +1553,7 @@
   "mcp.servers.notAnObject": "запись «{name}» — не объект",
   "mcp.servers.notJson": "файл не разобрался как JSON",
   "mcp.servers.offered": "свои MCP-серверы: {names}",
+  "mcp.servers.toolsFilterSkipped": "не передаём внешнему агенту серверы со списком tools — он его не соблюдает и увидел бы все инструменты: {names}",
   "mcp.servers.problem": "{file}: {text}",
   "mcp.servers.reason.exited": "процесс сервера завершился после запуска — перезапустите его",
   "mcp.servers.reason.noAnswer": "сервер не ответил за {seconds} с — проверьте команду, аргументы и переменные окружения",

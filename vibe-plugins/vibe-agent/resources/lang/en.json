@@ -1553,6 +1553,7 @@
   "mcp.servers.notAnObject": "the entry «{name}» is not an object",
   "mcp.servers.notJson": "the file is not valid JSON",
   "mcp.servers.offered": "your own MCP servers: {names}",
+  "mcp.servers.toolsFilterSkipped": "not passing servers with a tools allowlist to an external agent — it does not honor the list and would see every tool: {names}",
   "mcp.servers.problem": "{file}: {text}",
   "mcp.servers.reason.exited": "the server process ended after it started — restart it",
   "mcp.servers.reason.noAnswer": "the server did not answer in {seconds} s — check the command, the arguments and the environment variables",

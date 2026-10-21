@@ -1142,7 +1142,10 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
   override fun configuredServers(): List<Map<String, Any>> {
     val merged = com.vibe.agent.mcp.McpServersFile.loadLayers(project.basePath)
     merged.allProblems.forEach { (layer, complaint) -> systemLine(com.vibe.agent.mcp.McpFileText.line(layer, complaint), CONFIG, WARNING) }
-    val live = merged.servers.filterNot { it.disabled }
+    // A `tools` allowlist is a restriction the person wrote; a guest agent starts the server itself and would see every tool
+    val (filtered, unfiltered) = merged.servers.filterNot { it.disabled }.partition { it.toolsFiltered }
+    if (filtered.isNotEmpty()) systemLine(t("mcp.servers.toolsFilterSkipped", "names" to filtered.joinToString { it.name }), AGENTS, WARNING)
+    val live = unfiltered
     if (live.isNotEmpty()) systemLine(t("mcp.servers.offered", "names" to live.joinToString { it.name }), AGENTS)
     // ACP describes a stdio server by name, command, args and env only
     // The agent starts it in its own folder, so the entry's `cwd` cannot reach it

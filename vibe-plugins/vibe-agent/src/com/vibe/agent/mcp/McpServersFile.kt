@@ -53,6 +53,8 @@ object McpServersFile {
     val disabled: Boolean = false,
     /** Working folder of the server process, a path as written; null means the project folder */
     val cwd: String? = null,
+    /** The entry carries a `tools` allowlist: VibeIDE honors it, a guest agent connecting on its own does not */
+    val toolsFiltered: Boolean = false,
   ) {
     /** Where the process of this server runs: its own `cwd` as written, otherwise [fallback] */
     fun processDir(fallback: Path?): Path? = cwd?.let { Path.of(it) } ?: fallback
@@ -182,6 +184,7 @@ object McpServersFile {
           env = (body["env"] as? JsonObject)?.mapNotNull { (key, value) -> scalarText(value)?.let { key to it } }?.toMap() ?: emptyMap(),
           disabled = scalarText(body["disabled"]) == "true",
           cwd = stringOf(body["cwd"])?.takeIf { it.isNotBlank() },
+          toolsFiltered = body["tools"] is JsonArray,
         )
         // A server by address belongs to the product that connects to addresses; the others pass it by without a word
         hasUrl -> remote += name

@@ -156,4 +156,10 @@ class McpServersFileTest {
                  McpFileText.line(McpServersFile.Layer.PROJECT, project))
     assertTrue(McpFileText.line(McpServersFile.Layer.USER, McpServersFile.Complaint(McpServersFile.Problem.NOT_JSON)).startsWith("~/.vibe/mcp.json: "))
   }
+
+  @Test
+  fun `a tools allowlist is noticed so that a guest agent is not given the whole server`() {
+    val parsed = McpServersFile.parse("""{"mcpServers": {"a": {"command": "x", "tools": ["one"]}, "b": {"command": "y"}}}""")
+    assertEquals(mapOf("a" to true, "b" to false), parsed.servers.associate { it.name to it.toolsFiltered })
+  }
 }

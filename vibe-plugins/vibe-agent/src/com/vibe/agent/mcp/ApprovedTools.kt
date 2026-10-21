@@ -20,7 +20,11 @@ object ApprovedTools {
   /** What changed since approval. The drift is empty both when nothing changed and on first sight. */
   fun drift(project: String?, server: String, specs: List<ToolSpec>): ToolFingerprint.Drift {
     val approved = read(project, server) ?: return ToolFingerprint.Drift(emptyList(), emptyList(), emptyList())
-    return ToolFingerprint.compare(approved, ToolFingerprint.map(specs))
+    val drift = ToolFingerprint.compare(approved, ToolFingerprint.map(specs), ToolFingerprint.legacyMap(specs))
+    // Nothing changed, but an approval from before normalization is stored in the old form: re-pin it silently in the new
+    // one, so that later reordered words match it and the person is never asked about a tool they already approved
+    if (drift.isEmpty && approved != ToolFingerprint.map(specs)) approve(project, server, specs)
+    return drift
   }
 
   /** Remember the current set as approved. */
