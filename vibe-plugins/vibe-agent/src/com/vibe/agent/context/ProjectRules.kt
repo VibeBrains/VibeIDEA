@@ -105,24 +105,103 @@ object ProjectRules {
     var globs = emptyList<String>()
     var triggers = emptyList<String>()
     var always = false
-    for (line in header.lines()) {
+    val lines = header.lines()
+    var index = 0
+    while (index < lines.size) {
+      val line = lines[index++]
       val colon = line.indexOf(':')
       if (colon <= 0) continue
       val key = line.substring(0, colon).trim().lowercase()
-      val value = line.substring(colon + 1).trim().trim('"', '\'')
+      val raw = line.substring(colon + 1).trim()
+      val value = raw.trim('"', '\'')
       when (key) {
         "description" -> description = value.ifBlank { null }
-        "globs" -> globs = splitList(value)
-        "triggers" -> triggers = splitList(value).map { it.lowercase() }
+        "globs" -> { globs = splitList(listValue(raw, lines, index)); index = skipDashItems(raw, lines, index) }
+        "triggers" -> {
+          triggers = splitList(listValue(raw, lines, index)).map { it.lowercase() }
+          index = skipDashItems(raw, lines, index)
+        }
         "alwaysapply" -> always = value.equals("true", ignoreCase = true)
       }
     }
     return Rule(name, dir, description, globs, always, body, source, triggers)
   }
 
-  /** Comma-separated header list; quotes around items and square brackets around the whole list are optional */
-  private fun splitList(value: String): List<String> =
-    value.trim('[', ']').split(',').map { it.trim().trim('"', '\'') }.filter { it.isNotEmpty() }
+  private val DASH_ITEM = Regex("^\\s*-\\s+(.*)$")
+
+  /** Value of a list key: the inline text, or for an empty `key:` the `- item` lines below it joined by newlines */
+  private fun listValue(raw: String, lines: List<String>, from: Int): String {
+    if (raw.isNotEmpty()) return raw
+    val items = ArrayList<String>()
+    var i = from
+    while (i < lines.size) {
+      if (lines[i].isBlank()) { i++; continue }
+      val item = DASH_ITEM.find(lines[i]) ?: break
+      items.add(item.groupValues[1].trim())
+      i++
+    }
+    return items.joinToString("\n")
+  }
+
+  /** Index of the first header line after the dash items consumed by [listValue]; unchanged for an inline value */
+  private fun skipDashItems(raw: String, lines: List<String>, from: Int): Int {
+    if (raw.isNotEmpty()) return from
+    var i = from
+    var last = from
+    while (i < lines.size) {
+      if (lines[i].isBlank()) { i++; continue }
+      if (DASH_ITEM.find(lines[i]) == null) break
+      i++
+      last = i
+    }
+    return last
+  }
+
+  /**
+   * Header list: comma-separated, bracketed `[a, b]` or one item per line
+   *
+   * A comma splits only outside quotes, `{}` and `[]`, a newline always splits and resets the depth
+   * A quote opens an item only at its start, so `don't stop` keeps the apostrophe
+   * Brackets around the whole value are list syntax only when the opening one closes at the very end:
+   * `[ab]*.ts` is a glob with a character class
+   */
+  internal fun splitList(value: String): List<String> {
+    var text = value.trim()
+    if (text.startsWith("[") && closesAtEnd(text)) text = text.substring(1, text.length - 1)
+    val items = ArrayList<String>()
+    val item = StringBuilder()
+    var depth = 0
+    var quote = '\u0000'
+    fun flush() {
+      item.toString().trim().takeIf { it.isNotEmpty() }?.let { items.add(it) }
+      item.setLength(0)
+      depth = 0
+      quote = '\u0000'
+    }
+    for (c in text) {
+      when {
+        c == '\n' -> flush()
+        quote != '\u0000' -> if (c == quote) quote = '\u0000' else item.append(c)
+        (c == '"' || c == '\'') && item.isBlank() -> quote = c
+        c == '{' || c == '[' -> { depth++; item.append(c) }
+        (c == '}' || c == ']') -> { if (depth > 0) depth--; item.append(c) }
+        c == ',' && depth == 0 -> flush()
+        else -> item.append(c)
+      }
+    }
+    flush()
+    return items
+  }
+
+  /** True when the `[` at the start of [text] is closed by the last character and by nothing earlier */
+  private fun closesAtEnd(text: String): Boolean {
+    var depth = 0
+    for ((i, c) in text.withIndex()) {
+      if (c == '[') depth++
+      if (c == ']' && --depth == 0) return i == text.length - 1
+    }
+    return false
+  }
 
   /**
    * Which rules apply to this turn:
@@ -177,8 +256,33 @@ object ProjectRules {
   fun mentioned(text: String): Set<String> =
     MENTION.findAll(text).map { it.groupValues[1] }.toSet()
 
-  /** Subset of glob syntax that appears in real rule files: `*`, `**`, `?`. */
-  fun matchesGlob(path: String, glob: String): Boolean {
+  /** Subset of glob syntax that appears in real rule files: `*`, `**`, `?` and `{a,b}` alternation (nested too) */
+  fun matchesGlob(path: String, glob: String): Boolean =
+    expandBraces(glob).any { matchesPlainGlob(path, it) }
+
+  /** Expands `{a,b}` groups into plain globs; an unbalanced brace stays a literal */
+  internal fun expandBraces(glob: String): List<String> {
+    val open = glob.indexOf('{')
+    if (open < 0) return listOf(glob)
+    var depth = 0
+    val parts = ArrayList<String>()
+    var start = open + 1
+    for (i in open until glob.length) {
+      when (glob[i]) {
+        '{' -> depth++
+        ',' -> if (depth == 1) { parts.add(glob.substring(start, i)); start = i + 1 }
+        '}' -> if (--depth == 0) {
+          parts.add(glob.substring(start, i))
+          val head = glob.substring(0, open)
+          val tail = glob.substring(i + 1)
+          return parts.flatMap { part -> expandBraces(head + part + tail) }
+        }
+      }
+    }
+    return listOf(glob)
+  }
+
+  private fun matchesPlainGlob(path: String, glob: String): Boolean {
     val clean = path.replace('\\', '/').trimStart('/')
     val pattern = glob.replace('\\', '/').trimStart('/')
     val body = StringBuilder()
@@ -262,5 +366,5 @@ object ProjectRules {
     }.trimEnd()
   }
 
-  private val MENTION = Regex("(?<![\\w@/.-])@([A-Za-z0-9_-]{1,64})\\b")
+  private val MENTION = Regex("(?<![\\w@/.-])@(?:rule:)?([A-Za-z0-9_-]{1,64})\\b")
 }
