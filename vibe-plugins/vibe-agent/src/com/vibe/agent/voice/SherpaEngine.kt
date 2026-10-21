@@ -101,7 +101,9 @@ internal fun interface PhraseDecoder {
  * Where a phrase ends is decided here as well as by the model: T-one in sherpa-onnx 1.13.4 never reports an endpoint,
  * not after two and a half seconds of silence and not after five (measured 15.10.2026 through JNI, timestamps intact)
  * So a phrase also ends when the text of the streaming model has not changed for [ENDPOINT_SILENCE_SECONDS] of audio
- * after something was heard, and a stretch of [IDLE_SILENCE_SECONDS] with nothing heard is let go
+ * after something was heard
+ * Silence with nothing heard never closes a phrase, it only trims the buffer to the last [PREROLL_SECONDS]: the model shows
+ * a word about a second after it began, so a rule that fired at the five-second mark cut the first word of the next phrase
  * Pure apart from the decoders it is given, so the order of drafts and phrases is tested without a model
  * Not thread-safe: one thread feeds it, the one of [SherpaResident]
  */
@@ -113,6 +115,9 @@ internal class PhraseSplitter(
 ) {
   private val segment = ArrayList<FloatArray>()
   private var segmentSamples = 0
+
+  /** Samples of the segment before the text first showed; the cap counts only what comes after them */
+  private var leading = 0
   private var draft = ""
   private val said = ArrayList<String>()
 
@@ -135,6 +140,7 @@ internal class PhraseSplitter(
     streaming.accept(samples)
     val now = streaming.text()
     if (now != raw) {
+      if (raw.isBlank() && now.isNotBlank()) leading = segmentSamples - samples.size
       raw = now
       changedAt = heard
     }
@@ -143,15 +149,23 @@ internal class PhraseSplitter(
       draft = text
       onText(VoiceEngine.LiveText.Draft(text))
     }
-    if (ended()) endPhrase()
+    if (ended()) endPhrase() else if (raw.isBlank() && segmentSamples >= IDLE_SILENCE_SECONDS * sampleRate) trimToPreroll()
+  }
+
+  /** Nothing heard for a long stretch: the buffer keeps only the lead-in a late first word needs, the stream is not reset */
+  private fun trimToPreroll() {
+    val keep = (PREROLL_SECONDS * sampleRate).toInt()
+    val all = joined()
+    segment.clear()
+    segment += all.copyOfRange(all.size - keep, all.size)
+    segmentSamples = keep
   }
 
   private fun ended(): Boolean {
     val quiet = heard - changedAt
     return streaming.endpoint() ||
            raw.isNotBlank() && quiet >= ENDPOINT_SILENCE_SECONDS * sampleRate ||
-           raw.isBlank() && heard >= IDLE_SILENCE_SECONDS * sampleRate ||
-           segmentSamples >= MAX_PHRASE_SECONDS * sampleRate
+           segmentSamples - leading >= MAX_PHRASE_SECONDS * sampleRate
   }
 
   /** The recording is over: a short silence lets the streaming model settle, and the last phrase is made final */
@@ -172,6 +186,7 @@ internal class PhraseSplitter(
     streaming.reset()
     segment.clear()
     segmentSamples = 0
+    leading = 0
     draft = ""
     heard = 0
     changedAt = 0
@@ -198,8 +213,11 @@ internal class PhraseSplitter(
     /** The pause after speech at which a phrase counts as said; VibeIDE's default */
     const val ENDPOINT_SILENCE_SECONDS = 0.8
 
-    /** A stretch with nothing heard is let go, so the buffer of a microphone left open holds no minutes of silence */
+    /** A stretch with nothing heard is trimmed, so the buffer of a microphone left open holds no minutes of silence */
     const val IDLE_SILENCE_SECONDS = 5.0
+
+    /** What stays of that stretch: more than the lag of the model, not much more, as long silence before a phrase misleads it */
+    const val PREROLL_SECONDS = 1.5
   }
 }
 
@@ -223,6 +241,9 @@ internal object SherpaResident {
   private const val MAX_THREADS = 8
   private const val FEATURE_DIM = 80
   private const val PROVIDER = "cpu"
+
+  /** A rule value no recording reaches: the rule is off */
+  private const val NEVER = 1e9f
   private val log = logger<SherpaResident>()
 
   private val executor = ScheduledThreadPoolExecutor(1) { task -> Thread(task, "vibe-stt").apply { isDaemon = true } }
@@ -298,20 +319,15 @@ internal object SherpaResident {
       )
       SttCatalog.Kind.NEMO_CTC -> error("${model.kind.id} is not a streaming model")
     }
-    // The model's own endpoints, for the models that report them; the phrase logic has the same rules for those that do not
+    // Only the pause after speech is the model's own rule; the other two count from the last reset and cut a late first word
+    val never = EndpointRule.builder().setMustContainNonSilence(false).setMinTrailingSilence(NEVER).setMinUtteranceLength(NEVER).build()
     val endpoints = EndpointConfig.builder()
-      .setRule1(
-        EndpointRule.builder().setMustContainNonSilence(false)
-          .setMinTrailingSilence(PhraseSplitter.IDLE_SILENCE_SECONDS.toFloat()).setMinUtteranceLength(0f).build(),
-      )
+      .setRule1(never)
       .setRule2(
         EndpointRule.builder().setMustContainNonSilence(true)
           .setMinTrailingSilence(PhraseSplitter.ENDPOINT_SILENCE_SECONDS.toFloat()).setMinUtteranceLength(0f).build(),
       )
-      .setRule3(
-        EndpointRule.builder().setMustContainNonSilence(false).setMinTrailingSilence(0f)
-          .setMinUtteranceLength(PhraseSplitter.MAX_PHRASE_SECONDS.toFloat()).build(),
-      )
+      .setRule3(never)
       .build()
     return OnlineRecognizerConfig.builder()
       .setOnlineModelConfig(builder.build())

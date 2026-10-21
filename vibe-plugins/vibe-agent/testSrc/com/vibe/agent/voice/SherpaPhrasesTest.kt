@@ -100,13 +100,33 @@ class SherpaPhrasesTest {
   }
 
   @Test
-  fun `a long stretch with nothing heard is let go without a phrase`() {
+  fun `a long stretch with nothing heard closes no phrase and keeps only the lead-in`() {
     val streaming = Script(listOf(""))
     val decoded = mutableListOf<Int>()
     val splitter = PhraseSplitter(streaming, { samples -> decoded += samples.size; "" }, rate) { said += it }
-    repeat(PhraseSplitter.IDLE_SILENCE_SECONDS.toInt()) { splitter.accept(FloatArray(rate)) }
-    assertEquals(1, streaming.resets, "the buffer of silence is emptied")
+    repeat(PhraseSplitter.IDLE_SILENCE_SECONDS.toInt() * 2) { splitter.accept(FloatArray(rate)) }
+    assertEquals(0, streaming.resets, "the stream is not reset by silence")
     assertTrue(said.isEmpty())
+    splitter.flush()
+    assertTrue(decoded.all { it <= (PhraseSplitter.IDLE_SILENCE_SECONDS * rate).toInt() }, "the buffer was trimmed: $decoded")
+  }
+
+  @Test
+  fun `speech that starts just before the idle mark keeps its first word`() {
+    for (before in listOf(0.4, 0.6, 0.9)) {
+      said.clear()
+      val begins = ((PhraseSplitter.IDLE_SILENCE_SECONDS - before) * 10).toInt()
+      // The model shows the word a second after it began, as T-one does
+      val drafts = List(100) { if (it < begins + 10) "" else "запусти" }
+      val streaming = Script(drafts)
+      val decoded = mutableListOf<Int>()
+      val splitter = PhraseSplitter(streaming, { samples -> decoded += samples.size; "запусти" }, rate) { said += it }
+      repeat(begins + 14) { splitter.accept(FloatArray(rate / 10)) }
+      assertEquals(0, streaming.resets, "silence before $before s did not reset the stream")
+      assertEquals(LiveText.Draft("запусти"), said.last())
+      assertEquals(listOf("запусти"), splitter.flush())
+      assertTrue(decoded.single() >= ((before + 1.0) * rate).toInt(), "the audio of the word is in the phrase: $decoded")
+    }
   }
 
   @Test
