@@ -2443,6 +2443,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
           tools, workDir,
           onProgress = { stage -> feedNotice("[watch] $stage") },
           isCancelled = { cancelled.get() || disposed },
+          projectRoots = listOfNotNull(project.basePath),
         )
         val result = pipeline.run(command.source).getOrElse { error ->
           feedNotice("[watch] " + com.vibe.agent.i18n.VibeI18n.t("watch.failed", "reason" to error.message))
