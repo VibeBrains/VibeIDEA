@@ -12,6 +12,7 @@ import com.intellij.util.ui.JBUI
 import com.vibe.agent.history.ChatThread
 import com.vibe.agent.history.TranscriptSearch
 import com.vibe.agent.history.VibeChatHistory
+import com.vibe.agent.ui.VibeScroll
 import com.vibe.agent.ui.composer.PillButton
 import java.awt.Color
 import java.awt.Component
@@ -46,6 +47,8 @@ class ThreadListPanel(
   private val mode: Mode,
   parentDisposable: Disposable,
   private val callbacks: Callbacks,
+  /** Height the expanded landing list is measured against; the default is the whole window. */
+  private val panelHeight: () -> Int = { 0 },
 ) : JPanel(), Disposable, Scrollable {
   enum class Mode { LANDING, POPUP, RAIL }
 
@@ -154,15 +157,58 @@ class ThreadListPanel(
     today: LocalDate,
     zone: ZoneId,
   ) {
-    val shown = if (landingExpanded) visible else visible.take(LANDING_LIMIT)
-    shown.forEach { add(makeRow(history, it, matches[it.id], today, zone)) }
-    if (visible.size > LANDING_LIMIT) {
-      val text = if (landingExpanded) t("history.collapse") else t("history.more", "count" to (visible.size - LANDING_LIMIT))
-      add(expanderLine(text) {
-        landingExpanded = !landingExpanded
+    val expandable = visible.size > LANDING_LIMIT
+    if (landingExpanded && expandable) {
+      // The collapse control sits ABOVE the list: at the bottom of a long list it was out of reach.
+      add(expanderLine(t("history.collapse")) {
+        landingExpanded = false
+        render()
+      })
+      val rows = RowsView()
+      visible.forEach { rows.add(makeRow(history, it, matches[it.id], today, zone)) }
+      add(BoundedScroll(rows) { ThreadListBounds.height(rows.preferredSize.height, boundsHeight()) })
+      return
+    }
+    visible.take(LANDING_LIMIT).forEach { add(makeRow(history, it, matches[it.id], today, zone)) }
+    if (expandable) {
+      add(expanderLine(t("history.more", "count" to (visible.size - LANDING_LIMIT))) {
+        landingExpanded = true
         render()
       })
     }
+  }
+
+  private fun boundsHeight(): Int = panelHeight().takeIf { it > 0 } ?: (javax.swing.SwingUtilities.getRootPane(this)?.height ?: 0)
+
+  /** Rows column that follows the viewport width, so long titles truncate instead of scrolling sideways. */
+  private class RowsView : JPanel(), Scrollable {
+    init {
+      layout = BoxLayout(this, BoxLayout.Y_AXIS)
+      isOpaque = false
+    }
+
+    override fun getPreferredScrollableViewportSize(): Dimension = preferredSize
+    override fun getScrollableUnitIncrement(visibleRect: Rectangle, orientation: Int, direction: Int): Int = JBUI.scale(SCROLL_UNIT)
+    override fun getScrollableBlockIncrement(visibleRect: Rectangle, orientation: Int, direction: Int): Int = visibleRect.height
+    override fun getScrollableTracksViewportWidth(): Boolean = true
+    override fun getScrollableTracksViewportHeight(): Boolean = false
+  }
+
+  /** Thin scroll pane whose height is capped by [heightOf], never taller than its content. */
+  private class BoundedScroll(view: JComponent, private val heightOf: () -> Int) : JPanel(java.awt.BorderLayout()) {
+    init {
+      isOpaque = false
+      alignmentX = Component.LEFT_ALIGNMENT
+      add(VibeScroll.pane(view).apply {
+        border = JBUI.Borders.empty()
+        isOpaque = false
+        viewport.isOpaque = false
+        horizontalScrollBarPolicy = javax.swing.ScrollPaneConstants.HORIZONTAL_SCROLLBAR_NEVER
+      })
+    }
+
+    override fun getPreferredSize(): Dimension = Dimension(super.getPreferredSize().width, heightOf())
+    override fun getMaximumSize(): Dimension = Dimension(Int.MAX_VALUE, heightOf())
   }
 
   private fun renderGrouped(

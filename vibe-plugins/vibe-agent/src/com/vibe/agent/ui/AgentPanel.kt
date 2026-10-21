@@ -500,7 +500,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     override fun onOpen(threadId: String) = activateThread(threadId)
     override fun onOpenAtMessage(threadId: String, messageIndex: Int) = openThreadAt(threadId, messageIndex)
   }
-  private val landingList = ThreadListPanel(project, ThreadListPanel.Mode.LANDING, this, historyCallbacks)
+  private val landingList = ThreadListPanel(project, ThreadListPanel.Mode.LANDING, this, historyCallbacks) { height }
   private val landing = LandingBlock(landingList) { text -> startTurn(ComposedMessage(text)) }
   // Без шеврона: он обещает второй смысл у кнопки, которого нет — клик открывает список, и это
   // всё, что она делает. Прижатая к иконке стрелка читалась как теснота, а не как подсказка.

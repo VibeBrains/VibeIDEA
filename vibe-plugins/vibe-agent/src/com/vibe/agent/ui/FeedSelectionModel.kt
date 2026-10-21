@@ -53,6 +53,9 @@ object FeedSelectionModel {
   fun wholeFeed(lengths: List<Int>): Pair<Anchor, Anchor>? =
     if (lengths.isEmpty()) null else Anchor(0, 0) to Anchor(lengths.lastIndex, lengths.last())
 
+  /** Shift+click grows the existing selection only when there is one and its anchor is known. */
+  fun extendsOnShift(shift: Boolean, hasAnchor: Boolean, hasSelection: Boolean): Boolean = shift && hasAnchor && hasSelection
+
   private fun clamp(anchor: Anchor, lengths: List<Int>): Anchor {
     val index = anchor.index.coerceIn(0, lengths.lastIndex)
     return Anchor(index, anchor.offset.coerceIn(0, lengths[index]))

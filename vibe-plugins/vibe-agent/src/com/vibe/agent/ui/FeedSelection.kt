@@ -53,6 +53,9 @@ class FeedSelection(private val feed: JComponent, private val scroll: JScrollPan
    */
   private var lastDragPoint: Point? = null
 
+  /** Ticks while the button is held: the mouse may stand still outside the viewport, and no drag event comes then. */
+  private val autoscroll = javax.swing.Timer(FeedAutoscroll.TICK_MS) { autoscrollTick() }
+
   fun install() {
     hook(feed)
     feed.addMouseListener(object : MouseAdapter() {
@@ -132,9 +135,29 @@ class FeedSelection(private val feed: JComponent, private val scroll: JScrollPan
     if (e.isPopupTrigger) { popup(e); return }
     if (!SwingUtilities.isLeftMouseButton(e)) return
     remember(e)
-    anchor = anchorAt(feedPoint() ?: return)
+    val point = feedPoint() ?: return
     dragging = true
+    autoscroll.start()
+    // Shift+click extends the selection that is there from its original anchor, instead of starting a new one.
+    if (FeedSelectionModel.extendsOnShift(e.isShiftDown, anchor != null, pieces().any { it.selectionStart != it.selectionEnd })) {
+      anchorAt(point)?.let { apply(it) }
+      return
+    }
+    anchor = anchorAt(point)
     clearAll()
+  }
+
+  private fun autoscrollTick() {
+    val bar = scroll?.verticalScrollBar
+    val view = scroll?.viewport
+    val point = lastDragPoint
+    if (!dragging || bar == null || view == null || point == null) return
+    val step = FeedAutoscroll.step(point.y, view.height)
+    if (step == 0) return
+    val before = bar.value
+    bar.value = (before + step).coerceIn(bar.minimum, maxOf(bar.minimum, bar.maximum - bar.visibleAmount))
+    // The text moved under a still mouse: the selection end has to follow it.
+    if (bar.value != before) extendToLastPoint()
   }
 
   private fun onDrag(e: MouseEvent) {
@@ -145,6 +168,7 @@ class FeedSelection(private val feed: JComponent, private val scroll: JScrollPan
 
   private fun onRelease(e: MouseEvent) {
     dragging = false
+    autoscroll.stop()
     if (e.isPopupTrigger) popup(e)
   }
 
