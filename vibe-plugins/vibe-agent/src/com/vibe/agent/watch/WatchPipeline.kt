@@ -23,17 +23,28 @@ class WatchPipeline(
   private val workDir: Path,
   private val onProgress: (String) -> Unit,
   private val isCancelled: () -> Boolean,
+  /** Where a relative source is looked for, in order; the chat passes its project, the default is the last open one */
+  private val projectRoots: List<String> = WatchLocalSpeech.ideRoots(),
+  /** Speech of a LOCAL file, which carries no subtitle track; null when no engine could make text */
+  private val speech: (File, () -> Boolean) -> String? = WatchLocalSpeech::transcribe,
 ) {
   data class Result(
     val kind: WatchInput.Kind,
     val title: String,
     val transcript: String,
     val frames: List<Path>,
+    /** Seconds into the video of each frame, in the order of [frames]; empty when unknown */
+    val frameSeconds: List<Double> = emptyList(),
     /** Said out loud when the answer will be weaker than the user expects. */
     val warning: String?,
   )
 
-  fun run(source: String): kotlin.Result<Result> = runCatching {
+  fun run(typed: String): kotlin.Result<Result> = runCatching {
+    val source = when (val found = WatchPath.resolve(typed, projectRoots, System.getProperty("user.home"))) {
+      is WatchPath.Resolved.Found -> found.value
+      is WatchPath.Resolved.Missing ->
+        error(t("watch.error.notInProject", "path" to found.raw, "project" to found.roots.joinToString { WatchPath.rootName(it) }))
+    }
     val isUrl = WatchInput.isUrl(source)
     val hint = WatchInput.classify(source)
     onProgress(t("watch.stage.probe"))
@@ -59,7 +70,7 @@ class WatchPipeline(
     if (isCancelled()) error(CANCELLED)
 
     onProgress(t("watch.stage.subtitles"))
-    val transcript = subtitles(source, isUrl)
+    val transcript = subtitles(source, isUrl).ifBlank { if (isUrl) "" else localSpeech(File(source)) }
 
     // Audio with no transcript has nothing to send: no frames, no words. Saying so is the honest
     // end; sending an empty prompt would look like the model ignored the request.
@@ -68,7 +79,7 @@ class WatchPipeline(
     }
 
     if (audioOnly) {
-      return@runCatching Result(WatchInput.Kind.AUDIO, title, transcript, emptyList(), null)
+      return@runCatching Result(WatchInput.Kind.AUDIO, title, transcript, emptyList(), warning = null)
     }
 
     if (isCancelled()) error(CANCELLED)
@@ -77,7 +88,7 @@ class WatchPipeline(
 
     if (isCancelled()) error(CANCELLED)
     onProgress(t("watch.stage.frames"))
-    val frames = frames(media)
+    val (frames, seconds) = frames(media)
     check(frames.isNotEmpty()) { t("watch.error.noFrames") }
 
     Result(
@@ -85,6 +96,7 @@ class WatchPipeline(
       title = title,
       transcript = transcript,
       frames = frames,
+      frameSeconds = seconds,
       warning = if (transcript.isBlank()) t("watch.warn.noSubtitles") else null,
     )
   }
@@ -109,6 +121,18 @@ class WatchPipeline(
     return Subtitles.transcript(cues)
   }
 
+  /** Speech of a local file: ffmpeg makes the 16 kHz mono WAV the engines want, the engine makes the text */
+  private fun localSpeech(file: File): String {
+    onProgress(t("watch.stage.speech"))
+    val wav = workDir.resolve("speech.wav").toFile()
+    val made = exec(
+      listOf(tools.ffmpeg, "-hide_banner", "-y", "-i", file.absolutePath, "-vn", "-ar", "16000", "-ac", "1", "-c:a", "pcm_s16le", wav.path),
+      FRAMES_TIMEOUT_SEC,
+    )
+    if (made.exitCode != 0 || !wav.isFile) return ""
+    return speech(wav, isCancelled).orEmpty()
+  }
+
   private fun media(source: String, isUrl: Boolean): Path {
     if (!isUrl) return Path.of(source)
     // `-o video.%(ext)s` and a glob: yt-dlp picks the container itself when merging streams, so a
@@ -125,7 +149,7 @@ class WatchPipeline(
     return file?.toPath() ?: error(t("watch.error.mediaMissing"))
   }
 
-  private fun frames(media: Path): List<Path> {
+  private fun frames(media: Path): Pair<List<Path>, List<Double>> {
     val first = extract(media, VibeAgentSettings.watchSceneThreshold)
     // A static screencast crosses no threshold at all; one retry at a low one, then give up.
     val frames = if (SceneFrames.needsRetry(first.second)) {
@@ -138,10 +162,11 @@ class WatchPipeline(
     val kept = SceneFrames.thin(frames.second, VibeAgentSettings.watchMaxFrames)
     val files = workDir.toFile().listFiles { f: File -> f.name.startsWith("frame") && f.name.endsWith(".jpg") }
       ?.sortedBy { it.name }.orEmpty()
-    if (kept.isEmpty() || files.isEmpty()) return files.map { it.toPath() }.take(VibeAgentSettings.watchMaxFrames)
+    if (kept.isEmpty() || files.isEmpty()) return files.map { it.toPath() }.take(VibeAgentSettings.watchMaxFrames) to emptyList()
     // showinfo numbers frames from the filter's output, which is exactly the file order.
     val byOrder = files.mapIndexed { index, file -> index to file }.toMap()
-    return frames.second.mapIndexedNotNull { index, frame -> if (frame in kept) byOrder[index]?.toPath() else null }
+    val picked = frames.second.mapIndexedNotNull { index, frame -> if (frame in kept) byOrder[index]?.toPath()?.let { it to frame.timestampSec } else null }
+    return picked.map { it.first } to picked.map { it.second }
   }
 
   private fun extract(media: Path, threshold: Double): Pair<Int, List<SceneFrames.Frame>> {

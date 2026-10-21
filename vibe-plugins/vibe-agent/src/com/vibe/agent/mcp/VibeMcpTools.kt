@@ -66,6 +66,7 @@ class VibeMcpTools(private val projectProvider: () -> Project? = { ProjectManage
       McpProtocol.TOOL_COMMAND_OUTPUT -> commandOutput(project, arguments)
       McpProtocol.TOOL_COMMAND_STOP -> commandStop(project, arguments)
       McpProtocol.TOOL_TEXT_SLOP -> textSlop(project, arguments)
+      McpProtocol.TOOL_WATCH_MEDIA -> WatchMediaTool.run(project, string(arguments, "source"), string(arguments, "question").orEmpty())
       else -> McpServer.Tools.Result("неизвестный инструмент: $name", isError = true)
     }
   }

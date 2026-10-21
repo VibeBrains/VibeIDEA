@@ -47,6 +47,12 @@ object WatchInput {
     if (!text.startsWith(PREFIX)) return null
     val rest = text.removePrefix(PREFIX).trim()
     if (rest.isEmpty()) return null
+    // A quoted source may hold spaces: `/watch "my record.webm" what is it`
+    val quote = rest.first()
+    if ((quote == '"' || quote == '\'') && rest.indexOf(quote, 1) > 1) {
+      val end = rest.indexOf(quote, 1)
+      return Command(rest.substring(1, end), rest.substring(end + 1).trim())
+    }
     val source = rest.substringBefore(' ').trim()
     val question = rest.removePrefix(source).trim()
     return Command(source, question)

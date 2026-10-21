@@ -62,11 +62,11 @@ class McpAccessTest {
     // An unknown name falls to EXECUTE, so a tool forgotten in the list would silently stop working.
     // This forces a deliberate decision for every name in the listing.
     val names = McpProtocol.TOOLS.map { it.name }
-    // Пишут двое (запись файла и правка куска) плюс журнал решений; выполняют двое (команда
-    // оболочки и задача агенту). Число здесь — не арифметика, а список, который надо перечитать.
+    // Пишут двое (запись файла и правка куска) плюс журнал решений; выполняют трое (команда
+    // оболочки, задача агенту и разбор видео). Число здесь — не арифметика, а список, который надо перечитать.
     val dangerous = setOf(
       McpProtocol.TOOL_DECISIONS_RECORD, McpProtocol.TOOL_WRITE_FILE, McpProtocol.TOOL_REPLACE_IN_FILE,
-      McpProtocol.TOOL_RUN_COMMAND, McpProtocol.TOOL_COMMAND_STOP, McpProtocol.TOOL_RUN,
+      McpProtocol.TOOL_RUN_COMMAND, McpProtocol.TOOL_COMMAND_STOP, McpProtocol.TOOL_RUN, McpProtocol.TOOL_WATCH_MEDIA,
     )
     assertEquals(names.size - dangerous.size, names.count { McpProtocol.riskOf(it) == Risk.READ })
     assertTrue(dangerous.none { McpProtocol.riskOf(it) == Risk.READ })

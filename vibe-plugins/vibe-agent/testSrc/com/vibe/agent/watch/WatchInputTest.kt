@@ -43,4 +43,10 @@ class WatchInputTest {
     assertNull(WatchInput.parse("/watch"))
     assertNull(WatchInput.parse("расскажи про /watch"))
   }
+
+  @Test
+  fun `a quoted source may hold spaces`() {
+    assertEquals(WatchInput.Command("/tmp/my record.webm", "what is it"), WatchInput.parse("/watch \"/tmp/my record.webm\" what is it"))
+    assertEquals(WatchInput.Command("1.webm", "о чём"), WatchInput.parse("/watch 1.webm о чём"))
+  }
 }

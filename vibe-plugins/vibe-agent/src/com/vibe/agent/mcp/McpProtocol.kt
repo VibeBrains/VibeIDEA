@@ -106,6 +106,7 @@ object McpProtocol {
   const val TOOL_COMMAND_OUTPUT = "vibe_command_output"
   const val TOOL_COMMAND_STOP = "vibe_command_stop"
   const val TOOL_TEXT_SLOP = "vibe_text_slop_check"
+  const val TOOL_WATCH_MEDIA = "vibe_watch_media"
 
   /**
    * Что инструмент делает с машиной человека.
@@ -147,6 +148,8 @@ object McpProtocol {
     TOOL_COMMAND_STOP to Risk.EXECUTE,
     TOOL_RUN to Risk.EXECUTE,
     TOOL_TEXT_SLOP to Risk.READ,
+    // Runs yt-dlp and ffmpeg and may download from the network: an execution, not a read
+    TOOL_WATCH_MEDIA to Risk.EXECUTE,
   )
 
   /**
@@ -288,6 +291,25 @@ object McpProtocol {
           putJsonObject("path") { put("type", "string"); put("description", "Файл относительно корня проекта, например docs/guide.md") }
           putJsonObject("text") { put("type", "string"); put("description", "Сам текст — когда он ещё не записан в файл") }
         }
+      },
+    ),
+    Tool(
+      name = TOOL_WATCH_MEDIA,
+      title = "Посмотреть видео или послушать аудио",
+      description = "Разобрать видео или аудио: расшифровка речи и кадры по сменам сцен. Звать, когда человек просит " +
+                    "посмотреть видео, разобрать ролик, запись или созвон, послушать аудио, расшифровать запись — и " +
+                    "не отвечать «открыть не могу»: этот инструмент и есть способ. Источник — файл или ссылка " +
+                    "(YouTube, Loom, прямой mp4). Относительный путь (`1.webm`, `./1.webm`, `sub/2.webm`) " +
+                    "считается от корня проекта, `~/…` — от домашней папки. Ответ — транскрипт и список файлов " +
+                    "кадров с тайм-кодами; сам вопрос тоже передавайте, он возвращается в конце ответа. " +
+                    "Работа идёт минутами: скачивание и распознавание речи.",
+      schema = buildJsonObject {
+        put("type", "object")
+        putJsonObject("properties") {
+          putJsonObject("source") { put("type", "string"); put("description", "Путь к файлу или ссылка, как написал человек") }
+          putJsonObject("question") { put("type", "string"); put("description", "Что человек хочет узнать о записи; без него — пересказ") }
+        }
+        putJsonArray("required") { add(kotlinx.serialization.json.JsonPrimitive("source")) }
       },
     ),
     Tool(

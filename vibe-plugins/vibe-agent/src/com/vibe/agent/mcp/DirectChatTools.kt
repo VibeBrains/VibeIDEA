@@ -113,7 +113,7 @@ class DirectChatTools(
    * (найдено перечиткой 18.09.2026, в тот же день, что руки и появились).
    */
   private fun ceilingFor(tool: String): Long =
-    if (tool == McpProtocol.TOOL_RUN_COMMAND) COMMAND_TIMEOUT_MS else callTimeoutMs
+    if (tool == McpProtocol.TOOL_RUN_COMMAND || tool == McpProtocol.TOOL_WATCH_MEDIA) COMMAND_TIMEOUT_MS else callTimeoutMs
 
   private fun <T> withCeiling(call: ToolCall, ceilingMs: Long, human: HumanTime, body: () -> T): T {
     val task = java.util.concurrent.FutureTask(body)
