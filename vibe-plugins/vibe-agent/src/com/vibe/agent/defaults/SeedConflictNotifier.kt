@@ -25,9 +25,8 @@ import java.nio.file.Path
  *  • «Обновить, сохранив мои тумблеры» — offered only when the sole difference is `active`
  *    values: the file is refreshed and their off-switches move to `<project>/.vibe/providers.json`,
  *    the overlay layer that always wins and that no release ever rewrites;
- *  • «Смержить» — the release on the left, THEIR OWN FILE on the right, editable: the release may
- *    bring something new while their edit is worth keeping, and only a person can say which chunk is
- *    which. The platform's diff viewer moves chunks with its own arrows; we invent nothing;
+ *  • «Смержить» — the platform's multiple-file merge dialog (Accept Yours / Accept Theirs / Merge…)
+ *    over all conflicting files, a real three-way merge with the stored base (see [showMergeDialog]);
  *  • «Обновить» — takes the release version AFTER saving theirs as `<файл>.mine`: overwriting is the
  *    only destructive thing seeding does, and it never happens alone;
  *  • «Оставить своё» — recorded against the current revision, so it stays quiet until the next bump.
@@ -50,10 +49,11 @@ object SeedConflictNotifier {
       conflicts.forEach { showDiff(project, vibeDir, it.path) }
     })
 
+    val resolved = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
     notification.addAction(NotificationAction.createSimple(t("seed.conflict.merge")) {
-      conflicts.forEach { showMerge(project, vibeDir, it.path) }
-      // Not expired: merging is a conversation with the file, and the notice still holds the other
-      // two answers for the files the person decides not to merge.
+      showMergeDialog(project, projectBase, vibeDir, SeedMerge.pending(conflicts.map { it.path }, resolved), resolved)
+      // The notice goes once every file has an answer; a file the person cancelled keeps it alive.
+      if (SeedMerge.pending(conflicts.map { it.path }, resolved).isEmpty()) notification.expire()
     })
 
     val toggleOnly = conflicts.filter { canMergeToggles(vibeDir, it.path) }
@@ -138,29 +138,32 @@ object SeedConflictNotifier {
   }
 
   /**
-   * The release next to THEIR file, with their side editable.
+   * The platform's multiple-file merge dialog over the conflicting files.
    *
-   * A three-way merge would need the base — the release revision their copy grew from — and we do
-   * not have its content: the set records only the sha256 of past revisions. Inventing a base to
-   * satisfy the merge dialog would produce confident nonsense in the middle pane. So: two panes,
-   * their own file on the right as a real document, and the viewer's own arrows to pull in whatever
-   * the release brought. Nothing is written behind their back — the file changes only where they
-   * click, and only until they save.
+   * Left = their file, right = the release, middle = the release revision their copy was seeded
+   * from (empty, and said so in the window title, for projects seeded before bases were recorded).
+   * The dialog writes the result into their file; here it is only recorded: taking the release is
+   * journalled as seeded, anything else as «reconciled» so the notice does not return.
    */
-  private fun showMerge(project: Project, vibeDir: Path, relative: String) {
-    val release = VibeDefaults.releaseContent(relative) ?: return
-    val file = LocalFileSystem.getInstance().refreshAndFindFileByNioFile(vibeDir.resolve(relative)) ?: return
-    val factory = DiffContentFactory.getInstance()
-    DiffManager.getInstance().showDiff(
-      project,
-      SimpleDiffRequest(
-        t("seed.merge.title", "file" to relative),
-        factory.create(project, release, file.fileType),
-        factory.create(project, file),
-        t("seed.diff.release"),
-        t("seed.merge.yoursEditable"),
-      ),
-    )
+  private fun showMergeDialog(
+    project: Project,
+    projectBase: String,
+    vibeDir: Path,
+    paths: List<String>,
+    resolved: MutableSet<String>,
+  ) {
+    val files = SeedMergeProvider.virtualFiles(vibeDir, paths)
+    if (files.isEmpty()) return
+    val provider = SeedMergeProvider(vibeDir, projectBase) { relative, choice ->
+      when (choice) {
+        SeedMerge.Choice.THEIRS -> VibeDefaults.markTaken(projectBase, listOf(relative))
+        SeedMerge.Choice.MINE -> VibeDefaults.markReconciled(projectBase, listOf(relative))
+      }
+      resolved.add(relative)
+    }
+    SeedMergeProvider.show(project, files, provider)
+    refreshVfs(vibeDir)
+    if (!project.isDisposed) project.messageBus.syncPublisher(ProvidersChangeListener.TOPIC).providersChanged()
   }
 
   private fun canMergeToggles(vibeDir: Path, relative: String): Boolean =

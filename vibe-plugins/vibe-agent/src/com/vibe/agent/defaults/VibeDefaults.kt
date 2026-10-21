@@ -189,6 +189,7 @@ object VibeDefaults {
 
   private const val RESOURCE_ROOT = "/vibeDefaults/"
   private const val JOURNAL = ".seeded.json"
+  private const val BASE_DIR = "seedBase"
   private const val DEPRECATED = "deprecated.json"
   private const val VERSIONS = "versions.json"
 
@@ -326,13 +327,17 @@ object VibeDefaults {
         SeedVerdict.CREATE -> if (write(target, content)) {
           created++
           journal[relative] = JournalEntry(sha256(content), revision?.version)
+          storeBase(vibeDir, relative, content)
         }
         SeedVerdict.UPDATE -> if (write(target, content)) {
           updated.add(relative)
           journal[relative] = JournalEntry(sha256(content), revision?.version)
+          storeBase(vibeDir, relative, content)
         }
         SeedVerdict.SAME -> {
           kept++
+          // The copy IS the release: the content a later conflict will use as the merge base.
+          storeBase(vibeDir, relative, content)
           // Keep the recorded revision current so a later bump is measured from here.
           if (revision != null && recorded?.version != revision.version) {
             journal[relative] = JournalEntry(sha256(content), revision.version, recorded?.reconciled)
@@ -360,17 +365,41 @@ object VibeDefaults {
 
   /** Records «keep mine» for [paths] at the set's current revision — the conflict stays quiet
    *  until the set moves again. Called from the notification action. */
-  fun markReconciled(projectBase: String, paths: List<String>) {
+  fun markReconciled(projectBase: String, paths: List<String>) = record(projectBase, paths, SeedMerge.Choice.MINE)
+
+  /** Records that the release version was taken for [paths]: journalled as seeded at the current revision. */
+  fun markTaken(projectBase: String, paths: List<String>) = record(projectBase, paths, SeedMerge.Choice.THEIRS)
+
+  private fun record(projectBase: String, paths: List<String>, choice: SeedMerge.Choice) {
     val vibeDir = Path.of(projectBase, ".vibe")
     val revisions = SeedRevisions.parse(readResource(VERSIONS))
     val byTarget = MANIFEST.associate { (resource, relative) -> relative to resource }
     val journal = loadJournal(vibeDir).toMutableMap()
     for (path in paths) {
-      val version = byTarget[path]?.let { revisions[it]?.version } ?: continue
-      val current = journal[path]
-      journal[path] = JournalEntry(current?.sha ?: "", current?.version, reconciled = version)
+      val resource = byTarget[path] ?: continue
+      val version = revisions[resource]?.version ?: continue
+      val release = readResource(resource) ?: continue
+      journal[path] = SeedMerge.journalAfter(choice, journal[path], sha256(release), version)
+      // Either way the person has now seen this revision: it is the base of the next merge.
+      storeBase(vibeDir, path, release)
     }
     saveJournal(vibeDir, journal)
+  }
+
+  /** Where the content of the release a copy was seeded from is kept — local, outside git (`.vibe/local/`). */
+  internal fun baseFile(vibeDir: Path, relative: String): Path = VibeLocal.dirIn(vibeDir).resolve(BASE_DIR).resolve(relative)
+
+  /** Content of the release revision the person's copy of [relative] was seeded from; null for older projects. */
+  fun seedBase(projectBase: String, relative: String): String? =
+    runCatching { Files.readString(baseFile(Path.of(projectBase, ".vibe"), relative)) }.getOrNull()
+
+  internal fun storeBase(vibeDir: Path, relative: String, content: String) {
+    val file = baseFile(vibeDir, relative)
+    runCatching {
+      if (Files.isRegularFile(file) && Files.readString(file) == content) return
+      file.parent?.let { Files.createDirectories(it) }
+      Files.writeString(file, content)
+    }
   }
 
   /** The release's content for a seeded path (left side of the comparison). */
