@@ -101,6 +101,14 @@ class TerminalConsole(title: String) : JPanel(BorderLayout()) {
     header.foreground = if (exitCode == 0) OK_FG else if (exitCode != null || signal != null) ERR_FG else header.foreground
   }
 
+  /**
+   * The tool call completed but no exit frame ever came (a background command, a released terminal).
+   * Without this the card would stay expanded forever, so finish it the same way as an exit without a code
+   */
+  fun finishIfRunning() {
+    if (!state.finished) markExit(null, null)
+  }
+
   private fun render() {
     val text = raw.toString()
     area.text = if (text.length > DISPLAY_CAP) {

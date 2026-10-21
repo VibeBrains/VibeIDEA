@@ -14,8 +14,13 @@ class TerminalCardState(finished: Boolean = false) {
     private set
   private var userChose = false
 
+  /** True once the command ended, with or without an exit code. */
+  var finished: Boolean = finished
+    private set
+
   /** The command ended: fold the card unless the user already took control of it. */
   fun onFinished() {
+    finished = true
     if (!userChose) collapsed = true
   }
 

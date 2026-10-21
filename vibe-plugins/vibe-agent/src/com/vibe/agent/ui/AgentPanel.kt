@@ -6822,6 +6822,8 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
         terminalOutputFrame(u)?.let { (id, data) -> appendTerminalOutput(id, data) }
         terminalExitFrame(u)?.let { (id, code, sig) -> markTerminalExit(id, code, sig) }
         if (call.isDone) {
+          // A completed call that never sent terminal_exit (background command) still ends its card
+          call.terminalId?.let { id -> SwingUtilities.invokeLater { terminalConsoles[id]?.finishIfRunning() } }
           auditToolCall(AuditEvent.Action.TOOL_CALL_DONE, call, turn)
           noteOutcome(call)
           val startedAt = turn.toolStarts.remove(call.id)

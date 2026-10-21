@@ -47,4 +47,13 @@ class TerminalCardStateTest {
     state.onFinished()
     assertFalse(state.collapsed)
   }
+
+  @Test
+  fun `card finished without exit code is marked finished and collapsed`() {
+    val state = TerminalCardState()
+    assertFalse(state.finished)
+    state.onFinished()
+    assertTrue(state.finished)
+    assertTrue(state.collapsed)
+  }
 }
