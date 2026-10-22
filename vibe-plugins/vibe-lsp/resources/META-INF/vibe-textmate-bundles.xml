@@ -1,4 +1,4 @@
-<!-- Подсветка языков, которых в платформе нет: Vue, Svelte, Astro, Sass и Stylus.
+<!-- Подсветка языков, которых в платформе нет: Vue, Svelte, Astro, Sass, Stylus и FreeMarker.
 
      Отдельным файлом и необязательной зависимостью — ровно как интеграция с LSP4IJ: без плагина
      TextMate остальной vibe-lsp обязан грузиться и работать. Языковой сервер даёт смысл и без
@@ -6,5 +6,8 @@
 <idea-plugin>
   <extensions defaultExtensionNs="com.intellij">
     <textmate.bundleProvider implementation="com.vibe.lsp.VibeTextMateBundles"/>
+    <!-- FreeMarker: its own name and icon; the highlighting comes from the freemarker bundle of the provider above. -->
+    <fileType name="FreeMarker" implementationClass="com.vibe.lsp.FreeMarkerFileType" fieldName="INSTANCE"
+              extensions="ftl;ftlh;ftlx"/>
   </extensions>
 </idea-plugin>

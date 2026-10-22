@@ -142,9 +142,9 @@ class FrameworkServersTest {
     assertTrue(!styled.has("configNamespace"), "своих настроек мы этому плагину не шлём")
   }
 
-  /** Имена бандлов подсветки — те же пять, что собирает скрипт зависимостей. */
+  /** Имена бандлов подсветки — те же шесть, что собирает скрипт зависимостей. */
   @Test
-  fun `бандлы подсветки объявлены для всех пяти языков`() {
-    assertEquals(listOf("vue", "svelte", "astro", "sass", "stylus"), VibeTextMateBundles.NAMES)
+  fun `бандлы подсветки объявлены для всех шести языков`() {
+    assertEquals(listOf("vue", "svelte", "astro", "sass", "stylus", "freemarker"), VibeTextMateBundles.NAMES)
   }
 }

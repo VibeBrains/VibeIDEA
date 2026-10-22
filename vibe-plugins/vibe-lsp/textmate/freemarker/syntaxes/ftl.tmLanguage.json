@@ -1,0 +1,316 @@
+{
+  "$comment": "FreeMarker (angle-bracket syntax) as an injectable fragment; hosts are text.html.ftl and text.xml.ftl. Original grammar by VibeBrains, AGPL-3.0.",
+  "name": "FreeMarker",
+  "scopeName": "source.ftl",
+  "patterns": [
+    {
+      "include": "#comment"
+    },
+    {
+      "include": "#noparse"
+    },
+    {
+      "include": "#directive-close"
+    },
+    {
+      "include": "#macro-close"
+    },
+    {
+      "include": "#macro-call"
+    },
+    {
+      "include": "#directive-control"
+    },
+    {
+      "include": "#directive-other"
+    },
+    {
+      "include": "#interpolation"
+    }
+  ],
+  "repository": {
+    "comment": {
+      "name": "comment.block.ftl",
+      "begin": "<#--",
+      "end": "-->",
+      "beginCaptures": {
+        "0": {
+          "name": "punctuation.definition.comment.begin.ftl"
+        }
+      },
+      "endCaptures": {
+        "0": {
+          "name": "punctuation.definition.comment.end.ftl"
+        }
+      }
+    },
+    "noparse": {
+      "name": "meta.ftl.noparse",
+      "begin": "(<#)(noparse)\\s*(>)",
+      "beginCaptures": {
+        "1": {
+          "name": "punctuation.definition.tag.begin.ftl"
+        },
+        "2": {
+          "name": "keyword.control.directive.ftl"
+        },
+        "3": {
+          "name": "punctuation.definition.tag.end.ftl"
+        }
+      },
+      "end": "(</#)(noparse)\\s*(>)",
+      "endCaptures": {
+        "1": {
+          "name": "punctuation.definition.tag.begin.ftl"
+        },
+        "2": {
+          "name": "keyword.control.directive.ftl"
+        },
+        "3": {
+          "name": "punctuation.definition.tag.end.ftl"
+        }
+      },
+      "contentName": "meta.embedded.noparse.ftl"
+    },
+    "directive-close": {
+      "name": "meta.ftl.directive",
+      "match": "(</#)([A-Za-z_][\\w.]*)\\s*(>)",
+      "captures": {
+        "1": {
+          "name": "punctuation.definition.tag.begin.ftl"
+        },
+        "2": {
+          "name": "keyword.control.directive.ftl"
+        },
+        "3": {
+          "name": "punctuation.definition.tag.end.ftl"
+        }
+      }
+    },
+    "macro-close": {
+      "name": "meta.ftl.macro-call",
+      "match": "(</@)([A-Za-z_][\\w.]*)?\\s*(>)",
+      "captures": {
+        "1": {
+          "name": "punctuation.definition.tag.begin.ftl"
+        },
+        "2": {
+          "name": "entity.name.function.macro-call.ftl"
+        },
+        "3": {
+          "name": "punctuation.definition.tag.end.ftl"
+        }
+      }
+    },
+    "macro-call": {
+      "name": "meta.ftl.macro-call",
+      "begin": "(<@)([A-Za-z_][\\w.]*)?",
+      "beginCaptures": {
+        "1": {
+          "name": "punctuation.definition.tag.begin.ftl"
+        },
+        "2": {
+          "name": "entity.name.function.macro-call.ftl"
+        }
+      },
+      "end": "(/)?(>)",
+      "endCaptures": {
+        "1": {
+          "name": "punctuation.definition.tag.end.ftl"
+        },
+        "2": {
+          "name": "punctuation.definition.tag.end.ftl"
+        }
+      },
+      "patterns": [
+        {
+          "include": "#expression"
+        }
+      ]
+    },
+    "directive-control": {
+      "name": "meta.ftl.directive",
+      "begin": "(<#)((?:if|else|elseif|list|items|sep|break|continue|return|switch|case|default|attempt|recover|visit|recurse|fallback|stop|escape|noescape|compress|foreach))(?![\\w.-])",
+      "beginCaptures": {
+        "1": {
+          "name": "punctuation.definition.tag.begin.ftl"
+        },
+        "2": {
+          "name": "keyword.control.directive.ftl"
+        }
+      },
+      "end": "(/)?(>)",
+      "endCaptures": {
+        "1": {
+          "name": "punctuation.definition.tag.end.ftl"
+        },
+        "2": {
+          "name": "punctuation.definition.tag.end.ftl"
+        }
+      },
+      "patterns": [
+        {
+          "include": "#expression"
+        }
+      ]
+    },
+    "directive-other": {
+      "name": "meta.ftl.directive",
+      "begin": "(<#)([A-Za-z_][\\w.]*)(?![\\w.-])",
+      "beginCaptures": {
+        "1": {
+          "name": "punctuation.definition.tag.begin.ftl"
+        },
+        "2": {
+          "name": "keyword.other.directive.ftl"
+        }
+      },
+      "end": "(/)?(>)",
+      "endCaptures": {
+        "1": {
+          "name": "punctuation.definition.tag.end.ftl"
+        },
+        "2": {
+          "name": "punctuation.definition.tag.end.ftl"
+        }
+      },
+      "patterns": [
+        {
+          "include": "#expression"
+        }
+      ]
+    },
+    "interpolation": {
+      "name": "meta.ftl.interpolation",
+      "begin": "\\$\\{|#\\{",
+      "beginCaptures": {
+        "0": {
+          "name": "punctuation.definition.interpolation.begin.ftl"
+        }
+      },
+      "end": "\\}",
+      "endCaptures": {
+        "0": {
+          "name": "punctuation.definition.interpolation.end.ftl"
+        }
+      },
+      "patterns": [
+        {
+          "include": "#expression"
+        }
+      ]
+    },
+    "string-double": {
+      "name": "string.quoted.double.ftl",
+      "begin": "\"",
+      "end": "\"",
+      "patterns": [
+        {
+          "name": "constant.character.escape.ftl",
+          "match": "\\\\."
+        },
+        {
+          "include": "#interpolation"
+        }
+      ]
+    },
+    "string-single": {
+      "name": "string.quoted.single.ftl",
+      "begin": "'",
+      "end": "'",
+      "patterns": [
+        {
+          "name": "constant.character.escape.ftl",
+          "match": "\\\\."
+        },
+        {
+          "include": "#interpolation"
+        }
+      ]
+    },
+    "expression": {
+      "patterns": [
+        {
+          "include": "#string-double"
+        },
+        {
+          "include": "#string-single"
+        },
+        {
+          "name": "constant.numeric.ftl",
+          "match": "\\b\\d+(?:\\.\\d+)?\\b"
+        },
+        {
+          "name": "constant.language.ftl",
+          "match": "\\b(?:true|false)\\b"
+        },
+        {
+          "name": "keyword.operator.word.ftl",
+          "match": "\\b(?:gt|gte|lt|lte|as|in|using)\\b"
+        },
+        {
+          "match": "(\\?)([A-Za-z_]\\w*)",
+          "captures": {
+            "1": {
+              "name": "keyword.operator.builtin.ftl"
+            },
+            "2": {
+              "name": "support.function.builtin.ftl"
+            }
+          }
+        },
+        {
+          "name": "keyword.operator.ftl",
+          "match": "\\?\\?|\\?"
+        },
+        {
+          "name": "variable.language.ftl",
+          "match": "(?<![\\w\\)\\]\\\"'])\\.[A-Za-z_]\\w*"
+        },
+        {
+          "name": "keyword.operator.ftl",
+          "match": "==|!=|<=|>=|&&|\\|\\||\\.\\.[*<!]?|[-+*/%!=]"
+        },
+        {
+          "name": "punctuation.accessor.ftl",
+          "match": "\\."
+        },
+        {
+          "name": "punctuation.separator.ftl",
+          "match": "[,;:]"
+        },
+        {
+          "name": "variable.other.readwrite.ftl",
+          "match": "[A-Za-z_][\\w$]*"
+        },
+        {
+          "begin": "\\(",
+          "end": "\\)",
+          "patterns": [
+            {
+              "include": "#expression"
+            }
+          ]
+        },
+        {
+          "begin": "\\[",
+          "end": "\\]",
+          "patterns": [
+            {
+              "include": "#expression"
+            }
+          ]
+        },
+        {
+          "begin": "\\{",
+          "end": "\\}",
+          "patterns": [
+            {
+              "include": "#expression"
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

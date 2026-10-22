@@ -43,7 +43,7 @@ class VibeTextMateBundles : TextMateBundleProvider {
      * Список повторён в гейте дистрибутива: бандл, потерянный при упаковке, снаружи неотличим от
      * бандла, которого мы не делали, — редактор просто чёрно-белый.
      */
-    val NAMES: List<String> = listOf("vue", "svelte", "astro", "sass", "stylus")
+    val NAMES: List<String> = listOf("vue", "svelte", "astro", "sass", "stylus", "freemarker")
 
     fun bundlesRoot(): Path? = ServerBinaries.textMateBundlesDir()
   }

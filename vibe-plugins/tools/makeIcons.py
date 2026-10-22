@@ -23,6 +23,7 @@ AGENT = "vibe-plugins/vibe-agent/resources/icons"
 HTTP = "vibe-plugins/vibe-http/resources/icons"
 DB = "vibe-plugins/vibe-db/resources/icons"
 SERVER = "vibe-plugins/vibe-server/resources/icons"
+LSP = "vibe-plugins/vibe-lsp/resources/icons"
 HEADER = "<!-- Copyright 2026 VibeBrains. Use of this source code is governed by the GNU AGPL-3.0 license. -->"
 
 # Каждый значок: имя → (каталог, тело 16×16, тело 20×20). {C} подставляется цветом.
@@ -100,6 +101,16 @@ ICONS = {
         '<rect x="3" y="3" width="14" height="5.6" rx="1.6" stroke="{C}" stroke-width="1.4"/>'
         '<rect x="3" y="11.4" width="14" height="5.6" rx="1.6" stroke="{C}" stroke-width="1.4"/>'
         '<circle cx="6.2" cy="5.8" r="1" fill="{C}"/><circle cx="6.2" cy="14.2" r="1" fill="{C}"/>',
+    ),
+    # Файл FreeMarker: две фигурные скобки и точка между ними — шаблон с местом под значение.
+    # Знак файла в дереве проекта; четвёрка нужна генератору, 20×20 для файла не используется.
+    "vibeFreemarker": (LSP,
+        '<path d="M5.5 2.5C4 2.5 3.5 3.2 3.5 4.5v1.2C3.5 6.6 3 7.6 2 8c1 .4 1.5 1.4 1.5 2.3v1.2c0 1.3.5 2 2 2" stroke="{C}" stroke-width="1" stroke-linecap="round" stroke-linejoin="round"/>'
+        '<path d="M10.5 2.5C12 2.5 12.5 3.2 12.5 4.5v1.2c0 .9.5 1.9 1.5 2.3-1 .4-1.5 1.4-1.5 2.3v1.2c0 1.3-.5 2-2 2" stroke="{C}" stroke-width="1" stroke-linecap="round" stroke-linejoin="round"/>'
+        '<circle cx="8" cy="8" r="1.1" fill="{C}"/>',
+        '<path d="M6.9 3.1C5 3.1 4.4 4 4.4 5.6v1.5c0 1.1-.6 2.4-1.9 2.9 1.3.5 1.9 1.8 1.9 2.9v1.5c0 1.6.6 2.5 2.5 2.5" stroke="{C}" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>'
+        '<path d="M13.1 3.1C15 3.1 15.6 4 15.6 5.6v1.5c0 1.1.6 2.4 1.9 2.9-1.3.5-1.9 1.8-1.9 2.9v1.5c0 1.6-.6 2.5-2.5 2.5" stroke="{C}" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>'
+        '<circle cx="10" cy="10" r="1.4" fill="{C}"/>',
     ),
 }
 

@@ -1,0 +1,28 @@
+{
+  "name": "freemarker",
+  "displayName": "FreeMarker",
+  "version": "1.0.0",
+  "description": "FreeMarker template syntax (angle-bracket form) over HTML or XML, for VibeIDEA. Original grammar by VibeBrains.",
+  "license": "AGPL-3.0-only",
+  "contributes": {
+    "languages": [
+      {
+        "id": "freemarker",
+        "aliases": ["FreeMarker", "ftl"],
+        "extensions": [".ftl", ".ftlh"],
+        "configuration": "./language-configuration.json"
+      },
+      {
+        "id": "freemarker-xml",
+        "aliases": ["FreeMarker (XML)", "ftlx"],
+        "extensions": [".ftlx"],
+        "configuration": "./language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {"scopeName": "source.ftl", "path": "./syntaxes/ftl.tmLanguage.json"},
+      {"language": "freemarker", "scopeName": "text.html.ftl", "path": "./syntaxes/ftl-html.tmLanguage.json"},
+      {"language": "freemarker-xml", "scopeName": "text.xml.ftl", "path": "./syntaxes/ftl-xml.tmLanguage.json"}
+    ]
+  }
+}

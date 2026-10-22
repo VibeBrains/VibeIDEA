@@ -1,0 +1,21 @@
+{
+  "name": "FreeMarker (XML)",
+  "scopeName": "text.xml.ftl",
+  "patterns": [
+    {
+      "include": "source.ftl"
+    },
+    {
+      "include": "text.xml"
+    }
+  ],
+  "injections": {
+    "L:text.xml.ftl (meta.tag | string | source | comment.block.html | comment.block.xml) - (meta.ftl | comment.block.ftl)": {
+      "patterns": [
+        {
+          "include": "source.ftl"
+        }
+      ]
+    }
+  }
+}

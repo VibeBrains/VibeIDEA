@@ -88,7 +88,10 @@ jvm_library(
         "//platform/editor-ui-api:editor-ui",
         "//platform/analysis-api:analysis",
         # Провайдер бандлов реализует интерфейс TextMate — без него тест не соберётся.
+        # Он же отдаёт ядро (токенайзер) и joni: грамматику FreeMarker тест прогоняет настоящим лексером.
         "//plugins/textmate",
+        "//libraries/caffeine",
+        "//platform/util",
         # The id of the Node interpreter page, which the agent module opens, is held against this module's plugin.xml.
         "//vibe-plugins/vibe-agent",
     ],

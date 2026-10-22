@@ -219,7 +219,7 @@ done
 # проверять отгружаемые байты, а не повторять утверждение кода о самом себе. Расхождение ловится
 # ниже сверкой с провайдером.
 TEXTMATE="$APP_PLUGINS/vibe-lsp/textmate"
-for bundle in vue svelte astro sass stylus; do
+for bundle in vue svelte astro sass stylus freemarker; do
   if [ ! -f "$TEXTMATE/$bundle/package.json" ]; then
     say "✖ нет грамматики подсветки: textmate/$bundle — файлы этого языка откроются без цвета"
     fail=1

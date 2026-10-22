@@ -54,6 +54,14 @@ BUNDLES = {
 }
 
 
+# Бандл, написанный нами: tm-grammars FreeMarker не знает, а единственная открытая грамматика из
+# найденных (vs-freemarker, MIT) читает шаблон построчно и не видит `${}` внутри атрибутов, то есть
+# на XML-шаблонах (HL7 CDA) подсвечивает ровно половину. Исходник живёт рядом с плагином, чтобы
+# тест читал те же байты, что уезжают в дистрибутив.
+OWN_BUNDLES = ["freemarker"]
+OWN_BUNDLES_DIR = pathlib.Path(__file__).resolve().parent.parent / "vibe-lsp" / "textmate"
+
+
 def scope_of(path: pathlib.Path) -> str:
     """Имя области — из самой грамматики. Своего мнения об этом у нас нет и быть не может."""
     with path.open(encoding="utf-8") as handle:
@@ -109,6 +117,12 @@ def build(source: pathlib.Path, target: pathlib.Path, version: str) -> None:
             json.dump(manifest, handle, indent=2, ensure_ascii=False)
             handle.write("\n")
 
+    for own in OWN_BUNDLES:
+        src = OWN_BUNDLES_DIR / own
+        if not (src / "package.json").is_file():
+            raise SystemExit(f"✖ собственный бандл {own} не найден: {src}")
+        shutil.copytree(src, target / own)
+
     # Лицензии обязаны ехать рядом с копией: MIT требует этого прямым текстом, а провенанс каждой
     # грамматики (чей репозиторий, чья лицензия) есть только в NOTICE пакета.
     for legal in ("LICENSE", "NOTICE"):
@@ -117,7 +131,8 @@ def build(source: pathlib.Path, target: pathlib.Path, version: str) -> None:
             shutil.copyfile(src, target / f"tm-grammars-{legal}")
     (target / "README.txt").write_text(
         f"TextMate grammars for Vue, Svelte, Astro, Sass and Stylus, from tm-grammars {version}.\n"
-        "The grammars are third-party; their origin and licences are in tm-grammars-NOTICE.\n",
+        "The grammars are third-party; their origin and licences are in tm-grammars-NOTICE.\n"
+        "The freemarker bundle is our own (AGPL-3.0), not from tm-grammars.\n",
         encoding="utf-8",
     )
 
@@ -126,4 +141,4 @@ if __name__ == "__main__":
     if len(sys.argv) != 4:
         raise SystemExit("использование: textmateBundles.py <tm-grammars/package> <каталог бандлов> <версия>")
     build(pathlib.Path(sys.argv[1]), pathlib.Path(sys.argv[2]), sys.argv[3])
-    print(f"  TextMate-бандлы собраны: {', '.join(BUNDLES)}")
+    print(f"  TextMate-бандлы собраны: {', '.join(list(BUNDLES) + OWN_BUNDLES)}")
