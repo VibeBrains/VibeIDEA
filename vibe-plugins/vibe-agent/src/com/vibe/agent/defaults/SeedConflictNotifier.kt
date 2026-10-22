@@ -5,10 +5,12 @@ import com.vibe.agent.i18n.VibeI18n.t
 import com.intellij.diff.DiffContentFactory
 import com.intellij.diff.DiffManager
 import com.intellij.diff.requests.SimpleDiffRequest
+import com.intellij.ide.plugins.PluginManagerCore
 import com.intellij.notification.NotificationAction
 import com.intellij.notification.NotificationGroupManager
 import com.intellij.notification.NotificationType
 import com.intellij.openapi.application.ApplicationManager
+import com.intellij.openapi.extensions.PluginId
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.vfs.LocalFileSystem
 import com.vibe.agent.providers.ProvidersChangeListener
@@ -50,11 +52,16 @@ object SeedConflictNotifier {
     })
 
     val resolved = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
-    notification.addAction(NotificationAction.createSimple(t("seed.conflict.merge")) {
-      showMergeDialog(project, projectBase, vibeDir, SeedMerge.pending(conflicts.map { it.path }, resolved), resolved)
-      // The notice goes once every file has an answer; a file the person cancelled keeps it alive.
-      if (SeedMerge.pending(conflicts.map { it.path }, resolved).isEmpty()) notification.expire()
-    })
+    // The dialog lives in the optional VCS plugin: without it the merge action is not offered at all.
+    if (mergeDialogAvailable()) {
+      notification.addAction(NotificationAction.createSimple(t("seed.conflict.merge")) {
+        val shown = runCatching {
+          showMergeDialog(project, projectBase, vibeDir, SeedMerge.pending(conflicts.map { it.path }, resolved), resolved)
+        }.onFailure { if (it !is LinkageError) throw it }.isSuccess
+        // The notice goes once every file has an answer; a file the person cancelled keeps it alive.
+        if (shown && SeedMerge.pending(conflicts.map { it.path }, resolved).isEmpty()) notification.expire()
+      })
+    }
 
     val toggleOnly = conflicts.filter { canMergeToggles(vibeDir, it.path) }
     if (toggleOnly.isNotEmpty()) {
@@ -120,6 +127,9 @@ object SeedConflictNotifier {
 
     notification.notify(project)
   }
+
+  private fun mergeDialogAvailable(): Boolean =
+    SeedMerge.dialogAvailable(PluginManagerCore.getPlugin(PluginId.getId(SeedMerge.VCS_PLUGIN_ID))?.isEnabled)
 
   private fun showDiff(project: Project, vibeDir: Path, relative: String) {
     val release = VibeDefaults.releaseContent(relative) ?: return

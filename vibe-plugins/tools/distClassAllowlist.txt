@@ -39,3 +39,11 @@ org.jetbrains.plugins.textmate.api.*
 # проверкой isAvailable() (плагин включён) и runCatching; без терминала вход возвращает false,
 # и лента показывает команду для копирования (AgentPanel.terminalSignIn).
 org.jetbrains.plugins.terminal.TerminalToolWindowManager
+
+# VCS: объявленная необязательная зависимость vibe-agent
+# <depends optional="true" config-file="vibe-vcs.xml">intellij.vcs.plugin</depends>
+# (класс лежит в plugins/platform-vcs-plugin/lib/modules/intellij.platform.vcs.impl.jar).
+# Диалог слияния сидов: класс называет только SeedMergeProvider.show, а действие «Смержить» в уведомлении
+# добавляется лишь когда плагин включён (SeedConflictNotifier.mergeDialogAvailable) и обёрнуто в защиту от LinkageError;
+# без плагина остаются «Сравнить», «Обновить» и «Оставить своё».
+com.intellij.openapi.vcs.merge.MultipleFileMergeDialog

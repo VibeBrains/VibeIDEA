@@ -13,6 +13,13 @@ import kotlin.test.assertTrue
 /** What the merge dialog's answer does to the journal, and where the merge base comes from. */
 class SeedMergeTest {
   @Test
+  fun dialogIsOfferedOnlyWithEnabledVcsPlugin() {
+    assertTrue(SeedMerge.dialogAvailable(true))
+    assertFalse(SeedMerge.dialogAvailable(false))
+    assertFalse(SeedMerge.dialogAvailable(null))
+  }
+
+  @Test
   fun missingBaseIsEmptyAndSaidSo() {
     val base = SeedMerge.base(null)
     assertEquals("", base.content)

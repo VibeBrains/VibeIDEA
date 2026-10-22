@@ -17,6 +17,15 @@ object SeedMerge {
    */
   data class Base(val content: String, val known: Boolean)
 
+  /** Id of the plugin that carries the merge dialog classes (`MultipleFileMergeDialog`); see `vibe-vcs.xml`. */
+  const val VCS_PLUGIN_ID = "intellij.vcs.plugin"
+
+  /**
+   * The merge dialog may be touched only when the VCS plugin is installed and enabled: [pluginEnabled] is `null` for
+   * a missing plugin. Without it the notice offers only compare / update / keep mine, never a missing class.
+   */
+  fun dialogAvailable(pluginEnabled: Boolean?): Boolean = pluginEnabled == true
+
   fun base(stored: String?): Base = if (stored != null) Base(stored, true) else Base("", false)
 
   enum class Choice {

@@ -1,0 +1,3 @@
+<idea-plugin>
+  <!-- Intentionally empty: the optional dependency only makes the VCS plugin's classes visible to SeedMergeProvider. -->
+</idea-plugin>
