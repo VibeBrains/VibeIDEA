@@ -1,0 +1,6 @@
+<idea-plugin>
+  <!-- Registered here, not in plugin.xml: the activity touches TaskSettings and loads only when the tasks plugin is on. -->
+  <extensions defaultExtensionNs="com.intellij">
+    <postStartupActivity implementation="com.vibe.agent.tasks.TaskComboStartup"/>
+  </extensions>
+</idea-plugin>

@@ -16,6 +16,8 @@
   <depends optional="true" config-file="vibe-terminal.xml">org.jetbrains.plugins.terminal</depends>
   <!-- The VCS plugin hosts the multiple-file merge dialog for conflicting seeds; without it the merge action is not offered. -->
   <depends optional="true" config-file="vibe-vcs.xml">intellij.vcs.plugin</depends>
+  <!-- The tasks plugin owns the task combo in the toolbar; the first start turns it on in every project. -->
+  <depends optional="true" config-file="vibe-tasks.xml">com.intellij.tasks</depends>
   <applicationListeners>
     <!-- Тема пересоздаёт значения UIManager: без этого ширина скролла в редакторе возвращалась бы
          к платформенным 14 при каждой смене темы. -->

@@ -50,6 +50,8 @@ jvm_library(
         # Conflicts of the shared .vibe set resolve in the platform multiple-file merge dialog.
         "//platform/vcs-api:vcs",
         "//platform/vcs-impl",
+        # Task combo default: TaskSettings of the tasks plugin (optional dependency).
+        "//plugins/tasks/tasks-api:tasks",
         # In-editor review of the agent's edits: the platform line comparison (ByLineRt) without an application behind it.
         "//platform/util/diff",
         "//platform/lang-impl",
