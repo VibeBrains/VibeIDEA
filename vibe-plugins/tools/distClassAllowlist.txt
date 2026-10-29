@@ -47,3 +47,9 @@ org.jetbrains.plugins.terminal.TerminalToolWindowManager
 # добавляется лишь когда плагин включён (SeedConflictNotifier.mergeDialogAvailable) и обёрнуто в защиту от LinkageError;
 # без плагина остаются «Сравнить», «Обновить» и «Оставить своё».
 com.intellij.openapi.vcs.merge.MultipleFileMergeDialog
+# Плагин задач (`com.intellij.tasks`) — необязательная зависимость vibe-agent (`vibe-tasks.xml`): `TaskComboStartup`
+# объявлен только в этом конфиге и грузится лишь при включённом плагине задач; без него виджет задач просто не включается.
+com.intellij.tasks.config.TaskSettings
+# TextMate — необязательная зависимость vibe-lsp (`vibe-textmate-bundles.xml`): `FreeMarkerFileType` объявлен только там
+# и грузится лишь при включённом TextMate; без него .ftl остаётся простым текстом, как до этой возможности.
+org.jetbrains.plugins.textmate.TextMateBackedFileType
