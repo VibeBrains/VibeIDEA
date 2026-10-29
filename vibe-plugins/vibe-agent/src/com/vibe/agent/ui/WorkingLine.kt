@@ -72,7 +72,9 @@ class WorkingLine : JPanel(BorderLayout()) {
       Kind.WAITING -> WAITING_WORDS
     }
     val text = words[word % words.size]()
-    label.text = GLYPHS[frame] + "  " + (detail?.takeIf { it.isNotBlank() }?.let { "$text: $it" } ?: text)
+    val head = GLYPHS[frame] + "  " + (detail?.takeIf { it.isNotBlank() }?.let { "$text: $it" } ?: text)
+    // The hint names the key that stops the turn: the line is where a person looks while waiting.
+    label.text = "$head  ·  ${t("working.hint")}"
   }
 
   private companion object {
@@ -84,7 +86,8 @@ class WorkingLine : JPanel(BorderLayout()) {
     // Не список КЛЮЧЕЙ, а список вызовов каталога: гейт локализации ищет `t("...")` по тексту, и
     // ключ, собранный из списка строк, выглядит для него мёртвым — то есть однажды будет удалён.
     val THINKING_WORDS: List<() -> String> = listOf(
-      { t("working.thinking") }, { t("working.reasoning") }, { t("working.considering") }, { t("working.weighing") })
+      { t("working.thinking") }, { t("working.reasoning") }, { t("working.considering") }, { t("working.weighing") },
+      { t("working.generating") })
     val TOOL_WORDS: List<() -> String> = listOf(
       { t("working.tool") }, { t("working.reading") }, { t("working.preparing") })
     val WAITING_WORDS: List<() -> String> = listOf({ t("working.waiting") }, { t("working.retrying") })

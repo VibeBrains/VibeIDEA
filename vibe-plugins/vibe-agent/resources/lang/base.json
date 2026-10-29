@@ -2794,6 +2794,8 @@
   "wire.workspace.root": "- корень: {path}",
   "wire.workspace.tools": "Корень и имя уже названы выше: не угадывайте их и не просите у человека. Подробности об открытом проекте даёт vibe_project_info; project_resolve — про хранилище памяти VibeMemory, а не про эту папку.",
   "working.considering": "Разбираюсь",
+  "working.generating": "Генерирую ответ",
+  "working.hint": "Esc — отменить",
   "working.preparing": "Готовлю",
   "working.reading": "Читаю",
   "working.reasoning": "Рассуждаю",

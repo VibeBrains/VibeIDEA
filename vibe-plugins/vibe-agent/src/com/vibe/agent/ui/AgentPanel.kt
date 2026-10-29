@@ -4933,6 +4933,8 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
       retryCard?.let { messages.add(it) }
       // A console inside the block of a wave's step went away with that block; it comes back here, in the feed itself.
       terminalConsoles.values.filter { it.parent?.parent == null }.forEach { messages.add(it) }
+      // removeAll() also detached the working line; the running turn keeps saying what it is busy with.
+      workingLine?.let { messages.add(it) }
     }
     val live = if (liveTurnHere) chat.text.toString() else ""
     if (live.isNotEmpty()) {
@@ -6852,11 +6854,33 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     border = JBUI.Borders.empty()
   }
 
+  /**
+   * The working line is the feed's last row, not a row of the turn: every arrival during the turn pushes it down.
+   *
+   * Rows come from a dozen paths (the person's bubble, tool cards, consoles, notices), so the order is settled here,
+   * on each repaint, instead of at every add: a new path cannot forget the line, and a line already last is not moved.
+   */
+  private fun keepWorkingLast() {
+    val line = workingLine ?: return
+    val components = messages.components
+    val current = components.indexOf(line).takeIf { it >= 0 }
+    // A turn of another thread keeps running out of sight: its line belongs to that thread's feed, not to this one.
+    if (turnThreadId != null && turnThreadId != currentThreadId) {
+      if (current != null) messages.remove(line)
+      return
+    }
+    val rows = components.size - (if (current != null) 1 else 0)
+    val target = WorkingLineOrder.targetIndex(rows, current) ?: return
+    if (current != null) messages.remove(line)
+    messages.add(line, target)
+  }
+
   private fun revalidateScroll() {
     // Следование за потоком — при ДВУХ условиях, и второе появилось 18.09.2026. Первое прежнее:
     // человек уже внизу, иначе читающего историю сдёргивало бы каждой дельтой. Второе: ничего не
     // выделено — лента, прыгнувшая вниз посреди протяжки, уводит текст из-под мыши, и выделить
     // хвост длинного ответа становится нельзя. Вернуться вниз — кнопка «в конец».
+    keepWorkingLast()
     val follow = feedEnd.isAtEnd() && !feedSelection.isActive()
     messages.revalidate()
     messages.repaint()
