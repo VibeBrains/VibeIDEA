@@ -124,6 +124,7 @@ object VibeDefaults {
     "skills/anti-slop/evals/human-post.md" to "skills/anti-slop/evals/human-post.md",
     // Brigadier: the on/off switch and the one-off token saving; worker/ connects the external executor.
     "skills/brigadier/SKILL.md" to "skills/brigadier/SKILL.md",
+    "skills/brigadier/evals/evals.json" to "skills/brigadier/evals/evals.json",
     "skills/brigadier/worker/README.md" to "skills/brigadier/worker/README.md",
     "skills/brigadier/worker/providers/deepseek.json" to "skills/brigadier/worker/providers/deepseek.json",
     "skills/brigadier/worker/worker.ps1" to "skills/brigadier/worker/worker.ps1",
@@ -181,6 +182,7 @@ object VibeDefaults {
     "skills/na-paltsah/evals/evals.json" to "skills/na-paltsah/evals/evals.json",
     "skills/na-paltsah/examples/nginx.md" to "skills/na-paltsah/examples/nginx.md",
     "skills/night-work/SKILL.md" to "skills/night-work/SKILL.md",
+    "skills/night-work/evals/evals.json" to "skills/night-work/evals/evals.json",
     "skills/rescue-session/SKILL.md" to "skills/rescue-session/SKILL.md",
     "skills/rescue-session/evals/evals.json" to "skills/rescue-session/evals/evals.json",
     "skills/retro/LICENSE" to "skills/retro/LICENSE",

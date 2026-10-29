@@ -55,6 +55,8 @@
       "auth": "bearer",                  // "bearer" | "none" | "chatgpt" | "google-adc" | {"type":"header","name":"x-api-key"} | {"type":"query","name":"key"}
       "apiKeyEnv": "OLLAMA_API_KEY",     // имя переменной: ищется в <проект>/.vibe/.env → ~/.vibe/.env → окружении ОС
       "apiKeyRef": "ollama",             // или ключ из защищённого хранилища ОС (PasswordSafe), сильнее apiKeyEnv
+      "docsUrl": "https://example.com/docs",  // документация провайдера: ссылка в его карточке на странице «Провайдеры»
+      "apiKeyUrl": "https://example.com/keys", // где получить ключ: ссылка «Получить ключ» рядом с документацией
       "headers": {},                     // статические заголовки
       "query": {},                       // статические query-параметры
       // "params": [{"name": "project"}], // поля карточки (раздел «Поля карточки: params»)

@@ -236,22 +236,31 @@ class VibeProvidersConfigurable(private val project: Project) : Configurable, Co
   }
 
   /**
-   * The provider's hint plus a link to its own documentation when the shared set names one.
+   * The provider's hint plus links to its own documentation and key page when the shared set names them.
    *
-   * `docsUrl` comes from the file, so it is shown where a person already looks for a provider's
-   * outward links; an address read and never shown would be the dead setting the config gate catches.
+   * `docsUrl` and `apiKeyUrl` come from the file, so they are shown where a person already looks for a
+   * provider's outward links; an address read and never shown would be the dead setting the config gate catches.
    */
   private fun cardInfo(hint: JComponent, p: ProviderEntry): JComponent =
     JPanel().apply {
       layout = BoxLayout(this, BoxLayout.Y_AXIS)
       add(hint)
       docsLink(p)?.let { add(it) }
+      apiKeyLink(p)?.let { add(it) }
     }
 
   /** The provider's manual as a link; only http(s), because the shared file is editable by anyone. */
   private fun docsLink(p: ProviderEntry): JComponent? {
     val url = p.docsUrl?.takeIf { it.startsWith("https://") || it.startsWith("http://") } ?: return null
     return com.intellij.ui.components.ActionLink(t("settings.providers.docs")) {
+      com.intellij.ide.BrowserUtil.browse(url)
+    }
+  }
+
+  /** Where to get the provider's key; the same http(s) guard as the documentation link. */
+  private fun apiKeyLink(p: ProviderEntry): JComponent? {
+    val url = p.apiKeyUrl?.takeIf { it.startsWith("https://") || it.startsWith("http://") } ?: return null
+    return com.intellij.ui.components.ActionLink(t("settings.providers.getKey")) {
       com.intellij.ide.BrowserUtil.browse(url)
     }
   }

@@ -2360,6 +2360,7 @@
   "settings.providers.empty": "Активных провайдеров нет. Включите нужные в <code>.vibe/providers/*.jsonc</code> (<code>active: true</code>)<br>или создайте <code>providers.json</code>. Спека — docs/vibe/manuals/providersSpec.md.",
   "settings.providers.emptyCatalogAccepted": "Endpoint ответил, каталог пуст — ключ принят (модели только из файла)",
   "settings.providers.emptyCatalogUnchecked": "Endpoint ответил, но каталог пуст — ключ не проверяется (static-список)",
+  "settings.providers.getKey": "Получить ключ",
   "settings.providers.hint": "<html>Провайдер: {origin} (id: <code>{id}</code>{env}). Введите ключ здесь — он уйдёт в защищённое хранилище ОС, — или задайте его в .vibe/.env.</html>",
   "settings.providers.keyFromEnv": "Ключ найден · источник: переменная окружения {name}",
   "settings.providers.keyFromEnvFile": "Ключ найден · источник: .vibe/.env",

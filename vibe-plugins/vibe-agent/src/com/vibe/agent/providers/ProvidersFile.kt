@@ -210,6 +210,12 @@ data class ProviderEntry(
    * a field nobody shows would be the dead setting the config-fields gate exists to catch.
    */
   val docsUrl: String? = null,
+  /**
+   * Where to get the provider's API key, shown as a link next to the documentation on its card.
+   *
+   * Like [docsUrl], the address belongs to the shared set: it is written once there and only shown here.
+   */
+  val apiKeyUrl: String? = null,
   val origin: ProviderOrigin? = null,
   val quota: QuotaSpec? = null,
   /**
@@ -440,6 +446,7 @@ object ProvidersFile {
       models = models,
       note = o["note"]?.jsonPrimitive?.contentOrNull,
       docsUrl = o["docsUrl"]?.jsonPrimitive?.contentOrNull,
+      apiKeyUrl = o["apiKeyUrl"]?.jsonPrimitive?.contentOrNull,
       quota = parseQuota(o["quota"] as? JsonObject, id, onWarning),
       promptCacheKey = o["promptCacheKey"]?.jsonPrimitive?.booleanOrNull,
       reasoningDialect = parseReasoningDialect(o["reasoningDialect"]?.jsonPrimitive?.contentOrNull, id, onWarning),
@@ -619,6 +626,7 @@ object ProvidersFile {
       note = over.note ?: base.note,
       // Silence inherits, as for every other optional field
       docsUrl = over.docsUrl ?: base.docsUrl,
+      apiKeyUrl = over.apiKeyUrl ?: base.apiKeyUrl,
       quota = over.quota ?: base.quota,
       promptCacheKey = over.promptCacheKey ?: base.promptCacheKey,
       reasoningDialect = over.reasoningDialect ?: base.reasoningDialect,

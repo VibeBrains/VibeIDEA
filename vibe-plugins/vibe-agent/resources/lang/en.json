@@ -2360,6 +2360,7 @@
   "settings.providers.empty": "No active providers. Enable the ones you need in <code>.vibe/providers/*.jsonc</code> (<code>active: true</code>)<br>or create <code>providers.json</code>. Spec: docs/vibe/manuals/providersSpec.md.",
   "settings.providers.emptyCatalogAccepted": "The endpoint answered, the catalogue is empty — the key is accepted (models come from the file)",
   "settings.providers.emptyCatalogUnchecked": "The endpoint answered but the catalogue is empty — the key cannot be verified (static list)",
+  "settings.providers.getKey": "Get a key",
   "settings.providers.hint": "<html>Provider: {origin} (id: <code>{id}</code>{env}). Enter the key here — it goes into the OS secure storage — or set it in .vibe/.env.</html>",
   "settings.providers.keyFromEnv": "Key found · source: environment variable {name}",
   "settings.providers.keyFromEnvFile": "Key found · source: .vibe/.env",
