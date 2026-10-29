@@ -7630,8 +7630,8 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     val line = (listOf(command) + args).joinToString(" ")
     val verdict = ShellSafetyAnalyzer.analyzeLine(line)
     // On autopilot a removal inside the project or a temp folder is taken back by the checkpoint, as in VibeIDE
-    val reversible = verdict != null && com.vibe.agent.mcp.PermissionMode.of(VibeAgentSettings.permissionMode)
-      == com.vibe.agent.mcp.PermissionMode.AUTO && RemovalScope.isReversible(line, project.basePath, cwd)
+    val reversible = verdict != null && com.vibe.agent.mcp.PermissionMode.of(VibeAgentSettings.permissionMode) ==
+      com.vibe.agent.mcp.PermissionMode.AUTO && com.vibe.agent.guard.RemovalScope.isReversible(line, project.basePath, cwd)
     if (verdict != null && !reversible) {
       // The same question in two places: the dialog here and, when the bridge is running, buttons
       // on the phone. A long unattended run otherwise waits silently for someone who left the room.
