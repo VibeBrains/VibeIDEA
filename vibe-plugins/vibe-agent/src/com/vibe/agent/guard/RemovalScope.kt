@@ -1,6 +1,7 @@
 // Copyright 2026 VibeBrains. Use of this source code is governed by the GNU AGPL-3.0 license.
 package com.vibe.agent.guard
 
+import java.nio.file.Files
 import java.nio.file.Path
 
 /**
@@ -40,7 +41,8 @@ object RemovalScope {
       add(project)
       tempRoots.mapNotNullTo(this) { normalize(it).takeIf { p -> p.nameCount > 0 } }
     }
-    if (roots.none { isInside(base, it) }) return false
+    // The working folder may be a root itself (the project root by default), not only something inside one.
+    if (roots.none { isWithin(base, it) }) return false
     // A substitution, a backtick or an unquoted variable can name a second command or a target this rule never sees
     if (line.contains('$') || line.contains('`')) return false
     val segments = ShellSafetyAnalyzer.splitSegments(line)
@@ -75,7 +77,26 @@ object RemovalScope {
     "/var/tmp",
   )
 
-  private fun normalize(path: String): Path = Path.of(path.replace('\\', '/')).toAbsolutePath().normalize()
+  private fun normalize(path: String): Path = canonical(Path.of(path.replace('\\', '/')).toAbsolutePath())
+
+  /**
+   * The closest real path: symlinks in the existing part are resolved, the rest is kept as written.
+   *
+   * macOS gives `/tmp` and `/var/folders` as links to `/private/...`, so a target inside a temp folder and the
+   * temp folder itself would otherwise be compared as two unrelated strings. A path that does not exist yet
+   * (`/work/project/build`) is resolved through its deepest existing ancestor.
+   */
+  private fun canonical(path: Path): Path {
+    val missing = ArrayList<Path>()
+    var existing: Path? = path
+    while (existing != null && !Files.exists(existing)) {
+      existing.fileName?.let(missing::add)
+      existing = existing.parent
+    }
+    // `..` is resolved while walking, so a link followed by `..` is judged where the shell would land.
+    val real = existing?.let { runCatching { it.toRealPath() }.getOrNull() } ?: return path.normalize()
+    return missing.asReversed().fold(real) { acc, part -> acc.resolve(part) }.normalize()
+  }
 
   /**
    * The folder relative targets are read from.
@@ -85,8 +106,8 @@ object RemovalScope {
    */
   private fun workingBase(cwd: String?, project: Path): Path? = runCatching {
     val path = cwd?.takeIf { it.isNotBlank() }?.let { Path.of(it.replace('\\', '/')) }
-    if (path == null || !path.isAbsolute) project.resolve(path ?: Path.of("")) else path
-  }.getOrNull()?.toAbsolutePath()?.normalize()
+    canonical(if (path == null || !path.isAbsolute) project.resolve(path ?: Path.of("")) else path)
+  }.getOrNull()
 
   private fun baseName(token: String): String = token.substringAfterLast('/').substringAfterLast('\\')
 
@@ -101,8 +122,12 @@ object RemovalScope {
 
   private fun resolve(base: Path, target: String): Path? = runCatching {
     val path = Path.of(target.replace('\\', '/'))
-    (if (path.isAbsolute) path else base.resolve(path)).normalize()
+    canonical(if (path.isAbsolute) path else base.resolve(path))
   }.getOrNull()
 
+  /** The root itself or anything below it: where a folder is allowed to sit. */
+  private fun isWithin(child: Path, root: Path): Boolean = child == root || child.startsWith(root)
+
+  /** Strictly below the root: what a removal is allowed to touch. */
   private fun isInside(child: Path, root: Path): Boolean = child != root && child.startsWith(root)
 }

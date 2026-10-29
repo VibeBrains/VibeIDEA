@@ -59,8 +59,10 @@ object ProjectFiles {
    * and without that case every walk would descend into `node_modules` and find nothing to skip.
    */
   fun skips(relativePath: String): Boolean {
-    val lower = relativePath.lowercase().replace('\\', '/')
-    return SKIP.any { lower == it || lower.startsWith("$it/") || lower.contains("/$it/") }
+    val segments = relativePath.lowercase().replace('\\', '/').split('/')
+    // Every segment counts, including the last: a walk prunes by the directory it is about to enter,
+    // and that path (`app/build`) has no child to match against.
+    return segments.any { it in SKIP }
   }
 
   const val MAX_FILE_CHARS = 400_000
