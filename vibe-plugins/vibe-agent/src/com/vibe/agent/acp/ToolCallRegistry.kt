@@ -52,8 +52,9 @@ data class ToolCall(
   /** ACP `content` entries of type `diff`: what the agent's own edit tool is about to write or has written. */
   var diffs: List<ToolDiff> = emptyList(),
 ) {
-  val isRunning: Boolean get() = status == STATUS_PENDING || status == STATUS_IN_PROGRESS
-  val isDone: Boolean get() = status == STATUS_COMPLETED || status == STATUS_FAILED
+  val isOpen: Boolean get() = status == STATUS_PENDING || status == STATUS_IN_PROGRESS
+  val isRunning: Boolean get() = isOpen
+  val isDone: Boolean get() = status == STATUS_COMPLETED || status == STATUS_FAILED || status == STATUS_CANCELLED
 
   /** Raw params as `name → string value` for the privacy filter and hook payload. */
   fun rawParamsFlat(): Map<String, String?> {
@@ -104,6 +105,14 @@ data class ToolCall(
     const val STATUS_IN_PROGRESS = "in_progress"
     const val STATUS_COMPLETED = "completed"
     const val STATUS_FAILED = "failed"
+
+    /**
+     * A call the agent never closed: the turn ended while it was still pending or in progress
+     *
+     * ACP knows four statuses and none of them says «nobody reported an end». Leaving the call open would keep a card
+     * spinning in a turn that is over and keep the audit log short of the call, so the turn's end says so itself.
+     */
+    const val STATUS_CANCELLED = "cancelled"
   }
 }
 
@@ -175,6 +184,23 @@ class ToolCallRegistry {
     locationsOf(update)?.let { call.locations = it }
     diffsOf(update)?.let { call.diffs = it }
     return call
+  }
+
+  /**
+   * Closes every call that is still open, and returns the ones it closed so the caller can record them.
+   *
+   * The turn's end is the fact that no more frames are coming: a session that died, a cancelled run or an adapter
+   * that dropped the last update would otherwise leave the call in progress for good. Called once per turn, before the
+   * next [reset] — the caller owns the turn's lifetime, the registry only holds the calls.
+   */
+  fun settleOpen(): List<ToolCall> {
+    val settled = ArrayList<ToolCall>()
+    for (call in byId.values) {
+      if (!call.isOpen) continue
+      call.status = ToolCall.STATUS_CANCELLED
+      settled.add(call)
+    }
+    return settled
   }
 
   /** An update without diff entries (a text-only `content`) leaves the diffs announced earlier as they were */

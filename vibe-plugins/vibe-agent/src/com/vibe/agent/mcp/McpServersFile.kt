@@ -114,6 +114,16 @@ object McpServersFile {
   fun loadLayers(projectBase: String?, home: String = System.getProperty("user.home")): Merged =
     merge(load(userPath(home)), load(pathIn(projectBase)))
 
+  /**
+   * The servers that may actually be started: the shared file always, the project's only when the project is trusted
+   *
+   * A project file arrives with a clone, and starting its command before the person said the folder is trusted would
+   * let a repository run code by being opened. The settings page still reads and shows the project file — seeing a
+   * server is not running it. VibeIDE draws the same line (`Workspace Trust`).
+   */
+  fun loadRunnable(projectBase: String?, projectTrusted: Boolean, home: String = System.getProperty("user.home")): Merged =
+    loadLayers(projectBase.takeIf { projectTrusted }, home)
+
   private fun load(path: Path?): Parsed {
     if (path == null || !Files.isRegularFile(path)) return EMPTY
     val text = runCatching { Files.readString(path) }.getOrElse { return Parsed(emptyList(), listOf(Complaint(Problem.UNREADABLE))) }

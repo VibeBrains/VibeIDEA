@@ -43,6 +43,24 @@ class ToolCallRegistryTest {
   }
 
   @Test
+  fun `the end of a turn closes the calls the agent never finished`() {
+    val reg = ToolCallRegistry()
+    reg.onToolCall(frame("""{"toolCallId":"open","title":"Bash","status":"in_progress"}"""))
+    reg.onToolCall(frame("""{"toolCallId":"done","title":"Read","status":"completed"}"""))
+    reg.onToolCall(frame("""{"toolCallId":"bad","title":"Edit","status":"failed"}"""))
+
+    assertEquals(listOf("open"), reg.settleOpen().map { it.id })
+    assertEquals(ToolCall.STATUS_CANCELLED, reg["open"]?.status)
+    assertTrue(reg["open"]!!.isDone)
+    assertTrue(!reg["open"]!!.isOpen)
+    // A reported end is a fact of the agent and is left as it was
+    assertEquals(ToolCall.STATUS_COMPLETED, reg["done"]?.status)
+    assertEquals(ToolCall.STATUS_FAILED, reg["bad"]?.status)
+    // Nothing is left to settle on a second call, so the end of a turn cannot rewrite the record twice
+    assertTrue(reg.settleOpen().isEmpty())
+  }
+
+  @Test
   fun terminalIdCapturedFromMeta() {
     val reg = ToolCallRegistry()
     reg.onToolCall(frame("""{"toolCallId":"t1","name":"Bash","status":"pending","_meta":{"terminal_info":{"terminal_id":"term-7"}}}"""))

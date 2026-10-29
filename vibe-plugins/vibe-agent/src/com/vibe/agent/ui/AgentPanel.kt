@@ -37,6 +37,7 @@ import com.vibe.agent.gates.VerifyGateDecision
 import com.vibe.agent.gates.VerifyGatePolicy
 import com.vibe.agent.gates.VerifyGateRunner
 import com.vibe.agent.gates.VibeBreakerService
+import com.vibe.agent.guard.RemovalScope
 import com.vibe.agent.guard.ShellSafetyAnalyzer
 import com.vibe.agent.hooks.HookDecision
 import com.vibe.agent.hooks.HookEvent
@@ -241,7 +242,11 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
    * Kept apart from [directTools] so that the settings page can read their state and restart one: it reaches them through [VibeMcpServers]
    */
   private val ownServers = com.vibe.agent.mcp.ConfiguredServersSource(
-    servers = { com.vibe.agent.mcp.McpServersFile.loadLayers(project.basePath).servers },
+    // A project file arrives with a clone; starting it before the folder is trusted would run a repository's command
+    servers = {
+      com.vibe.agent.mcp.McpServersFile.loadRunnable(
+        project.basePath, com.intellij.ide.trustedProjects.TrustedProjects.isProjectTrusted(project)).servers
+    },
     workingDir = project.basePath?.let { java.nio.file.Path.of(it) },
     clientVersion = com.intellij.openapi.application.ApplicationInfo.getInstance().fullVersion,
     onFailure = { failures -> failures.forEach { systemLine(t("mcp.servers.problem", "text" to it), CONFIG, WARNING) } },
@@ -1140,7 +1145,8 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
    * меньше — это часы поисков «почему инструмент пропал».
    */
   override fun configuredServers(): List<Map<String, Any>> {
-    val merged = com.vibe.agent.mcp.McpServersFile.loadLayers(project.basePath)
+    val merged = com.vibe.agent.mcp.McpServersFile.loadRunnable(
+      project.basePath, com.intellij.ide.trustedProjects.TrustedProjects.isProjectTrusted(project))
     merged.allProblems.forEach { (layer, complaint) -> systemLine(com.vibe.agent.mcp.McpFileText.line(layer, complaint), CONFIG, WARNING) }
     // A `tools` allowlist is a restriction the person wrote; a guest agent starts the server itself and would see every tool
     val (filtered, unfiltered) = merged.servers.filterNot { it.disabled }.partition { it.toolsFiltered }
@@ -2915,6 +2921,12 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
       externalRuns.remove(it)?.let { runId ->
         runs.finished(runId, com.vibe.agent.runs.AgentRunLedger.Status.COMPLETED, t("chat.turnFinished"))
       }
+    }
+    // No more frames are coming: a call the agent never closed would stay in progress for good, its card spinning
+    // and its terminal console live. The end of the turn settles it, and the audit says the end was not reported
+    for (call in turns.chat.toolCalls.settleOpen()) {
+      call.terminalId?.let { id -> SwingUtilities.invokeLater { terminalConsoles[id]?.finishIfRunning() } }
+      auditToolCall(AuditEvent.Action.TOOL_CALL_DONE, call, turns.chat)
     }
     status.set(if (breakers.isBlocking()) VibeAgentStatusService.State.BLOCKED else VibeAgentStatusService.State.IDLE)
     if (disposed) return
@@ -6691,7 +6703,10 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
   private fun restoreFolder(cp: com.vibe.agent.checkpoints.Checkpoint, rollback: com.vibe.agent.checkpoints.FolderRollback, done: (Boolean) -> Unit) {
     val service = checkpoints ?: return
     ApplicationManager.getApplication().executeOnPooledThread {
-      done(service.restore(cp, rollback.plan))
+      val restored = service.restore(cp, rollback.plan)
+      // The folder is back to the snapshot, so every journal entry now describes a state that no longer exists
+      if (restored) journal().forgetAll()
+      done(restored)
       ApplicationManager.getApplication().invokeLater {
         com.intellij.openapi.vfs.VfsUtil.markDirtyAndRefresh(true, true, true, com.intellij.openapi.vfs.LocalFileSystem.getInstance().findFileByPath(project.basePath!!))
       }
@@ -7290,7 +7305,8 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
       ts = System.currentTimeMillis(),
       action = action,
       actor = agentActor(turn),
-      ok = call.status != ToolCall.STATUS_FAILED,
+      // Only a reported completion is a success: a call the turn had to settle says so in the record
+      ok = call.status == ToolCall.STATUS_COMPLETED,
       callId = call.id,
       turnId = turnId, sessionId = turnThreadId ?: currentThreadId,
       files = target?.let { listOf(it) },
@@ -7611,8 +7627,12 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
       turn.signals.add(com.vibe.agent.guard.Trifecta.Signal.OUTBOUND_CHANNEL)
     }
     // Destructive-command gate: same deterministic classifier as VibeIDE, asked before execution.
-    val verdict = ShellSafetyAnalyzer.analyzeLine((listOf(command) + args).joinToString(" "))
-    if (verdict != null) {
+    val line = (listOf(command) + args).joinToString(" ")
+    val verdict = ShellSafetyAnalyzer.analyzeLine(line)
+    // On autopilot a removal inside the project or a temp folder is taken back by the checkpoint, as in VibeIDE
+    val reversible = verdict != null && com.vibe.agent.mcp.PermissionMode.of(VibeAgentSettings.permissionMode)
+      == com.vibe.agent.mcp.PermissionMode.AUTO && RemovalScope.isReversible(line, project.basePath, cwd)
+    if (verdict != null && !reversible) {
       // The same question in two places: the dialog here and, when the bridge is running, buttons
       // on the phone. A long unattended run otherwise waits silently for someone who left the room.
       val body = t("chat.destructive.body",

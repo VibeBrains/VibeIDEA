@@ -76,4 +76,14 @@ class AgentEditJournalTest {
     assertEquals("стало", file.readText())
     assertTrue(journal().isEmpty())
   }
+
+  @Test
+  fun `a folder rollback forgets every entry, files left as the rollback made them`() {
+    file.writeText("было")
+    journal().record(file.path, "было", "стало")
+    journal().forgetAll()
+    assertTrue(journal().isEmpty())
+    assertEquals("было", file.readText(), "forgetting must not touch the file a second time")
+    assertTrue(journal().reject(file.path) is AgentEditJournal.Revert.Failed, "there is nothing left to reject")
+  }
 }

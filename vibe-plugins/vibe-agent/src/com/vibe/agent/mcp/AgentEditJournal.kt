@@ -63,7 +63,15 @@ class AgentEditJournal(private val onRefresh: (File) -> Unit = {}) {
     if (removed != null) announce(Change.Removed(path))
   }
 
-  fun acceptAll() {
+  fun acceptAll() = forgetAll()
+
+  /**
+   * Drops every entry without touching the files
+   *
+   * A rollback of the whole folder (`/undo`, a rewind) has already put the old text back, so the entries describe
+   * a state that no longer exists: keeping them would offer «reject» for an edit that is already gone.
+   */
+  fun forgetAll() {
     val paths = order.toList()
     entries.clear()
     order.clear()
