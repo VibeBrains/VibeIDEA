@@ -47,6 +47,22 @@ class SeedsSmokeTest {
   }
 
   @Test
+  fun `описания навыков набора не показывают служебные символы YAML`() {
+    // The set writes a description with a colon in quotes and the party skill as a folded block;
+    // a reader that keeps the quotes or the `>` puts them in the skill popup.
+    val broken = StringBuilder()
+    for (id in skillIds()) {
+      val text = resource("skills/$id/SKILL.md") ?: continue
+      val description = SkillPackage.parse(id, text).description ?: continue
+      if (description.startsWith(">") || description.startsWith("|")) broken.append("\n  $id: $description")
+      val quoted = description.length >= 2 &&
+        ((description.startsWith('"') && description.endsWith('"')) || (description.startsWith('\'') && description.endsWith('\'')))
+      if (quoted) broken.append("\n  $id: $description")
+    }
+    if (broken.isNotEmpty()) fail("описание навыка осталось YAML-значением, а не текстом:$broken")
+  }
+
+  @Test
   fun `пайплайны набора читаются загрузчиком продукта`() {
     val text = resource("pipelines.json") ?: fail("нет pipelines.json")
     // Через настоящий загрузчик, а не через свой разбор JSON: неизвестная роль, половина адреса

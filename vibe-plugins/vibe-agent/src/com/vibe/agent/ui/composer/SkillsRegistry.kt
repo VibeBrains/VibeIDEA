@@ -2,6 +2,7 @@
 package com.vibe.agent.ui.composer
 
 import com.vibe.agent.i18n.VibeI18n.t
+import com.vibe.agent.skills.SkillPackage
 
 
 /**
@@ -33,27 +34,15 @@ object SkillsRegistry {
 
   /** Pure and testable: frontmatter `description:` wins, else the first plain text line. */
   fun parseDescription(text: String): String {
-    val lines = text.lines()
-    if (lines.firstOrNull()?.trim() == "---") {
-      for (line in lines.drop(1)) {
-        if (line.trim() == "---") break
-        val match = FRONTMATTER_DESCRIPTION.find(line) ?: continue
-        return clean(match.groupValues[1])
-      }
-    }
-    val body = if (lines.firstOrNull()?.trim() == "---") {
-      val end = lines.drop(1).indexOfFirst { it.trim() == "---" }
-      if (end >= 0) lines.drop(end + 2) else lines
-    }
-    else lines
-    val firstText = body.firstOrNull { it.isNotBlank() && !it.trimStart().startsWith("#") } ?: return ""
-    return clean(firstText)
+    // The skill package parser already knows quoted and block YAML scalars; a second reader here would drift from it.
+    val pkg = SkillPackage.parse("", text)
+    val description = pkg.description
+      ?: pkg.body.lineSequence().firstOrNull { it.isNotBlank() && !it.trimStart().startsWith("#") }.orEmpty()
+    return clean(description)
   }
 
   private fun clean(raw: String): String {
-    val text = raw.trim().removeSurrounding("\"").removeSurrounding("'").trim()
+    val text = raw.trim()
     return if (text.length <= DESCRIPTION_LIMIT) text else text.take(DESCRIPTION_LIMIT) + "…"
   }
-
-  private val FRONTMATTER_DESCRIPTION = Regex("^description:\\s*(.+)$")
 }

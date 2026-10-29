@@ -1,6 +1,8 @@
 // Copyright 2026 VibeBrains. Use of this source code is governed by the GNU AGPL-3.0 license.
 package com.vibe.agent.context
 
+import com.vibe.agent.util.YamlHeader
+
 /**
  * Project rules the agent must obey: `.vibe/rules` (the family's own folder) and `.cursor/rules` files with the `.mdc`
  * extension (and the legacy `.cursorrules`)
@@ -113,16 +115,29 @@ object ProjectRules {
       if (colon <= 0) continue
       val key = line.substring(0, colon).trim().lowercase()
       val raw = line.substring(colon + 1).trim()
-      val value = raw.trim('"', '\'')
+      // A quoted scalar loses its quotes here, a block scalar consumes the indented lines below.
+      val parsed = YamlHeader.read(raw, lines, index)
+      val value = parsed.text
       when (key) {
         "description" -> description = value.ifBlank { null }
-        "globs" -> { globs = splitList(listValue(raw, lines, index)); index = skipDashItems(raw, lines, index) }
+        "globs" -> {
+          if (YamlHeader.isBlock(raw)) globs = splitList(value)
+          else {
+            globs = splitList(listValue(raw, lines, index))
+            index = skipDashItems(raw, lines, index)
+          }
+        }
         "triggers" -> {
-          triggers = splitList(listValue(raw, lines, index)).map { it.lowercase() }
-          index = skipDashItems(raw, lines, index)
+          if (YamlHeader.isBlock(raw)) triggers = splitList(value).map { it.lowercase() }
+          else {
+            triggers = splitList(listValue(raw, lines, index)).map { it.lowercase() }
+            index = skipDashItems(raw, lines, index)
+          }
         }
         "alwaysapply" -> always = value.equals("true", ignoreCase = true)
       }
+      // Block lines belong to the key that opened them, never to the next key.
+      index = maxOf(index, parsed.next)
     }
     return Rule(name, dir, description, globs, always, body, source, triggers)
   }

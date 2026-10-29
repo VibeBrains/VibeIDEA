@@ -74,4 +74,21 @@ class SkillPackageTest {
     val flow = SkillPackage.parse("x", "---\nname: x\nallowed-tools: [Bash, 'Read']\n---\nтело")
     assertEquals("Bash, Read", flow.field("allowed-tools"))
   }
+
+  @Test
+  fun `quoted descriptions lose quotes and expand escapes`() {
+    val double = "---\nname: x\ndescription: \"say \\\"hi\\\" at C:\\\\tmp\\nnext\"\n---\nтело"
+    assertEquals("say \"hi\" at C:\\tmp\nnext", SkillPackage.parse("x", double).description)
+    val single = "---\nname: x\ndescription: 'it''s: fine'\n---\nтело"
+    assertEquals("it's: fine", SkillPackage.parse("x", single).description)
+  }
+
+  @Test
+  fun `folded and literal descriptions are values, not markers`() {
+    val folded = SkillPackage.parse("x", "---\nname: x\ndescription: >\n  Throw or join\n  a party.\n---\nтело")
+    assertEquals("Throw or join a party.", folded.description)
+    assertEquals("Throw or join a party.", folded.field("description"))
+    val literal = SkillPackage.parse("x", "---\nname: x\ndescription: |\n  Первая\n  Вторая\n---\nтело")
+    assertEquals("Первая\nВторая", literal.description)
+  }
 }

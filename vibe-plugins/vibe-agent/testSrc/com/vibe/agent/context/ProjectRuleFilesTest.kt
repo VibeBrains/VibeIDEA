@@ -159,13 +159,13 @@ class ProjectRuleFilesTest {
   fun `засеянное правило бригадир лежит в vibe rules и ждёт вызова по имени`() {
     val base = project()
     VibeDefaults.seed(base.toString())
-    assertTrue(Files.isRegularFile(base.resolve(".vibe/rules/brigadir-ekonomiya-tokenov.mdc")))
+    assertTrue(Files.isRegularFile(base.resolve(".vibe/rules/brigadier.mdc")))
     val rules = ProjectRuleFiles.read(base)
-    val brigadir = rules.first { it.name == "brigadir-ekonomiya-tokenov" }
-    assertTrue(brigadir.requestedOnly, "по умолчанию правило выключено")
+    val brigadier = rules.first { it.name == "brigadier" }
+    assertTrue(brigadier.requestedOnly, "по умолчанию правило выключено")
     val quiet = ProjectRules.applicable(rules, emptyList(), "обычный вопрос").map { it.name }
-    assertFalse("brigadir-ekonomiya-tokenov" in quiet)
-    val called = ProjectRules.applicable(rules, emptyList(), "включи @brigadir-ekonomiya-tokenov").map { it.name }
-    assertTrue("brigadir-ekonomiya-tokenov" in called)
+    assertFalse("brigadier" in quiet)
+    val called = ProjectRules.applicable(rules, emptyList(), "включи @brigadier").map { it.name }
+    assertTrue("brigadier" in called)
   }
 }

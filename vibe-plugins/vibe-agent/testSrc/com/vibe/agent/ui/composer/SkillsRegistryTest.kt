@@ -19,6 +19,14 @@ class SkillsRegistryTest {
   }
 
   @Test
+  fun `folded and quoted frontmatter descriptions reach the popup as text`() {
+    val folded = "---\nname: party\ndescription: >\n  Throw or join\n  a party.\n---\n# Заголовок"
+    assertEquals("Throw or join a party.", SkillsRegistry.parseDescription(folded))
+    val quoted = "---\nname: x\ndescription: \"Смотрит видео: любое\"\n---\nТело."
+    assertEquals("Смотрит видео: любое", SkillsRegistry.parseDescription(quoted))
+  }
+
+  @Test
   fun `first plain line when no frontmatter, headings skipped`() {
     val text = "# Скилл\n\nПервая строка описания.\nВторая."
     assertEquals("Первая строка описания.", SkillsRegistry.parseDescription(text))
