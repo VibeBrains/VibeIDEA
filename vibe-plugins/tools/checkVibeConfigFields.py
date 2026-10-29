@@ -113,6 +113,10 @@ FREE_FORM = {'env', 'headers', 'query', 'extraBody', 'params'}
 FREE_FORM_FILES = {'http-client.env.json'}
 
 SEED_ROOT = 'vibe-plugins/vibe-agent/resources/vibeDefaults/'
+
+# Профили внешнего исполнителя навыка brigadier: их читает worker.sh навыка, а не IDE, и
+# контракт их полей живёт в README навыка. Наши парсеры настроек их не разбирают и не должны.
+WORKER_PROFILES = 'skills/brigadier/worker/'
 PRODUCTS_FILE = SEED_ROOT + 'products.json'
 
 
@@ -206,6 +210,8 @@ def check_seeds():
     for path in SEEDS:
         name = path.split('/')[-1]
         if name in SERVICE_FILES or path[len(SEED_ROOT):] in nobody:
+            continue
+        if path[len(SEED_ROOT):].startswith(WORKER_PROFILES):
             continue
         if name in FREE_FORM_FILES:
             free_form_hit.add(name)

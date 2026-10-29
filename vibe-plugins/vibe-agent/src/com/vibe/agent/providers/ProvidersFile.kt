@@ -204,7 +204,7 @@ data class ProviderEntry(
   val models: List<ModelEntry> = emptyList(),
   val note: String? = null,
   /**
-   * The provider's own documentation, opened as a link from its card on the Провайдеры page.
+   * The provider's own documentation, opened as a link from its card on the Providers settings page.
    *
    * The set is shared, so the address of the vendor's manual is written once there and read here;
    * a field nobody shows would be the dead setting the config-fields gate exists to catch.
