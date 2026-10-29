@@ -2356,6 +2356,7 @@
   "settings.providers.checkTooltip": "Ask the provider's model catalogue with the entered key and, if it is accepted, store it in the OS keychain",
   "settings.providers.checkAdcTooltip": "Ask the model catalogue with the Application Default Credentials token and the filled-in parameters",
   "settings.providers.checking": "Checking…",
+  "settings.providers.docs": "Documentation",
   "settings.providers.empty": "No active providers. Enable the ones you need in <code>.vibe/providers/*.jsonc</code> (<code>active: true</code>)<br>or create <code>providers.json</code>. Spec: docs/vibe/manuals/providersSpec.md.",
   "settings.providers.emptyCatalogAccepted": "The endpoint answered, the catalogue is empty — the key is accepted (models come from the file)",
   "settings.providers.emptyCatalogUnchecked": "The endpoint answered but the catalogue is empty — the key cannot be verified (static list)",

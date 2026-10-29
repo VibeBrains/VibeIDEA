@@ -2356,6 +2356,7 @@
   "settings.providers.checkTooltip": "Запросить каталог моделей введённым ключом и, если провайдер его принял, сохранить в хранилище ОС",
   "settings.providers.checkAdcTooltip": "Запросить каталог моделей с токеном Application Default Credentials и заполненными параметрами",
   "settings.providers.checking": "Проверяю…",
+  "settings.providers.docs": "Документация",
   "settings.providers.empty": "Активных провайдеров нет. Включите нужные в <code>.vibe/providers/*.jsonc</code> (<code>active: true</code>)<br>или создайте <code>providers.json</code>. Спека — docs/vibe/manuals/providersSpec.md.",
   "settings.providers.emptyCatalogAccepted": "Endpoint ответил, каталог пуст — ключ принят (модели только из файла)",
   "settings.providers.emptyCatalogUnchecked": "Endpoint ответил, но каталог пуст — ключ не проверяется (static-список)",

@@ -60,12 +60,23 @@ class VibeDefaultsTest {
     // Every seeded file parsed cleanly — a JSONC typo anywhere in the catalog shows up here.
     assertTrue(warnings.isEmpty(), "warnings=$warnings")
     // Keys never live in the files: every provider that needs one names where it comes from.
-    // Local endpoints (auth "none") legitimately need no key at all.
+    // A credential that is not a key is not named in the file either: local endpoints (`none`),
+    // the ChatGPT plan's sign-in token (`chatgpt`) and the Google account's OAuth token from
+    // Application Default Credentials (`google-adc`) all work without one.
     for (p in providers) {
       assertTrue(!p.baseURL.isNullOrBlank(), "provider '${p.id}' has no baseURL")
-      if (p.auth.type == "none") continue
+      if (p.auth.type in KEYLESS_AUTH) continue
       assertTrue(p.apiKeyEnv != null || p.apiKeyRef != null, "provider '${p.id}' has no key source")
     }
+  }
+
+  private companion object {
+    /** Auth types whose credential is not an API key from `apiKeyEnv` / `apiKeyRef`. */
+    val KEYLESS_AUTH = setOf(
+      com.vibe.agent.providers.AuthSpec.NONE,
+      com.vibe.agent.providers.AuthSpec.CHATGPT,
+      com.vibe.agent.providers.AuthSpec.GOOGLE_ADC,
+    )
   }
 
   @Test
@@ -94,8 +105,15 @@ class VibeDefaultsTest {
     // тоже: иначе первый же файл соседа в общем наборе красит этот гейт и вынуждает нас
     // засеять чужое. Сегодня адресации в наборе нет и множество пусто.
     val foreign = resources.filterNot { VibeDefaults.addressedToUs(it) }.toSet()
+    // The set carries material for its own maintainers. Since VibeBrains 361b9cf these are the
+    // top-level `docs/` (manuals) and `tools/` (rulesToAgentsMd.mjs) — they are outside
+    // versions.json and the seeder walks MANIFEST only, so they never reach a project. Requiring
+    // a manifest entry for them would demand seeding what is deliberately not seeded.
+    val setOwnMaterial = resources.filter { it.startsWith("docs/") || it.startsWith("tools/") }.toSet()
+    assertEquals(emptySet(), manifest.intersect(setOwnMaterial),
+                 "сеялка не должна засевать служебные каталоги docs/ и tools/ набора")
     // Set-metadata files (deprecated.json) serve the seeders and are never seeded.
-    assertEquals(emptySet(), resources - manifest - VibeDefaults.SET_METADATA - foreign,
+    assertEquals(emptySet(), resources - manifest - VibeDefaults.SET_METADATA - foreign - setOwnMaterial,
                  "ресурс без записи в манифесте — не будет засеян")
     assertEquals(emptySet(), manifest.filterNot { VibeDefaults.addressedToUs(it) }.toSet(),
                  "манифест засевает файл, адресованный другому продукту")

@@ -111,7 +111,7 @@ class VibeProvidersConfigurable(private val project: Project) : Configurable, Co
       val card = JPanel(BorderLayout(0, JBUI.scale(4))).apply {
         border = IdeBorderFactory.createTitledBorder(p.name, false)
         add(top, BorderLayout.NORTH)
-        add(hint, BorderLayout.CENTER)
+        add(cardInfo(hint, p), BorderLayout.CENTER)
         add(status, BorderLayout.SOUTH)
       }
       val cardState = Card(p, field, status, initiallyStored = false, params = paramFields)
@@ -191,6 +191,7 @@ class VibeProvidersConfigurable(private val project: Project) : Configurable, Co
         add(signIn)
         add(signOut)
         add(usage)
+        docsLink(p)?.let { add(it) }
       }, BorderLayout.NORTH)
       add(SettingsUi.hint(t("chatgpt.settings.hint", "id" to p.id)).apply {
         font = com.intellij.util.ui.JBFont.label().deriveFont(11f)
@@ -223,15 +224,36 @@ class VibeProvidersConfigurable(private val project: Project) : Configurable, Co
     val card = JPanel(BorderLayout(0, JBUI.scale(4))).apply {
       border = IdeBorderFactory.createTitledBorder(p.name, false)
       add(top, BorderLayout.NORTH)
-      add(SettingsUi.hint(t("settings.providers.adcHint", "id" to p.id)).apply {
+      add(cardInfo(SettingsUi.hint(t("settings.providers.adcHint", "id" to p.id)).apply {
         font = com.intellij.util.ui.JBFont.label().deriveFont(11f)
-      }, BorderLayout.CENTER)
+      }, p), BorderLayout.CENTER)
       add(status, BorderLayout.SOUTH)
     }
     val state = Card(p, null, status, initiallyStored = false, params = paramFields)
     test.addActionListener { verify(state, status) }
     cards.add(state)
     return card
+  }
+
+  /**
+   * The provider's hint plus a link to its own documentation when the shared set names one.
+   *
+   * `docsUrl` comes from the file, so it is shown where a person already looks for a provider's
+   * outward links; an address read and never shown would be the dead setting the config gate catches.
+   */
+  private fun cardInfo(hint: JComponent, p: ProviderEntry): JComponent =
+    JPanel().apply {
+      layout = BoxLayout(this, BoxLayout.Y_AXIS)
+      add(hint)
+      docsLink(p)?.let { add(it) }
+    }
+
+  /** The provider's manual as a link; only http(s), because the shared file is editable by anyone. */
+  private fun docsLink(p: ProviderEntry): JComponent? {
+    val url = p.docsUrl?.takeIf { it.startsWith("https://") || it.startsWith("http://") } ?: return null
+    return com.intellij.ui.components.ActionLink(t("settings.providers.docs")) {
+      com.intellij.ide.BrowserUtil.browse(url)
+    }
   }
 
   /** Rows of `params`: the declared label, the entered value and the declaration's explanation as a tooltip. */

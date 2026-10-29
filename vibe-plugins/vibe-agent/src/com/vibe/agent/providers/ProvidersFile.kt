@@ -203,6 +203,13 @@ data class ProviderEntry(
   val modelsFetch: ModelsFetch? = null,
   val models: List<ModelEntry> = emptyList(),
   val note: String? = null,
+  /**
+   * The provider's own documentation, opened as a link from its card on the Провайдеры page.
+   *
+   * The set is shared, so the address of the vendor's manual is written once there and read here;
+   * a field nobody shows would be the dead setting the config-fields gate exists to catch.
+   */
+  val docsUrl: String? = null,
   val origin: ProviderOrigin? = null,
   val quota: QuotaSpec? = null,
   /**
@@ -432,6 +439,7 @@ object ProvidersFile {
       modelsFetch = modelsFetch,
       models = models,
       note = o["note"]?.jsonPrimitive?.contentOrNull,
+      docsUrl = o["docsUrl"]?.jsonPrimitive?.contentOrNull,
       quota = parseQuota(o["quota"] as? JsonObject, id, onWarning),
       promptCacheKey = o["promptCacheKey"]?.jsonPrimitive?.booleanOrNull,
       reasoningDialect = parseReasoningDialect(o["reasoningDialect"]?.jsonPrimitive?.contentOrNull, id, onWarning),
@@ -609,6 +617,8 @@ object ProvidersFile {
       modelsFetch = over.modelsFetch ?: base.modelsFetch,
       models = mergedModels.values.toList(),
       note = over.note ?: base.note,
+      // Silence inherits, as for every other optional field
+      docsUrl = over.docsUrl ?: base.docsUrl,
       quota = over.quota ?: base.quota,
       promptCacheKey = over.promptCacheKey ?: base.promptCacheKey,
       reasoningDialect = over.reasoningDialect ?: base.reasoningDialect,

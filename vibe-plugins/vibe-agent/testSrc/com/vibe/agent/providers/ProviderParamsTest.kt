@@ -42,7 +42,9 @@ class ProviderParamsTest {
     val entry = provider("""[{"name":"region","default":"us-central1"},{"name":"project","default":"demo"}]""")
     val prepared = ProviderParams.prepare(entry, mapOf("region" to "europe-west1"))
     assertEquals("https://europe-west1.example/v1", prepared?.baseURL)
-    assertEquals("https://demo.example/v1", ProviderParams.prepare(entry, emptyMap())?.baseURL)
+    // Nobody entered anything: the address gets the default of the parameter it names (`region`),
+    // not the default of the other declared parameter (`project`, "demo").
+    assertEquals("https://us-central1.example/v1", ProviderParams.prepare(entry, emptyMap())?.baseURL)
   }
 
   @Test
@@ -66,7 +68,10 @@ class ProviderParamsTest {
     assertEquals(mapOf("X-Combined" to "Bearer "), prepared.headers)
     // An optional placeholder inside a longer value becomes empty, it does not remove the value
     assertFalse(prepared.headers.containsKey("X-Token"))
-    assertEquals(mapOf("X-Token" to "t"), ProviderParams.prepare(entry, mapOf("token" to "t"))!!.headers)
+    // Filled in, the longer value is sent with the value in it: only the whole-value placeholder
+    // was ever eligible for dropping.
+    assertEquals(mapOf("X-Token" to "t", "X-Combined" to "Bearer t"),
+                 ProviderParams.prepare(entry, mapOf("token" to "t"))!!.headers)
   }
 
   @Test

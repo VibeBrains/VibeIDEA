@@ -75,6 +75,11 @@
         "timeoutMs": { "type": "integer", "minimum": 1, "description": "Сколько ждать начала ответа, мс." },
         "extends": { "type": "string", "description": "id записи, от которой унаследовать поля." },
         "note": { "type": "string" },
+        "docsUrl": {
+          "type": "string",
+          "format": "uri",
+          "description": "Ссылка на документацию провайдера: открывается из его карточки на странице «Провайдеры»."
+        },
         "products": {
           "description": "Кому адресована запись: \"vibeidea\", \"vibeide\", \"vibecli\"; нет поля — всем.",
           "type": ["string", "array"],
