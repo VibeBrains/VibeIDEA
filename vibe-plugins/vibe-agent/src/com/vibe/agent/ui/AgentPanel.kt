@@ -6092,7 +6092,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
         }
         ApplicationManager.getApplication().executeOnPooledThread {
           try {
-            val models = llm.listModels(resolved, p.modelsFetch?.url)
+            val models = llm.listModels(resolved, resolved.entry.modelsFetch?.url)
             val entry = ModelCatalogCache.entryOf(p, models, System.currentTimeMillis())
             fresh[p.id] = entry
             updated += p.id

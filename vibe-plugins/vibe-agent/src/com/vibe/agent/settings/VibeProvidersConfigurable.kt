@@ -8,6 +8,7 @@ import com.intellij.openapi.project.Project
 import com.intellij.ui.IdeBorderFactory
 import com.intellij.ui.components.JBLabel
 import com.intellij.ui.components.JBPasswordField
+import com.intellij.ui.components.JBTextField
 import com.intellij.util.ui.JBUI
 import com.vibe.agent.providers.ApiKeyResolver
 import com.vibe.agent.providers.AuthSpec
@@ -15,6 +16,9 @@ import com.vibe.agent.providers.CatalogReport
 import com.vibe.agent.providers.LlmClient
 import com.vibe.agent.providers.ProviderOrigin
 import com.vibe.agent.providers.ProviderEntry
+import com.vibe.agent.providers.ProviderParam
+import com.vibe.agent.providers.ProviderParamStore
+import com.vibe.agent.providers.ProviderParams
 import com.vibe.agent.providers.ProvidersChangeListener
 import com.vibe.agent.providers.ProvidersService
 import java.awt.BorderLayout
@@ -23,6 +27,7 @@ import javax.swing.BoxLayout
 import javax.swing.JButton
 import javax.swing.JComponent
 import javax.swing.JPanel
+import javax.swing.JTextField
 import javax.swing.SwingUtilities
 
 /**
@@ -37,7 +42,17 @@ class VibeProvidersConfigurable(private val project: Project) : Configurable, Co
   /** [initiallyStored] guards deletion: an empty field only deletes a key the card SHOWED as stored —
    *  otherwise a twin card sharing the same apiKeyRef (OpenCode Go/Zen) would wipe the key its
    *  sibling just saved during the same apply. */
-  private class Card(val provider: ProviderEntry, val field: JBPasswordField, val status: JBLabel, var initiallyStored: Boolean)
+  private class Card(
+    val provider: ProviderEntry,
+    /** Null for a provider that has no key to type: `google-adc` takes its token from Application Default Credentials. */
+    val field: JBPasswordField?,
+    val status: JBLabel,
+    var initiallyStored: Boolean,
+    val params: List<ParamField> = emptyList(),
+  )
+
+  /** One `params` entry of the provider card: what the file declares and where the person types the value. */
+  private class ParamField(val spec: ProviderParam, val field: JTextField, var initial: String)
   private val cards = ArrayList<Card>()
   private val llm = LlmClient()
 
@@ -51,8 +66,13 @@ class VibeProvidersConfigurable(private val project: Project) : Configurable, Co
     }
     for (p in providers) {
       // A ChatGPT plan has no key to type: the card signs in instead
-      if (p.auth.type == com.vibe.agent.providers.AuthSpec.CHATGPT) {
+      if (p.auth.type == AuthSpec.CHATGPT) {
         list.add(chatGptCard(p))
+        continue
+      }
+      // ADC has no key to type: the card shows the token source and the parameters the file asks for
+      if (p.auth.type == AuthSpec.GOOGLE_ADC) {
+        list.add(adcCard(p))
         continue
       }
       val field = JBPasswordField()
@@ -79,16 +99,22 @@ class VibeProvidersConfigurable(private val project: Project) : Configurable, Co
                                    "env" to (p.apiKeyEnv?.let { " · env: <code>$it</code>" } ?: ""))).apply {
         font = com.intellij.util.ui.JBFont.label().deriveFont(11f)
       }
-      val card = JPanel(BorderLayout(0, JBUI.scale(4))).apply {
-        border = IdeBorderFactory.createTitledBorder(p.name, false)
+      val (paramsView, paramFields) = paramsPanel(p)
+      val top = JPanel().apply {
+        layout = BoxLayout(this, BoxLayout.Y_AXIS)
         add(JPanel(BorderLayout(JBUI.scale(6), 0)).apply {
           add(field, BorderLayout.CENTER)
           add(test, BorderLayout.EAST)
-        }, BorderLayout.NORTH)
+        })
+        if (paramsView != null) add(paramsView)
+      }
+      val card = JPanel(BorderLayout(0, JBUI.scale(4))).apply {
+        border = IdeBorderFactory.createTitledBorder(p.name, false)
+        add(top, BorderLayout.NORTH)
         add(hint, BorderLayout.CENTER)
         add(status, BorderLayout.SOUTH)
       }
-      val cardState = Card(p, field, status, initiallyStored = false)
+      val cardState = Card(p, field, status, initiallyStored = false, params = paramFields)
       test.addActionListener { verify(cardState, status) }
       cards.add(cardState)
       list.add(card)
@@ -173,6 +199,58 @@ class VibeProvidersConfigurable(private val project: Project) : Configurable, Co
     }
   }
 
+  /**
+   * The card of a provider that authenticates with Google Application Default Credentials.
+   *
+   * There is no key to type: the token is taken from the credentials `gcloud auth application-default login`
+   * leaves on the machine. The card therefore carries the parameters the file asks for and a check button.
+   */
+  private fun adcCard(p: ProviderEntry): JComponent {
+    val status = JBLabel(t("settings.providers.adcStatus")).apply {
+      font = com.intellij.util.ui.JBFont.label().deriveFont(11f)
+      foreground = com.intellij.ui.JBColor.GRAY
+      minimumSize = Dimension(0, 0)
+    }
+    val test = JButton(t("settings.providers.check")).apply {
+      toolTipText = t("settings.providers.checkAdcTooltip")
+    }
+    val (paramsView, paramFields) = paramsPanel(p)
+    val top = JPanel().apply {
+      layout = BoxLayout(this, BoxLayout.Y_AXIS)
+      add(JPanel(java.awt.FlowLayout(java.awt.FlowLayout.LEFT, JBUI.scale(6), 0)).apply { add(test) })
+      if (paramsView != null) add(paramsView)
+    }
+    val card = JPanel(BorderLayout(0, JBUI.scale(4))).apply {
+      border = IdeBorderFactory.createTitledBorder(p.name, false)
+      add(top, BorderLayout.NORTH)
+      add(SettingsUi.hint(t("settings.providers.adcHint", "id" to p.id)).apply {
+        font = com.intellij.util.ui.JBFont.label().deriveFont(11f)
+      }, BorderLayout.CENTER)
+      add(status, BorderLayout.SOUTH)
+    }
+    val state = Card(p, null, status, initiallyStored = false, params = paramFields)
+    test.addActionListener { verify(state, status) }
+    cards.add(state)
+    return card
+  }
+
+  /** Rows of `params`: the declared label, the entered value and the declaration's explanation as a tooltip. */
+  private fun paramsPanel(p: ProviderEntry): Pair<JComponent?, List<ParamField>> {
+    if (p.params.isEmpty()) return null to emptyList()
+    val stored = ProviderParamStore.values(p)
+    val rows = JPanel().apply { layout = BoxLayout(this, BoxLayout.Y_AXIS) }
+    val fields = p.params.map { spec ->
+      val initial = stored[spec.name].orEmpty()
+      val input = JBTextField(initial).apply { toolTipText = spec.description }
+      rows.add(JPanel(BorderLayout(JBUI.scale(6), JBUI.scale(2))).apply {
+        add(JBLabel(spec.label ?: spec.name), BorderLayout.WEST)
+        add(input, BorderLayout.CENTER)
+      })
+      ParamField(spec, input, initial)
+    }
+    return rows to fields
+  }
+
   /** Fills every card's key state off the EDT — see the note in createComponent. */
   private fun loadKeyStatesInBackground() {
     val snapshot = cards.toList()
@@ -180,14 +258,16 @@ class VibeProvidersConfigurable(private val project: Project) : Configurable, Co
       // hasStoredKey, а не storedKey: странице нужен ответ «есть ли ключ», а не сам ключ. Чтение
       // значения вызывает диалог связки НА КАЖДОГО провайдера при открытии страницы — владелец
       // получал их подряд, ничего не попросив (20.09.2026).
-      val states = snapshot.map { it to ApiKeyResolver.hasStoredKey(it.provider) }
-      val lines = snapshot.associateWith { sourceLine(it.provider) }
+      val states = snapshot.map { card -> card to (card.field != null && ApiKeyResolver.hasStoredKey(card.provider)) }
+      val lines = snapshot.associateWith {
+        if (it.provider.auth.type == AuthSpec.GOOGLE_ADC) t("settings.providers.adcStatus") else sourceLine(it.provider)
+      }
       SwingUtilities.invokeLater {
         if (project.isDisposed) return@invokeLater
         for ((card, stored) in states) {
           card.initiallyStored = stored
           // Не затираем то, что пользователь успел набрать, пока читалось хранилище.
-          if (stored && String(card.field.password).isEmpty()) card.field.text = STORED_PLACEHOLDER
+          if (stored && card.field != null && String(card.field.password).isEmpty()) card.field.text = STORED_PLACEHOLDER
           card.status.text = lines[card] ?: ""
         }
       }
@@ -219,21 +299,27 @@ class VibeProvidersConfigurable(private val project: Project) : Configurable, Co
    */
   private fun verify(card: Card, status: JBLabel) {
     val p = card.provider
-    val typed = String(card.field.password).takeIf { it.isNotEmpty() && it != STORED_PLACEHOLDER }
+    val typed = card.field?.let { String(it.password).takeIf { v -> v.isNotEmpty() && v != STORED_PLACEHOLDER } }
+    // The fields are used as typed, not as applied: «check» must test what the person is looking at.
+    val entered = card.params.associate { it.spec.name to it.field.text }
     status.text = t("settings.providers.checking")
     ApplicationManager.getApplication().executeOnPooledThread {
-      val resolved = ProvidersService.resolve(p, project.basePath) { }?.let {
+      val resolved = ProvidersService.resolve(p, project.basePath, entered = entered) { }?.let {
         if (typed != null) it.copy(apiKey = typed) else it
       }
       // The key takes part in the request only when the provider authenticates at all: with auth
       // "none" (local servers) the catalog answers an empty key too, so "the key is valid" would lie.
       val keyUsed = resolved != null && resolved.apiKey != null && p.auth.type != AuthSpec.NONE
       var ok = false
+      val missing = ProviderParams.missing(p, entered)
       val text = when {
+        resolved == null && missing.isNotEmpty() ->
+          t("settings.providers.paramsMissing", "names" to missing.joinToString(", ") { it.label ?: it.name })
         resolved == null -> t("settings.providers.noBaseUrl")
+        resolved.missingKey && p.auth.type == AuthSpec.GOOGLE_ADC -> t("settings.providers.adcMissing")
         resolved.missingKey -> sourceLine(p)
         else -> try {
-          val n = llm.listModels(resolved, p.modelsFetch?.url).size
+          val n = llm.listModels(resolved, resolved.entry.modelsFetch?.url).size
           ok = true
           when {
             n > 0 && keyUsed -> t("settings.providers.keyValid", "count" to n)
@@ -252,7 +338,7 @@ class VibeProvidersConfigurable(private val project: Project) : Configurable, Co
         status.text = text
         // Сохраняем только на EDT и только если пользователь не тронул поле, пока шёл запрос:
         // иначе медленный ответ воскрешал бы стёртый ключ или затирал только что введённый.
-        val fieldUnchanged = String(card.field.password) == (typed ?: "")
+        val fieldUnchanged = card.field == null || String(card.field.password) == (typed ?: "")
         if (ok && typed != null && fieldUnchanged) {
           ApiKeyResolver.storeKey(p, typed)
           // Общий apiKeyRef (OpenCode Go/Zen) = одна запись в хранилище: близнецы должны
@@ -261,7 +347,9 @@ class VibeProvidersConfigurable(private val project: Project) : Configurable, Co
           val ref = p.apiKeyRef ?: p.id
           for (twin in cards.filter { (it.provider.apiKeyRef ?: it.provider.id) == ref }) {
             twin.initiallyStored = true
-            if (String(twin.field.password).isEmpty() || twin === card) twin.field.text = STORED_PLACEHOLDER
+            if (twin.field != null && (String(twin.field.password).isEmpty() || twin === card)) {
+              twin.field.text = STORED_PLACEHOLDER
+            }
             twin.status.text = sourceLine(twin.provider)
           }
           status.text = t("settings.providers.keySaved", "status" to text)
@@ -272,24 +360,42 @@ class VibeProvidersConfigurable(private val project: Project) : Configurable, Co
   }
 
   override fun isModified(): Boolean = cards.any { c ->
-    val v = String(c.field.password)
-    (v != STORED_PLACEHOLDER && v.isNotEmpty()) || (v.isEmpty() && c.initiallyStored)
+    val keyChanged = c.field?.let { field ->
+      val v = String(field.password)
+      (v != STORED_PLACEHOLDER && v.isNotEmpty()) || (v.isEmpty() && c.initiallyStored)
+    } ?: false
+    keyChanged || c.params.any { it.field.text != it.initial }
   }
 
   override fun apply() {
     var changed = false
     for (c in cards) {
-      val value = String(c.field.password)
-      when {
-        value == STORED_PLACEHOLDER -> {}
-        value.isEmpty() -> if (c.initiallyStored) { ApiKeyResolver.storeKey(c.provider, null); changed = true }
-        else -> { ApiKeyResolver.storeKey(c.provider, value); c.field.text = STORED_PLACEHOLDER; changed = true }
+      val value = c.field?.let { String(it.password) }
+      when (value) {
+        null, STORED_PLACEHOLDER -> {}
+        "" -> if (c.initiallyStored) { ApiKeyResolver.storeKey(c.provider, null); changed = true }
+        else -> {
+          ApiKeyResolver.storeKey(c.provider, value)
+          c.field?.text = STORED_PLACEHOLDER
+          changed = true
+        }
       }
-      c.initiallyStored = ApiKeyResolver.hasStoredKey(c.provider)
-      if (c.initiallyStored && String(c.field.password).isEmpty()) c.field.text = STORED_PLACEHOLDER
-      c.status.text = sourceLine(c.provider)
+      if (c.field != null) {
+        c.initiallyStored = ApiKeyResolver.hasStoredKey(c.provider)
+        if (c.initiallyStored && String(c.field.password).isEmpty()) c.field.text = STORED_PLACEHOLDER
+      }
+      for (param in c.params) {
+        val entered = param.field.text
+        if (entered != param.initial) {
+          ProviderParamStore.store(c.provider.id, param.spec.name, entered)
+          param.initial = entered
+          changed = true
+        }
+      }
+      c.status.text = if (c.provider.auth.type == AuthSpec.GOOGLE_ADC) t("settings.providers.adcStatus")
+                       else sourceLine(c.provider)
     }
-    // Let open panels re-read the registry and pull model catalogs with the fresh key.
+    // Let open panels re-read the registry and pull model catalogs with the fresh key and values.
     if (changed) project.messageBus.syncPublisher(ProvidersChangeListener.TOPIC).providersChanged()
   }
 

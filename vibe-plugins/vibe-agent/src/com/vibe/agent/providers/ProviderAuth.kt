@@ -51,6 +51,8 @@ object ProviderAuth {
       AuthSpec.NONE -> NOTHING
       // The sign-in's access token, the way the vendor takes it on any wire
       AuthSpec.CHATGPT -> bearer(key)
+      // The Google account's OAuth token, likewise: an Authorization header and nothing else
+      AuthSpec.GOOGLE_ADC -> bearer(key)
       AuthSpec.QUERY -> Placement(emptyMap(), mapOf((declared.name ?: DEFAULT_KEY_PARAM) to key))
       AuthSpec.HEADER -> header(declared.name ?: native ?: DEFAULT_KEY_HEADER, key)
       // `bearer` and anything unrecognised (warned about at load)

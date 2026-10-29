@@ -193,7 +193,7 @@ class VibeModelsConfigurable(private val project: Project) : Configurable, Confi
         val ticket = tickets.getValue(p.id)
         ApplicationManager.getApplication().executeOnPooledThread {
           val models = try {
-            llm.listModels(resolved, p.modelsFetch?.url)
+            llm.listModels(resolved, resolved.entry.modelsFetch?.url)
           }
           catch (e: Exception) {
             answer(page, p.id, ticket) { ModelsPage.Source.Failed(e.message?.take(REASON_CHARS) ?: e.javaClass.simpleName) }

@@ -126,7 +126,8 @@ data class ModelEntry(
 
 /**
  * How the key reaches the endpoint: `bearer` (the default), `header` and `query` under [name], `none` — never sent,
- * `chatgpt` — no key at all: the access token of a ChatGPT sign-in as Bearer, of the [account] named or the only one
+ * `chatgpt` — no key at all: the access token of a ChatGPT sign-in as Bearer, of the [account] named or the only one,
+ * `google-adc` — no key either: a Google OAuth token from Application Default Credentials, sent as Bearer
  * An unrecognised type is read as `bearer` and warned about at load ([ProvidersFile.parse])
  */
 data class AuthSpec(val type: String = BEARER, val name: String? = null, val account: String? = null) {
@@ -136,9 +137,28 @@ data class AuthSpec(val type: String = BEARER, val name: String? = null, val acc
     const val QUERY = "query"
     const val NONE = "none"
     const val CHATGPT = "chatgpt"
-    val KNOWN = setOf(BEARER, HEADER, QUERY, NONE, CHATGPT)
+    const val GOOGLE_ADC = "google-adc"
+    val KNOWN = setOf(BEARER, HEADER, QUERY, NONE, CHATGPT, GOOGLE_ADC)
   }
 }
+
+/**
+ * A value the person enters in the provider card, written in the file as `params`.
+ *
+ * The address, the catalog URL and the static headers and query may carry `{name}` placeholders.
+ * An entered value wins over [default]; a parameter that has neither and is not [optional] leaves
+ * the provider configured for no request at all. `as: "headers"` means the value is a JSON object
+ * of headers merged into the request rather than a string substituted into a template.
+ */
+data class ProviderParam(
+  val name: String,
+  val label: String? = null,
+  val description: String? = null,
+  val default: String? = null,
+  val optional: Boolean = false,
+  /** `as: "headers"`: the value is a JSON object of headers, merged into `headers` as written. */
+  val headers: Boolean = false,
+)
 
 /** Which providers.json the entry ultimately came from (set after merge, not parsed). */
 enum class ProviderOrigin { GLOBAL, PROJECT, OVERRIDDEN }
@@ -172,6 +192,11 @@ data class ProviderEntry(
   val apiKeyRef: String? = null,
   val headers: Map<String, String> = emptyMap(),
   val query: Map<String, String> = emptyMap(),
+  /**
+   * Values the person fills in the provider card; `{name}` placeholders in the address, the catalog URL,
+   * the headers and the query are substituted from them ([ProviderParams]). Values live in IDE settings, never here.
+   */
+  val params: List<ProviderParam> = emptyList(),
   val timeoutMs: Long? = null,
   val extendsId: String? = null,
   /** models.fetch: absent = null (counts as enabled, `<baseURL>/models`); explicit true/false/URL survive overlays. */
@@ -401,6 +426,7 @@ object ProvidersFile {
       apiKeyRef = o["apiKeyRef"]?.jsonPrimitive?.contentOrNull,
       headers = o["headers"]?.jsonObject?.mapValues { it.value.jsonPrimitive.content } ?: emptyMap(),
       query = o["query"]?.jsonObject?.mapValues { it.value.jsonPrimitive.content } ?: emptyMap(),
+      params = parseParams(o["params"]),
       timeoutMs = o["timeoutMs"]?.jsonPrimitive?.contentOrNull?.toLongOrNull(),
       extendsId = o["extends"]?.jsonPrimitive?.contentOrNull,
       modelsFetch = modelsFetch,
@@ -411,6 +437,35 @@ object ProvidersFile {
       reasoningDialect = parseReasoningDialect(o["reasoningDialect"]?.jsonPrimitive?.contentOrNull, id, onWarning),
       runsLocally = o["runsLocally"]?.jsonPrimitive?.booleanOrNull,
     )
+  }
+
+  /**
+   * `params` — either a list of `{ "name": … }` objects or an object keyed by parameter name.
+   *
+   * Both spellings are read because the set is shared: a shape we do not recognise would leave
+   * `{region}` in the address literally, which is exactly the failure this field exists to prevent.
+   */
+  private fun parseParams(el: kotlinx.serialization.json.JsonElement?): List<ProviderParam> {
+    fun param(name: String, o: JsonObject) = ProviderParam(
+      name = name,
+      label = o["label"]?.jsonPrimitive?.contentOrNull ?: o["title"]?.jsonPrimitive?.contentOrNull,
+      description = o["description"]?.jsonPrimitive?.contentOrNull,
+      default = o["default"]?.jsonPrimitive?.contentOrNull,
+      optional = o["optional"]?.jsonPrimitive?.booleanOrNull ?: false,
+      headers = o["as"]?.jsonPrimitive?.contentOrNull == "headers",
+    )
+    return when (el) {
+      null -> emptyList()
+      is kotlinx.serialization.json.JsonArray -> el.mapNotNull { item ->
+        val o = item as? JsonObject ?: return@mapNotNull null
+        val name = o["name"]?.jsonPrimitive?.contentOrNull?.trim() ?: return@mapNotNull null
+        name.takeIf { it.isNotEmpty() }?.let { param(it, o) }
+      }
+      is JsonObject -> el.mapNotNull { (name, value) ->
+        name.trim().takeIf { it.isNotEmpty() }?.let { param(it, value as? JsonObject ?: JsonObject(emptyMap())) }
+      }
+      else -> emptyList()
+    }
   }
 
   /** An unknown dialect is dropped aloud: sent as the wire's spelling, it would look like a dial that works. */
@@ -545,6 +600,8 @@ object ProvidersFile {
       apiKeyRef = over.apiKeyRef ?: base.apiKeyRef,
       headers = base.headers + over.headers,
       query = base.query + over.query,
+      // Silence inherits the declarations, as for every other optional field
+      params = over.params.ifEmpty { base.params },
       timeoutMs = over.timeoutMs ?: base.timeoutMs,
       // An unresolved `extends` must survive layer merges: the single strict pass runs
       // over the fully merged registry, so the base may live in another file or scope.

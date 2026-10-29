@@ -200,21 +200,35 @@ object ProvidersService {
    *   и провайдер без известного ключа возвращается с `apiKey = null` — фон его пропустит, а диалога
    *   с паролем человек не увидит. Настоящий запрос человека идёт с `quiet = false`.
    */
-  fun resolve(entry: ProviderEntry, projectBase: String?, quiet: Boolean = false, onWarning: (String) -> Unit): ResolvedProvider? {
-    val base = entry.baseURL
+  fun resolve(
+    entry: ProviderEntry,
+    projectBase: String?,
+    quiet: Boolean = false,
+    entered: Map<String, String> = ProviderParamStore.values(entry),
+    onWarning: (String) -> Unit,
+  ): ResolvedProvider? {
+    // Placeholders are filled before anything looks at the address: a literal `{region}` would go to the vendor
+    val prepared = ProviderParams.prepare(entry, entered) ?: run {
+      val names = ProviderParams.missing(entry, entered).joinToString(", ") { it.label ?: it.name }
+      onWarning(t("providers.warn.paramsMissing", "id" to entry.id, "names" to names))
+      return null
+    }
+    val base = prepared.baseURL
     if (base.isNullOrBlank()) {
       onWarning(t("providers.warn.noBaseUrl", "id" to entry.id))
       return null
     }
-    val protocol = protocolFor(entry.protocol)
+    val protocol = protocolFor(prepared.protocol)
     val key = when {
       // No key behind a ChatGPT sign-in: the account's access token, refreshed when it ran out
-      entry.auth.type == AuthSpec.CHATGPT -> com.vibe.agent.providers.chatgpt.ChatGptSession.accessToken(entry.auth.account, quiet)
-      quiet -> ApiKeyResolver.resolveQuietly(entry, projectBase)
-      else -> ApiKeyResolver.resolve(entry, projectBase)
+      prepared.auth.type == AuthSpec.CHATGPT -> com.vibe.agent.providers.chatgpt.ChatGptSession.accessToken(prepared.auth.account, quiet)
+      // No key behind ADC either: the Google account's OAuth token, refreshed shortly before it expires
+      prepared.auth.type == AuthSpec.GOOGLE_ADC -> GoogleAdc.accessToken(prepared.id, onWarning)
+      quiet -> ApiKeyResolver.resolveQuietly(prepared, projectBase)
+      else -> ApiKeyResolver.resolve(prepared, projectBase)
     }
     return ResolvedProvider(
-      entry = entry,
+      entry = prepared,
       protocol = protocol,
       baseUrl = base,
       apiKey = key,
