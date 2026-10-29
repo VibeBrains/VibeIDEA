@@ -47,10 +47,20 @@ object ProjectFiles {
 
   /** Pure part: is this path one of ours, by directory and extension? */
   fun matches(relativePath: String, extensions: Set<String>): Boolean {
-    val lower = relativePath.lowercase()
-    if (SKIP.any { lower.startsWith("$it/") || lower.contains("/$it/") }) return false
-    val extension = lower.substringAfterLast('.', "")
+    if (skips(relativePath)) return false
+    val extension = relativePath.lowercase().substringAfterLast('.', "")
     return extension.isNotEmpty() && extension in extensions
+  }
+
+  /**
+   * Pure part: does this path lie in a directory nobody wants — a file inside one, or the directory itself?
+   *
+   * The directory itself counts because a walk prunes subtrees by the path of the directory it is about to enter,
+   * and without that case every walk would descend into `node_modules` and find nothing to skip.
+   */
+  fun skips(relativePath: String): Boolean {
+    val lower = relativePath.lowercase().replace('\\', '/')
+    return SKIP.any { lower == it || lower.startsWith("$it/") || lower.contains("/$it/") }
   }
 
   const val MAX_FILE_CHARS = 400_000

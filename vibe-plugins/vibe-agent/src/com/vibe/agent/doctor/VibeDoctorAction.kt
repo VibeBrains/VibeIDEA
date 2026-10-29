@@ -469,6 +469,9 @@ class VibeDoctorAction : AnAction({ t("doctor.action") }) {
                                  if (rules.isEmpty()) VibeDiagnosis.State.WARN else VibeDiagnosis.State.OK,
                                  rules.size.toString()))
 
+    // Rules come from files, and a file of instructions the project did not add reads exactly like one it did.
+    lines.add(instructionFilesLine(base))
+
     val knowledge = com.vibe.agent.knowledge.KnowledgeIndex.getInstance(project).entries()
     lines.add(VibeDiagnosis.Line(t("doctor.line.knowledge"),
                                  if (knowledge.isEmpty()) VibeDiagnosis.State.WARN else VibeDiagnosis.State.OK,
@@ -504,6 +507,58 @@ class VibeDoctorAction : AnAction({ t("doctor.action") }) {
    */
   private fun priceSource(notice: com.vibe.agent.providers.PriceValidity.Notice): String =
     notice.note?.takeIf { it.isNotBlank() }?.let { " · " + t("price.source", "note" to it) } ?: ""
+
+  /**
+   * Instruction files an agent obeys although the project never added them: one above the root, or one git does not
+   * track. A file that came with an archive, a sync folder or a download is an instruction nobody wrote on purpose.
+   */
+  private fun instructionFilesLine(base: String?): VibeDiagnosis.Line {
+    val name = t("doctor.line.instructionFiles")
+    if (base == null) return VibeDiagnosis.Line(name, VibeDiagnosis.State.OK, t("doctor.detail.instructionFilesNone"))
+    val root = Path.of(base).toAbsolutePath().normalize()
+    val inside = com.vibe.agent.context.InstructionOrigin.scan(root)
+    // Only the file itself, not a whole folder walk: above the root nothing of ours has a say in what is there.
+    val home = System.getProperty("user.home")?.takeIf { it.isNotBlank() }?.let { Path.of(it) }
+    val above = com.vibe.agent.context.InstructionOrigin.ancestors(root, home)
+      .flatMap { dir -> com.vibe.agent.context.InstructionOrigin.NAMES.map { dir.resolve(it) } }
+      .filter { Files.isRegularFile(it) }
+      .map { it.toString() }
+    val found = com.vibe.agent.context.InstructionOrigin.findings(inside, gitTracked(root, inside), above)
+    val warnings = com.vibe.agent.context.InstructionOrigin.warnings(found)
+    return when {
+      warnings.isEmpty() && found.isEmpty() ->
+        VibeDiagnosis.Line(name, VibeDiagnosis.State.OK, t("doctor.detail.instructionFilesNone"))
+      warnings.isEmpty() ->
+        VibeDiagnosis.Line(name, VibeDiagnosis.State.OK, t("doctor.detail.instructionFilesOk", "count" to found.size))
+      else -> {
+        val first = warnings.first()
+        val what = if (first.scope == com.vibe.agent.context.InstructionOrigin.Scope.ABOVE)
+          t("doctor.instruction.above", "path" to first.path)
+        else t("doctor.instruction.untracked", "path" to first.path)
+        VibeDiagnosis.Line(name, VibeDiagnosis.State.WARN,
+                           t("doctor.detail.instructionFilesWarn", "files" to what, "count" to warnings.size))
+      }
+    }
+  }
+
+  /** What git tracks among [paths], or null when it cannot answer — a guess here accuses a file the person added. */
+  private fun gitTracked(root: Path, paths: List<String>): Set<String>? {
+    if (paths.isEmpty()) return emptySet()
+    return runCatching {
+      // argv, never a shell: the paths are data, and a project folder may contain any character at all
+      val literal = paths.map { ":(literal)$it" }
+      val process = ProcessBuilder(listOf("git", "-C", root.toString(), "ls-files", "-z", "--") + literal)
+        .redirectError(ProcessBuilder.Redirect.DISCARD)
+        .start()
+      if (!process.waitFor(GIT_TIMEOUT_MS, java.util.concurrent.TimeUnit.MILLISECONDS)) {
+        process.destroyForcibly()
+        return null
+      }
+      if (process.exitValue() != 0) return null
+      val output = process.inputStream.bufferedReader().use { it.readText() }
+      com.vibe.agent.context.InstructionOrigin.parseTracked(output)
+    }.getOrNull()
+  }
 
   private fun labels() = object : VibeDiagnosis.Labels {
     override fun header(problems: Int, total: Int) = t("doctor.header", "problems" to problems, "total" to total)
@@ -587,5 +642,8 @@ class VibeDoctorAction : AnAction({ t("doctor.action") }) {
 
     /** Pairs named in the line; the rest is in the audit viewer */
     private const val SUBSTITUTIONS_SHOWN = 3
+
+    /** `git ls-files` on a warm repository answers in milliseconds; a stuck one must not hold the report */
+    private const val GIT_TIMEOUT_MS = 3_000L
   }
 }
