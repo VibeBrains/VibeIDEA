@@ -188,8 +188,6 @@ object VibeDefaults {
     "skills/retro/LICENSE" to "skills/retro/LICENSE",
     "skills/retro/SKILL.md" to "skills/retro/SKILL.md",
     "skills/retro/evals/evals.json" to "skills/retro/evals/evals.json",
-    "skills/save-tokens/SKILL.md" to "skills/save-tokens/SKILL.md",
-    "skills/save-tokens/evals/evals.json" to "skills/save-tokens/evals/evals.json",
     "skills/tdd/LICENSE" to "skills/tdd/LICENSE",
     "skills/tdd/SKILL.md" to "skills/tdd/SKILL.md",
     "skills/tdd/evals/evals.json" to "skills/tdd/evals/evals.json",
