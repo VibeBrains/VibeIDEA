@@ -77,6 +77,7 @@ class VibeAgentConfigurable : Configurable, Configurable.NoScroll {
   private var fimEnabled: JBCheckBox? = null
   private var fimDebounce: JBIntSpinner? = null
   private var fimCache: JBIntSpinner? = null
+  private var seedAuto: JBCheckBox? = null
   private var runLedger: JBCheckBox? = null
   private var runLedgerMax: JBIntSpinner? = null
   private var runLedgerDays: JBIntSpinner? = null
@@ -164,6 +165,7 @@ class VibeAgentConfigurable : Configurable, Configurable.NoScroll {
       .also { fimDebounce = it }
     val fimCacheSize = JBIntSpinner(VibeAgentSettings.fimCacheSize, VibeAgentSettings.MIN_FIM_CACHE_SIZE, VibeAgentSettings.MAX_FIM_CACHE_SIZE)
       .also { fimCache = it }
+    val seedAutoUpdate = JBCheckBox(t("settings.agent.seedAuto"), VibeAgentSettings.seedAutoUpdate).also { seedAuto = it }
     val ledger = JBCheckBox(t("settings.agent.runLedger"), VibeAgentSettings.runLedgerEnabled).also { runLedger = it }
     val ledgerMax = JBIntSpinner(VibeAgentSettings.runLedgerMaxRecords, VibeAgentSettings.MIN_RUN_LEDGER_MAX_RECORDS, VibeAgentSettings.MAX_RUN_LEDGER_MAX_RECORDS)
       .also { runLedgerMax = it }
@@ -301,6 +303,9 @@ class VibeAgentConfigurable : Configurable, Configurable.NoScroll {
       .addLabeledComponent(t("settings.agent.compactKeep"), keep)
       .addComponent(hint(t("settings.agent.hint.compaction")))
       .addComponent(hint(t("settings.agent.hint.handshakeHint")))
+      .addComponent(section(t("settings.agent.section.seeds")))
+      .addComponent(seedAutoUpdate)
+      .addComponent(hint(t("settings.agent.hint.seedAuto")))
       .addComponent(section(t("settings.agent.section.more")))
       .addLabeledComponent(t("settings.agent.docsFolder"), docsFolder)
       .addLabeledComponent(t("settings.agent.watchLanguages"), watchLanguages)
@@ -382,6 +387,7 @@ class VibeAgentConfigurable : Configurable, Configurable.NoScroll {
     fimEnabled?.isSelected != VibeAgentSettings.fimEnabled ||
     fimDebounce?.number != VibeAgentSettings.fimDebounceMs ||
     fimCache?.number != VibeAgentSettings.fimCacheSize ||
+    seedAuto?.isSelected != VibeAgentSettings.seedAutoUpdate ||
     runLedger?.isSelected != VibeAgentSettings.runLedgerEnabled ||
     runLedgerMax?.number != VibeAgentSettings.runLedgerMaxRecords ||
     runLedgerDays?.number != VibeAgentSettings.runLedgerRetentionDays ||
@@ -449,6 +455,7 @@ class VibeAgentConfigurable : Configurable, Configurable.NoScroll {
     fimEnabled?.let { VibeAgentSettings.fimEnabled = it.isSelected }
     fimDebounce?.let { VibeAgentSettings.fimDebounceMs = it.number }
     fimCache?.let { VibeAgentSettings.fimCacheSize = it.number }
+    seedAuto?.let { VibeAgentSettings.seedAutoUpdate = it.isSelected }
     runLedger?.let { VibeAgentSettings.runLedgerEnabled = it.isSelected }
     runLedgerMax?.let { VibeAgentSettings.runLedgerMaxRecords = it.number }
     runLedgerDays?.let { VibeAgentSettings.runLedgerRetentionDays = it.number }
@@ -529,6 +536,7 @@ class VibeAgentConfigurable : Configurable, Configurable.NoScroll {
     fimEnabled?.isSelected = VibeAgentSettings.fimEnabled
     fimDebounce?.number = VibeAgentSettings.fimDebounceMs
     fimCache?.number = VibeAgentSettings.fimCacheSize
+    seedAuto?.isSelected = VibeAgentSettings.seedAutoUpdate
     runLedger?.isSelected = VibeAgentSettings.runLedgerEnabled
     runLedgerMax?.number = VibeAgentSettings.runLedgerMaxRecords
     runLedgerDays?.number = VibeAgentSettings.runLedgerRetentionDays

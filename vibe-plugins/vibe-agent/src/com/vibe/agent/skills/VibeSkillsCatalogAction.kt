@@ -52,7 +52,10 @@ class VibeSkillsCatalogAction : AnAction(t("skills.catalog.title")) {
                "edited" to items.count { it.state == SkillCatalog.State.EDITED })).append("\n\n")
       for (item in items) {
         append(mark(item.state)).append(' ').append(item.id)
-        item.version?.let { append("  v").append(it) }
+        // The human-facing version first, the bookkeeping revision second: `v1.2.0` answers
+        // «which skill is this», `rev 3` answers «which release carried it»
+        item.vibeVersion?.let { append("  v").append(it) }
+        item.version?.let { append("  ").append(t("skills.catalog.revision", "rev" to it)) }
         if (item.broken) append("  ").append(t("skills.catalog.broken"))
         append('\n')
         if (item.description.isNotBlank()) append("    ").append(item.description.take(120)).append('\n')

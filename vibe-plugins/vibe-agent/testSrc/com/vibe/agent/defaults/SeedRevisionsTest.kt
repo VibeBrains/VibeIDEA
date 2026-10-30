@@ -90,13 +90,53 @@ class SeedRevisionsTest {
   @Test
   fun registryParsesAndDegradesGracefully() {
     val parsed = SeedRevisions.parse("""
-      {"version":1,"files":{"a.md":{"version":2,"sha256":"aa","history":["a0"]},
+      {"version":1,"files":{"a.md":{"version":2,"sha256":"aa","history":["a0"],"vibeVersion":"1.2.0"},
                             "b.md":{"sha256":"bb"}}}
     """.trimIndent())
-    assertEquals(SeedRevision(2, "aa", setOf("a0")), parsed["a.md"])
+    assertEquals(SeedRevision(2, "aa", setOf("a0"), vibeVersion = "1.2.0"), parsed["a.md"])
     assertEquals(SeedRevision(1, "bb", emptySet()), parsed["b.md"])
+    // The field arrived after the face of the contract: an older registry has no `vibeVersion`,
+    // and every decision must keep working without it
+    assertEquals(null, parsed["b.md"]?.vibeVersion)
     assertTrue(SeedRevisions.parse(null).isEmpty())
     assertTrue(SeedRevisions.parse("{ not json").isEmpty())
+  }
+
+  @Test
+  fun headerVersionIsReadFromTheShapeTheSetUses() {
+    val skill = """
+      ---
+      name: grill
+      metadata:
+        vibeVersion: "1.2.0"
+        depends:
+          - other
+      ---
+      body
+    """.trimIndent()
+    assertEquals("1.2.0", SeedHeader.version("skills/grill/SKILL.md", skill))
+    assertEquals("1.2.0", SeedHeader.version("SKILL.md", skill))
+    val rule = """
+      ---
+      description: test
+      alwaysApply: false
+      vibeVersion: "1.0.0"
+      ---
+      rule
+    """.trimIndent()
+    assertEquals("1.0.0", SeedHeader.version("rules/verification.mdc", rule))
+    // A version of another skill nested deeper is not the version of this file
+    val deeper = """
+      ---
+      metadata:
+        depends:
+          vibeVersion: "9.9.9"
+      ---
+    """.trimIndent()
+    assertEquals(null, SeedHeader.version("skills/x/SKILL.md", deeper))
+    assertEquals(null, SeedHeader.version("rules/plain.mdc", "---\ndescription: d\n---"))
+    assertEquals(null, SeedHeader.version("README.md", "vibeVersion: \"1.0.0\""))
+    assertEquals(null, SeedHeader.version("skills/x/SKILL.md", null))
   }
 
   @Test

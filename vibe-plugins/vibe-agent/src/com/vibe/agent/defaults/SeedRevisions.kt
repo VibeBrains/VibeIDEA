@@ -1,6 +1,7 @@
 // Copyright 2026 VibeBrains. Use of this source code is governed by the GNU AGPL-3.0 license.
 package com.vibe.agent.defaults
 
+import com.vibe.agent.util.YamlHeader
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.intOrNull
@@ -22,7 +23,16 @@ import kotlinx.serialization.json.jsonPrimitive
  * The `"version": 1` inside a providers jsonc is the FORMAT version (VibeIDE contract) and
  * travels with the user's copy — deliberately not reused here.
  */
-data class SeedRevision(val version: Int, val sha256: String, val history: Set<String>)
+data class SeedRevision(
+  val version: Int,
+  val sha256: String,
+  val history: Set<String>,
+  /**
+   * Semver the set declares for this file (`vibeVersion` beside `version`/`sha256`).
+   * Absent for files outside the versioning contract and for registries written before it existed
+   */
+  val vibeVersion: String? = null,
+)
 
 enum class SeedVerdict {
   /** Nothing on disk — plain create. */
@@ -61,6 +71,8 @@ object SeedRevisions {
           version = o["version"]?.jsonPrimitive?.intOrNull ?: 1,
           sha256 = sha,
           history = o["history"]?.jsonArray?.mapNotNull { it.jsonPrimitive.contentOrNull }?.toSet() ?: emptySet(),
+          // The field is new: an older registry simply has none, and the whole seeding keeps working
+          vibeVersion = o["vibeVersion"]?.jsonPrimitive?.contentOrNull?.takeIf { it.isNotBlank() },
         )
       }?.toMap() ?: emptyMap()
     }.getOrDefault(emptyMap())
@@ -105,5 +117,59 @@ object SeedRevisions {
     }
     val userIsBehind = (journalVersion ?: 0) < revision.version
     return if (userIsBehind) SeedVerdict.CONFLICT else SeedVerdict.USER_EDIT
+  }
+}
+
+/**
+ * The version the set declares in a file's own header — the left side of «was → became»
+ *
+ * It is deliberately read from the USER'S copy before an update: the registry holds only what the
+ * release says now, and «was 1.0.0 → became 1.2.0» is worth more than «updated»
+ *
+ * Two shapes, both fixed by the shared-set contract: a skill keeps its semver under
+ * `metadata.vibeVersion`, a rule (`*.mdc`) has it at the top level
+ */
+object SeedHeader {
+  private const val SKILL_FILE = "SKILL.md"
+  private const val RULE_SUFFIX = ".mdc"
+
+  /** Version from [text], or null when the file carries none (older copies, arbitrary seeds) */
+  fun version(path: String, text: String?): String? {
+    val header = text?.let { headerLines(it) } ?: return null
+    return when {
+      path.endsWith("/" + SKILL_FILE) || path == SKILL_FILE -> YamlHeader.nestedValue(header, "metadata", "vibeVersion")
+      path.endsWith(RULE_SUFFIX) -> topLevel(header, "vibeVersion")
+      else -> null
+    }
+  }
+
+  /** The lines between the two `---` markers; null when the file has no closed header */
+  private fun headerLines(text: String): List<String>? {
+    val lines = text.lines()
+    if (lines.firstOrNull()?.trim() != "---") return null
+    val end = lines.drop(1).indexOfFirst { it.trim() == "---" }
+    if (end < 0) return null
+    return lines.subList(1, end + 1)
+  }
+
+  private fun topLevel(header: List<String>, key: String): String? {
+    var i = 0
+    while (i < header.size) {
+      val line = header[i]
+      if (line.isBlank() || line.first().isWhitespace() || line.trimStart().startsWith("#")) {
+        i++
+        continue
+      }
+      val colon = line.indexOf(':')
+      if (colon <= 0) {
+        i++
+        continue
+      }
+      val name = line.substring(0, colon).trim()
+      val parsed = YamlHeader.read(line.substring(colon + 1), header, i + 1)
+      i = parsed.next
+      if (name == key) return parsed.text.takeIf { it.isNotEmpty() }
+    }
+    return null
   }
 }

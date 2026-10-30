@@ -298,8 +298,25 @@ object VibeDefaults {
    *  revision the user last said «keep mine» about (so a conflict is not raised twice). */
   data class JournalEntry(val sha: String, val version: Int? = null, val reconciled: Int? = null)
 
+  /**
+   * One file an untouched older revision can move to the current release.
+   *
+   * [from]/[to] are the semver of the file header and of the registry — «1.0.0 → 1.2.0» is what a
+   * person can judge; a revision number is our bookkeeping. Null becomes «—» on screen
+   */
+  data class SeedUpdate(val path: String, val from: String?, val to: String?) {
+    /** «path: 1.0.0 → 1.2.0»; a missing header version is shown as «—», never as an empty string */
+    fun describe(): String = "$path: ${from ?: "—"} → ${to ?: "—"}"
+  }
+
   /** One file the release moved on while the user's copy differs — needs a human decision. */
-  data class SeedConflict(val path: String, val fromVersion: Int?, val toVersion: Int)
+  data class SeedConflict(
+    val path: String,
+    val fromVersion: Int?,
+    val toVersion: Int,
+    val from: String? = null,
+    val to: String? = null,
+  )
 
   data class SeedReport(
     val created: Int,
@@ -308,26 +325,44 @@ object VibeDefaults {
     val removed: List<String> = emptyList(),
     /** Stale seeds LEFT in place: the user edited them, deleting would lose work. */
     val keptModified: List<String> = emptyList(),
-    /** Untouched copies of older revisions, silently refreshed to the current one. */
-    val updated: List<String> = emptyList(),
+    /** Untouched copies of older revisions, refreshed to the current one by this run */
+    val updated: List<SeedUpdate> = emptyList(),
+    /** Untouched copies left for the person because automatic updates are off */
+    val pending: List<SeedUpdate> = emptyList(),
     /** Edited copies whose revision moved in the set — reported, never overwritten. */
     val conflicts: List<SeedConflict> = emptyList(),
     /** Set-discipline errors: content moved without a revision bump (bump.mjs not run). */
     val setDrift: List<String> = emptyList(),
   )
 
+  /** The set compared with the project without touching a single file — what the check action shows */
+  data class SeedCheck(
+    val updates: List<SeedUpdate> = emptyList(),
+    val conflicts: List<SeedConflict> = emptyList(),
+    val missing: List<String> = emptyList(),
+    val setDrift: List<String> = emptyList(),
+  ) {
+    /** Edits are the person's business; only an untouched copy or a conflict means the set is behind */
+    val upToDate: Boolean get() = updates.isEmpty() && conflicts.isEmpty() && missing.isEmpty() && setDrift.isEmpty()
+  }
+
   /**
    * Seed `.vibe/` under [projectBase]. Idempotent; call OFF the EDT.
    *
    * Per file the set's revision registry decides (see [SeedRevisions]): missing → create,
-   * untouched copy of an older revision → refresh silently, the user's own edit → never touch
+   * untouched copy of an older revision → refresh, the user's own edit → never touch
    * (reported as a conflict when the set has moved on, so the caller can offer a comparison).
+   *
+   * [autoUpdate] is the product setting: when off, an untouched older revision is only REPORTED in
+   * [SeedReport.pending] and the person decides. The default keeps the old behaviour for callers
+   * that are not a user gesture (tests, tools)
    */
-  fun seed(projectBase: String): SeedReport {
+  fun seed(projectBase: String, autoUpdate: Boolean = true): SeedReport {
     val vibeDir = Path.of(projectBase, ".vibe")
     var created = 0
     var kept = 0
-    val updated = ArrayList<String>()
+    val updated = ArrayList<SeedUpdate>()
+    val pending = ArrayList<SeedUpdate>()
     val conflicts = ArrayList<SeedConflict>()
     val drift = ArrayList<String>()
     val journal = loadJournal(vibeDir).toMutableMap()
@@ -347,16 +382,25 @@ object VibeDefaults {
         journalVersion = recorded?.version,
         reconciledVersion = recorded?.reconciled,
       )
+      val shown = {
+        SeedUpdate(relative, SeedHeader.version(relative, onDisk?.toString(Charsets.UTF_8)), revision?.vibeVersion)
+      }
       when (verdict) {
         SeedVerdict.CREATE -> if (write(target, content)) {
           created++
           journal[relative] = JournalEntry(sha256(content), revision?.version)
           storeBase(vibeDir, relative, content)
         }
-        SeedVerdict.UPDATE -> if (write(target, content)) {
-          updated.add(relative)
-          journal[relative] = JournalEntry(sha256(content), revision?.version)
-          storeBase(vibeDir, relative, content)
+        SeedVerdict.UPDATE -> {
+          if (autoUpdate) {
+            if (write(target, content)) {
+              updated.add(shown())
+              journal[relative] = JournalEntry(sha256(content), revision?.version)
+              storeBase(vibeDir, relative, content)
+            }
+          } else {
+            pending.add(shown())
+          }
         }
         SeedVerdict.SAME -> {
           kept++
@@ -369,7 +413,11 @@ object VibeDefaults {
         }
         SeedVerdict.CONFLICT -> {
           kept++
-          conflicts.add(SeedConflict(relative, recorded?.version, revision?.version ?: 0))
+          conflicts.add(SeedConflict(
+            relative, recorded?.version, revision?.version ?: 0,
+            from = SeedHeader.version(relative, onDisk?.toString(Charsets.UTF_8)),
+            to = revision?.vibeVersion,
+          ))
         }
         SeedVerdict.SET_DRIFT -> { kept++; drift.add(relative) }
         SeedVerdict.USER_EDIT -> kept++
@@ -379,7 +427,52 @@ object VibeDefaults {
     if (created > 0 || updated.isNotEmpty() || removed.isNotEmpty() || journal != loadJournal(vibeDir)) {
       saveJournal(vibeDir, journal)
     }
-    return SeedReport(created, kept, removed, keptModified, updated, conflicts, drift)
+    return SeedReport(
+      created = created, kept = kept, removed = removed, keptModified = keptModified,
+      updated = updated, pending = pending, conflicts = conflicts, setDrift = drift,
+    )
+  }
+
+  /**
+   * Compare the project with the shipped set without writing anything — the check-updates action.
+   * Same verdict table as [seed], so the two can never disagree about a file
+   */
+  fun check(projectBase: String): SeedCheck {
+    val vibeDir = Path.of(projectBase, ".vibe")
+    val journal = loadJournal(vibeDir)
+    val revisions = SeedRevisions.parse(readResource(VERSIONS))
+    val updates = ArrayList<SeedUpdate>()
+    val conflicts = ArrayList<SeedConflict>()
+    val missing = ArrayList<String>()
+    val drift = ArrayList<String>()
+    for ((resource, relative) in MANIFEST) {
+      if (readResource(resource) == null) continue
+      val revision = revisions[resource]
+      val target = vibeDir.resolve(relative)
+      val onDisk = if (Files.isRegularFile(target)) runCatching { Files.readAllBytes(target) }.getOrNull() else null
+      val recorded = journal[relative]
+      val verdict = SeedRevisions.verdict(
+        revision = revision,
+        localSha = onDisk?.let { sha256(it) },
+        localShaLf = onDisk?.let { sha256(String(it, Charsets.UTF_8).replace("\r\n", "\n")) },
+        journalSha = recorded?.sha,
+        journalVersion = recorded?.version,
+        reconciledVersion = recorded?.reconciled,
+      )
+      when (verdict) {
+        SeedVerdict.CREATE -> missing.add(relative)
+        SeedVerdict.UPDATE -> updates.add(
+          SeedUpdate(relative, SeedHeader.version(relative, onDisk?.toString(Charsets.UTF_8)), revision?.vibeVersion))
+        SeedVerdict.CONFLICT -> conflicts.add(SeedConflict(
+          relative, recorded?.version, revision?.version ?: 0,
+          from = SeedHeader.version(relative, onDisk?.toString(Charsets.UTF_8)),
+          to = revision?.vibeVersion,
+        ))
+        SeedVerdict.SET_DRIFT -> drift.add(relative)
+        SeedVerdict.SAME, SeedVerdict.USER_EDIT -> Unit
+      }
+    }
+    return SeedCheck(updates, conflicts, missing, drift)
   }
 
   private fun write(target: Path, content: String): Boolean = runCatching {

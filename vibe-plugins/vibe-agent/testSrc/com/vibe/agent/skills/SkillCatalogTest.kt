@@ -56,6 +56,15 @@ class SkillCatalogTest {
   }
 
   @Test
+  fun `версия навыка из шапки попадает в каталог`() {
+    val versioned = "---\nname: grill\ndescription: допрос решения\nmetadata:\n  vibeVersion: \"1.2.0\"\n---\nтело"
+    val item = SkillCatalog.build(mapOf("grill" to versioned), released).single { it.id == "grill" }
+    assertEquals("1.2.0", item.vibeVersion)
+    assertEquals(null, SkillCatalog.build(emptyMap(), released).single { it.id == "grill" }.vibeVersion,
+                 "у навыка без поля версии нет, и «—» рисует действие, а не каталог")
+  }
+
+  @Test
   fun `версия и вердикт валидатора попадают в каталог`() {
     val installed = mapOf("grill" to released.getValue("grill"))
     val item = SkillCatalog.build(installed, released, versions = mapOf("grill" to 3), broken = setOf("grill")).single { it.id == "grill" }

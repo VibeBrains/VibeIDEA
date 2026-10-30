@@ -29,6 +29,11 @@ data class SkillPackage(
    * characters that our shallow parser has already thrown away.
    */
   val frontmatter: String = "",
+  /**
+   * `metadata.vibeVersion` of the shared set — the skill's own semver, shown in the catalogue.
+   * Null for a skill written here: the field is the set's contract, not a requirement of Agent Skills
+   */
+  val vibeVersion: String? = null,
 ) {
   /**
    * A top-level header value as written: the scalar after `key:`, or the items of a flow list
@@ -58,6 +63,9 @@ data class SkillPackage(
       .filter { it.isNotEmpty() }
     return items.joinToString(", ").takeIf { it.isNotEmpty() }
   }
+
+  /** A key directly under `metadata:`; the shared set keeps `vibeVersion` there */
+  fun metadataValue(key: String): String? = YamlHeader.nestedValue(frontmatter.lines(), "metadata", key)
 
   companion object {
     /** Everything the reference Agent Skills validator accepts at the top level. */
@@ -102,7 +110,8 @@ data class SkillPackage(
         }
       }
       return SkillPackage(id, name, description, body, keys, hasFrontmatter = true,
-                          frontmatter = header.joinToString("\n"))
+                          frontmatter = header.joinToString("\n"),
+                          vibeVersion = YamlHeader.nestedValue(header, "metadata", "vibeVersion"))
     }
   }
 }

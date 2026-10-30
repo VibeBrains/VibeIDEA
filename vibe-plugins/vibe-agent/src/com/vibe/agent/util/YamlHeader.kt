@@ -40,6 +40,61 @@ object YamlHeader {
   fun isBlock(raw: String): Boolean = BLOCK.matches(raw.trim())
 
   /**
+   * A key directly under a top-level [parent] mapping.
+   *
+   * Deeper keys are skipped on purpose: `metadata.depends` may carry a `vibeVersion` of its own,
+   * and that one describes another skill rather than this file
+   */
+  fun nestedValue(lines: List<String>, parent: String, key: String): String? {
+    var i = 0
+    while (i < lines.size) {
+      val line = lines[i]
+      if (line.isBlank() || line.first().isWhitespace() || line.trimStart().startsWith("#")) {
+        i++
+        continue
+      }
+      val colon = line.indexOf(':')
+      if (colon <= 0) {
+        i++
+        continue
+      }
+      val name = line.substring(0, colon).trim()
+      val parsed = read(line.substring(colon + 1), lines, i + 1)
+      if (name != parent) {
+        i = parsed.next
+        continue
+      }
+      var childIndent: Int? = null
+      var j = i + 1
+      while (j < lines.size) {
+        val child = lines[j]
+        if (child.isBlank()) {
+          j++
+          continue
+        }
+        val indent = child.takeWhile { it.isWhitespace() }.length
+        if (indent == 0) break
+        if (child.trimStart().startsWith("#")) {
+          j++
+          continue
+        }
+        if (childIndent == null) childIndent = indent
+        val childColon = child.indexOf(':')
+        if (indent != childIndent || childColon <= 0) {
+          j++
+          continue
+        }
+        val childName = child.substring(0, childColon).trim()
+        val childValue = read(child.substring(childColon + 1), lines, j + 1)
+        j = childValue.next
+        if (childName == key) return childValue.text.takeIf { it.isNotEmpty() }
+      }
+      return null
+    }
+    return null
+  }
+
+  /**
    * A single-line scalar: double quotes are stripped and their escapes expanded, single quotes are
    * stripped and `''` becomes `'`; anything else is the value as written.
    */

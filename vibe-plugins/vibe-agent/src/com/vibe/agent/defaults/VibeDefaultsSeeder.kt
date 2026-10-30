@@ -4,6 +4,7 @@ package com.vibe.agent.defaults
 import com.intellij.openapi.diagnostic.logger
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.startup.ProjectActivity
+import com.vibe.agent.settings.VibeAgentSettings
 
 /**
  * Seeds `.vibe/` at project open (background thread by [ProjectActivity]
@@ -13,14 +14,20 @@ import com.intellij.openapi.startup.ProjectActivity
 class VibeDefaultsSeeder : ProjectActivity {
   override suspend fun execute(project: Project) {
     val base = project.basePath ?: return
-    val report = VibeDefaults.seed(base)
+    val autoUpdate = VibeAgentSettings.seedAutoUpdate
+    val report = VibeDefaults.seed(base, autoUpdate = autoUpdate)
     if (report.created > 0 || report.removed.isNotEmpty()) {
       logger<VibeDefaultsSeeder>().info(
         ".vibe defaults seeded: +${report.created}, kept ${report.kept}" +
           (if (report.removed.isNotEmpty()) ", removed stale ${report.removed}" else ""))
     }
     if (report.updated.isNotEmpty()) {
-      logger<VibeDefaultsSeeder>().info(".vibe defaults refreshed from release: ${report.updated}")
+      logger<VibeDefaultsSeeder>().info(
+        ".vibe defaults refreshed from release: ${report.updated.map { it.describe() }}")
+    }
+    if (report.pending.isNotEmpty()) {
+      logger<VibeDefaultsSeeder>().info(
+        ".vibe defaults left for the person (auto-update is off): ${report.pending.map { it.describe() }}")
     }
     if (report.keptModified.isNotEmpty()) {
       logger<VibeDefaultsSeeder>().warn(
@@ -35,5 +42,7 @@ class VibeDefaultsSeeder : ProjectActivity {
       logger<VibeDefaultsSeeder>().info(".vibe conflicts: ${report.conflicts.map { it.path }}")
       SeedConflictNotifier.notify(project, base, report.conflicts)
     }
+    // Untouched older revisions: applied by the setting, or offered as one explicit step
+    SeedUpdateNotifier.notify(project, base, report.updated, report.pending)
   }
 }

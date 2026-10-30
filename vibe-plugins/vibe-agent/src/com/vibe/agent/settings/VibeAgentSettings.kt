@@ -109,6 +109,12 @@ object VibeAgentSettings {
   const val MIN_FIM_CACHE_SIZE = 0
   const val MAX_FIM_CACHE_SIZE = 5000
 
+  // --- seed set (VibeBrains) ---
+  /**
+   * An untouched copy of an older revision carries no edit of the person's, so updating it costs
+   * nothing and the set must not freeze at whatever release first created the project
+   */
+  const val DEFAULT_SEED_AUTO_UPDATE = true
   // --- run ledger (.vibe/agent-runs.jsonl) ---
   const val DEFAULT_RUN_LEDGER_ENABLED = true
   const val DEFAULT_RUN_LEDGER_MAX_RECORDS = 500
@@ -247,6 +253,7 @@ object VibeAgentSettings {
   private const val KEY_FIM_ENABLED = "vibe.agent.fim.enabled"
   private const val KEY_FIM_DEBOUNCE_MS = "vibe.agent.fim.debounceMs"
   private const val KEY_FIM_CACHE_SIZE = "vibe.agent.fim.cacheSize"
+  private const val KEY_SEED_AUTO_UPDATE = "vibe.agent.seed.autoUpdate"
   private const val KEY_RUN_LEDGER_ENABLED = "vibe.agent.runs.enabled"
   private const val KEY_RUN_LEDGER_MAX = "vibe.agent.runs.maxRecords"
   private const val KEY_RUN_LEDGER_DAYS = "vibe.agent.runs.retentionDays"
@@ -415,6 +422,16 @@ object VibeAgentSettings {
   var knownProjects: Set<String>
     get() = props.getValue(KEY_KNOWN_PROJECTS).orEmpty().split('\n').filter { it.isNotBlank() }.toSet()
     set(value) = props.setValue(KEY_KNOWN_PROJECTS, value.joinToString("\n"))
+
+  /**
+   * Refresh untouched older revisions of the `.vibe` set on project open.
+   *
+   * Off means the seeder only reports them and a notification offers an update action — for a person who
+   * keeps `.vibe` under version control and wants every change to pass through a commit
+   */
+  var seedAutoUpdate: Boolean
+    get() = props.getBoolean(KEY_SEED_AUTO_UPDATE, DEFAULT_SEED_AUTO_UPDATE)
+    set(value) = props.setValue(KEY_SEED_AUTO_UPDATE, value, DEFAULT_SEED_AUTO_UPDATE)
 
   var runLedgerEnabled: Boolean
     get() = props.getBoolean(KEY_RUN_LEDGER_ENABLED, DEFAULT_RUN_LEDGER_ENABLED)

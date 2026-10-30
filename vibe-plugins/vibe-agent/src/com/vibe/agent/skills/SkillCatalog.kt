@@ -32,6 +32,8 @@ object SkillCatalog {
     /** Revision of the shipped file, when the set declares one. */
     val version: Int?,
     val broken: Boolean,
+    /** `metadata.vibeVersion` of the copy on disk: the skill's own semver, the one people quote */
+    val vibeVersion: String? = null,
   )
 
   /**
@@ -66,6 +68,8 @@ object SkillCatalog {
         state = state,
         version = versions[id],
         broken = id in broken,
+        // From the copy the person actually has; a missing copy falls back to the release text
+        vibeVersion = pkg.vibeVersion,
       )
     }
   }

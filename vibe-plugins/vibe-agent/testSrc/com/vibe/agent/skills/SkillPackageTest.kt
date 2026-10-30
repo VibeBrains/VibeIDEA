@@ -37,6 +37,13 @@ class SkillPackageTest {
     val pkg = SkillPackage.parse("grill", full)
     assertEquals(listOf("name", "description", "metadata"), pkg.topLevelKeys)
     assertFalse(pkg.topLevelKeys.contains("vibeVersion"), "vibeVersion лежит под metadata и верхним уровнем не считается")
+    // The field is still READ — from its own place: «nested» means not top-level, not «ignored»
+    assertEquals("1.0.0", pkg.vibeVersion)
+    assertEquals("1.0.0", pkg.metadataValue("vibeVersion"))
+    // A nested block of another key carries its own value, not the version of this skill
+    val deeper = "---\nname: x\nmetadata:\n  depends:\n    vibeVersion: \"9.9.9\"\n---\nтело"
+    assertNull(SkillPackage.parse("x", deeper).vibeVersion)
+    assertNull(SkillPackage.parse("plain", "# без шапки").vibeVersion, "нет шапки — нет версии")
   }
 
   @Test

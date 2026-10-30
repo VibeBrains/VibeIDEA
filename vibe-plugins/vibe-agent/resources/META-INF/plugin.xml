@@ -222,6 +222,9 @@
               text="Очистить учёт расхода" description="Стереть счётчики расхода"/>
       <action id="Vibe.SkillsCatalog" class="com.vibe.agent.skills.VibeSkillsCatalogAction"
               text="Навыки проекта" description="Состояние навыков относительно поставляемого набора и возврат к его версии"/>
+      <action id="Vibe.CheckSeedUpdates" class="com.vibe.agent.defaults.VibeCheckSeedUpdatesAction"
+              text="Проверить обновления набора Vibe"
+              description="Сверка .vibe с набором: что можно обновить, что осталось вашим и актуален ли набор"/>
       <action id="Vibe.RunSkillEvals" class="com.vibe.agent.skills.VibeRunSkillEvalsAction"
               text="Прогнать эвалы навыка" description="Прогон случаев из evals/evals.json навыка: ответ модели и вердикт судьи"/>
       <action id="Vibe.ValidateSkills" class="com.vibe.agent.skills.VibeValidateSkillsAction"
@@ -317,6 +320,8 @@
           <reference ref="Vibe.SkillsCatalog"/>
           <reference ref="Vibe.ValidateSkills"/>
           <reference ref="Vibe.RunSkillEvals"/>
+          <separator/>
+          <reference ref="Vibe.CheckSeedUpdates"/>
         </group>
         <group id="Vibe.BrainMenu.Context" text="Контекст агента" popup="true">
           <reference ref="Vibe.PlaceAgentsFile"/>

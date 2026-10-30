@@ -4,6 +4,7 @@ package com.vibe.agent.defaults
 import org.junit.jupiter.api.Test
 import java.nio.file.Files
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 class VibeDefaultsTest {
@@ -214,6 +215,29 @@ class VibeDefaultsTest {
     assertEquals(emptyList(), removed)
     assertEquals(emptyList(), keptModified)
     assertTrue(spec.contains("openai-gpt56") && spec.contains("sha256"))
+  }
+
+  @Test
+  fun `проверка обновлений ничего не пишет и называет актуальность`() {
+    val base = tempProject()
+    VibeDefaults.seed(base)
+    val fresh = VibeDefaults.check(base)
+    assertTrue(fresh.upToDate, "свежезасеянный проект обязан быть актуальным: $fresh")
+
+    val vibe = java.nio.file.Path.of(base, ".vibe")
+    val removed = vibe.resolve("rules.md")
+    Files.delete(removed)
+    val after = VibeDefaults.check(base)
+    assertFalse(after.upToDate)
+    assertEquals(listOf("rules.md"), after.missing)
+    assertFalse(Files.exists(removed), "проверка — только чтение; вернуть файл — дело засева")
+  }
+
+  @Test
+  fun `описание обновления говорит было и стало, а не только стало`() {
+    assertEquals("rules/x.mdc: 1.0.0 → 1.2.0", VibeDefaults.SeedUpdate("rules/x.mdc", "1.0.0", "1.2.0").describe())
+    assertEquals("rules/x.mdc: — → 1.2.0", VibeDefaults.SeedUpdate("rules/x.mdc", null, "1.2.0").describe())
+    assertEquals("rules/x.mdc: 1.0.0 → —", VibeDefaults.SeedUpdate("rules/x.mdc", "1.0.0", null).describe())
   }
 
   @Test
