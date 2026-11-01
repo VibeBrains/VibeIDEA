@@ -134,6 +134,8 @@ object VibeDefaults {
     "skills/security-audit/SKILL.md" to "skills/security-audit/SKILL.md",
     "skills/security-audit/evals/evals.json" to "skills/security-audit/evals/evals.json",
     "skills/design-vocabulary/SKILL.md" to "skills/design-vocabulary/SKILL.md",
+    "skills/page-design/SKILL.md" to "skills/page-design/SKILL.md",
+    "skills/page-design/evals/evals.json" to "skills/page-design/evals/evals.json",
     "skills/example/SKILL.md" to "skills/example/SKILL.md",
     // Образец эвалов: случаи проверяют ровно то, что обещает SKILL.md примера.
     "skills/example/evals/evals.json" to "skills/example/evals/evals.json",
