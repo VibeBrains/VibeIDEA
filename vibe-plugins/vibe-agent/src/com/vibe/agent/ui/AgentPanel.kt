@@ -6100,8 +6100,12 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
         val resolved = ProvidersService.resolve(p, project.basePath, quiet = true) { } ?: return@mapNotNull null
         // No key and not a local endpoint: asking would earn a predictable 401. Не спрашиваем и
         // не называем это ошибкой провайдера — у человека просто не введён ключ.
+        // Тихий поиск не отличает непрочитанный ключ из связки от отсутствующего
+        // Считать такой провайдер безключевым значило убрать из выбора все его модели, хотя страница «Модели» показывает их включёнными
+        // Безключевой — только при подтверждённом отсутствии ключа; непрочитанный остаётся с каталогом из кэша, связку прочтёт первый запрос человека
         if (resolved.missingKey) {
-          keyless += p.id
+          val verdict = com.vibe.agent.settings.ModelsPage.verdict(true) { com.vibe.agent.providers.ApiKeyResolver.keyPresence(p) }
+          if (verdict == com.vibe.agent.settings.ModelsPage.KeyVerdict.WAITING) keyless += p.id
           return@mapNotNull null
         }
         ApplicationManager.getApplication().executeOnPooledThread {
