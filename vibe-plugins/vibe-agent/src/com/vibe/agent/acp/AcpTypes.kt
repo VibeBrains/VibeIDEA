@@ -72,7 +72,7 @@ data class AuthMethod(
  * The message stays the whole error object as text, as before the code was kept: the chat shows it,
  * and a shorter one would hide what the agent actually said.
  */
-class AcpRpcError(val code: Int?, message: String) : RuntimeException(message)
+class AcpRpcError(val code: Int?, message: String, val requestId: String? = null) : RuntimeException(message)
 
 /** One entry of `availableModes` in the `session/new` result. */
 data class SessionMode(

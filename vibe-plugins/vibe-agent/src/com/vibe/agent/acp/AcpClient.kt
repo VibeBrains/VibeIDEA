@@ -666,7 +666,7 @@ class AcpClient(
               // The code is kept so a caller can tell «sign in first» from a failure; the text stays whole.
               if (error != null && error != JsonNull) {
                 val code = ((error as? JsonObject)?.get("code") as? JsonPrimitive)?.longOrNull?.toInt()
-                future.completeExceptionally(AcpRpcError(code, error.toString()))
+                future.completeExceptionally(AcpRpcError(code, error.toString(), rawId.content))
               }
               else future.complete(msg["result"] ?: JsonNull)
             }
