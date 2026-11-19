@@ -29,6 +29,15 @@ import java.time.Duration
 /** One inline image: raw base64 payload (no data: prefix) plus its MIME type. */
 data class ImagePart(val mimeType: String, val base64: String)
 
+/**
+ * An HTTP failure with the status and the vendor's request id.
+ *
+ * The body stays in [message] for the feed, where it explains the refusal; the log takes only the
+ * status and the id ([com.vibe.agent.acp.TurnFailure.logLine]) — a vendor may echo the prompt back.
+ */
+class ProviderHttpException(val status: Int, val requestId: String?, body: String = "") :
+  RuntimeException("HTTP $status" + if (body.isBlank()) "" else ": " + body)
+
 data class ChatMessage(
   val role: String,
   val text: String,
@@ -331,6 +340,9 @@ class LlmClient(
   /** The effort the last request was sent at, for the answer to keep ([EffortUpdates]); null when not tracked */
   fun lastEffortMark(): String? = lastEffortMark
 
+  /** The vendor's id of the last request, for a report about a failure; null when it sent none */
+  fun lastRequestId(): String? = lastRequestId
+
   @Volatile private var responses = ResponsesAccumulator()
   @Volatile private var lastResponsesKey: String? = null
 
@@ -572,7 +584,8 @@ class LlmClient(
     val url = ProviderRequest.catalogUrl(provider.baseUrl, fetchUrl)
     val builder = authorizedRequest(provider, url, provider.protocol, CATALOG_TIMEOUT_MS).GET()
     val response = clients.of(provider).send(builder.build(), HttpResponse.BodyHandlers.ofString())
-    if (response.statusCode() !in 200..299) throw RuntimeException("HTTP " + response.statusCode())
+    lastRequestId = response.headers().firstValue(REQUEST_ID_HEADER).orElse(null)
+    if (response.statusCode() !in 200..299) throw ProviderHttpException(response.statusCode(), lastRequestId)
     val root = json.parseToJsonElement(response.body()).jsonObject
     // Заодно запоминаем, какое окно провайдер приписывает своим моделям: второй поход в сеть ради
     // одной цифры был бы расточительством, а расхождение с конфигом надо кому-то заметить.
@@ -598,7 +611,10 @@ class LlmClient(
       .POST(HttpRequest.BodyPublishers.ofString(body.toString()))
       .build()
     val response = clients.of(provider).send(request, HttpResponse.BodyHandlers.ofString())
-    if (response.statusCode() !in 200..299) throw RuntimeException("HTTP " + response.statusCode() + ": " + response.body().take(300))
+    lastRequestId = response.headers().firstValue(REQUEST_ID_HEADER).orElse(null)
+    if (response.statusCode() !in 200..299) {
+      throw ProviderHttpException(response.statusCode(), lastRequestId, response.body().take(300))
+    }
     return json.parseToJsonElement(response.body()).jsonObject["choices"].arr()?.firstOrNull()
       .obj()?.get("text")?.jsonPrimitive?.contentOrNull ?: ""
   }
@@ -957,7 +973,7 @@ class LlmClient(
     response.headers().firstValue(ModelEcho.ROUTED_MODEL_HEADER).orElse(null)?.takeIf { it.isNotBlank() }?.let { lastRoutedModel = it }
     if (cancelled()) throw java.io.InterruptedIOException(STOPPED_BY_USER)
     if (response.statusCode() !in 200..299) {
-      throw RuntimeException("HTTP " + response.statusCode() + ": " + response.body().take(500))
+      throw ProviderHttpException(response.statusCode(), lastRequestId, response.body().take(500))
     }
     return json.parseToJsonElement(response.body()).jsonObject
   }
@@ -988,7 +1004,7 @@ class LlmClient(
       if (cancelled()) throw java.io.InterruptedIOException(STOPPED_BY_USER)
       body.bufferedReader().use { reader ->
         if (response.statusCode() !in 200..299) {
-          throw RuntimeException("HTTP " + response.statusCode() + ": " + reader.readText().take(500))
+          throw ProviderHttpException(response.statusCode(), lastRequestId, reader.readText().take(500))
         }
         reader.forEachLine { line ->
           if (cancelled()) throw java.io.InterruptedIOException(STOPPED_BY_USER)

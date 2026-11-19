@@ -1,6 +1,7 @@
 // Copyright 2026 VibeBrains. Use of this source code is governed by the GNU AGPL-3.0 license.
 package com.vibe.agent.acp
 
+import com.vibe.agent.providers.ProviderHttpException
 import java.io.IOException
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.CompletionException
@@ -80,5 +81,54 @@ class AgentFailureTest {
     var pile: Throwable = stopped
     repeat(50) { pile = ExecutionException(pile) }
     assertTrue(AgentFailure.reasonOf(pile).isNotBlank())
+  }
+
+  @Test
+  fun `only a refusal or an error stop is an abnormal end of a turn`() {
+    assertTrue(TurnFailure.abnormalStop("refusal"))
+    assertTrue(TurnFailure.abnormalStop("error"))
+    assertFalse(TurnFailure.abnormalStop("end_turn"))
+    assertFalse(TurnFailure.abnormalStop("cancelled"))
+    assertFalse(TurnFailure.abnormalStop(null))
+  }
+
+  @Test
+  fun `an agent rpc failure keeps the json-rpc code and the request id`() {
+    val failure = TurnFailure.ofAgent("Claude Code",
+      ExecutionException(AcpRpcError(-32000, "Authentication required", "7")))
+
+    assertEquals("JSON-RPC -32000", failure.code)
+    assertEquals("7", failure.requestId)
+    val text = TurnFailure.render(failure)
+    assertTrue("Claude Code" in text && "-32000" in text && "7" in text, text)
+  }
+
+  @Test
+  fun `an abnormal stop names the agent and the reason it gave`() {
+    val failure = TurnFailure.ofStop("Claude Code", "refusal")
+
+    assertEquals(TurnFailure.Source.AGENT, failure.source)
+    assertEquals("refusal", failure.code)
+    assertTrue("Claude Code" in TurnFailure.render(failure), TurnFailure.render(failure))
+  }
+
+  @Test
+  fun `a provider http failure keeps the status and the request id`() {
+    val error = ExecutionException(ProviderHttpException(403, "req-1", "your account is on hold"))
+    val failure = TurnFailure.ofProvider("openai", error)
+
+    assertEquals("HTTP 403", failure.code)
+    assertEquals("req-1", failure.requestId)
+    assertTrue("openai" in TurnFailure.render(failure), TurnFailure.render(failure))
+  }
+
+  @Test
+  fun `the log line names the provider, the code and the request id, and no message text`() {
+    val failure = TurnFailure.ofProvider("openai",
+      ProviderHttpException(403, "req-1", "your account is on hold: secret prompt"))
+
+    val line = TurnFailure.logLine(failure)
+    assertTrue("provider" in line && "openai" in line && "HTTP 403" in line && "req-1" in line, line)
+    assertFalse("on hold" in line || "secret" in line || "HTTP 403:" in line, line)
   }
 }

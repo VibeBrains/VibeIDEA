@@ -2900,8 +2900,19 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
       }
       catch (e: Exception) {
         // An agent failure reads as the agent's and in words: a future waited with get() brings the class name in its message
-        if (t is ChatTarget.Agent) turnNote(agentErrorText(e), agentErrorFixes(e))
-        else turnNote(t("chat.error", "reason" to e.message))
+        if (t is ChatTarget.Agent) {
+          val record = com.vibe.agent.acp.TurnFailure.ofAgent(t.config.name, e)
+          com.vibe.agent.acp.TurnFailure.log(record)
+          val text = com.vibe.agent.acp.TurnFailure.render(record) +
+            (if (com.vibe.agent.acp.AgentAuth.needsLogin(e)) "\n" + t("auth.loginHint") else "")
+          turnNote(text, agentErrorFixes(e))
+        }
+        else {
+          val model = t as ChatTarget.Model
+          val record = com.vibe.agent.acp.TurnFailure.ofProvider(model.provider.id, e, llmClient.lastRequestId())
+          com.vibe.agent.acp.TurnFailure.log(record)
+          turnNote(com.vibe.agent.acp.TurnFailure.render(record))
+        }
         finishTurn()
       }
     }
@@ -3627,6 +3638,20 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
       turns.chat.signals.add(com.vibe.agent.guard.Trifecta.Signal.UNTRUSTED_CONTENT)
     }
     // The turn's reasoning block is EDT-owned (created in appendThought's invokeLater); a fresh turn has none yet.
+    // Only `image: true` in promptCapabilities buys image blocks in `session/prompt`; a silent capability
+    // (null) is not a yes. Sending the prompt without the picture was the old behaviour — the agent answered
+    // the text alone, so the person believed the image had been read.
+    if (images.isNotEmpty() && c.capabilities?.image != true) {
+      askOnEdt {
+        Messages.showErrorDialog(project,
+          t("chat.agent.noImageDialog", "agent" to t.config.name),
+          com.vibe.agent.ui.VibeNotifications.AGENT)
+      }
+      SwingUtilities.invokeLater { composer.setImagesAllowed(false, NO_IMAGE_AGENT) }
+      turnNote(t("chat.agent.noImageRecord", "agent" to t.config.name))
+      finishTurn()
+      return
+    }
     // Which recipes, in which version, took part in the turn: without it the chain an investigation
     // walks (prompt → skill → tool call) breaks right here. The digest is the approved one.
     val promptMeta = buildMap {
@@ -3639,9 +3664,8 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     SwingUtilities.invokeLater {
       modePicker.setModes(c.modes)
       configPicker.setOptions(c.configOptions)
-      composer.setImagesAllowed(c.capabilities?.image != false, NO_IMAGE_AGENT)
+      composer.setImagesAllowed(c.capabilities?.image == true, NO_IMAGE_AGENT)
     }
-    if (images.isNotEmpty() && c.capabilities?.image != true) systemLine(t("chat.noImagesAgent"), AGENTS, WARNING)
     val blocks = ContextSerializer.acpBlocks(fullPrompt, loaded, images, c.capabilities, skills)
     promptAcpTurn(c, blocks, t, startedAt, verifyAttempt = 0, checkAttempt = 0)
   }
@@ -3661,13 +3685,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
       try {
         val secs = (System.currentTimeMillis() - startedAt) / 1000.0
         if (error != null) {
-          finishAgentBubble(secs, t("chat.failed"))
-          feedNotice(agentErrorText(error), agentErrorFixes(error))
-          audit?.append(AuditEvent(System.currentTimeMillis(), AuditEvent.Action.REPLY, ok = false, actor = agentActor(),
-            model = "acp/${t.config.name}", latencyMs = System.currentTimeMillis() - startedAt,
-            meta = mapOf("error" to (error.message ?: "error"))))
-          turnEndedBadly = true
-          finishTurn()
+          failAgentTurn(t, error, null, secs, startedAt)
           return@whenComplete
         }
         // Lenient: a null / non-object result (JsonNull from a `{"result":null}` reply) yields stop=null, not a throw.
@@ -3676,6 +3694,12 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
           finishAgentBubble(secs, stop)
           turnEndedBadly = true
           finishTurn()
+          return@whenComplete
+        }
+        // `refusal` (and an agent's own `error`) means there is no answer: the words are an explanation of
+        // the failure, not something the model said, so they must not enter the thread as an assistant turn.
+        if (com.vibe.agent.acp.TurnFailure.abnormalStop(stop)) {
+          failAgentTurn(t, null, stop, secs, startedAt)
           return@whenComplete
         }
         // Gates may run a build command and read files — never on the reader thread that completed us.
@@ -3708,6 +3732,54 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
       catch (e: Exception) {
         feedNotice(t("chat.turnEndError", "reason" to e.message))
         finishTurn()
+      }
+    }
+  }
+
+  /**
+   * Ends an agent turn that produced no answer: a JSON-RPC failure or an abnormal stop reason.
+   *
+   * The words streamed before it are dropped, and the failure itself becomes a record of its own
+   * ([com.vibe.agent.acp.TurnFailure]): stored as `assistant` they would be read back by the next
+   * request as the model's own statement, and the account notice of a vendor would travel on as
+   * context. The log gets the agent, the code and the request id, and nothing of the person's text.
+   */
+  private fun failAgentTurn(t: ChatTarget.Agent, error: Throwable?, stop: String?, seconds: Double, startedAt: Long) {
+    val record = if (error != null) com.vibe.agent.acp.TurnFailure.ofAgent(t.config.name, error)
+                 else com.vibe.agent.acp.TurnFailure.ofStop(t.config.name, stop ?: "")
+    com.vibe.agent.acp.TurnFailure.log(record)
+    discardAgentText(turns.chat)
+    val text = com.vibe.agent.acp.TurnFailure.render(record) +
+      (if (error != null && com.vibe.agent.acp.AgentAuth.needsLogin(error)) "\n" + t("auth.loginHint") else "")
+    turnNote(text, error?.let { agentErrorFixes(it) }.orEmpty())
+    audit?.append(AuditEvent(System.currentTimeMillis(), AuditEvent.Action.REPLY, ok = false, actor = agentActor(),
+      model = "acp/${t.config.name}", latencyMs = System.currentTimeMillis() - startedAt,
+      meta = buildMap {
+        put("code", record.code ?: "none")
+        put("requestId", record.requestId ?: "none")
+        if (stop != null) put("stopReason", stop)
+      }))
+    turnEndedBadly = true
+    finishAgentBubble(seconds, t("chat.failed"), noteOutcome = false)
+    finishTurn()
+  }
+
+  /** Takes the words of a failed turn out of the feed and the thread before anything else is stored */
+  private fun discardAgentText(turn: TurnState) {
+    synchronized(turn.text) { turn.text.setLength(0) }
+    synchronized(turn.reasoning) { turn.reasoning.setLength(0) }
+    val closed = turn.segments.cut()
+    closed?.retired = true
+    turn.segments.reset()
+    SwingUtilities.invokeLater {
+      val m = turn.message
+      turn.message = null
+      turn.thoughts?.finish()
+      turn.thoughts = null
+      m?.row?.parent?.let { parent ->
+        parent.remove(m.row)
+        parent.revalidate()
+        parent.repaint()
       }
     }
   }
@@ -4281,11 +4353,16 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
       turnNote(t("chat.stopError", "reason" to e.message))
     }
     catch (e: Exception) {
+      val failure = com.vibe.agent.acp.TurnFailure.ofProvider(t.provider.id, e, llmClient.lastRequestId())
+      com.vibe.agent.acp.TurnFailure.log(failure)
       if (failOver(t, e, startedAt)) return
-      finishAgentBubble((System.currentTimeMillis() - startedAt) / 1000.0, t("chat.failed"))
+      // A failed request was still billed when the provider reported usage before it broke.
+      if (turns.chat.usage.known) recordTurnSpend(turns.chat, "", turnThreadId)
+      // The failure record below is the one outcome; a second "turn ended without a word" line would say it twice.
+      finishAgentBubble((System.currentTimeMillis() - startedAt) / 1000.0, t("chat.failed"), noteOutcome = false)
       // A rejected payload must not poison every later request in this thread.
       turnThreadId?.let { if (history.dropImagesFromLastUser(it)) feedNotice(t("chat.imagesDropped")) }
-      turnNote(t("chat.error", "reason" to e.message))
+      turnNote(com.vibe.agent.acp.TurnFailure.render(failure))
       // Отказ провайдера и петля выглядят одинаково — оборванный ход, — а решения противоположные:
       // первое стоит продолжить, когда провайдер вернётся, второе повторять нельзя.
       val cause = com.vibe.agent.safety.StopCause.of(
@@ -6572,7 +6649,8 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     }
   }
 
-  private fun finishAgentBubble(seconds: Double, suffix: String?, turn: TurnState = turns.chat) {
+  private fun finishAgentBubble(seconds: Double, suffix: String?, turn: TurnState = turns.chat,
+                                noteOutcome: Boolean = true) {
     val threadId = turnThreadId
     // Atomic capture+clear: queued per-delta projections then see an empty buffer and no-op.
     val fullText = synchronized(turn.text) {
@@ -6601,7 +6679,8 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     val closedSegments = turn.segments.cutCount
     turn.segments.reset()
     // Words said before the last call are stored as records already; a turn whose last word was a call has an answer
-    if (threadId != null && fullText.isBlank() && (closedSegments == 0 || toolRounds.isNotEmpty() || stopMarker != null)) {
+    if (noteOutcome && threadId != null && fullText.isBlank() &&
+        (closedSegments == 0 || toolRounds.isNotEmpty() || stopMarker != null)) {
       val note = t("chat.turnNoAnswer", "outcome" to (suffix ?: "").ifBlank { t("chat.turnNoAnswerUnknown") })
       history.append(threadId, ChatMessageRecord(Role.OTHER, note, at = nowIso(), wireText = stopMarker, toolRounds = toolRounds))
       // Its requests were billed all the same: a model that works silently must not spend outside the report and the budget
