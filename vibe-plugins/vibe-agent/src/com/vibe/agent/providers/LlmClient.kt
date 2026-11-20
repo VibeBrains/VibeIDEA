@@ -1107,12 +1107,12 @@ class LlmClient(
    */
   private fun armFirstTokenGuard(body: java.io.InputStream): java.util.TimerTask? {
     val limit = firstTokenLimitMs
-    if (limit <= 0 || firstFragmentAt.get() != 0) return null
+    if (limit <= 0 || firstFragmentAt.get() != 0L) return null
     val remaining = limit - (System.currentTimeMillis() - attemptStartedAt.get())
     if (remaining <= 0) return null
     val task = object : java.util.TimerTask() {
       override fun run() {
-        if (firstFragmentAt.get() != 0 || cancelled()) return
+        if (firstFragmentAt.get() != 0L || cancelled()) return
         if (firstTokenExpired.compareAndSet(false, true)) runCatching { body.close() }
       }
     }

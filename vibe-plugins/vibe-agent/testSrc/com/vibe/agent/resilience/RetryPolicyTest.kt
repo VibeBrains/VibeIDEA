@@ -174,8 +174,8 @@ class RetryPolicyTest {
 
   @Test
   fun `a large body on a 5xx is not retried, a small one is`() {
-    val large = RequestSize.Sample(RequestSize.LARGE_CHARS + 1, 0)
-    val small = RequestSize.Sample(1_000, 500)
+    val large = RequestSize.Sample(RequestSize.LARGE_CHARS + 1L, 0L)
+    val small = RequestSize.Sample(1_000L, 500L)
     assertTrue(RequestSize.stopsRetries(500, large))
     assertFalse(RequestSize.stopsRetries(500, small))
     assertFalse(RequestSize.stopsRetries(429, large))

@@ -165,7 +165,7 @@ object RequestSize {
       message.toolCalls.forEach { chars += it.name.length + it.arguments.length }
       message.toolResults.forEach { chars += it.text.length }
     }
-    val schemas = tools.sumOf { it.name.length + it.description.length + it.schema.toString().length }
+    val schemas = tools.sumOf { (it.name.length + it.description.length + it.schema.toString().length).toLong() }
     return Sample(chars + schemas, schemas)
   }
 
