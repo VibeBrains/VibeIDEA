@@ -1114,6 +1114,7 @@
   "doctor.extraBody.betweenToolsField": "рядом с between_tools другие поля thinking не принимаются (400): уберите display, budget_tokens и block_binding",
   "doctor.extraBody.betweenToolsModel": "у этой модели нет режима between_tools — вендор ответит 400",
   "doctor.extraBody.budget": "модель отвергает бюджет мышления (400), ей нужен адаптивный режим",
+  "doctor.extraBody.fastMode": "быстрый режим у Opus 4.8 выведен с 30.11.2026: запрос с speed fast вендор отвергнет; уберите поле или перейдите на Opus 5.5",
   "doctor.extraBody.forcedTool": "модель отвергает принудительный выбор инструмента (400 на каждом запросе)",
   "doctor.extraBody.serverFallback": "запасную модель вендора IDE не поддерживает: блок fallback не хранится, и длинный разговор с инструментами получит 400 — уберите поле, IDE сама уходит на следующую модель цепочки при отказе",
   "doctor.extraBody.sampling": "модель отвергает выборку (400)",

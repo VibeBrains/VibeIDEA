@@ -52,6 +52,16 @@ class ExtraBodyConflictsTest {
   }
 
   @Test
+  fun `fast mode is named for opus 4-8 and allowed on opus 5-5`() {
+    assertEquals(listOf("speed" to ExtraBodyConflicts.Reason.FAST_MODE),
+                 conflicts("claude-opus-4-8", "anthropic", """{"speed": "fast"}"""))
+    // Fast mode stays on Opus 5.5.
+    assertTrue(conflicts("claude-opus-5-5", "anthropic", """{"speed": "fast"}""").isEmpty())
+    // The field is Anthropic's own; another wire does not carry it.
+    assertTrue(conflicts("claude-opus-4-8", "openai", """{"speed": "fast"}""").isEmpty())
+  }
+
+  @Test
   fun `no extraBody, no conflicts`() {
     assertTrue(ExtraBodyConflicts.of("claude-opus-5-5", "anthropic", null).isEmpty())
     assertTrue(conflicts("some-local-model", "openai", """{"temperature": 0.2}""").isEmpty())

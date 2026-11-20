@@ -37,6 +37,23 @@ class ToolCallsTest {
   }
 
   @Test
+  fun `a duplicate tool name goes out once on every wire`() {
+    // Two servers can expose the same name, and the provider refuses the whole request over the duplicate.
+    val second = tool.copy(description = "Search memory again", schema = obj("""{"type":"object"}"""))
+    val descriptions = listOf(
+      ToolCalls.openAiTools(listOf(tool, second)).map {
+        it.jsonObject["function"]!!.jsonObject["description"]!!.jsonPrimitive.content
+      },
+      ToolCalls.anthropicTools(listOf(tool, second)).map { it.jsonObject["description"]!!.jsonPrimitive.content },
+      ToolCalls.geminiTools(listOf(tool, second)).single().jsonObject["functionDeclarations"]!!.jsonArray.map {
+        it.jsonObject["description"]!!.jsonPrimitive.content
+      },
+      ResponsesWire.tools(listOf(tool, second)).map { it.jsonObject["description"]!!.jsonPrimitive.content },
+    )
+    for (wire in descriptions) assertEquals(listOf("Search memory"), wire)
+  }
+
+  @Test
   fun `openai calls stream in pieces and are assembled by index`() {
     val acc = ToolCallAccumulator()
     acc.openAiChunk(obj("""{"choices":[{"delta":{"tool_calls":[{"index":0,"id":"c1","function":{"name":"memory_search","arguments":""}}]}}]}"""))

@@ -73,7 +73,7 @@ object ResponsesWire {
   }
 
   /** Function tools in this wire's flat shape: no `function` wrapper, and `strict` stated rather than defaulted. */
-  fun tools(specs: List<ToolSpec>): JsonArray = JsonArray(specs.map { spec ->
+  fun tools(specs: List<ToolSpec>): JsonArray = JsonArray(ToolCalls.distinct(specs).map { spec ->
     buildJsonObject {
       put("type", "function")
       put("name", spec.name)

@@ -29,6 +29,13 @@ object ExtraBodyConflicts {
     FORCED_TOOL,
 
     /**
+     * `speed: "fast"` on a model whose fast mode has ended: from 30.11.2026 Opus 4.8 answers it with an error, and
+     * fast mode remains on Opus 5.5 (platform.claude.com/docs/en/release-notes/overview, as quoted by the digest of
+     * 01.11.2026). The client never sends the field itself; a hand-written `extraBody` is the only way in.
+     */
+    FAST_MODE,
+
+    /**
      * The vendor's own fallback on Anthropic's wire: a refused turn is answered by another model inside one response
      * That answer carries a `fallback` block the next request must send back at the same place, or replayed thinking
      * around it is a 400; this client keeps no such block and retries on its own chain instead
@@ -71,6 +78,10 @@ object ExtraBodyConflicts {
       result.add(Conflict("$REASONING.$EFFORT", Reason.SWITCH))
     }
     if (wire == ModelQuirks.WIRE_ANTHROPIC && FALLBACKS in extraBody) result.add(Conflict(FALLBACKS, Reason.SERVER_FALLBACK))
+    val speed = (extraBody[SPEED] as? JsonPrimitive)?.contentOrNull
+    if (wire == ModelQuirks.WIRE_ANTHROPIC && speed == FAST && FAST_ENDED.containsMatchIn(modelId)) {
+      result.add(Conflict(SPEED, Reason.FAST_MODE))
+    }
     if (ModelQuirks.Quirk.NO_FORCED_TOOL_CHOICE in quirks) forcedToolChoice(wire, extraBody[TOOL_CHOICE])?.let { result.add(it) }
     return result
   }
@@ -124,6 +135,11 @@ object ExtraBodyConflicts {
   private const val NONE = "none"
   private const val TOOL_CHOICE = "tool_choice"
   private const val FALLBACKS = "fallbacks"
+  private const val SPEED = "speed"
+  private const val FAST = "fast"
+
+  /** Opus 4.8 loses fast mode on 30.11.2026; Opus 5.5 keeps it, so the line stops at the 4.8 family. */
+  private val FAST_ENDED = Regex("^claude-opus-4-8")
   private val FORCED_CHOICES = setOf("any", "tool")
   private const val REQUIRED = "required"
   private const val FUNCTION = "function"

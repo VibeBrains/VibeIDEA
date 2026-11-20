@@ -50,7 +50,17 @@ object ToolCalls {
   /** Role of the message carrying a round's [ToolResult]s. */
   const val ROLE = "tool"
 
-  fun openAiTools(tools: List<ToolSpec>): JsonArray = JsonArray(tools.map { tool ->
+  /**
+   * Tools with one definition per name, the first one kept.
+   *
+   * Two servers can expose the same tool name, and a refreshed `tools/list` can arrive beside the old definition:
+   * the provider then rejects the whole request with a 400 about a duplicate declaration (Kimi Code 2.5.2 fixed the
+   * same bug on its side, kimi-code releases). The name is the identity the model calls by, so the first definition
+   * wins and order stays as it was.
+   */
+  fun distinct(tools: List<ToolSpec>): List<ToolSpec> = tools.distinctBy { it.name }
+
+  fun openAiTools(tools: List<ToolSpec>): JsonArray = JsonArray(distinct(tools).map { tool ->
     buildJsonObject {
       put("type", "function")
       put("function", buildJsonObject {
@@ -61,7 +71,7 @@ object ToolCalls {
     }
   })
 
-  fun anthropicTools(tools: List<ToolSpec>): JsonArray = JsonArray(tools.map { tool ->
+  fun anthropicTools(tools: List<ToolSpec>): JsonArray = JsonArray(distinct(tools).map { tool ->
     buildJsonObject {
       put("name", tool.name)
       put("description", tool.description)
@@ -70,7 +80,7 @@ object ToolCalls {
   })
 
   fun geminiTools(tools: List<ToolSpec>): JsonArray = JsonArray(listOf(buildJsonObject {
-    put("functionDeclarations", JsonArray(tools.map { tool ->
+    put("functionDeclarations", JsonArray(distinct(tools).map { tool ->
       buildJsonObject {
         put("name", tool.name)
         put("description", tool.description)
