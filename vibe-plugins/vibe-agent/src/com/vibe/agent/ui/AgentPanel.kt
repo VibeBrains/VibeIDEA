@@ -3021,6 +3021,10 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
       breakerTripped = breakers.isBlocking(),
       spentTokens = stretchTokens.get(),
       maxTokens = VibeAgentSettings.autopilotMaxTokens.toLong(),
+      // The last words of the turn are what the person is left to answer: continuing past them
+      // means answering the agent's question on the person's behalf.
+      endedWithQuestion = com.vibe.agent.autopilot.AutopilotPolicy
+        .endsWithQuestion(turns.chat.segments.current.text.toString()),
     )
     val remaining = com.vibe.agent.autopilot.AutopilotPolicy.remaining(plan)
     when (com.vibe.agent.autopilot.AutopilotPolicy.decide(state)) {
@@ -3053,6 +3057,10 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
       com.vibe.agent.autopilot.AutopilotPolicy.Decision.STOP_UNSAFE -> {
         autopilotTurns = 0
         feedNotice(t("autopilot.unsafe"))
+      }
+      com.vibe.agent.autopilot.AutopilotPolicy.Decision.STOP_QUESTION -> {
+        autopilotTurns = 0
+        feedNotice(t("autopilot.question"))
       }
     }
   }
@@ -6177,9 +6185,9 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
         val resolved = ProvidersService.resolve(p, project.basePath, quiet = true) { } ?: return@mapNotNull null
         // No key and not a local endpoint: asking would earn a predictable 401. Не спрашиваем и
         // не называем это ошибкой провайдера — у человека просто не введён ключ.
-        // Тихий поиск не отличает непрочитанный ключ из связки от отсутствующего
-        // Считать такой провайдер безключевым значило убрать из выбора все его модели, хотя страница «Модели» показывает их включёнными
-        // Безключевой — только при подтверждённом отсутствии ключа; непрочитанный остаётся с каталогом из кэша, связку прочтёт первый запрос человека
+        // A quiet lookup cannot tell an unread keychain entry from a missing one
+        // Calling such a provider keyless would hide all its models from the picker while the Models page still lists them
+        // Keyless only on a confirmed absence; an unread one keeps its cached catalog, and the first real request reads it
         if (resolved.missingKey) {
           val verdict = com.vibe.agent.settings.ModelsPage.verdict(true) { com.vibe.agent.providers.ApiKeyResolver.keyPresence(p) }
           if (verdict == com.vibe.agent.settings.ModelsPage.KeyVerdict.WAITING) keyless += p.id
@@ -7594,6 +7602,11 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
       val choice = dialog.exitCode
       if (choice >= 0 && !request.dismissed) options[choice].getValue("optionId").jsonPrimitive.content else null
     }
+    // The person said «allow» to this exact command: the destructive gate in terminal/create must not ask again
+    val chosenKind = chosen?.let { id ->
+      options.firstOrNull { it.getValue("optionId").jsonPrimitive.content == id }
+    }?.get("kind")?.jsonPrimitive?.contentOrNull
+    if (chosen != null && command != null && chosenKind?.startsWith("allow") == true) turn.approvedCommands.add(command)
     audit?.append(AuditEvent(System.currentTimeMillis(), AuditEvent.Action.PERMISSION, ok = chosen != null, actor = com.vibe.agent.audit.AuditActor.HUMAN,
       callId = permissionCallId, turnId = turnId, sessionId = turnThreadId ?: currentThreadId,
       meta = mapOf("title" to title.take(120), "outcome" to if (chosen != null) "selected" else "cancelled") +
@@ -7712,10 +7725,13 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     // Destructive-command gate: same deterministic classifier as VibeIDE, asked before execution.
     val line = (listOf(command) + args).joinToString(" ")
     val verdict = ShellSafetyAnalyzer.analyzeLine(line)
-    // On autopilot a removal inside the project or a temp folder is taken back by the checkpoint, as in VibeIDE
+    // On autopilot only a removal inside a temp folder is reversible: a project removal is not taken back by the
+    // checkpoint (ignored files, no git, same-turn creations), as VibeIDE fixed in 16aa3eb244c
     val reversible = verdict != null && com.vibe.agent.mcp.PermissionMode.of(VibeAgentSettings.permissionMode) ==
       com.vibe.agent.mcp.PermissionMode.AUTO && com.vibe.agent.guard.RemovalScope.isReversible(line, project.basePath, cwd)
-    if (verdict != null && !reversible) {
+    // The card already asked about this very line: one approval is one run, not a second identical dialog
+    val approvedInCard = turn.approvedCommands.remove(line)
+    if (verdict != null && !reversible && !approvedInCard) {
       // The same question in two places: the dialog here and, when the bridge is running, buttons
       // on the phone. A long unattended run otherwise waits silently for someone who left the room.
       val body = t("chat.destructive.body",

@@ -8,10 +8,15 @@ import java.nio.file.Path
  * Whether a removal takes back only what a snapshot can put back.
  *
  * Autopilot asks about every `rm` today, and a run that builds and cleans ten times asks ten times — the same ritual
- * of unread dialogs that the permission modes exist to avoid. VibeIDE draws the line by scope: a removal whose every
- * target lies inside the project or a temp folder is not a question, because the checkpoint holds the old text and a
- * temp folder is scratch. Everything else stays a question: home, root, the repository store, a wildcard, a path
- * climbing out with `..`, a variable this rule cannot resolve, a second program on the line.
+ * of unread dialogs that the permission modes exist to avoid. The line is drawn by scope, and only one scope counts:
+ * a temp folder is scratch, so deleting inside it is not a question. A project folder is NOT in that scope, because
+ * the checkpoint cannot promise to bring it back: it snapshots the folder with `git add -A` / `ls-files
+ * --exclude-standard`, so files the project ignores (`.env`, `node_modules`, build output) are missing from it; a
+ * folder without git has no checkpoint at all; the snapshot is taken once per turn, not before each command, so a
+ * file created earlier in the same turn is not in it; and an external ACP agent has no whole-folder snapshot either.
+ * `rm .env` on autopilot therefore went without a question — VibeIDE closed the same hole (16aa3eb244c).
+ * Everything outside a temp folder stays a question: home, root, the project, the repository store, a wildcard, a
+ * path climbing out with `..`, a variable this rule cannot resolve, a second program on the line.
  *
  * Pure — strings in, verdict out — so a test decides it rather than a click on a dialog. Wrong in the safe direction
  * only: anything not understood is treated as irreversible and asked.
@@ -22,11 +27,13 @@ object RemovalScope {
   private val SAFE_FLAGS = Regex("^-[rRfvd]+$|^--(recursive|force|dir|verbose)$")
 
   /**
-   * True when the line is a plain `rm` and every target it names is inside [projectRoot] or one of [tempRoots].
+   * True when the line is a plain `rm` and every target it names is inside one of [tempRoots].
    *
-   * [cwd] is where relative targets are read from; it must itself be inside one of the roots, since `../../..`
-   * from a folder outside them would reach anywhere. A missing project root means no scope to judge by, so the answer
-   * is false and the question is still asked.
+   * [projectRoot] is where a relative [cwd] is read from (`.`, or `build` without a folder), not a reversible root:
+   * the checkpoint's snapshot does not cover ignored files, a folder without git, or what the same turn created
+   * (see the class comment). [cwd] must itself be inside one of the temp roots, since `../../..` from a folder
+   * outside them would reach anywhere. A missing project root means the working folder cannot be resolved, so the
+   * answer is false and the question is still asked.
    */
   fun isReversible(
     line: String,
@@ -37,11 +44,8 @@ object RemovalScope {
     val root = projectRoot ?: return false
     val project = normalize(root).takeIf { it.nameCount > 0 } ?: return false
     val base = workingBase(cwd, project)?.takeIf { it.nameCount > 0 } ?: return false
-    val roots = buildList {
-      add(project)
-      tempRoots.mapNotNullTo(this) { normalize(it).takeIf { p -> p.nameCount > 0 } }
-    }
-    // The working folder may be a root itself (the project root by default), not only something inside one.
+    val roots = tempRoots.mapNotNull { normalize(it).takeIf { p -> p.nameCount > 0 } }
+    // The working folder may be a temp root itself, not only something inside one.
     if (roots.none { isWithin(base, it) }) return false
     // A substitution, a backtick or an unquoted variable can name a second command or a target this rule never sees
     if (line.contains('$') || line.contains('`')) return false
@@ -58,9 +62,6 @@ object RemovalScope {
         val target = raw.trim('"', '\'')
         if (!plainPath(target)) return false
         val resolved = resolve(base, target) ?: return false
-        // Never the project root itself, never the repository store: the checkpoint does not carry `.git`
-        if (resolved == project) return false
-        if (isInside(resolved, project.resolve(".git"))) return false
         // A temp root is scratch only as a folder to work in, not as something to delete whole
         if (roots.any { it == resolved }) return false
         if (roots.none { isInside(resolved, it) }) return false

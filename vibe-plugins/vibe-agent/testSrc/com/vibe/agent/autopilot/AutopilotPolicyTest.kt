@@ -5,6 +5,7 @@ import com.vibe.agent.plans.AgentPlan
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
+import kotlin.test.assertTrue
 
 class AutopilotPolicyTest {
   private fun plan(vararg statuses: AgentPlan.Status) = AgentPlan.Plan(
@@ -22,7 +23,8 @@ class AutopilotPolicyTest {
     stopped: Boolean = false,
     spentTokens: Long = 0,
     maxTokens: Long = 0,
-  ) = AutopilotPolicy.State(enabled, done, maxTurns, checkpointEvery, plan, spentTokens, maxTokens, failed, breaker, stopped)
+    question: Boolean = false,
+  ) = AutopilotPolicy.State(enabled, done, maxTurns, checkpointEvery, plan, spentTokens, maxTokens, failed, breaker, stopped, question)
 
   @Test
   fun `выключенный автопилот не решает ничего`() {
@@ -45,6 +47,27 @@ class AutopilotPolicyTest {
     assertEquals(AutopilotPolicy.Decision.STOP_UNSAFE, AutopilotPolicy.decide(state(failed = true)))
     assertEquals(AutopilotPolicy.Decision.STOP_UNSAFE, AutopilotPolicy.decide(state(breaker = true)))
     assertEquals(AutopilotPolicy.Decision.STOP_UNSAFE, AutopilotPolicy.decide(state(stopped = true)))
+  }
+
+  @Test
+  fun `ход, кончившийся вопросом, останавливает автопилот в любом режиме`() {
+    // The model wrote a plan and asked «shall I start?» — the autopilot does not answer for the person
+    assertEquals(AutopilotPolicy.Decision.STOP_QUESTION, AutopilotPolicy.decide(state(question = true)))
+    // A question outranks a finished plan: the last word stays with the person
+    val done = plan(AgentPlan.Status.COMPLETED, AgentPlan.Status.COMPLETED)
+    assertEquals(AutopilotPolicy.Decision.STOP_QUESTION, AutopilotPolicy.decide(state(plan = done, question = true)))
+  }
+
+  @Test
+  fun `вопросом считается последняя непустая строка ответа`() {
+    assertTrue(AutopilotPolicy.endsWithQuestion("Готово. Приступать к реализации?"))
+    assertTrue(AutopilotPolicy.endsWithQuestion("Готово.\n\nПриступать к реализации?  \n"))
+    assertTrue(AutopilotPolicy.endsWithQuestion("Приступать к реализации?»"))
+    assertTrue(AutopilotPolicy.endsWithQuestion("Приступать к реализации?**"))
+    assertFalse(AutopilotPolicy.endsWithQuestion("Приступать к реализации?\nПлан готов."))
+    assertFalse(AutopilotPolicy.endsWithQuestion("Готово."))
+    assertFalse(AutopilotPolicy.endsWithQuestion(null))
+    assertFalse(AutopilotPolicy.endsWithQuestion("   "))
   }
 
   @Test

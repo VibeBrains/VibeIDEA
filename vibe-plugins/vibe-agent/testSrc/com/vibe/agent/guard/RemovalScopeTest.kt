@@ -7,10 +7,12 @@ import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 /**
- * On autopilot a removal is silent only when it stays inside the project or a temp folder.
+ * On autopilot a removal is silent only when it stays inside a temp folder.
  *
- * The rule is the one that decides whether a person is interrupted, so every way out of the two folders is a test:
- * a wildcard, a climb with `..`, the home shortcut, the repository store, a wrapper, a second command.
+ * A project folder is not reversible: the checkpoint's snapshot skips ignored files, a folder without git has none,
+ * and a file created earlier in the same turn is not in it (VibeIDE 16aa3eb244c). The rule is the one that decides
+ * whether a person is interrupted, so every way out of a temp folder is a test: the project, a wildcard, a climb
+ * with `..`, the home shortcut, a wrapper, a second command.
  */
 class RemovalScopeTest {
 
@@ -20,25 +22,29 @@ class RemovalScopeTest {
   private fun reversible(line: String, cwd: String? = null) = RemovalScope.isReversible(line, project, cwd, temp)
 
   @Test
-  fun `a removal inside the project is taken back by the checkpoint`() {
-    assertTrue(reversible("rm -rf build"))
-    assertTrue(reversible("rm notes.txt"))
-    assertTrue(reversible("rm -rf src/test resources"))
-    assertTrue(reversible("rm -rf $project/build"))
+  fun `a removal inside the project is still a question`() {
+    // The checkpoint does not carry `.env`, `node_modules` or a file this same turn created
+    assertFalse(reversible("rm -rf build"))
+    assertFalse(reversible("rm notes.txt"))
+    assertFalse(reversible("rm -rf .env"))
+    assertFalse(reversible("rm -rf src/test resources"))
+    assertFalse(reversible("rm -rf $project/build"))
   }
 
   @Test
   fun `a removal inside a temp folder is scratch`() {
     assertTrue(reversible("rm -rf /tmp/vibe-build"))
+    assertTrue(reversible("rm -rf /tmp/a /tmp/b"))
   }
 
   @Test
   fun `a relative target is read from the working folder, which must itself be in scope`() {
-    assertTrue(reversible("rm -rf build", "$project/src"))
+    assertTrue(reversible("rm -rf build", "/tmp/vibe-work"))
+    assertFalse(reversible("rm -rf build", "$project/src"))
     // A relative working folder is read from the project, not from the IDE's own process folder
-    assertTrue(reversible("rm -rf build", "."))
+    assertFalse(reversible("rm -rf build", "."))
     assertFalse(reversible("rm -rf build", "/"))
-    assertFalse(reversible("rm -rf ../../etc", "$project/src"))
+    assertFalse(reversible("rm -rf ../../etc", "/tmp/vibe-work"))
     assertFalse(RemovalScope.isReversible("rm -rf build", project, "../outside", temp))
   }
 
@@ -49,6 +55,7 @@ class RemovalScopeTest {
     assertFalse(reversible("rm -rf .git"))
     assertFalse(reversible("rm -rf $project/.git/objects"))
     assertFalse(reversible("rm -rf ./.git"))
+    assertFalse(reversible("rm -rf /tmp"))
   }
 
   @Test

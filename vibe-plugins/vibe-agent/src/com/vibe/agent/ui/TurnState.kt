@@ -57,6 +57,15 @@ internal class TurnState(
 
   val toolCalls = ToolCallRegistry()
 
+  /**
+   * Command lines the person approved in a permission card during this turn.
+   *
+   * The agent asks once, then delegates the run to `terminal/create`; the destructive gate there is a second
+   * question about the very same line, and a person who has just said «allow» is being asked whether they meant it
+   * (VibeIDE 22cc0656adb). Consumed on use: an approval is for one run, not a standing permission.
+   */
+  val approvedCommands: MutableSet<String> = ConcurrentHashMap.newKeySet()
+
   /** Baselines of the files the agent's own edit tools change, for the per-hunk review */
   val editCapture = com.vibe.agent.acp.ExternalEditCapture()
   val toolStarts = ConcurrentHashMap<String, Long>()

@@ -20,6 +20,8 @@ import com.vibe.agent.plans.AgentPlan
  *  2. **Anything unusual hands control back.** A failure, a stop, a tripped breaker — the autopilot
  *     never decides that it understands the situation better than the person who is about to read
  *     it.
+ *  3. **A question ends the autopilot.** «Shall I start?» is the agent asking the person, not a
+ *     step; continuing would answer it on their behalf.
  */
 object AutopilotPolicy {
   enum class Decision {
@@ -49,6 +51,15 @@ object AutopilotPolicy {
 
     /** Something went wrong; the person decides what happens next. */
     STOP_UNSAFE,
+
+    /**
+     * The turn ended with a question to the person.
+     *
+     * A model that has just written a plan asks «shall I start?» — and an autopilot that answers
+     * for the person has approved the plan nobody read. A question is the agent handing the turn
+     * back, so the autopilot stops even in a mode that would otherwise continue (owner, 20.11.2026).
+     */
+    STOP_QUESTION,
   }
 
   data class State(
@@ -65,6 +76,8 @@ object AutopilotPolicy {
     val lastTurnFailed: Boolean = false,
     val breakerTripped: Boolean = false,
     val stoppedByUser: Boolean = false,
+    /** The last words of the turn were a question addressed to the person ([endsWithQuestion]). */
+    val endedWithQuestion: Boolean = false,
   )
 
   fun decide(state: State): Decision {
@@ -74,6 +87,9 @@ object AutopilotPolicy {
     if (state.stoppedByUser || state.breakerTripped || state.lastTurnFailed) return Decision.STOP_UNSAFE
     val plan = state.plan
     if (plan == null || plan.isEmpty) return Decision.OFF
+    // A question is the agent asking the person, not a step of the plan: answering it with
+    // «continue» would approve on the person's behalf exactly what they were asked about.
+    if (state.endedWithQuestion) return Decision.STOP_QUESTION
     if (plan.steps.all { it.status == AgentPlan.Status.COMPLETED }) return Decision.STOP_PLAN_DONE
     if (state.maxTurns > 0 && state.autoTurnsDone >= state.maxTurns) return Decision.STOP_LIMIT
     if (state.maxTokens > 0 && state.spentTokens >= state.maxTokens) return Decision.STOP_BUDGET
@@ -88,6 +104,20 @@ object AutopilotPolicy {
     val steps = plan?.steps ?: return null
     return (steps.firstOrNull { it.status == AgentPlan.Status.IN_PROGRESS }
       ?: steps.firstOrNull { it.status == AgentPlan.Status.PENDING})?.content
+  }
+
+  /**
+   * Did the turn end with a question to the person?
+   *
+   * The last non-empty line is what the person reads last, so it is the one that decides: a
+   * trailing quote, bracket or markdown emphasis after the question mark is not a different ending.
+   * Deliberately simple — a question mark anywhere else in the text says nothing about who the turn
+   * was left to.
+   */
+  fun endsWithQuestion(text: String?): Boolean {
+    val last = text?.lineSequence()?.map { it.trim() }?.lastOrNull { it.isNotEmpty() } ?: return false
+    val end = last.trimEnd { it.isWhitespace() || it in "\"'»”’)]}*_" }
+    return end.endsWith("?") || end.endsWith("？")
   }
 
   /** How many steps are still not done, for the line that says what remains. */
