@@ -213,6 +213,9 @@ def check_seeds():
             continue
         if path[len(SEED_ROOT):].startswith(WORKER_PROFILES):
             continue
+        # docs/ и tools/ набора в проекты не засеваются (вне реестра versions.json): это мануалы и утилиты, не настройки
+        if path[len(SEED_ROOT):].startswith(('docs/', 'tools/')):
+            continue
         if name in FREE_FORM_FILES:
             free_form_hit.add(name)
             continue

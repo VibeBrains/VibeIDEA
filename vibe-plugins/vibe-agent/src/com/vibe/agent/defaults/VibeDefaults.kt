@@ -112,6 +112,7 @@ object VibeDefaults {
     "rules/verification.mdc" to "rules/verification.mdc",
     "rules/versioning.mdc" to "rules/versioning.mdc",
     "rules/watch-media.mdc" to "rules/watch-media.mdc",
+    "rules/context.mdc" to "rules/context.mdc",
     "servers.json" to "servers.json",
     "slop.json" to "slop.json",
     "skills/anti-slop/SKILL.md" to "skills/anti-slop/SKILL.md",
