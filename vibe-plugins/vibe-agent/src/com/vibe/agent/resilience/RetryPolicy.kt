@@ -1,6 +1,9 @@
 // Copyright 2026 VibeBrains. Use of this source code is governed by the GNU AGPL-3.0 license.
 package com.vibe.agent.resilience
 
+import com.vibe.agent.providers.ChatMessage
+import com.vibe.agent.providers.ToolSpec
+
 /**
  * Waiting out a provider instead of failing the turn.
  *
@@ -127,4 +130,48 @@ object RetryPolicy {
   /** HTTP status out of a message like `HTTP 429: ...` — the shape our client throws. */
   fun statusFromMessage(message: String?): Int? =
     message?.let { Regex("HTTP (\\d{3})").find(it)?.groupValues?.get(1)?.toIntOrNull() }
+}
+
+/**
+ * How much a request weighs, measured only when a provider refused it.
+ *
+ * Serialising the messages on every turn would cost seconds on a thread with pictures; the number is needed
+ * exactly once — in the error branch, to tell a body too heavy for the provider from a provider that hiccuped.
+ *
+ * The advice behind the number comes from VibeIDE: a 558 KB body of 221 tool schemas got HTTP 500 while the
+ * model's window was 14% full, so retrying the same body only burns attempts. A large body on a 5xx is not a
+ * transient failure, it is a request the provider will refuse again.
+ */
+object RequestSize {
+  /** Past this much text the body itself is the suspect: about the size a provider started refusing at */
+  const val LARGE_CHARS = 200_000
+
+  /** [requestChars] — everything the body carries; [schemaChars] — the tool schemas alone, the part we choose */
+  data class Sample(val requestChars: Long, val schemaChars: Long) {
+    val large: Boolean get() = requestChars > LARGE_CHARS
+  }
+
+  /**
+   * The size of the request [messages] and [tools] make, in characters.
+   *
+   * A count of the text the body carries, not the bytes of one wire's JSON: the wires differ in keys and
+   * escaping, and «≈ N KB» is what the person reads. Pictures count by their base64, as they travel.
+   */
+  fun of(messages: List<ChatMessage>, tools: List<ToolSpec>): Sample {
+    var chars = 0L
+    for (message in messages) {
+      chars += message.text.length + (message.reasoning?.length ?: 0)
+      message.images.forEach { chars += it.base64.length }
+      message.toolCalls.forEach { chars += it.name.length + it.arguments.length }
+      message.toolResults.forEach { chars += it.text.length }
+    }
+    val schemas = tools.sumOf { it.name.length + it.description.length + it.schema.toString().length }
+    return Sample(chars + schemas, schemas)
+  }
+
+  /** A 5xx on a body this large will come back on every attempt: waiting only makes the failure later */
+  fun stopsRetries(status: Int?, sample: Sample): Boolean = status != null && status in 500..599 && sample.large
+
+  /** Characters as whole kilobytes, rounded to the nearer one — the unit the person reads */
+  fun kb(chars: Long): Long = (chars + 512) / 1024
 }

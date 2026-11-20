@@ -4194,9 +4194,13 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
       fun offer() = com.vibe.agent.mcp.ToolSearch.offered(allTools, if (inPlace) emptySet() else loaded,
                                                           VibeAgentSettings.toolSearchThreshold)
       var tools = offer()
+      // The names of the tools that stayed behind: without them the model invents names, and an invented name reads
+      // as a refusal from the IDE. Part of the prefix, so it breaks the cache exactly when the set of tools changes.
+      val deferredNote = com.vibe.agent.mcp.ToolSearch.deferralNote(allTools, tools, loaded)
+                           ?.let { ChatMessage("system", it) }
       // Where the turn is happening goes FIRST and always: a model that is not told invents the
       // answer, and which tool it invents with differs from endpoint to endpoint (WorkspaceBriefing).
-      val wire = listOf(workspaceMessage(t)) + terseMessage(resolved.runsLocally) +
+      val wire = listOf(workspaceMessage(t)) + terseMessage(resolved.runsLocally) + listOfNotNull(deferredNote) +
                  com.vibe.agent.providers.ToolRounds.expand(compactForWindow(t, resolved, threadId, transcript, uncompacted, tools)) {
                    name -> allTools.firstOrNull { it.name == name }
                  }
@@ -4446,10 +4450,13 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
   ): com.vibe.agent.providers.ToolResult {
     val query = (call.argumentsObject()["query"] as? kotlinx.serialization.json.JsonPrimitive)?.contentOrNull.orEmpty()
     val found = com.vibe.agent.mcp.ToolSearch.search(query, all)
+    // An exact-name request that found nothing says WHICH name is missing: the model guessed it or mistyped it
+    val asked = com.vibe.agent.mcp.ToolSearch.selected(query)
+    val missing = asked.filter { name -> found.none { it.name == name } }
     loaded.addAll(found.map { it.name })
     systemLine(t("directTools.searched", "query" to query,
                  "found" to (found.joinToString { it.name }.ifEmpty { t("directTools.searchedNothing") })), AGENTS)
-    return com.vibe.agent.providers.ToolResult(call.id, call.name, com.vibe.agent.mcp.ToolSearch.answer(found))
+    return com.vibe.agent.providers.ToolResult(call.id, call.name, com.vibe.agent.mcp.ToolSearch.answer(found, missing))
   }
 
   /**

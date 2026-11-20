@@ -35,7 +35,7 @@ data class ImagePart(val mimeType: String, val base64: String)
  * The body stays in [message] for the feed, where it explains the refusal; the log takes only the
  * status and the id ([com.vibe.agent.acp.TurnFailure.logLine]) — a vendor may echo the prompt back.
  */
-class ProviderHttpException(val status: Int, val requestId: String?, body: String = "") :
+class ProviderHttpException(val status: Int, val requestId: String?, val body: String = "") :
   RuntimeException("HTTP $status" + if (body.isBlank()) "" else ": " + body)
 
 data class ChatMessage(
@@ -549,7 +549,23 @@ class LlmClient(
         // turning that into a red line throws away a turn the user already paid to compose.
         val status = RetryPolicy.statusFromMessage(e.message)
         val kind = RetryPolicy.classify(status, e)
+        // Measured HERE and nowhere else: serialising a thread with pictures on every turn would buy nothing
+        val size = if (status != null && status in 500..599) {
+          com.vibe.agent.resilience.RequestSize.of(messages, offeredTools)
+        }
+        else null
         if (cancelled()) throw e
+        // A body too heavy for the provider fails the same way on every attempt: repeating it only makes the
+        // failure later. The size and the way out travel in the message, so the card shows them as they are.
+        if (size != null && com.vibe.agent.resilience.RequestSize.stopsRetries(status, size)) {
+          val tail = t("retry.bodySize", "request" to com.vibe.agent.resilience.RequestSize.kb(size.requestChars),
+                       "schemas" to com.vibe.agent.resilience.RequestSize.kb(size.schemaChars)) +
+                     " " + t("retry.bodySizeAdvice")
+          val http = e as? ProviderHttpException
+          // The tail joins the provider's own words in the body: the card shows the detail of the HTTP cause
+          if (http != null) throw ProviderHttpException(http.status, http.requestId, (http.body + "\n" + tail).trim())
+          throw RuntimeException((status?.let { "HTTP $it: " } ?: "") + tail, e)
+        }
         val delay = when (val verdict = RetryPolicy.verdict(kind, attempt, RetryPolicy.retryAfterSeconds(lastRetryAfter))) {
           RetryPolicy.Verdict.Stop -> throw e
           // The status stays in the text: the failover decision downstream classifies the failure by it

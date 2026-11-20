@@ -157,4 +157,35 @@ class RetryPolicyTest {
     assertFalse(FailoverPlan.shouldFailOver(RetryPolicy.Kind.FATAL, retriesExhausted = true))
     assertFalse(FailoverPlan.shouldFailOver(RetryPolicy.Kind.RATE_LIMIT, retriesExhausted = false))
   }
+
+  @Test
+  fun `the size of a request counts the text and the schemas it carries`() {
+    val schema = kotlinx.serialization.json.JsonObject(
+      mapOf("type" to kotlinx.serialization.json.JsonPrimitive("object")))
+    val tool = com.vibe.agent.providers.ToolSpec("memory_search", "Search memory", schema)
+    val messages = listOf(
+      com.vibe.agent.providers.ChatMessage("system", "x".repeat(100)),
+      com.vibe.agent.providers.ChatMessage("user", "y".repeat(50)),
+    )
+    val sample = RequestSize.of(messages, listOf(tool))
+    assertTrue(sample.schemaChars > 0)
+    assertEquals(sample.schemaChars + 150, sample.requestChars)
+  }
+
+  @Test
+  fun `a large body on a 5xx is not retried, a small one is`() {
+    val large = RequestSize.Sample(RequestSize.LARGE_CHARS + 1, 0)
+    val small = RequestSize.Sample(1_000, 500)
+    assertTrue(RequestSize.stopsRetries(500, large))
+    assertFalse(RequestSize.stopsRetries(500, small))
+    assertFalse(RequestSize.stopsRetries(429, large))
+    assertFalse(RequestSize.stopsRetries(null, large))
+  }
+
+  @Test
+  fun `kilobytes are rounded to the nearer one`() {
+    assertEquals(1L, RequestSize.kb(1024))
+    assertEquals(1L, RequestSize.kb(700))
+    assertEquals(0L, RequestSize.kb(500))
+  }
 }
