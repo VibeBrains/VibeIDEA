@@ -20,7 +20,9 @@ class ReasoningEchoTest {
   @Test
   fun `reasoning Kimi models ask for their reasoning back, router prefix included, other models do not`() {
     for (id in listOf("kimi-k3", "moonshotai/kimi-k3", "kimi-k2.6", "kimi-k2.7-code", "kimi-k2.7-code-highspeed",
-                      "kimi-for-coding", "kimi-for-coding-highspeed", "k3", "k3-256k")) {
+                      "kimi-for-coding", "kimi-for-coding-highspeed", "k3", "k3-256k",
+                      // K3.1 Pro: `kimi-k3.1-pro` was caught by the prefix, the bare `k3.1-pro` was not
+                      "k3.1-pro", "k3.1-pro-highspeed", "kimi-k3.1-pro")) {
       assertTrue(ModelQuirks.has(id, ModelQuirks.Quirk.ECHO_REASONING), id)
     }
     // Kimi's own reference names K2.6 and K2.7; an older K2 and look-alike ids stay out.

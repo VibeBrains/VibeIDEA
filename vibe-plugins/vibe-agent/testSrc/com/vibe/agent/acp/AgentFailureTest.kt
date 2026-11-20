@@ -123,6 +123,17 @@ class AgentFailureTest {
   }
 
   @Test
+  fun `the id of the failing response wins over the last id the client remembers`() {
+    // The exception carries the id of its own response, so a later request on the same client cannot take its place
+    val error = CompletionException(ProviderHttpException(403, "req-1", "your account is on hold"))
+    assertEquals("req-1", TurnFailure.ofProvider("kimi", error, requestId = "req-later").requestId)
+    // A dropped connection has no exception of its own: the id the client kept for this request is the only one
+    val transport = TurnFailure.ofProvider("kimi", IOException("connection reset"), requestId = "req-2")
+    assertEquals("req-2", transport.requestId)
+    assertEquals(null, transport.code)
+  }
+
+  @Test
   fun `the log line names the provider, the code and the request id, and no message text`() {
     val failure = TurnFailure.ofProvider("openai",
       ProviderHttpException(403, "req-1", "your account is on hold: secret prompt"))

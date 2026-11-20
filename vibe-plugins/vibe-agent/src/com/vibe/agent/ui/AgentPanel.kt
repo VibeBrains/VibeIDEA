@@ -2909,6 +2909,8 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
         }
         else {
           val model = t as ChatTarget.Model
+          // An HTTP failure carries the id of its own response; the client's last id covers a dropped connection,
+          // and the client is this panel's own, so that id belongs to this request
           val record = com.vibe.agent.acp.TurnFailure.ofProvider(model.provider.id, e, llmClient.lastRequestId())
           com.vibe.agent.acp.TurnFailure.log(record)
           turnNote(com.vibe.agent.acp.TurnFailure.render(record))

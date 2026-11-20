@@ -373,7 +373,9 @@ object ModelQuirks {
       // `kimi-for-coding` (K2.8 Preview) and `k3` — the error «reasoning_content is missing in assistant tool call
       // message» in kimi.com/code/docs/en/kimi-code/error-reference.html (checked 2026-09-17).
       // Not verified with a live key — decision №83.
-      Regex("^(kimi-k3|kimi-k2\\.[67]|kimi-for-coding|k3(-|$))"),
+      // Kimi Code names K3.1 Pro `k3.1-pro` and `k3.1-pro-highspeed`: a dot follows `k3`, and the dash-only
+      // separator left the bare id without the rule (kimi.com/code/docs/en/kimi-code/models.html, checked 30.10.2026)
+      Regex("^(kimi-k3|kimi-k2\\.[67]|kimi-for-coding|k3([.-]|$))"),
       setOf(Quirk.ECHO_REASONING),
       "kimi: the assistant's reasoning_content goes back with its answer and its tool calls in the history",
     ),
@@ -381,10 +383,12 @@ object ModelQuirks {
       // K3 cannot switch reasoning off, its levels are low, high and max, and the platform's default is max
       // (platform.kimi.ai/docs/guide/use-reasoning-effort, checked 2026-09-11); Kimi Code serves it as `k3` and
       // `k3-256k` with the same levels (kimi.com/code/docs/en/kimi-code/models.html, checked 2026-09-23)
-      // Fetched from the vendor's list, the model carries no declaration: «off» sent nothing and ran at max
-      Regex("^(kimi-k3|k3)(-|$)"),
+      // Fetched from the vendor's list, the model carries no declaration: «off» sent nothing and ran at max.
+      // K3.1 Pro is the same: it always reasons, takes low, high and max with high by default, and answers 400 to
+      // «none» or to any word outside those three (same page, checked 30.10.2026). «Off» therefore goes as low.
+      Regex("^(kimi-k3|k3)([.-]|$)"),
       setOf(Quirk.THINKING_ALWAYS_ON, Quirk.EFFORT_LOW_HIGH_MAX),
-      "kimi k3: reasoning cannot be switched off; the levels are low, high and max",
+      "kimi k3 and k3.1: reasoning cannot be switched off; the levels are low, high and max",
     ),
     Rule(
       // Kimi Code's `kimi-for-coding` (K2.8 Preview) takes low, high and max, and `none` switches reasoning off

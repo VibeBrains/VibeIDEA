@@ -29,6 +29,19 @@ class NewModelsReasoningTest {
   }
 
   @Test
+  fun `kimi k3-1 pro answers 400 to none, so off goes as low under both of its names`() {
+    // The vendor serves K3.1 Pro as `k3.1-pro` and `k3.1-pro-highspeed`; a dot after `k3` used to leave the bare id
+    // without any rule, and «off» then sent `reasoning_effort: none`, which K3.1 Pro rejects with 400
+    for (id in listOf("k3.1-pro", "k3.1-pro-highspeed", "kimi-k3.1-pro", "moonshotai/k3.1-pro")) {
+      assertEquals(obj("""{"reasoning_effort":"low"}"""), fields("openai", Level.OFF, id), id)
+      assertEquals(obj("""{"reasoning_effort":"low"}"""), fields("openai", Level.LOW, id), id)
+      // No `medium` in the vendor's dictionary: the middle of the slider asks for its own high
+      assertEquals(obj("""{"reasoning_effort":"high"}"""), fields("openai", Level.MEDIUM, id), id)
+      assertEquals(obj("""{"reasoning_effort":"max"}"""), fields("openai", Level.HIGH, id), id)
+    }
+  }
+
+  @Test
   fun `kimi-for-coding switches off with none and keeps the same words`() {
     assertEquals(obj("""{"reasoning_effort":"none"}"""), fields("openai", Level.OFF, "kimi-for-coding"))
     assertEquals(obj("""{"reasoning_effort":"low"}"""), fields("openai", Level.LOW, "kimi-for-coding"))
