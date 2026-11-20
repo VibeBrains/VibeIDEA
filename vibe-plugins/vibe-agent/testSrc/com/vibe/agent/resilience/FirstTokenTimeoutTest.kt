@@ -37,7 +37,8 @@ class FirstTokenTimeoutTest {
     assertEquals(10_000L, FirstTokenTimeout.promptExtra(50_001))
     assertEquals(10_000L, FirstTokenTimeout.promptExtra(100_000))
     assertEquals(20_000L, FirstTokenTimeout.promptExtra(100_001))
-    assertEquals(40_000L, FirstTokenTimeout.limit(30_000, 200_000, emptyList(), retry = 0))
+    // 200k tokens is 150k past the free step: three started 50k steps, so 30 s over the 30 s floor.
+    assertEquals(60_000L, FirstTokenTimeout.limit(30_000, 200_000, emptyList(), retry = 0))
   }
 
   @Test

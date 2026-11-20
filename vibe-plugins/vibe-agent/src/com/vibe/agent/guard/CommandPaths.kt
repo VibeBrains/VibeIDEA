@@ -70,8 +70,8 @@ object CommandPaths {
         if (project != null && inside(path, project, insensitive)) continue
         if (roots.any { inside(path, it, insensitive) }) continue
         if (isDeviceOrKernel(path)) continue
-        // A plain relative path is inside the project by construction; only an absolute one or a climb can leave it.
-        if (!isAbsolute(candidate) && !climbs(candidate)) continue
+        // A plain relative path is inside the project by construction; a home shortcut or a variable is not one.
+        if (plainRelative(candidate)) continue
         findings.add(OUTSIDE_PROJECT)
       }
     }
@@ -147,6 +147,15 @@ object CommandPaths {
 
   private fun climbs(path: String): Boolean =
     path == ".." || path.startsWith("../") || path.startsWith("..\\") || path.contains("/../")
+
+  /**
+   * A path written against the working folder: no root, no home shortcut, no variable, no climb.
+   *
+   * Only such a path is inside the project by construction. `~/Pictures` and `$HOME/Pictures` resolve to the home
+   * folder — outside it — and a check that asked only «is this spelled absolute» waved both through (VibeIDE 1.31).
+   */
+  private fun plainRelative(candidate: String): Boolean =
+    !isAbsolute(candidate) && !climbs(candidate) && !candidate.startsWith("~") && !VAR_PATH.matches(candidate)
 
   /** Normalised absolute form: `/a/./b/../c` → `/a/c`; Windows separators and keys fold to one shape. */
   private fun normalize(path: String): String {

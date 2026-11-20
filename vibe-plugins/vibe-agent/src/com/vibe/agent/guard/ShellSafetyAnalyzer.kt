@@ -122,8 +122,12 @@ object ShellSafetyAnalyzer {
       }
     }
     // A path in an argument is where the program may write, whatever the command looks like.
-    for (reason in CommandPaths.reasons(program, cleanArgs, projectRoot, cwd)) {
-      if (reason !in reasons) reasons.add(reason)
+    // `format D: /q` is the one exception: the drive is already named by `format-drive`, and `/q` is a switch the
+    // path rule would read as a file at the volume root, so both extra reasons would only teach people to click through.
+    if (program != "format") {
+      for (reason in CommandPaths.reasons(program, cleanArgs, projectRoot, cwd)) {
+        if (reason !in reasons) reasons.add(reason)
+      }
     }
     if (reasons.isNotEmpty()) return Result(Safety.DESTRUCTIVE, reasons, target, cleanArgs)
     if (cleanArgs.isEmpty()) {
@@ -273,7 +277,12 @@ object ShellSafetyAnalyzer {
         ch == '`' -> { backtick = !backtick; word.append(ch) }
         backtick -> word.append(ch)
         ch == '"' || ch == '\'' -> quote = ch
-        ch == '\\' && next != null -> { word.append(next); i++ }
+        // A backslash quotes only what the shell would otherwise read as a separator or a quote; before anything
+        // else it is a character of the word, because a Windows path (`C:\Windows`, `\\server\share`) has none.
+        // Dropping it turned every such path into a word the path rule could not read (VibeIDE 1.31).
+        ch == '\\' && next != null && (next == ' ' || next == '\t' || next in "\"'`|&;<>()$") -> {
+          word.append(next); i++
+        }
         (ch == '$' || ch == '<' || ch == '>') && next == '(' -> { nesting = 1; word.append(ch).append(next); i++ }
         ch == '|' && next == '|' -> { endChain(); i++ }
         // `|&` pipes stderr along with stdout: still one pipeline.

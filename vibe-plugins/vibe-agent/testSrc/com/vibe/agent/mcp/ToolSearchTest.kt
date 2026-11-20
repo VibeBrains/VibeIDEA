@@ -26,7 +26,9 @@ class ToolSearchTest {
 
   @Test
   fun `above the threshold only the search and the loaded tools are offered`() {
-    val offered = ToolSearch.offered(catalogue, loaded = setOf("memory_search"), threshold = 3)
+    // Victims are taken from the end until the rest fits, so at one the three IDE tools go and the loaded one
+    // stays where it stood (VibeIDE 1.31: the number threshold no longer defers everything at once).
+    val offered = ToolSearch.offered(catalogue, loaded = setOf("memory_search"), threshold = 1)
     assertEquals(listOf(ToolSearch.NAME, "memory_search"), offered.map { it.name })
   }
 

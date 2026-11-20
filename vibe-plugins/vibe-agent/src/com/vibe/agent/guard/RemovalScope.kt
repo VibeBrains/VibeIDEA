@@ -31,9 +31,10 @@ object RemovalScope {
    *
    * [projectRoot] is where a relative [cwd] is read from (`.`, or `build` without a folder), not a reversible root:
    * the checkpoint's snapshot does not cover ignored files, a folder without git, or what the same turn created
-   * (see the class comment). [cwd] must itself be inside one of the temp roots, since `../../..` from a folder
-   * outside them would reach anywhere. A missing project root means the working folder cannot be resolved, so the
-   * answer is false and the question is still asked.
+   * (see the class comment). [cwd] only decides where a relative target lands: such a target is reversible when the
+   * folder it lands in is inside a temp root, so a relative removal from a folder outside them stays a question.
+   * An absolute target does not depend on [cwd] at all. A missing project root means the working folder cannot be
+   * resolved, so the answer is false and the question is still asked.
    */
   fun isReversible(
     line: String,
@@ -45,8 +46,6 @@ object RemovalScope {
     val project = normalize(root).takeIf { it.nameCount > 0 } ?: return false
     val base = workingBase(cwd, project)?.takeIf { it.nameCount > 0 } ?: return false
     val roots = tempRoots.mapNotNull { normalize(it).takeIf { p -> p.nameCount > 0 } }
-    // The working folder may be a temp root itself, not only something inside one.
-    if (roots.none { isWithin(base, it) }) return false
     // A substitution, a backtick or an unquoted variable can name a second command or a target this rule never sees
     if (line.contains('$') || line.contains('`')) return false
     val segments = ShellSafetyAnalyzer.splitSegments(line)
@@ -125,9 +124,6 @@ object RemovalScope {
     val path = Path.of(target.replace('\\', '/'))
     canonical(if (path.isAbsolute) path else base.resolve(path))
   }.getOrNull()
-
-  /** The root itself or anything below it: where a folder is allowed to sit. */
-  private fun isWithin(child: Path, root: Path): Boolean = child == root || child.startsWith(root)
 
   /** Strictly below the root: what a removal is allowed to touch. */
   private fun isInside(child: Path, root: Path): Boolean = child != root && child.startsWith(root)
