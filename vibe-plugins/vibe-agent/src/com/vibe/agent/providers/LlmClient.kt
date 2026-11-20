@@ -6,6 +6,8 @@ import com.vibe.agent.util.arr
 import com.intellij.openapi.diagnostic.logger
 import com.vibe.agent.i18n.VibeI18n.t
 import com.vibe.agent.resilience.ProxySettings
+import com.vibe.agent.resilience.FirstTokenTimeout
+import com.vibe.agent.resilience.FirstTokenTimeoutException
 import com.vibe.agent.resilience.InterruptiblePause
 import com.vibe.agent.resilience.RetryObserver
 import com.vibe.agent.resilience.RetryPause
@@ -221,10 +223,14 @@ interface LlmSettings {
   /** The reasoning level the person chose, in the words [ReasoningMode.levelOf] reads */
   val reasoningLevel: String
 
+  /** Seconds the first fragment of a turn may take; the floor of [FirstTokenTimeout.limit] */
+  val firstTokenSeconds: Int get() = (FirstTokenTimeout.DEFAULT_SETTING_MS / 1000).toInt()
+
   /** The live IDE settings, read on every request: a toggle between two requests applies to the second */
   object Ide : LlmSettings {
     override val offline: Boolean get() = com.vibe.agent.settings.VibeAgentSettings.offline
     override val reasoningLevel: String get() = com.vibe.agent.settings.VibeAgentSettings.reasoningLevel
+    override val firstTokenSeconds: Int get() = com.vibe.agent.settings.VibeAgentSettings.agentFirstTokenSeconds
   }
 }
 
@@ -430,6 +436,24 @@ class LlmClient(
   /** The wait between two attempts: a stop ends it at once instead of at the next polling step */
   private val retryPause = InterruptiblePause(SLEEP_STEP_MS)
 
+  /** First-fragment delays of this client's recent turns per model; the slowest of them lifts the next wait. */
+  private val firstTokenHistory = FirstTokenTimeout.History()
+
+  /** How long the attempt in flight may think before its first fragment; 0 turns the guard off. */
+  @Volatile private var firstTokenLimitMs = 0L
+
+  /** When the attempt in flight started counting: from here, not from the first byte of the stream. */
+  private val attemptStartedAt = java.util.concurrent.atomic.AtomicLong(0)
+
+  /** When the first fragment of the attempt in flight arrived; 0 while the model is still silent. */
+  private val firstFragmentAt = java.util.concurrent.atomic.AtomicLong(0)
+
+  /** Set by the guard that gave up on the attempt in flight, so the read failure is named for what it is. */
+  private val firstTokenExpired = java.util.concurrent.atomic.AtomicBoolean(false)
+
+  /** The model of the attempt in flight: the history is per model, and one key may serve several. */
+  @Volatile private var attemptModelKey = ""
+
   /** Aborts the in-flight stream from any thread: closing the body wakes a read blocked on a silent server. */
   fun cancel() {
     activeBody?.let { runCatching { it.close() } }
@@ -506,6 +530,10 @@ class LlmClient(
     if (wire == ModelQuirks.WIRE_OPENAI && ModelQuirks.has(quirkIdOf(model), ModelQuirks.Quirk.RESPONSES_ONLY, quirks())) {
       throw IllegalStateException(t("provider.responsesOnly", "model" to model.id))
     }
+    // The size of what the model has to read before its first word — the one thing about a long thread
+    // that is knowable in advance, and the reason a 400-message chat waits longer than an empty one.
+    val promptTokens = messages.sumOf { com.vibe.agent.context.ContextBudget.estimateTokens(it.text) }
+    attemptModelKey = provider.entry.id + "/" + model.id
     var attempt = 1
     while (true) {
       try {
@@ -528,7 +556,25 @@ class LlmClient(
         // stream may have stopped inside an unclosed tag.
         // An answer to a request with tools is read for calls written as text before it reaches the feed
         val markup = if (textCallTools.isNotEmpty()) ToolMarkupFilter(onDelta) else null
-        val inline = InlineThinking(onAnswer = markup?.let { it::accept } ?: onDelta, onThought = onThought)
+        // Every fragment that reaches the feed is a sign the model is working; the first of them ends the
+        // first-fragment wait for this attempt, and is remembered to size the wait of the next turn.
+        val answer: (String) -> Unit = { fragment ->
+          noteFirstFragment()
+          (markup?.let { it::accept } ?: onDelta)(fragment)
+        }
+        val inline = InlineThinking(onAnswer = answer, onThought = { thought ->
+          noteFirstFragment()
+          onThought(thought)
+        })
+        // Armed before the request leaves: the person waits from the click, not from the response headers.
+        firstFragmentAt.set(0)
+        firstTokenExpired.set(false)
+        firstTokenLimitMs = FirstTokenTimeout.limit(
+          settingMs = settings.firstTokenSeconds * 1000L,
+          promptTokens = promptTokens,
+          recentFirstTokenMs = firstTokenHistory.recent(attemptModelKey),
+          retry = attempt - 1)
+        attemptStartedAt.set(System.currentTimeMillis())
         when (wire) {
           "anthropic" -> anthropicWithCredit(provider, model, messages, inline::accept)
           "gemini" -> geminiChat(provider, model, messages, inline::accept)
@@ -1007,6 +1053,18 @@ class LlmClient(
     return element as? JsonObject
   }
 
+  /**
+   * The first fragment of the attempt in flight arrived: the guard stands down, and the delay joins the
+   * history that sizes the wait of the next turn. Later fragments change nothing — this is the first one.
+   */
+  private fun noteFirstFragment() {
+    val now = System.currentTimeMillis()
+    if (firstFragmentAt.compareAndSet(0, now)) {
+      val started = attemptStartedAt.get()
+      if (started > 0) firstTokenHistory.note(attemptModelKey, now - started)
+    }
+  }
+
   private fun streamSse(provider: ResolvedProvider, request: HttpRequest, onData: (String) -> Unit) {
     val response = clients.of(provider).send(request, HttpResponse.BodyHandlers.ofInputStream())
     // The provider knows its own window; guessing shorter means being refused again.
@@ -1015,6 +1073,7 @@ class LlmClient(
     response.headers().firstValue(ModelEcho.ROUTED_MODEL_HEADER).orElse(null)?.takeIf { it.isNotBlank() }?.let { lastRoutedModel = it }
     val body = response.body()
     activeBody = body
+    val guard = armFirstTokenGuard(body)
     try {
       // Stop may have been pressed while we waited for the headers.
       if (cancelled()) throw java.io.InterruptedIOException(STOPPED_BY_USER)
@@ -1029,12 +1088,50 @@ class LlmClient(
       }
     }
     catch (e: java.io.IOException) {
-      // close() from cancel() surfaces as IOException("closed") — report it as a user stop, not an error.
+      // The guard's close and cancel()'s close are the same IOException; only one of them is a stop.
+      if (firstTokenExpired.get()) throw firstTokenRefusal()
       if (cancelled()) throw java.io.InterruptedIOException(STOPPED_BY_USER) else throw e
     }
     finally {
+      guard?.cancel()
       activeBody = null
     }
+  }
+
+  /**
+   * Arms the first-fragment guard for the stream about to be read.
+   *
+   * Closing the body is the only way to wake a read blocked on a server that has gone quiet, and it is
+   * the same door [cancel] uses — which is why the refusal has to be told apart from a stop afterwards.
+   * The wait counts from the click: the time already spent on the connection is not given back.
+   */
+  private fun armFirstTokenGuard(body: java.io.InputStream): java.util.TimerTask? {
+    val limit = firstTokenLimitMs
+    if (limit <= 0 || firstFragmentAt.get() != 0) return null
+    val remaining = limit - (System.currentTimeMillis() - attemptStartedAt.get())
+    if (remaining <= 0) return null
+    val task = object : java.util.TimerTask() {
+      override fun run() {
+        if (firstFragmentAt.get() != 0 || cancelled()) return
+        if (firstTokenExpired.compareAndSet(false, true)) runCatching { body.close() }
+      }
+    }
+    return try {
+      guardTimer.schedule(task, remaining)
+      task
+    }
+    catch (e: IllegalStateException) {
+      null
+    }
+  }
+
+  /** The refusal of the attempt that never got its first fragment: its real wait, not the setting. */
+  private fun firstTokenRefusal(): FirstTokenTimeoutException {
+    val waitedMs = (System.currentTimeMillis() - attemptStartedAt.get()).coerceAtLeast(0)
+    val limitMs = firstTokenLimitMs
+    val message = t("chat.noFirstToken",
+                    "waited" to (waitedMs / 1000), "limit" to (limitMs / 1000))
+    return FirstTokenTimeoutException(waitedMs, limitMs, message)
   }
 
   internal companion object {
@@ -1043,6 +1140,9 @@ class LlmClient(
 
     /** How much of the provider's own message travels with a pause */
     const val PAUSE_DETAIL_CHARS = 200
+
+    /** One daemon timer for every first-fragment guard in the IDE: a thread per attempt would be paid for nothing */
+    private val guardTimer: java.util.Timer by lazy { java.util.Timer("vibe-first-token-guard", true) }
 
     /**
      * The reasoning fields of one request: the person's level, brought to what this model accepts.

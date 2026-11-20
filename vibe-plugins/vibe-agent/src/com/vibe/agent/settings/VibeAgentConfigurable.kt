@@ -24,6 +24,7 @@ class VibeAgentConfigurable : Configurable, Configurable.NoScroll {
   private var auditEnabled: JBCheckBox? = null
   private var auditRotation: JBIntSpinner? = null
   private var silenceMinutes: JBIntSpinner? = null
+  private var firstTokenSeconds: JBIntSpinner? = null
   private var bgTtl: JBIntSpinner? = null
   private var bgPoll: JBIntSpinner? = null
   private var autopilotEnabled: JBCheckBox? = null
@@ -133,6 +134,8 @@ class VibeAgentConfigurable : Configurable, Configurable.NoScroll {
     val council = com.intellij.ui.components.JBTextField(VibeAgentSettings.councilAdvisers, 32).also { councilField = it }
     val roleBudget = JBIntSpinner(VibeAgentSettings.roleBudgetTokens, 0, VibeAgentSettings.MAX_ROLE_BUDGET_TOKENS).also { roleBudgetTokens = it }
     val silence = JBIntSpinner(VibeAgentSettings.agentSilenceMinutes, 0, VibeAgentSettings.MAX_SILENCE_MINUTES).also { silenceMinutes = it }
+    val firstToken = JBIntSpinner(VibeAgentSettings.agentFirstTokenSeconds, VibeAgentSettings.MIN_FIRST_TOKEN_SECONDS,
+                                  VibeAgentSettings.MAX_FIRST_TOKEN_SECONDS).also { firstTokenSeconds = it }
     val bgTtlField = JBIntSpinner(VibeAgentSettings.backgroundTtlMinutes, 0, VibeAgentSettings.MAX_BG_TTL_MINUTES).also { bgTtl = it }
     val bgPollField = JBIntSpinner(VibeAgentSettings.backgroundPollSeconds, 0, VibeAgentSettings.MAX_BG_POLL_SECONDS).also { bgPoll = it }
     val autopilot = JBCheckBox(t("autopilot.enabled"), VibeAgentSettings.autopilotEnabled).also { autopilotEnabled = it }
@@ -202,6 +205,8 @@ class VibeAgentConfigurable : Configurable, Configurable.NoScroll {
       .addLabeledComponent(t("settings.agent.auditRotation"), rotation)
       .addComponent(section(t("settings.agent.section.safety")))
       .addLabeledComponent(t("settings.agent.silence"), silence)
+      .addLabeledComponent(t("settings.agent.firstToken"), firstToken)
+      .addComponent(hint(t("settings.agent.hint.firstToken")))
       .addLabeledComponent(t("settings.bg.ttl"), bgTtlField)
       .addLabeledComponent(t("settings.bg.poll"), bgPollField)
       .addComponent(hint(t("settings.bg.hint")))
@@ -335,6 +340,7 @@ class VibeAgentConfigurable : Configurable, Configurable.NoScroll {
     auditEnabled?.isSelected != VibeAgentSettings.auditEnabled ||
     auditRotation?.number != VibeAgentSettings.auditRotationMb ||
     silenceMinutes?.number != VibeAgentSettings.agentSilenceMinutes ||
+    firstTokenSeconds?.number != VibeAgentSettings.agentFirstTokenSeconds ||
     (bgTtl?.number ?: VibeAgentSettings.backgroundTtlMinutes) != VibeAgentSettings.backgroundTtlMinutes ||
     (bgPoll?.number ?: VibeAgentSettings.backgroundPollSeconds) != VibeAgentSettings.backgroundPollSeconds ||
     autopilotEnabled?.isSelected != VibeAgentSettings.autopilotEnabled ||
@@ -403,6 +409,7 @@ class VibeAgentConfigurable : Configurable, Configurable.NoScroll {
     auditEnabled?.let { VibeAgentSettings.auditEnabled = it.isSelected }
     auditRotation?.let { VibeAgentSettings.auditRotationMb = it.number }
     silenceMinutes?.let { VibeAgentSettings.agentSilenceMinutes = it.number }
+    firstTokenSeconds?.let { VibeAgentSettings.agentFirstTokenSeconds = it.number }
     bgTtl?.let { VibeAgentSettings.backgroundTtlMinutes = it.number }
     bgPoll?.let { VibeAgentSettings.backgroundPollSeconds = it.number }
     autopilotEnabled?.let { VibeAgentSettings.autopilotEnabled = it.isSelected }
@@ -482,6 +489,7 @@ class VibeAgentConfigurable : Configurable, Configurable.NoScroll {
     auditEnabled?.isSelected = VibeAgentSettings.auditEnabled
     auditRotation?.number = VibeAgentSettings.auditRotationMb
     silenceMinutes?.number = VibeAgentSettings.agentSilenceMinutes
+    firstTokenSeconds?.number = VibeAgentSettings.agentFirstTokenSeconds
     bgTtl?.number = VibeAgentSettings.backgroundTtlMinutes
     bgPoll?.number = VibeAgentSettings.backgroundPollSeconds
     autopilotEnabled?.isSelected = VibeAgentSettings.autopilotEnabled

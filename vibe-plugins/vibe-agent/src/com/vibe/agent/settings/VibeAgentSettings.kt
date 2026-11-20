@@ -192,6 +192,7 @@ object VibeAgentSettings {
   private const val KEY_WATCH_MAX_FRAMES = "vibe.agent.watch.maxFrames"
   private const val KEY_WATCH_FRAME_HEIGHT = "vibe.agent.watch.frameHeight"
   private const val KEY_SILENCE_MINUTES = "vibe.agent.silenceMinutes"
+  private const val KEY_FIRST_TOKEN_SECONDS = "vibe.agent.firstTokenSeconds"
   private const val KEY_ROLE_BUDGET = "vibe.agent.roleBudgetTokens"
   private const val KEY_COUNCIL = "vibe.agent.councilAdvisers"
   private const val KEY_CONTEXT_FILTER = "vibe.agent.contextFilterMode"
@@ -244,6 +245,11 @@ object VibeAgentSettings {
   /** Minutes of total silence before the turn is called hung; 0 turns the switch off. */
   const val DEFAULT_SILENCE_MINUTES = 5
   const val MAX_SILENCE_MINUTES = 120
+
+  /** Seconds a model may think before its first fragment; the floor below which the first-token wait never drops. */
+  const val DEFAULT_FIRST_TOKEN_SECONDS = 30
+  const val MIN_FIRST_TOKEN_SECONDS = 30
+  const val MAX_FIRST_TOKEN_SECONDS = 300
   private const val KEY_WATCH_SUB_LANGS = "vibe.agent.watch.subtitleLanguages"
   private const val KEY_DESIGN_MODE = "vibe.agent.design.mode"
   private const val KEY_DESIGN_MAX_ATTEMPTS = "vibe.agent.design.maxAttempts"
@@ -699,6 +705,19 @@ object VibeAgentSettings {
   var agentSilenceMinutes: Int
     get() = props.getInt(KEY_SILENCE_MINUTES, DEFAULT_SILENCE_MINUTES).coerceIn(0, MAX_SILENCE_MINUTES)
     set(value) = props.setValue(KEY_SILENCE_MINUTES, value.coerceIn(0, MAX_SILENCE_MINUTES), DEFAULT_SILENCE_MINUTES)
+
+  /**
+   * Seconds the first fragment of a turn may take before the attempt is given up and repeated
+   * A floor, not the whole wait: a long prompt and a model that has been starting slowly lift it
+   * ([com.vibe.agent.resilience.FirstTokenTimeout]) — one constant cannot serve both an empty chat
+   * and a 400-message one.
+   */
+  var agentFirstTokenSeconds: Int
+    get() = props.getInt(KEY_FIRST_TOKEN_SECONDS, DEFAULT_FIRST_TOKEN_SECONDS)
+      .coerceIn(MIN_FIRST_TOKEN_SECONDS, MAX_FIRST_TOKEN_SECONDS)
+    set(value) = props.setValue(KEY_FIRST_TOKEN_SECONDS,
+                                value.coerceIn(MIN_FIRST_TOKEN_SECONDS, MAX_FIRST_TOKEN_SECONDS),
+                                DEFAULT_FIRST_TOKEN_SECONDS)
 
   var watchMaxFrames: Int
     get() = props.getInt(KEY_WATCH_MAX_FRAMES, DEFAULT_WATCH_MAX_FRAMES).coerceIn(MIN_WATCH_MAX_FRAMES, MAX_WATCH_MAX_FRAMES)
