@@ -9,7 +9,7 @@ import java.net.SocketTimeoutException
  * A thinking model and a hung one look alike: no tokens, the same spinner. A fixed patience therefore
  * fails both ways — short enough to notice a hang also cuts a long conversation being re-read, and the
  * cut is not free: the retry starts from scratch, so the model thinks the whole 40 s again, and after
- * three attempts the person gets «Модель не ответила» about a model that was working the whole time.
+ * three attempts the person gets the "model did not answer" error about a model that was working the whole time.
  *
  * So the first-fragment wait is derived from what is known about this exact request: how much prompt the
  * model has to read, how slowly it has been starting lately, and which attempt this is. Everything

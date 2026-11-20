@@ -1093,7 +1093,7 @@ class LlmClient(
       if (cancelled()) throw java.io.InterruptedIOException(STOPPED_BY_USER) else throw e
     }
     finally {
-      guard?.cancel()
+      guard?.cancel(false)
       activeBody = null
     }
   }
@@ -1105,22 +1105,20 @@ class LlmClient(
    * the same door [cancel] uses — which is why the refusal has to be told apart from a stop afterwards.
    * The wait counts from the click: the time already spent on the connection is not given back.
    */
-  private fun armFirstTokenGuard(body: java.io.InputStream): java.util.TimerTask? {
+  private fun armFirstTokenGuard(body: java.io.InputStream): java.util.concurrent.ScheduledFuture<*>? {
     val limit = firstTokenLimitMs
     if (limit <= 0 || firstFragmentAt.get() != 0L) return null
     val remaining = limit - (System.currentTimeMillis() - attemptStartedAt.get())
     if (remaining <= 0) return null
-    val task = object : java.util.TimerTask() {
-      override fun run() {
-        if (firstFragmentAt.get() != 0L || cancelled()) return
-        if (firstTokenExpired.compareAndSet(false, true)) runCatching { body.close() }
-      }
+    val task = Runnable {
+      if (firstFragmentAt.get() != 0L || cancelled()) return@Runnable
+      if (firstTokenExpired.compareAndSet(false, true)) runCatching { body.close() }
     }
     return try {
-      guardTimer.schedule(task, remaining)
-      task
+      com.intellij.util.concurrency.AppExecutorUtil.getAppScheduledExecutorService()
+        .schedule(task, remaining, java.util.concurrent.TimeUnit.MILLISECONDS)
     }
-    catch (e: IllegalStateException) {
+    catch (e: java.util.concurrent.RejectedExecutionException) {
       null
     }
   }
@@ -1140,9 +1138,6 @@ class LlmClient(
 
     /** How much of the provider's own message travels with a pause */
     const val PAUSE_DETAIL_CHARS = 200
-
-    /** One daemon timer for every first-fragment guard in the IDE: a thread per attempt would be paid for nothing */
-    private val guardTimer: java.util.Timer by lazy { java.util.Timer("vibe-first-token-guard", true) }
 
     /**
      * The reasoning fields of one request: the person's level, brought to what this model accepts.

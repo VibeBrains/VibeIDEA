@@ -8,7 +8,7 @@ import kotlin.test.assertTrue
 /**
  * The first-fragment wait grows with what makes a model slow, and never past the point of pretending.
  *
- * The numbers below are the ones a person sees as «Модель не ответила», so each of them is pinned:
+ * The numbers below are the ones a person sees as the "model did not answer" error, so each of them is pinned:
  * a wait that silently stayed at 30 s is exactly the bug this module exists to prevent.
  */
 class FirstTokenTimeoutTest {
