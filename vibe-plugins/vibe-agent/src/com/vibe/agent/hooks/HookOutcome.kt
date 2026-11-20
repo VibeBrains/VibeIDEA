@@ -32,9 +32,9 @@ data class HookResult(val hook: Hook, val verdict: HookVerdict, val message: Str
 
 /**
  * Aggregated decision for one event's hook chain. `blocked` is true only for
- * preToolUse; `flagged` records that a hook actually refused (exit 2), even when
- * that refusal cannot block (post/turnEnd) — the audit `ok` should reflect the
- * refusal, not just whether the action was stopped.
+ * preToolUse; `flagged` records that a hook actually refused (exit 2) or failed
+ * under `onFailure: "block"`, even when that refusal cannot block (post/turnEnd)
+ * — the audit `ok` should reflect the refusal, not just whether the action was stopped.
  */
 data class HookDecision(val blocked: Boolean, val flagged: Boolean, val agentMessage: String?, val brokenHooks: List<String>)
 
@@ -123,9 +123,19 @@ object HookOutcome {
    * already happened, so its message is a request to fix, not a block.
    */
   fun decideHooks(event: HookEvent, results: List<HookResult>): HookDecision {
+    // Broken hooks stay named in `brokenHooks` even when their policy turns the failure into a refusal: the person
+    // has to see both «this hook is broken» and «the call was stopped because of it».
     val broken = results.filter { it.verdict == HookVerdict.BROKEN }.map { it.hook.name() }
-    val refuse = results.firstOrNull { it.verdict == HookVerdict.REFUSE }
-    val notes = results.filter { it.verdict == HookVerdict.NOTE }.mapNotNull { it.message }
+    // `onFailure: "block"` is the deliberate opposite of the default: a check that guards more than its own
+    // health must not pass silently when it cannot run (Claude Code v2.1.328/329, checked 2026-11-19).
+    val effective = results.map { r ->
+      if (r.verdict == HookVerdict.BROKEN && r.hook.onFailure == HookFailurePolicy.BLOCK)
+        HookResult(r.hook, HookVerdict.REFUSE, t("hooks.result.failedAndBlocked", "hook" to r.hook.name(),
+                                                "reason" to r.message))
+      else r
+    }
+    val refuse = effective.firstOrNull { it.verdict == HookVerdict.REFUSE }
+    val notes = effective.filter { it.verdict == HookVerdict.NOTE }.mapNotNull { it.message }
     val header = when (event) {
       HookEvent.PRE_TOOL_USE -> t("hooks.header.blocked")
       // Отказ гейта — не блокировка: он говорит «черновик не принят», а что с этим делать,

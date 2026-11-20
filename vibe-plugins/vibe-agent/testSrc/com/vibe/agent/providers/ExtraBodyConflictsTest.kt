@@ -81,6 +81,15 @@ class ExtraBodyConflictsTest {
   }
 
   @Test
+  fun `fable 5-2 refuses forced tool use like 5-1`() {
+    for (type in listOf("any", "tool")) {
+      assertEquals(listOf("tool_choice.type" to ExtraBodyConflicts.Reason.FORCED_TOOL),
+                   conflicts("claude-fable-5-2", "anthropic", """{"tool_choice": {"type": "$type", "name": "x"}}"""), type)
+    }
+    assertTrue(conflicts("claude-fable-5-2", "anthropic", """{"tool_choice": {"type": "auto"}}""").isEmpty())
+  }
+
+  @Test
   fun `the vendor's fallback is named on anthropic's wire for any model, and ignored elsewhere`() {
     assertEquals(listOf("fallbacks" to ExtraBodyConflicts.Reason.SERVER_FALLBACK),
                  conflicts("claude-sonnet-4-5", "anthropic", """{"fallbacks": "default"}"""))

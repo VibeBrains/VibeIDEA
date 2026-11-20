@@ -2,7 +2,9 @@
 package com.vibe.agent.providers
 
 import kotlin.test.Test
+import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 /** Один ключ — не больше одного вопроса пароля за всю жизнь. */
@@ -26,6 +28,19 @@ class KeyOwnershipTest {
   fun `вне macOS список доступа к приложению не привязан`() {
     // На других хранилищах перезапись не даёт ничего и лишь тревожит хранилище.
     assertFalse(KeyOwnership.needsReown(onMac = false, alreadyReowned = false, keyPresent = true))
+  }
+
+  @Test
+  fun `два источника ключа называются только когда есть оба`() {
+    val provider = ProviderEntry(id = "zai", apiKeyEnv = "ZAI_API_KEY", apiKeyRef = "zai-ref")
+    val both = KeyOwnership.bothKeySources(provider, storedPresent = true, envPresent = true)
+    assertEquals("zai", both?.providerId)
+    assertEquals("ZAI_API_KEY", both?.envName)
+    assertEquals("zai-ref", both?.ref)
+    assertNull(KeyOwnership.bothKeySources(provider, storedPresent = true, envPresent = false))
+    assertNull(KeyOwnership.bothKeySources(provider, storedPresent = false, envPresent = true))
+    // No variable declared means there is no second source to shadow
+    assertNull(KeyOwnership.bothKeySources(ProviderEntry(id = "local"), storedPresent = true, envPresent = true))
   }
 
   @Test

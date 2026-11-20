@@ -86,6 +86,22 @@ class HookConfigTest {
   }
 
   @Test
+  fun onFailureDefaultsToAllowAndBlockIsParsed() {
+    val (hooks, warnings) = parse(
+      """{"hooks":[{"event":"preToolUse","command":"a"},{"event":"preToolUse","command":"b","onFailure":"block"}]}""")
+    assertEquals(HookFailurePolicy.ALLOW, hooks[0].onFailure)
+    assertEquals(HookFailurePolicy.BLOCK, hooks[1].onFailure)
+    assertTrue(warnings.isEmpty())
+  }
+
+  @Test
+  fun unknownOnFailureWarnsAndFallsBackToAllow() {
+    val (hooks, warnings) = parse("""{"hooks":[{"event":"preToolUse","command":"a","onFailure":"explode"}]}""")
+    assertEquals(HookFailurePolicy.ALLOW, hooks[0].onFailure)
+    assertTrue(warnings.any { it.contains("onFailure") }, "$warnings")
+  }
+
+  @Test
   fun disabledHookIsNotValidatedAtAll() {
     // Общий набор сидов пишут несколько продуктов сразу: выключенная запись может ссылаться на
     // событие, которого в этой сборке ещё нет. Проверять её содержимое незачем — она не

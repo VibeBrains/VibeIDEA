@@ -35,7 +35,7 @@ class ReasoningByDefaultTest {
 
   @Test
   fun `opus 5-5, fable and mythos cannot switch thinking off, so off sends the lowest effort`() {
-    for (id in listOf("claude-opus-5-5", "claude-fable-5", "claude-fable-5-1", "claude-mythos-5-1")) {
+    for (id in listOf("claude-opus-5-5", "claude-fable-5", "claude-fable-5-1", "claude-fable-5-2", "claude-mythos-5-1")) {
       val body = fields(id, "anthropic", off)
       assertEquals("adaptive", body.path("thinking", "type"), id)
       assertEquals("low", body.path("output_config", "effort"), id)

@@ -40,6 +40,14 @@
           "timeoutMs": {
             "type": "integer",
             "minimum": 1
+          },
+          "onFailure": {
+            "type": "string",
+            "enum": [
+              "allow",
+              "block"
+            ],
+            "description": "Что делать при поломке самого хука: allow (по умолчанию) — не блокировать вызов, block — остановить его."
           }
         }
       }

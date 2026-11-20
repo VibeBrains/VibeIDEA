@@ -280,10 +280,11 @@ object ModelQuirks {
       // «tool_choice: type "tool" and "any" are not supported for this model», the token counting endpoint included;
       // Fable 5.1 and Mythos 5.1 «reject forced tool use on every request with a 400 error»
       // (platform.claude.com/docs/en/models/opus-5-5/whats-new-opus-5-5, checked 2026-09-25)
-      // Exact versions: the page names these three, and Fable 5 and Mythos 5 are not on it
-      Regex("^claude-(opus-5-5|fable-5-1|mythos-5-1|sonnet-5-5)"),
+      // Fable 5.2 keeps the same refusal (platform.claude.com/docs/en/models/fable-5-2/whats-new-fable-5-2,
+      // checked 2026-11-10). Exact versions: Fable 5 and Mythos 5 are not on either list
+      Regex("^claude-(opus-5-5|fable-5-1|fable-5-2|mythos-5-1|sonnet-5-5)"),
       setOf(Quirk.NO_FORCED_TOOL_CHOICE),
-      "claude opus 5.5, fable 5.1, mythos 5.1, sonnet 5.5: forced tool use (tool_choice any or tool) is rejected",
+      "claude opus 5.5, fable 5.1, fable 5.2, mythos 5.1, sonnet 5.5: forced tool use (tool_choice any or tool) is rejected",
     ),
     Rule(
       // Sonnet 5.5, 28.09.2026: thinking is adaptive and on by default, `disabled` is a 400 pointing to `between_tools`,

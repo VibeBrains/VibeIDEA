@@ -96,6 +96,33 @@ class HookOutcomeTest {
   }
 
   @Test
+  fun brokenHookDoesNotBlockByDefault() {
+    val d = HookOutcome.decideHooks(HookEvent.PRE_TOOL_USE, listOf(verdict(1, err = "boom")))
+    assertFalse(d.blocked)
+    assertEquals(listOf("H"), d.brokenHooks)
+  }
+
+  @Test
+  fun brokenHookWithBlockPolicyStopsTheCallAndStaysNamedBroken() {
+    val strict = Hook(HookEvent.PRE_TOOL_USE, "guard", emptyList(), 1000, "H", onFailure = HookFailurePolicy.BLOCK)
+    val result = HookOutcome.verdictOf(strict, 1, timedOut = false, spawnFailed = false, stdout = "", stderr = "boom")
+    val d = HookOutcome.decideHooks(HookEvent.PRE_TOOL_USE, listOf(result))
+    assertTrue(d.blocked)
+    assertTrue(d.flagged)
+    assertEquals(listOf("H"), d.brokenHooks)
+    assertTrue(d.agentMessage!!.contains("onFailure"), d.agentMessage)
+  }
+
+  @Test
+  fun failedBlockingHookOnPostToolUseIsFlaggedButCannotBlock() {
+    val strict = Hook(HookEvent.POST_TOOL_USE, "guard", emptyList(), 1000, "H", onFailure = HookFailurePolicy.BLOCK)
+    val result = HookOutcome.verdictOf(strict, null, timedOut = true, spawnFailed = false, stdout = "", stderr = "")
+    val d = HookOutcome.decideHooks(HookEvent.POST_TOOL_USE, listOf(result))
+    assertFalse(d.blocked)
+    assertTrue(d.flagged)
+  }
+
+  @Test
   fun allOkGivesNoMessage() {
     val d = HookOutcome.decideHooks(HookEvent.TURN_END, listOf(verdict(0)))
     assertFalse(d.blocked)

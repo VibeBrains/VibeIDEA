@@ -266,6 +266,17 @@ object ApiKeyResolver {
   fun sourceNames(provider: ProviderEntry): String =
     listOfNotNull(provider.apiKeyRef ?: provider.id, provider.apiKeyEnv).joinToString(" / ")
 
+  /**
+   * Whether the provider's key variable is set — in either `.env` layer or the process environment.
+   *
+   * The VALUE is never returned: the doctor needs to know that a second source exists, and reading it would put the
+   * key into a report the person pastes into a chat. Same rule as the provider count above it.
+   */
+  fun envKeyPresent(provider: ProviderEntry, projectBase: String?): Boolean {
+    val name = provider.apiKeyEnv?.takeIf { it.isNotBlank() } ?: return false
+    return dotEnv(projectBase)[name]?.isNotBlank() == true || System.getenv(name)?.isNotBlank() == true
+  }
+
   /** Workspace `.vibe/.env` overrides `~/.vibe/.env` per variable. */
   internal fun dotEnv(projectBase: String?): Map<String, String> {
     val result = HashMap<String, String>()

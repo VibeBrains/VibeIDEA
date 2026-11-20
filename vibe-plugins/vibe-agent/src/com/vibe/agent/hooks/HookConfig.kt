@@ -38,6 +38,16 @@ enum class HookEvent(val wire: String) {
   }
 }
 
+/**
+ * What to do when the hook itself failed: did not start, ran past its timeout, or answered with the wrong code.
+ *
+ * [ALLOW] is the default and the previous behaviour — a broken hook does not block the agent. A typo in a script must
+ * not lock the project, and `exit 1` says «I am broken», not «forbidden». [BLOCK] is for a check whose guard matters
+ * more than its own health: when a security gate cannot run, the call does not go. The choice is explicit in
+ * `.vibe/hooks.json`.
+ */
+enum class HookFailurePolicy { ALLOW, BLOCK }
+
 data class Hook(
   val event: HookEvent,
   val command: String,
@@ -54,6 +64,8 @@ data class Hook(
    * Для файла, написанного человеком, умолчание обратное — он пишет хук, чтобы тот работал.
    */
   val active: Boolean = true,
+  /** Failure policy of the mechanism itself; see [HookFailurePolicy]. */
+  val onFailure: HookFailurePolicy = HookFailurePolicy.ALLOW,
 ) {
   /** Human name in messages: label if set, else the command. */
   fun name(): String = label ?: command
@@ -114,6 +126,14 @@ object HookConfig {
         warn(t("hooks.warn.turnEndTools", "hook" to (hookObj["label"]?.jsonPrimitive?.contentOrNull ?: command)))
         tools = emptyList()
       }
+      val onFailure = when (val raw = hookObj["onFailure"]?.jsonPrimitive?.contentOrNull?.lowercase()) {
+        null, "allow" -> HookFailurePolicy.ALLOW
+        "block" -> HookFailurePolicy.BLOCK
+        else -> {
+          warn(t("hooks.warn.unknownOnFailure", "index" to (i + 1), "value" to raw))
+          HookFailurePolicy.ALLOW
+        }
+      }
       val timeoutMs = when (val raw = hookObj["timeoutMs"]?.jsonPrimitive?.longOrNull) {
         null -> DEFAULT_TIMEOUT_MS
         in 1..MAX_TIMEOUT_MS -> raw
@@ -122,7 +142,8 @@ object HookConfig {
           MAX_TIMEOUT_MS
         } else DEFAULT_TIMEOUT_MS
       }
-      result.add(Hook(event, command, tools, timeoutMs, hookObj["label"]?.jsonPrimitive?.contentOrNull, active = active))
+      result.add(Hook(event, command, tools, timeoutMs, hookObj["label"]?.jsonPrimitive?.contentOrNull, active = active,
+                      onFailure = onFailure))
     }
     return result
   }

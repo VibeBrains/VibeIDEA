@@ -38,4 +38,22 @@ object KeyOwnership {
    */
   fun needsReown(onMac: Boolean, alreadyReowned: Boolean, keyPresent: Boolean): Boolean =
     onMac && keyPresent && !alreadyReowned
+
+  /**
+   * The two places a provider key can live, and the case where both hold one.
+   *
+   * [ApiKeyResolver.resolve] reads the IDE slot first and the environment only as a fallback, so a key typed into the
+   * provider card silently shadows a variable the person set on purpose. Neither copy is wrong on its own; together
+   * they make «I changed the variable and nothing happened» — a support question with no visible cause. The doctor
+   * names the pair instead of printing any value.
+   *
+   * Pure: presence in, a report out. Reading the keychain or the environment stays with the caller.
+   */
+  data class BothKeySources(val providerId: String, val envName: String, val ref: String)
+
+  fun bothKeySources(provider: ProviderEntry, storedPresent: Boolean, envPresent: Boolean): BothKeySources? {
+    if (!storedPresent || !envPresent) return null
+    val envName = provider.apiKeyEnv?.takeIf { it.isNotBlank() } ?: return null
+    return BothKeySources(provider.id, envName, provider.apiKeyRef ?: provider.id)
+  }
 }

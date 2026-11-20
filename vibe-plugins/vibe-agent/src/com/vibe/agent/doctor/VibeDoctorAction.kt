@@ -51,9 +51,9 @@ class VibeDoctorAction : AnAction({ t("doctor.action") }) {
     // Доктору нужно ЧИСЛО провайдеров с ключом, а не сами ключи: читать значения значило бы
     // показывать диалог связки на каждого при открытии доктора (20.09.2026).
     val resolved = providers.associateWith { ProvidersService.resolve(it, base, quiet = true) { } }
-    val withKey = resolved.count { (entry, provider) ->
-      com.vibe.agent.providers.ApiKeyResolver.hasStoredKey(entry) || provider?.apiKey != null
-    }
+    // One keychain question per provider, reused by the count and by the two-sources check below
+    val storedKeys = providers.associateWith { com.vibe.agent.providers.ApiKeyResolver.hasStoredKey(it) }
+    val withKey = resolved.count { (entry, provider) -> storedKeys[entry] == true || provider?.apiKey != null }
     // Usable without a key: a server at this machine's address, or one declared `"auth": "none"` — a vLLM in the office included
     // The chat asks them keyless, so the doctor must not call them unusable
     val keyFree = resolved.values.count { it?.needsKey == false }
@@ -64,6 +64,21 @@ class VibeDoctorAction : AnAction({ t("doctor.action") }) {
       if (providers.isEmpty()) VibeDiagnosis.State.ABSENT
       else if (withKey + keyFree == 0) VibeDiagnosis.State.WARN else VibeDiagnosis.State.OK,
       t("doctor.detail.providers", "total" to providers.size, "keyed" to withKey, "local" to localCount),
+    ))
+
+    // A key in the IDE slot shadows the environment variable without saying so: the request goes out with the old
+    // key and nobody can see why the new variable changed nothing (Claude Code v2.1.321, checked 2026-11-10).
+    val bothSources = providers.mapNotNull { p ->
+      com.vibe.agent.providers.KeyOwnership.bothKeySources(
+        p, storedPresent = storedKeys[p] == true,
+        envPresent = com.vibe.agent.providers.ApiKeyResolver.envKeyPresent(p, base))
+    }
+    lines.add(VibeDiagnosis.Line(
+      t("doctor.line.keySources"),
+      if (bothSources.isEmpty()) VibeDiagnosis.State.OK else VibeDiagnosis.State.WARN,
+      if (bothSources.isEmpty()) t("doctor.detail.keySourcesNone")
+      else t("doctor.detail.keySourcesBoth", "provider" to bothSources.first().providerId,
+             "variable" to bothSources.first().envName, "count" to bothSources.size),
     ))
 
     // «Почему у меня пропала temperature» имеет ровно один полезный ответ: кто это решил.
