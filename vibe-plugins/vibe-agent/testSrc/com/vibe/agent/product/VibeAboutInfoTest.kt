@@ -11,7 +11,10 @@ class VibeAboutInfoTest {
     override val platform = "Платформа"
     override val build = "сборка"
     override val revision = "Коммит"
+    override val madeBy = "Сделано в"
   }
+
+  private val madeBy = VibeAboutInfo.MadeBy("Сделано в", VibeProductUrls.AUTHOR_SITE_TEXT, VibeProductUrls.AUTHOR_SITE)
 
   @Test
   fun `the product version comes first, the platform second, the commit last`() {
@@ -37,6 +40,24 @@ class VibeAboutInfoTest {
     val plain = VibeAboutInfo.plain(lines)
     assertTrue(html.contains("<b>Версия:</b> 0.3.0") && html.contains("<br>"))
     assertEquals("Версия: 0.3.0\nПлатформа: intellij-community 2026.3, сборка VI-263.300\nКоммит: abc123abc123", plain)
+  }
+
+  @Test
+  fun `the author signature closes the block with the site as a link`() {
+    val lines = VibeAboutInfo.lines("0.3.0", "2026.3", "VI-263.300", null, labels)
+    val html = VibeAboutInfo.html(lines, madeBy)
+    assertTrue(html.endsWith(
+      "<br><span aria-hidden=\"true\">·</span> Сделано в " +
+      "<a href=\"https://borodatych.ru\" target=\"_blank\" rel=\"noopener\">borodatych.ru</a>"))
+    // The clipboard keeps the same words, with the address as plain text.
+    assertTrue(VibeAboutInfo.plain(lines, madeBy).endsWith("\nСделано в borodatych.ru"))
+  }
+
+  @Test
+  fun `without the signature the block stays exactly as it was`() {
+    val lines = VibeAboutInfo.lines("0.3.0", "2026.3", "VI-263.300", null, labels)
+    assertEquals(VibeAboutInfo.html(lines), VibeAboutInfo.html(lines, null))
+    assertEquals(VibeAboutInfo.plain(lines), VibeAboutInfo.plain(lines, null))
   }
 
   @Test

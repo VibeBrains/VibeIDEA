@@ -21,6 +21,13 @@ class VibeProductUrlsTest {
   }
 
   @Test
+  fun `the author signature points at a real site address`() {
+    assertEquals("https://borodatych.ru", VibeProductUrls.AUTHOR_SITE)
+    assertEquals("borodatych.ru", VibeProductUrls.AUTHOR_SITE_TEXT)
+    URI(VibeProductUrls.AUTHOR_SITE).toURL()
+  }
+
+  @Test
   fun `a bug report carries the description, encoded`() {
     val url = VibeProductUrls.newIssueUrl("Build 263.301\nOS: macOS")
     assertTrue(url.startsWith("https://github.com/VibeBrains/VibeIDEA/issues/new?body="))

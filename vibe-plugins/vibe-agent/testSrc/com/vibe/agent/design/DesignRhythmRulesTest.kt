@@ -15,9 +15,13 @@ class DesignRhythmRulesTest {
     lines: Int = 3,
     family: String = "Inter, sans-serif",
     padding: Box = Box(8.0, 8.0, 8.0, 8.0),
+    tag: String = "p",
+    weight: Int = 400,
+    transform: String = "none",
   ) = ElementSnapshot(
-    selector = selector, tag = "p", text = text, fontSizePx = fontSize, lineHeightPx = lineHeight,
+    selector = selector, tag = tag, text = text, fontSizePx = fontSize, lineHeightPx = lineHeight,
     widthPx = width, heightPx = 40.0, textLineCount = lines, fontFamily = family, paddingPx = padding,
+    fontWeight = weight, textTransform = transform,
   )
 
   private fun page(vararg elements: ElementSnapshot) = DocumentSnapshot(
@@ -71,13 +75,66 @@ class DesignRhythmRulesTest {
   }
 
   @Test
-  fun `a third font family is a page assembled from two designs`() {
-    val elements = listOf(
+  fun `a fourth font family is a page assembled from different designs`() {
+    val three = listOf(
       element(selector = "a", family = "Inter"),
       element(selector = "b", family = "Georgia"),
       element(selector = "c", family = "Comic Sans MS"),
     )
-    assertTrue(DesignRhythmRules.fontFamilies(page(*elements.toTypedArray())).isNotEmpty())
+    // Three families are three roles: body, display and code. The threshold from VibeIDE is three, not two.
+    assertTrue(DesignRhythmRules.fontFamilies(page(*three.toTypedArray())).isEmpty())
+    val four = three + element(selector = "d", family = "Courier New")
+    assertTrue(DesignRhythmRules.fontFamilies(page(*four.toTypedArray())).isNotEmpty())
+  }
+
+  @Test
+  fun `four font weights are a page with no accent`() {
+    val three = listOf(400, 500, 700).mapIndexed { i, w -> element(selector = "p$i", weight = w) }
+    assertTrue(rules(*three.toTypedArray()).none { it == DesignRuleCatalog.TOO_MANY_WEIGHTS })
+    val four = three + element(selector = "p3", weight = 300)
+    assertTrue(rules(*four.toTypedArray()).contains(DesignRuleCatalog.TOO_MANY_WEIGHTS))
+  }
+
+  @Test
+  fun `three dots are an ellipsis only in prose, never in code`() {
+    assertTrue(rules(element(text = "Подробнее...")).contains(DesignRuleCatalog.THREE_DOT_ELLIPSIS))
+    // «…» is a single glyph and cannot be split by a line break.
+    assertTrue(rules(element(text = "Подробнее…")).none { it == DesignRuleCatalog.THREE_DOT_ELLIPSIS })
+    assertTrue(rules(element(text = "rest...args", tag = "code")).none { it == DesignRuleCatalog.THREE_DOT_ELLIPSIS })
+  }
+
+  @Test
+  fun `a sliver is four lines in a column narrower than sixteen font sizes`() {
+    // 200px / 16px = 12.5 — already a strip of text.
+    assertTrue(rules(element(width = 200.0, lines = 4)).contains(DesignRuleCatalog.TEXT_SLIVER))
+    // The same column with three lines is a caption, not a paragraph.
+    assertTrue(rules(element(width = 200.0, lines = 3)).none { it == DesignRuleCatalog.TEXT_SLIVER })
+    assertTrue(rules(element(width = 400.0, lines = 4)).none { it == DesignRuleCatalog.TEXT_SLIVER })
+  }
+
+  @Test
+  fun `capitals with a line height below the font size touch each other`() {
+    val tight = element(tag = "h2", transform = "uppercase", fontSize = 24.0, lineHeight = 20.0,
+                        text = "Заголовок", lines = 1, width = 600.0)
+    assertTrue(DesignRhythmRules.capsHeadUnderOne(page(tight)).single().rule == DesignRuleCatalog.CAPS_HEAD_UNDER_1_0)
+    val loose = tight.copy(lineHeightPx = 26.0)
+    assertTrue(DesignRhythmRules.capsHeadUnderOne(page(loose)).isEmpty())
+    val lowerCase = tight.copy(textTransform = "none")
+    assertTrue(DesignRhythmRules.capsHeadUnderOne(page(lowerCase)).isEmpty())
+  }
+
+  @Test
+  fun `small section headings are judged on a desktop only`() {
+    val heads = arrayOf(
+      element(selector = "h2a", tag = "h2", fontSize = 28.0, text = "Раздел", lines = 1),
+      element(selector = "h2b", tag = "h2", fontSize = 30.0, text = "Раздел", lines = 1),
+    )
+    assertTrue(DesignRhythmRules.smallSectionHeads(page(*heads)).isNotEmpty())
+    // On a phone 28px is a heading; the desktop threshold says nothing there.
+    val mobile = page(*heads).copy(viewport = Viewport.MOBILE)
+    assertTrue(DesignRhythmRules.smallSectionHeads(mobile).isEmpty())
+    val big = heads.map { it.copy(fontSizePx = 44.0) }.toTypedArray()
+    assertTrue(DesignRhythmRules.smallSectionHeads(page(*big)).isEmpty())
   }
 
   @Test
@@ -93,7 +150,9 @@ class DesignRhythmRulesTest {
     // Ритм — вкус: проект вправе нарушить его осознанно, и тогда он пишет об этом в своём файле.
     val produced = listOf(
       DesignRuleCatalog.LINE_TOO_LONG, DesignRuleCatalog.LINE_HEIGHT_OFF, DesignRuleCatalog.FONT_SCALE_DRIFT,
-      DesignRuleCatalog.SPACING_OFF_GRID, DesignRuleCatalog.TOO_MANY_FONTS, DesignRuleCatalog.SHOUTING_TEXT,
+      DesignRuleCatalog.SPACING_OFF_GRID, DesignRuleCatalog.TOO_MANY_FONTS, DesignRuleCatalog.TOO_MANY_WEIGHTS,
+      DesignRuleCatalog.SHOUTING_TEXT, DesignRuleCatalog.THREE_DOT_ELLIPSIS, DesignRuleCatalog.TEXT_SLIVER,
+      DesignRuleCatalog.CAPS_HEAD_UNDER_1_0, DesignRuleCatalog.SMALL_SECTION_HEADS,
     )
     assertTrue(DesignRuleCatalog.ALL.containsAll(produced))
     assertTrue(produced.none { DesignRuleCatalog.isFloor(it) })

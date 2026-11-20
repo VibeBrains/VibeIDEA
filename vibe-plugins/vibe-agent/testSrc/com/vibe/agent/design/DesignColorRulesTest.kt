@@ -18,10 +18,13 @@ class DesignColorRulesTest {
     decoration: String = "none",
     weight: Int = 400,
     body: String = "текст",
+    alpha: Double = 0.0,
+    width: Double = 400.0,
+    height: Double = 40.0,
   ) = ElementSnapshot(
     selector = selector, tag = tag, text = body, color = color, backgroundColor = background,
     parentId = parentId, textDecorationLine = decoration, fontWeight = weight,
-    widthPx = 400.0, heightPx = 40.0,
+    ownBackgroundAlpha = alpha, widthPx = width, heightPx = height,
   )
 
   private fun page(vararg elements: ElementSnapshot) = DocumentSnapshot(
@@ -33,6 +36,17 @@ class DesignColorRulesTest {
   @Test
   fun `обычный абзац не даёт находок`() {
     assertEquals(emptyList(), rules(text()))
+  }
+
+  @Test
+  fun `большая белая плашка — заливка по умолчанию`() {
+    val card = text(selector = "section", background = Rgb(255, 255, 255), alpha = 1.0, width = 700.0, height = 500.0)
+    assertTrue(rules(card).contains(DesignRuleCatalog.PURE_WHITE_SURFACE))
+    // A small white detail is a deliberate contrast point, not a surface of the page.
+    assertTrue(rules(card.copy(widthPx = 500.0, heightPx = 300.0))
+                 .none { it == DesignRuleCatalog.PURE_WHITE_SURFACE })
+    // A transparent block has no colour of its own: what is under it is the page background.
+    assertTrue(rules(card.copy(ownBackgroundAlpha = 0.3)).none { it == DesignRuleCatalog.PURE_WHITE_SURFACE })
   }
 
   @Test

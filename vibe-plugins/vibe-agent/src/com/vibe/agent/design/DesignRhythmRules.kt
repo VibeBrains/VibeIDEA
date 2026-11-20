@@ -33,7 +33,8 @@ object DesignRhythmRules {
   const val SPACING_TOLERANCE_PX = 0.6
 
   fun all(doc: DocumentSnapshot): List<Finding> =
-    lineLength(doc) + lineHeight(doc) + fontScale(doc) + spacingGrid(doc) + fontFamilies(doc) + upperCaseText(doc)
+    lineLength(doc) + lineHeight(doc) + fontScale(doc) + spacingGrid(doc) + fontFamilies(doc) + fontWeights(doc) +
+    upperCaseText(doc) + threeDotEllipsis(doc) + textSliver(doc) + capsHeadUnderOne(doc) + smallSectionHeads(doc)
 
   /** A paragraph wider than the comfortable measure: the eye loses the line it was reading. */
   fun lineLength(doc: DocumentSnapshot): List<Finding> = doc.elements.mapNotNull { element ->
@@ -86,7 +87,7 @@ object DesignRhythmRules {
             t("design.rule.spacing.why"), offGrid.joinToString(", ") { format(it) })
   }
 
-  /** More than two families on a page is a page assembled from two different designs. */
+  /** More than three families on a page is a page assembled from different designs. */
   fun fontFamilies(doc: DocumentSnapshot): List<Finding> {
     val families = doc.elements.filter { it.text.isNotBlank() && it.fontFamily.isNotBlank() }
       .map { it.fontFamily.substringBefore(',').trim().trim('"', '\'').lowercase() }
@@ -94,8 +95,18 @@ object DesignRhythmRules {
       .distinct()
     if (families.size <= MAX_FONT_FAMILIES) return emptyList()
     return listOf(pageFinding(DesignRuleCatalog.TOO_MANY_FONTS, doc,
-                              t("design.rule.fonts.message", "count" to families.size),
+                              t("design.rule.fonts.message", "count" to families.size, "max" to MAX_FONT_FAMILIES),
                               t("design.rule.fonts.why"), families.joinToString(", ")))
+  }
+
+  /** The same count for weights: bold, medium and light on one page are three designs agreeing by accident. */
+  fun fontWeights(doc: DocumentSnapshot): List<Finding> {
+    val weights = doc.elements.filter { it.text.isNotBlank() && it.fontWeight > 0 }
+      .map { it.fontWeight }.distinct().sorted()
+    if (weights.size <= MAX_FONT_WEIGHTS) return emptyList()
+    return listOf(pageFinding(DesignRuleCatalog.TOO_MANY_WEIGHTS, doc,
+                              t("design.rule.weights.message", "count" to weights.size, "max" to MAX_FONT_WEIGHTS),
+                              t("design.rule.weights.why"), weights.joinToString(", ")))
   }
 
   /** A whole sentence in capitals: shouting that also reads slower, letter by letter. */
@@ -109,6 +120,56 @@ object DesignRhythmRules {
     finding(DesignRuleCatalog.SHOUTING_TEXT, element, doc,
             t("design.rule.shouting.message", "length" to text.length),
             t("design.rule.shouting.why"), text.take(60))
+  }
+
+  /**
+   * Three dots typed instead of the ellipsis character.
+   *
+   * The two are not the same: `...` is three full stops that break at a line end, `…` is one glyph that does not.
+   * Code samples are exempt — `...` in code means something of its own.
+   */
+  fun threeDotEllipsis(doc: DocumentSnapshot): List<Finding> = doc.elements.mapNotNull { element ->
+    if (element.tag == "code" || element.tag == "pre") return@mapNotNull null
+    if (!element.text.contains("...")) return@mapNotNull null
+    finding(DesignRuleCatalog.THREE_DOT_ELLIPSIS, element, doc,
+            t("design.rule.ellipsis.message"),
+            t("design.rule.ellipsis.why"), element.text.take(60))
+  }
+
+  /** Four lines squeezed into a column narrower than sixteen font sizes: the eye has nowhere to go. */
+  fun textSliver(doc: DocumentSnapshot): List<Finding> = doc.elements.mapNotNull { element ->
+    if (element.textLineCount < MIN_SLIVER_LINES) return@mapNotNull null
+    if (element.fontSizePx <= 0 || element.widthPx <= 0) return@mapNotNull null
+    val ratio = element.widthPx / element.fontSizePx
+    if (ratio >= MIN_TEXT_WIDTH_PER_FONT) return@mapNotNull null
+    finding(DesignRuleCatalog.TEXT_SLIVER, element, doc,
+            t("design.rule.sliver.message", "ratio" to format(ratio), "lines" to element.textLineCount),
+            t("design.rule.sliver.why"), format(ratio))
+  }
+
+  /** Capitals have no descenders, so a line height under the font size makes two heading lines touch. */
+  fun capsHeadUnderOne(doc: DocumentSnapshot): List<Finding> = doc.elements.mapNotNull { element ->
+    val tag = element.tag.lowercase()
+    if (tag != "h1" && tag != "h2") return@mapNotNull null
+    if (element.textTransform != "uppercase") return@mapNotNull null
+    if (element.fontSizePx <= 0 || element.lineHeightPx <= 0) return@mapNotNull null
+    val ratio = element.lineHeightPx / element.fontSizePx
+    if (ratio >= CAPS_LINE_HEIGHT_RATIO) return@mapNotNull null
+    finding(DesignRuleCatalog.CAPS_HEAD_UNDER_1_0, element, doc,
+            t("design.rule.capsHead.message", "ratio" to format(ratio)),
+            t("design.rule.capsHead.why"), format(ratio))
+  }
+
+  /** Section headings that read as body text: on a phone this is a choice, on a desktop it is a lost hierarchy. */
+  fun smallSectionHeads(doc: DocumentSnapshot): List<Finding> {
+    if (doc.viewport != Viewport.DESKTOP) return emptyList()
+    val sizes = doc.elements.filter { it.tag == "h2" && it.fontSizePx > 0 }.map { it.fontSizePx }.sorted()
+    if (sizes.size < MIN_SECTION_HEADS) return emptyList()
+    val median = sizes[sizes.size / 2]
+    if (median >= MIN_SECTION_HEAD_PX) return emptyList()
+    return listOf(pageFinding(DesignRuleCatalog.SMALL_SECTION_HEADS, doc,
+                              t("design.rule.sectionHeads.message", "size" to format(median)),
+                              t("design.rule.sectionHeads.why"), format(median)))
   }
 
   private fun onStep(value: Double): Boolean {
@@ -127,7 +188,26 @@ object DesignRhythmRules {
 
   private fun format(value: Double): String = DesignFloorRules.format(value)
 
-  const val MAX_FONT_FAMILIES = 2
+  const val MAX_FONT_FAMILIES = 3
+
+  /** Weights on one page: regular, medium, semibold and bold are already four intentions. */
+  const val MAX_FONT_WEIGHTS = 3
+
+  /** Line height under the font size: capitals touch, because they have no descenders to keep the gap. */
+  const val CAPS_LINE_HEIGHT_RATIO = 1.0
+
+  /** Text narrower than sixteen font sizes per line is a sliver rather than a column. */
+  const val MIN_TEXT_WIDTH_PER_FONT = 16.0
+
+  /** A sliver is only a defect once the column holds enough lines to read. */
+  const val MIN_SLIVER_LINES = 4
+
+  /** Section headings below this median stop reading as section headings on a desktop. */
+  const val MIN_SECTION_HEAD_PX = 40.0
+
+  /** One heading is not a set; the median only says something from a pair onwards. */
+  private const val MIN_SECTION_HEADS = 2
+
   private const val MIN_UPPERCASE_CHARS = 25
   private const val UPPERCASE_SHARE_PERCENT = 80
 }

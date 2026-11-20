@@ -28,12 +28,16 @@ class VibeAboutPopupDescriptionProvider : AboutPopupDescriptionProvider {
         override val platform get() = t("about.platform")
         override val build get() = t("about.build")
         override val revision get() = t("about.revision")
+        override val madeBy get() = t("about.madeBy")
       },
     )
   }
 
-  override fun getDescription(): String = VibeAboutInfo.html(lines())
+  private fun madeBy(): VibeAboutInfo.MadeBy =
+    VibeAboutInfo.MadeBy(t("about.madeBy"), VibeProductUrls.AUTHOR_SITE_TEXT, VibeProductUrls.AUTHOR_SITE)
+
+  override fun getDescription(): String = VibeAboutInfo.html(lines(), madeBy())
 
   /** Plain text for «Копировать»: the same lines, so the clipboard never says something else. */
-  override fun getExtendedDescription(): String = VibeAboutInfo.plain(lines())
+  override fun getExtendedDescription(): String = VibeAboutInfo.plain(lines(), madeBy())
 }

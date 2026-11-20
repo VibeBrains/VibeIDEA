@@ -38,10 +38,28 @@ object VibeAboutInfo {
   /** Twelve characters: unique in any repository this size, short enough to read out loud. */
   const val REVISION_CHARS = 12
 
-  fun html(lines: List<Line>): String =
-    lines.joinToString("<br>") { "<b>${escape(it.label)}:</b> ${escape(it.value)}" }
+  /**
+   * The author's signature shown under the version block: "made at the author's site", the site as the link.
+   *
+   * The domain is visible in the text and reads as an address, which is the point: whoever scrolled to the bottom
+   * sees where the product comes from and can go there without guessing.
+   */
+  data class MadeBy(val label: String, val text: String, val url: String)
 
-  fun plain(lines: List<Line>): String = lines.joinToString("\n") { "${it.label}: ${it.value}" }
+  fun html(lines: List<Line>, madeBy: MadeBy? = null): String {
+    val block = lines.joinToString("<br>") { "<b>${escape(it.label)}:</b> ${escape(it.value)}" }
+    if (madeBy == null) return block
+    // The dot is decoration for the eye only: a screen reader should not read a bullet as content.
+    val footer = "<span aria-hidden=\"true\">·</span> ${escape(madeBy.label)} " +
+                 "<a href=\"${escape(madeBy.url)}\" target=\"_blank\" rel=\"noopener\">${escape(madeBy.text)}</a>"
+    return "$block<br>$footer"
+  }
+
+  fun plain(lines: List<Line>, madeBy: MadeBy? = null): String {
+    val block = lines.joinToString("\n") { "${it.label}: ${it.value}" }
+    if (madeBy == null) return block
+    return "$block\n${madeBy.label} ${madeBy.text}"
+  }
 
   private fun escape(text: String): String =
     text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
@@ -51,5 +69,6 @@ object VibeAboutInfo {
     val platform: String
     val build: String
     val revision: String
+    val madeBy: String
   }
 }

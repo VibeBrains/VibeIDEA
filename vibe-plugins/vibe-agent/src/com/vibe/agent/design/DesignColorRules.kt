@@ -37,8 +37,12 @@ object DesignColorRules {
   /** Share of the viewport above which a saturated fill stops being an accent and starts vibrating. */
   private const val LARGE_AREA_SHARE = 0.25
 
+  /** A white block smaller than this is a detail; from here up it is a surface of the page. */
+  const val WHITE_SURFACE_MIN_WIDTH_PX = 600.0
+  const val WHITE_SURFACE_MIN_HEIGHT_PX = 400.0
+
   fun all(doc: DocumentSnapshot): List<Finding> =
-    textColorCount(doc) + accentHues(doc) + pureBlackText(doc) + saturatedLargeArea(doc) +
+    textColorCount(doc) + accentHues(doc) + pureBlackText(doc) + pureWhiteSurface(doc) + saturatedLargeArea(doc) +
     linkByColorOnly(doc) + linkSameAsText(doc) + invisibleBorder(doc) + lowContrastIcons(doc) +
     textOnImage(doc) + focusRingContrast(doc)
 
@@ -81,6 +85,25 @@ object DesignColorRules {
             message = t("design.rule.pureBlack.message"),
             why = t("design.rule.pureBlack.why"),
             evidence = "#000000 / #ffffff")
+  }
+
+  /**
+   * A large pure-white card on any page: the default fill nobody chose.
+   *
+   * Only a block of its own size counts — a white chip or a white icon is a deliberate contrast point, while a
+   * six-hundred-pixel card is a surface that was meant to belong to the page and does not.
+   */
+  fun pureWhiteSurface(doc: DocumentSnapshot): List<Finding> = doc.elements.mapNotNull { element ->
+    if (element.ownBackgroundAlpha <= 0.5) return@mapNotNull null
+    if (element.backgroundColor != Rgb(255, 255, 255)) return@mapNotNull null
+    if (element.widthPx < WHITE_SURFACE_MIN_WIDTH_PX || element.heightPx < WHITE_SURFACE_MIN_HEIGHT_PX) {
+      return@mapNotNull null
+    }
+    finding(DesignRuleCatalog.PURE_WHITE_SURFACE, Severity.HINT, element, doc,
+            message = t("design.rule.whiteSurface.message", "width" to element.widthPx.roundToInt(),
+                        "height" to element.heightPx.roundToInt()),
+            why = t("design.rule.whiteSurface.why"),
+            evidence = "#ffffff")
   }
 
   /** A big saturated fill: the eye cannot settle on it, and everything on top loses. */

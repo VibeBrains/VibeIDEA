@@ -27,6 +27,12 @@ object VibeProductUrls {
   const val RELEASES_URL = "$REPO/releases"
   const val LATEST_RELEASE_URL = "$RELEASES_URL/latest"
 
+  /** The author's site: the address in the signature at the bottom of every product of the family. */
+  const val AUTHOR_SITE = "https://borodatych.ru"
+
+  /** What the signature shows as link text — the domain itself, so the line reads as an address. */
+  const val AUTHOR_SITE_TEXT = "borodatych.ru"
+
   fun releaseUrl(tag: String): String = "$RELEASES_URL/tag/$tag"
 
   /** New issue with the environment description pre-filled — what «Submit a Bug Report» should open for a fork. */
