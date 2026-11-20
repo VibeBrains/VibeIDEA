@@ -13,9 +13,17 @@ object WatchPrompt {
     val what = if (result.kind == WatchInput.Kind.AUDIO) "аудиозапись" else "видео"
     append("Разбери ").append(what).append(" «").append(result.title).append("».\n\n")
     if (result.frames.isNotEmpty()) {
-      append("К сообщению приложено кадров: ").append(result.frames.size)
-      append(" — они сняты по сменам сцен, а не через равные промежутки, поэтому это ключевые моменты, ")
-      append("а не равномерная выборка.\n\n")
+      val count = result.frameSeconds.size.takeIf { it > 0 } ?: result.frames.size
+      if (result.frames.size == 1 && count > 1) {
+        append("К сообщению приложен один лист кадров: ").append(count)
+        append(" кадров в сетке, на каждом виден его тайм-код — ")
+        append("это смены сцен, а не равномерная выборка.\n\n")
+      }
+      else {
+        append("К сообщению приложено кадров: ").append(count)
+        append(" — они сняты по сменам сцен, а не через равные промежутки, поэтому это ключевые моменты, ")
+        append("а не равномерная выборка.\n\n")
+      }
     }
     if (result.transcript.isNotBlank()) {
       append("Транскрипт с тайм-кодами:\n").append(result.transcript).append("\n\n")
@@ -37,13 +45,20 @@ object WatchPrompt {
     val what = if (result.kind == WatchInput.Kind.AUDIO) "аудиозапись" else "видео"
     append("Разобрано ").append(what).append(" «").append(result.title).append("».\n\n")
     if (frameFiles.isNotEmpty()) {
-      append("Кадры (").append(frameFiles.size).append(") сняты по сменам сцен, а не через равные промежутки. ")
-      append("Это файлы изображений: откройте нужные, если умеете смотреть картинки.\n")
-      frameFiles.forEachIndexed { index, file ->
-        val at = result.frameSeconds.getOrNull(index)?.let { "[" + Subtitles.stamp(it) + "] " }.orEmpty()
-        append(at).append(file).append('\n')
+      if (frameFiles.size == 1 && result.frameSeconds.size > 1) {
+        append("Лист кадров: ").append(frameFiles[0]).append(" — одна картинка, кадры по сменам сцен в сетке; ")
+        append("тайм-коды ячеек по порядку: ")
+        append(result.frameSeconds.joinToString(", ") { Subtitles.stamp(it) }).append(".\n\n")
       }
-      append('\n')
+      else {
+        append("Кадры (").append(frameFiles.size).append(") сняты по сменам сцен, а не через равные промежутки. ")
+        append("Это файлы изображений: откройте нужные, если умеете смотреть картинки.\n")
+        frameFiles.forEachIndexed { index, file ->
+          val at = result.frameSeconds.getOrNull(index)?.let { "[" + Subtitles.stamp(it) + "] " }.orEmpty()
+          append(at).append(file).append('\n')
+        }
+        append('\n')
+      }
     }
     if (result.transcript.isNotBlank()) {
       append("Транскрипт:\n").append(result.transcript).append("\n\n")

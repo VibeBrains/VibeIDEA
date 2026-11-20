@@ -15,9 +15,21 @@ package com.vibe.agent.watch
 object SceneFrames {
   data class Frame(val index: Int, val timestampSec: Double)
 
+  /**
+   * HDR → SDR before any scaling: linear light, a Hable tonemap and BT.709 output.
+   *
+   * `zscale` needs libzimg, which not every ffmpeg build has; the caller checks `-filters` first and
+   * leaves the frames untranslated (with a line in the feed) rather than failing the whole run.
+   */
+  const val TONEMAP =
+    "zscale=t=linear:npl=100,format=gbrpf32le,zscale=p=bt709,tonemap=tonemap=hable:desat=0," +
+      "zscale=t=bt709:m=bt709:r=tv,format=yuv420p"
+
   /** The filter string handed to ffmpeg. The anchor is not optional — see the class comment. */
-  fun filter(threshold: Double, frameHeight: Int): String =
-    "select='eq(n,0)+gt(scene,$threshold)',scale=-2:$frameHeight,showinfo"
+  fun filter(threshold: Double, frameHeight: Int, tonemap: Boolean = false): String {
+    val color = if (tonemap) "$TONEMAP," else ""
+    return "${color}select='eq(n,0)+gt(scene,$threshold)',scale=-2:$frameHeight,showinfo"
+  }
 
   /** Parsed from ffmpeg's `showinfo` output on stderr; tolerant of both major-version formats. */
   fun parseShowinfo(output: String): List<Frame> {

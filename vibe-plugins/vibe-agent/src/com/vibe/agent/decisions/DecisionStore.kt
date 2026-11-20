@@ -48,6 +48,13 @@ class DecisionStore(private val project: Project) {
     return CANDIDATES.firstOrNull { Files.isDirectory(Path.of(base, it)) } ?: DecisionRecord.FOLDER
   }
 
+  /** The decisions index verbatim: the journal handed back after the conversation was folded. */
+  fun indexText(): String? {
+    val base = project.basePath ?: return null
+    return runCatching { Files.readString(Path.of(base, folder(), DecisionRecord.INDEX)) }
+      .getOrNull()?.takeIf { it.isNotBlank() }
+  }
+
   fun nextNumber(): Int {
     val base = project.basePath ?: return 1
     val dir = Path.of(base, folder())

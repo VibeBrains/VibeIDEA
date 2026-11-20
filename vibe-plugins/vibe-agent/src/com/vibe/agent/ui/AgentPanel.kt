@@ -4094,7 +4094,15 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     val pinned = transcript.filter(com.vibe.agent.history.TranscriptWire::carried).take(cut).filter { it.pinned }.map {
       ChatMessage(role = if (it.role == Role.USER) "user" else "assistant", text = it.wireText ?: it.text)
     }
-    return listOf(ChatMessage("system", t("context.compacted.prefix", "summary" to summary))) + pinned + current.drop(cut)
+    // The fold keeps the retelling; the anchor hands back the words it was made from: the person's own
+    // task and the decisions journal, both written outside the conversation.
+    val anchor = com.vibe.agent.context.CompactionAnchor.text(
+      com.vibe.agent.context.CompactionAnchor.taskOf(transcript),
+      com.vibe.agent.decisions.DecisionStore.getInstance(project).indexText(),
+      pinned.map { it.text },
+    )?.let { ChatMessage("system", it) }
+    return listOf(ChatMessage("system", t("context.compacted.prefix", "summary" to summary))) +
+      listOfNotNull(anchor) + pinned + current.drop(cut)
   }
 
   /**
@@ -7569,7 +7577,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     }
     // Deterministic destructive-command warning for the agent's own command tools (Claude runs Bash itself).
     val command = hookParams?.get("command")?.jsonPrimitive?.contentOrNull
-    val destructive = command?.let { ShellSafetyAnalyzer.analyzeLine(it) }
+    val destructive = command?.let { ShellSafetyAnalyzer.analyzeLine(it, projectRoot = project.basePath) }
     // Трифекта: чтение приватного собственным инструментом агента. До нас доходит не само чтение,
     // а просьба разрешить его, — и это единственное место, где такое чтение вообще видно.
     if (com.vibe.agent.guard.Trifecta.readsPrivateData(hookTool, hookParams?.keys.orEmpty())) {
@@ -7733,7 +7741,7 @@ class AgentPanel(private val project: Project) : com.vibe.agent.http.VibeAgentGa
     }
     // Destructive-command gate: same deterministic classifier as VibeIDE, asked before execution.
     val line = (listOf(command) + args).joinToString(" ")
-    val verdict = ShellSafetyAnalyzer.analyzeLine(line)
+    val verdict = ShellSafetyAnalyzer.analyzeLine(line, projectRoot = project.basePath, cwd = cwd)
     // On autopilot only a removal inside a temp folder is reversible: a project removal is not taken back by the
     // checkpoint (ignored files, no git, same-turn creations), as VibeIDE fixed in 16aa3eb244c
     val reversible = verdict != null && com.vibe.agent.mcp.PermissionMode.of(VibeAgentSettings.permissionMode) ==

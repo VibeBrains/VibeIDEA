@@ -28,6 +28,9 @@ class WatchPipeline(
   /** Speech of a LOCAL file, which carries no subtitle track; null when no engine could make text */
   private val speech: (File, () -> Boolean) -> String? = WatchLocalSpeech::transcribe,
 ) {
+  /** Whether this ffmpeg has zscale; asked once per run, because the answer cannot change mid-run. */
+  private var zscale: Boolean? = null
+
   data class Result(
     val kind: WatchInput.Kind,
     val title: String,
@@ -88,16 +91,20 @@ class WatchPipeline(
 
     if (isCancelled()) error(CANCELLED)
     onProgress(t("watch.stage.frames"))
-    val (frames, seconds) = frames(media)
+    val (frames, seconds, frameWarning) = frames(media)
     check(frames.isNotEmpty()) { t("watch.error.noFrames") }
 
+    val warning = listOfNotNull(
+      if (transcript.isBlank()) t("watch.warn.noSubtitles") else null,
+      frameWarning,
+    ).joinToString("; ").ifBlank { null }
     Result(
       kind = WatchInput.Kind.VIDEO,
       title = title,
       transcript = transcript,
       frames = frames,
       frameSeconds = seconds,
-      warning = if (transcript.isBlank()) t("watch.warn.noSubtitles") else null,
+      warning = warning,
     )
   }
 
@@ -149,37 +156,79 @@ class WatchPipeline(
     return file?.toPath() ?: error(t("watch.error.mediaMissing"))
   }
 
-  private fun frames(media: Path): Pair<List<Path>, List<Double>> {
-    val first = extract(media, VibeAgentSettings.watchSceneThreshold)
+  private fun frames(media: Path): Triple<List<Path>, List<Double>, String?> {
+    // HDR is read from the banner before extraction: the frames of an untranslated PQ/HLG video are pale
+    // grey, and the model judges colour it cannot see. Without zscale they stay untranslated, with a line.
+    val hdr = WatchProbe.isHdr(probeBanner(media))
+    val tonemap = hdr && hasZscale()
+    var warning = if (hdr && !tonemap) t("watch.warn.hdrNoTonemap") else null
+    val threshold = VibeAgentSettings.watchSceneThreshold
+    var first = extract(media, threshold, tonemap)
+    if (tonemap && first.second.isEmpty() && first.first != 0) {
+      warning = t("watch.warn.tonemapFailed")
+      first = extract(media, threshold, false)
+    }
     // A static screencast crosses no threshold at all; one retry at a low one, then give up.
-    val frames = if (SceneFrames.needsRetry(first.second)) {
+    var frames = if (SceneFrames.needsRetry(first.second)) {
       onProgress(t("watch.stage.retry"))
       clearFrames()
-      extract(media, SceneFrames.RETRY_SCENE_THRESHOLD)
+      extract(media, SceneFrames.RETRY_SCENE_THRESHOLD, tonemap).also {
+        if (tonemap && it.second.isEmpty() && it.first != 0) {
+          warning = t("watch.warn.tonemapFailed")
+          clearFrames()
+        }
+      }
     }
     else first
+    if (frames.second.isEmpty() && tonemap) {
+      clearFrames()
+      frames = extract(media, SceneFrames.RETRY_SCENE_THRESHOLD, false)
+    }
 
     val kept = SceneFrames.thin(frames.second, VibeAgentSettings.watchMaxFrames)
     val files = workDir.toFile().listFiles { f: File -> f.name.startsWith("frame") && f.name.endsWith(".jpg") }
       ?.sortedBy { it.name }.orEmpty()
-    if (kept.isEmpty() || files.isEmpty()) return files.map { it.toPath() }.take(VibeAgentSettings.watchMaxFrames) to emptyList()
+    if (kept.isEmpty() || files.isEmpty()) {
+      return Triple(files.map { it.toPath() }.take(VibeAgentSettings.watchMaxFrames), emptyList(), warning)
+    }
     // showinfo numbers frames from the filter's output, which is exactly the file order.
     val byOrder = files.mapIndexed { index, file -> index to file }.toMap()
-    val picked = frames.second.mapIndexedNotNull { index, frame -> if (frame in kept) byOrder[index]?.toPath()?.let { it to frame.timestampSec } else null }
-    return picked.map { it.first } to picked.map { it.second }
+    val picked = frames.second.mapIndexedNotNull { index, frame ->
+      if (frame in kept) byOrder[index]?.toPath()?.let { it to frame.timestampSec } else null
+    }
+    // One sheet instead of twelve attachments: fewer tokens, and every time code is on its own frame.
+    val sheet = if (picked.size > 1) {
+      ContactSheet.compose(picked.map { it.first }, picked.map { it.second }, workDir.resolve("sheet.jpg"))
+    }
+    else null
+    val sent = sheet?.let { listOf(it) } ?: picked.map { it.first }
+    return Triple(sent, picked.map { it.second }, warning)
   }
 
-  private fun extract(media: Path, threshold: Double): Pair<Int, List<SceneFrames.Frame>> {
+  private fun extract(media: Path, threshold: Double, tonemap: Boolean): Pair<Int, List<SceneFrames.Frame>> {
     val result = exec(
       listOf(
         tools.ffmpeg, "-hide_banner", "-i", media.toString(),
-        "-vf", SceneFrames.filter(threshold, VibeAgentSettings.watchFrameHeight),
+        "-vf", SceneFrames.filter(threshold, VibeAgentSettings.watchFrameHeight, tonemap),
         "-fps_mode", "vfr", "-q:v", "3",
         workDir.resolve("frame%04d.jpg").toString(),
       ),
       FRAMES_TIMEOUT_SEC,
     )
     return result.exitCode to SceneFrames.parseShowinfo(result.stderr)
+  }
+
+  /** The `ffmpeg -i` banner of the media actually being read: for a download it differs from the source probe. */
+  private fun probeBanner(media: Path): String =
+    exec(listOf(tools.ffmpeg, "-hide_banner", "-i", media.toString()), PROBE_TIMEOUT_SEC).stderr
+
+  /** Whether this ffmpeg build has zscale (libzimg): a static build often does not, and the run must not fail. */
+  private fun hasZscale(): Boolean {
+    if (zscale == null) {
+      val result = runCatching { exec(listOf(tools.ffmpeg, "-hide_banner", "-filters"), PROBE_TIMEOUT_SEC) }.getOrNull()
+      zscale = result != null && result.exitCode == 0 && result.stdout.contains("zscale")
+    }
+    return zscale == true
   }
 
   private fun clearFrames() {

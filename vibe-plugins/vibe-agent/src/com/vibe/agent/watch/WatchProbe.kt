@@ -37,6 +37,19 @@ object WatchProbe {
    * @return null when the file could not be read at all (no stream lines), so the caller can show
    *         ffmpeg's own words instead of inventing "no audio track".
    */
+  /**
+   * Whether a video stream is HDR: PQ (`smpte2084`) or HLG (`arib-std-b67`).
+   *
+   * The `ffmpeg -i` banner names the transfer in the stream line, e.g.
+   * `yuv420p10le(tv, bt2020nc/bt2020/smpte2084)`. Without a translation to SDR the frames look washed
+   * out, and the model judges pale grey pictures instead of what the person sees (handoff, 03.11.2026).
+   */
+  fun isHdr(ffmpegStderr: String): Boolean = ffmpegStderr.lineSequence()
+    .filter { it.contains("Stream #") && it.contains(": Video:") }
+    .any { line ->
+      HDR_TRANSFERS.any { it in line.lowercase() }
+    }
+
   fun localIsAudioOnly(ffmpegStderr: String): Boolean? {
     val streams = ffmpegStderr.lineSequence().filter { it.contains("Stream #") }.toList()
     if (streams.isEmpty()) return null
@@ -45,4 +58,7 @@ object WatchProbe {
     val realVideo = video.filterNot { it.contains("(attached pic)") }
     return realVideo.isEmpty()
   }
+
+  /** Transfer functions that mean HDR: PQ, HLG, and Dolby Vision's own marker when the banner carries it. */
+  private val HDR_TRANSFERS = listOf("smpte2084", "arib-std-b67", "dovi")
 }

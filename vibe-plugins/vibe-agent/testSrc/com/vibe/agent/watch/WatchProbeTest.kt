@@ -53,4 +53,23 @@ class WatchProbeTest {
   fun `an unreadable file returns null so the caller can quote ffmpeg instead of inventing a reason`() {
     assertNull(WatchProbe.localIsAudioOnly("a.mp4: Invalid data found when processing input"))
   }
+
+  @Test
+  fun `PQ and HLG are HDR, and the same transfer on audio does not count`() {
+    val pq = "Stream #0:0: Video: hevc, yuv420p10le(tv, bt2020nc/bt2020/smpte2084), 3840x2160"
+    val hlg = "Stream #0:0: Video: hevc, yuv420p10le(tv, bt2020nc/bt2020/arib-std-b67), 1920x1080"
+    assertTrue(WatchProbe.isHdr(pq))
+    assertTrue(WatchProbe.isHdr(hlg))
+    assertFalse(WatchProbe.isHdr("Stream #0:0: Video: h264, yuv420p, 1280x720"))
+    assertFalse(WatchProbe.isHdr("Stream #0:1: Audio: aac, smpte2084"))
+  }
+
+  @Test
+  fun `the tone map comes before the scene filter and is off by default`() {
+    assertFalse(SceneFrames.filter(0.3, 720).contains("zscale"))
+    val hdr = SceneFrames.filter(0.3, 720, tonemap = true)
+    assertTrue(hdr.startsWith(SceneFrames.TONEMAP))
+    assertTrue(hdr.indexOf("zscale") < hdr.indexOf("select="))
+    assertTrue(hdr.contains("scale=-2:720"))
+  }
 }

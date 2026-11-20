@@ -61,7 +61,9 @@ object ShellSafetyAnalyzer {
   const val PROTECTED_EVALS = "protected-evals"
 
   /** Programs that only read what they are given: naming the journal to them is not a rewrite. */
-  private val PATH_READERS = setOf("cat", "less", "more", "head", "tail", "grep", "rg", "wc", "jq", "zcat", "gzcat", "Get-Content")
+  internal val PATH_READERS = setOf(
+    "cat", "less", "more", "head", "tail", "grep", "rg", "wc", "jq", "zcat", "gzcat", "Get-Content",
+  )
 
   /**
    * The protected-path reason for one argument, or null.
@@ -90,7 +92,12 @@ object ShellSafetyAnalyzer {
    * command judged is the one that actually runs: `sudo rm notes.txt` removes the file just the same,
    * and judging the wrapper waved it through.
    */
-  fun analyze(command: String, args: List<String>): Result {
+  fun analyze(
+    command: String,
+    args: List<String>,
+    projectRoot: String? = null,
+    cwd: String? = null,
+  ): Result {
     val (target, cleanArgs) = unwrap(command, args.map { it.trim() }.filter { it.isNotEmpty() })
     // Match on the base name so a path-qualified binary (/bin/rm, C:\Windows\System32\format.com) is
     // still classified by the anchored ^binary$ patterns.
@@ -114,6 +121,10 @@ object ShellSafetyAnalyzer {
         protectedPathReason(arg)?.let { if (it !in reasons) reasons.add(it) }
       }
     }
+    // A path in an argument is where the program may write, whatever the command looks like.
+    for (reason in CommandPaths.reasons(program, cleanArgs, projectRoot, cwd)) {
+      if (reason !in reasons) reasons.add(reason)
+    }
     if (reasons.isNotEmpty()) return Result(Safety.DESTRUCTIVE, reasons, target, cleanArgs)
     if (cleanArgs.isEmpty()) {
       for (p in AMBIGUOUS_COMMANDS) if (p.re.containsMatchIn(program)) return Result(Safety.AMBIGUOUS, listOf(p.reason), target, cleanArgs)
@@ -130,17 +141,21 @@ object ShellSafetyAnalyzer {
    * The composite rule of [fetchesAndRuns] comes last: no single segment of `curl … | sh` is
    * destructive — the line is.
    */
-  fun analyzeLine(line: String, depth: Int = 0): Result? {
+  fun analyzeLine(line: String, depth: Int = 0, projectRoot: String? = null, cwd: String? = null): Result? {
     val chains = pipelines(line)
     for (stage in chains.flatten()) {
-      val verdict = analyze(stage[0], stage.drop(1))
+      val verdict = analyze(stage[0], stage.drop(1), projectRoot, cwd)
       if (verdict.safety == Safety.DESTRUCTIVE) return verdict
       // `bash -c "rm notes.txt"`, `eval "rm notes.txt"`: the script handed over is a line of its own.
-      if (depth < MAX_NESTED_DEPTH) scriptOf(verdict.command, verdict.args)?.let { script -> analyzeLine(script, depth + 1)?.let { return it } }
+      if (depth < MAX_NESTED_DEPTH) {
+        scriptOf(verdict.command, verdict.args)?.let { script ->
+          analyzeLine(script, depth + 1, projectRoot, cwd)?.let { return it }
+        }
+      }
     }
     if (depth < MAX_NESTED_DEPTH) {
       // `echo $(rm notes.txt)`: a substitution runs before the command that reads its output.
-      for (inner in extractSubstitutions(line)) analyzeLine(inner, depth + 1)?.let { return it }
+      for (inner in extractSubstitutions(line)) analyzeLine(inner, depth + 1, projectRoot, cwd)?.let { return it }
     }
     val offending = findFetchAndRun(chains, depth) ?: return null
     val (command, args) = unwrap(offending[0], offending.drop(1))
