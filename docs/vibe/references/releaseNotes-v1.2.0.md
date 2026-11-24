@@ -166,23 +166,23 @@
 
 ```bash
 shasum -a 256 VibeIDEA-1.2.0-aarch64.dmg
-# __SHA256_DMG__
+# 2fe526f9fb3243dcb1add5856e6c93d6764f82b0b622746442d1dd6403360730
 ```
 
 **Windows (x64):** `VibeIDEA-1.2.0.exe` — обычный инсталлятор; или `VibeIDEA-1.2.0.win.zip` — распаковать куда угодно и запустить `bin\idea64.exe`.
 
 ```powershell
 Get-FileHash VibeIDEA-1.2.0.exe -Algorithm SHA256
-# __SHA256_EXE__
+# cf49c790ad382ae99745db5a1c5de172946608023e10b9a01ff5d2268e5fa5f9
 Get-FileHash VibeIDEA-1.2.0.win.zip -Algorithm SHA256
-# __SHA256_ZIP__
+# a5bbaa7a7de4f59157927008517a2c879cac78df1a7d85431951ee19621153f4
 ```
 
 **Linux (x64):** `VibeIDEA-1.2.0.tar.gz` — распаковать и запустить `bin/idea.sh`.
 
 ```bash
 sha256sum VibeIDEA-1.2.0.tar.gz
-# __SHA256_TGZ__
+# 6e5f6b055476cd86e1dfd86e5de865d86ff99c3ae9fd739455d33ad661485bf3
 ```
 
 **Что нужно на машине:** PHP 8.1+ и Node 18+.
