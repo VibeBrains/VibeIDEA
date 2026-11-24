@@ -138,6 +138,7 @@ object VibeDefaults {
     "skills/brigadier/SKILL.md" to "skills/brigadier/SKILL.md",
     "skills/brigadier/evals/evals.json" to "skills/brigadier/evals/evals.json",
     "skills/brigadier/worker/README.md" to "skills/brigadier/worker/README.md",
+    "skills/brigadier/worker/kimi_worker.py" to "skills/brigadier/worker/kimi_worker.py",
     "skills/brigadier/worker/providers/deepseek.json" to "skills/brigadier/worker/providers/deepseek.json",
     "skills/brigadier/worker/worker.ps1" to "skills/brigadier/worker/worker.ps1",
     "skills/brigadier/worker/worker.sh" to "skills/brigadier/worker/worker.sh",
